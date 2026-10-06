@@ -52,6 +52,7 @@
 .mf-check-row { padding: 10px; border-radius: 6px; background: var(--color-bg-sunken); display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: center; }
 .mf-check-row input { min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
 .mf-check-name { grid-column: 1 / -1; }
+.mf-actual { grid-column: 1 / -1; margin: 0; }
 .mf-months { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
 .mf-months button { min-width: 36px; min-height: 32px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
 .mf-months button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }

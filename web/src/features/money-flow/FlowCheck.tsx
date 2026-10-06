@@ -27,6 +27,9 @@ const num = (v: string) => { const n = Math.round(Number(v.replace(/,/g, ''))); 
 const catsOf = (kind: FlowKind) => FLOW_CATEGORIES.filter((c) => c.kind === kind)
 const stripKeys = <T extends { key: string }>(rows: T[]) => rows.map(({ key: _key, ...rest }) => rest)
 const kstMonth = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 7)
+const rowKey = (r: { categoryId: string; payment?: Payment }) => `${r.categoryId}|${r.payment ?? 'cash'}`
+/** 고정지출 줄 옆에 보여 줄 실제 기록 — 기준은 바꾸지 않고 비교만 한다 */
+type Actual = { month: string; byKey: Map<string, number> }
 
 /** 기록한 지출을 소분류·결제 수단별로 묶어 점검 줄로 만든다. 비정기 소분류는 그 달에 나간 1년치로 본다 */
 export function rowsFromEntries(entries: Entry[]): { fixed: Row[]; variable: Row[]; irregular: IrrRow[] } {
@@ -55,8 +58,23 @@ function CatSelect({ kind, value, onChange, label }: { kind: FlowKind; value: st
   )
 }
 
-function ItemRows({ kind, rows, setRows }: { kind: 'fixed' | 'variable'; rows: Row[]; setRows: (rows: Row[]) => void }) {
+function ItemRows({ kind, rows, setRows, actual }: { kind: 'fixed' | 'variable'; rows: Row[]; setRows: (rows: Row[]) => void; actual?: Actual }) {
   const update = (key: string, patch: Partial<Row>) => setRows(rows.map((r) => r.key === key ? { ...r, ...patch } : r))
+  // 같은 분류·결제 수단 줄이 여럿이면(전기·가스를 따로 적은 경우) 기록은 합계로만 비교한다 — 어느 줄 몫인지 알 수 없어 바꾸기 버튼은 없다
+  const actualNote = (r: Row) => {
+    const recorded = actual?.byKey.get(rowKey(r))
+    const group = rows.filter((x) => rowKey(x) === rowKey(r))
+    if (recorded === undefined || group[0].key !== r.key) return null
+    const base = group.reduce((sum, x) => sum + x.amount, 0)
+    if (recorded === base) return null
+    const month = `${Number(actual!.month.slice(5))}월`
+    return (
+      <p className="acc-note mf-actual">
+        {month} 기록 {krw(recorded)}{group.length > 1 ? ` · 이 분류 ${group.length}줄 합계 ${krw(base)}` : ''} ({recorded > base ? '기준보다 ' + krw(recorded - base) + ' 많음' : '기준보다 ' + krw(base - recorded) + ' 적음'})
+        {group.length === 1 && <> <button type="button" className="acc-link" onClick={() => update(r.key, { amount: recorded, mustPart: r.mustPart && r.mustPart > recorded ? recorded : r.mustPart })}>기록 금액으로 바꾸기</button></>}
+      </p>
+    )
+  }
   return (
     <div className="mf-check-rows">
       {rows.map((r, i) => {
@@ -75,6 +93,7 @@ function ItemRows({ kind, rows, setRows }: { kind: 'fixed' | 'variable'; rows: R
               {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
             <button type="button" className="acc-link" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>빼기</button>
+            {actualNote(r)}
           </div>
         )
       })}
@@ -137,14 +156,18 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
 
   // 가장 최근에 기록한 달(이번 달 포함)의 지출로 채운다 — 매달 적지 않아도 마지막 기록이 기준
   const recordedMonth = entries.map((e) => e.date.slice(0, 7)).sort().pop() ?? null
+  const recordedRows = useMemo(() => (recordedMonth ? rowsFromEntries(entries.filter((e) => e.date.startsWith(recordedMonth))) : null), [entries, recordedMonth])
+  // 고정지출은 기준(평소 금액)이라 한 달 실제로 덮지 않는다. 공과금처럼 달마다 조금씩 다른 건 옆에 기록 금액만 보여 준다
+  const fixedActual: Actual | undefined = recordedMonth && recordedRows ? { month: recordedMonth, byKey: new Map(recordedRows.fixed.map((r) => [rowKey(r), r.amount])) } : undefined
   const fillFromRecords = () => {
-    if (!recordedMonth) return
-    const rows = rowsFromEntries(entries.filter((e) => e.date.startsWith(recordedMonth)))
-    const merge = <T extends { categoryId: string; payment?: Payment }>(cur: T[], add: T[]) => [...cur.filter((r) => !add.some((a) => a.categoryId === r.categoryId && (a.payment ?? 'cash') === (r.payment ?? 'cash'))), ...add]
+    if (!recordedMonth || !recordedRows) return
+    const rows = recordedRows
+    const merge = <T extends { categoryId: string; payment?: Payment }>(cur: T[], add: T[]) => [...cur.filter((r) => !add.some((a) => rowKey(a) === rowKey(r))), ...add]
     setVariable((cur) => merge(cur, rows.variable))
-    setFixed((cur) => merge(cur, rows.fixed))
     setIrregular((cur) => merge(cur, rows.irregular))
-    setNotice(`${recordedMonth.replace('-', '년 ')}월 기록으로 채웠습니다. 같은 분류는 기록 금액으로 바꿨습니다.`)
+    // 고정지출은 아직 없는 분류만 더한다
+    setFixed((cur) => [...cur, ...rows.fixed.filter((a) => !cur.some((r) => rowKey(r) === rowKey(a)))])
+    setNotice(`${recordedMonth.replace('-', '년 ')}월 기록으로 채웠습니다. 변동·비정기는 기록 금액으로 바꿨고, 고정지출은 평소 기준을 그대로 두고 기록 금액을 옆에 보여 줍니다(없던 분류만 추가).`)
   }
 
   const input: FlowCheckInput = useMemo(() => ({
@@ -222,8 +245,8 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
 
       <section className="acc-card">
         <h2>고정지출</h2>
-        <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다.</p>
-        <ItemRows kind="fixed" rows={fixed} setRows={setFixed} />
+        <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다. 공과금처럼 달마다 조금씩 다른 건 평소 금액(높은 쪽)을 적으세요. 기록이 있으면 옆에 실제 금액이 보이고, 바꿀지는 직접 고릅니다.</p>
+        <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} />
       </section>
 
       <section className="acc-card">

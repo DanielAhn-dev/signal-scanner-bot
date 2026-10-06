@@ -122,3 +122,28 @@ describe('우리 집 수입(시작하기·시드 만들기와 같은 값)', () =
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/ui/money-flow', expect.objectContaining({ method: 'POST' }))
   })
 })
+
+describe('고정지출은 기준, 기록은 실제', () => {
+  it('기록으로 채워도 고정지출 기준은 그대로 두고 기록 금액을 옆에 보여 주며, 바꿀지는 직접 고른다', async () => {
+    const input = { ...savedInput, fixed: [...savedInput.fixed, { categoryId: 'utilities', amount: 13_000, label: '전기·가스' }] }
+    apiFetchMock.mockResolvedValue({
+      rules: [], checks: [{ id: 'c1', date: '2026-09-30', label: '', input }],
+      entries: [
+        { id: 'a', date: `${month}-03`, amount: 12_400, memo: '전기요금', categoryId: 'utilities', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', date: `${month}-04`, amount: 55_000, memo: '휴대폰', categoryId: 'phone', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'c', date: `${month}-05`, amount: 30_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+      ],
+    })
+    renderCheck()
+    // 채우기 전에도 기록 금액은 보인다
+    expect(await screen.findByText(/기록 12,400원 \(기준보다 600원 적음\)/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /기록으로 채우기/ }))
+    expect((screen.getByLabelText('전기·가스 월 금액') as HTMLInputElement).value).toBe('13000')
+    // 없던 고정 분류는 더하고, 변동은 기록 금액으로 바꾼다
+    expect((screen.getByLabelText('휴대폰 월 금액') as HTMLInputElement).value).toBe('55000')
+    expect((screen.getByLabelText('배달 월 금액') as HTMLInputElement).value).toBe('30000')
+    fireEvent.click(screen.getByRole('button', { name: '기록 금액으로 바꾸기' }))
+    expect((screen.getByLabelText('전기·가스 월 금액') as HTMLInputElement).value).toBe('12400')
+    expect(screen.queryByText(/기준보다 600원 적음/)).toBeNull()
+  })
+})
