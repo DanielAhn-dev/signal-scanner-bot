@@ -1,3 +1,4 @@
+import "../src/lib/installTruncationGuard";
 /**
  * 유니버스 종목 뉴스 헤드라인 일일 보관 (src/services/newsArchive.ts).
  *   pnpm exec tsx scripts/collect_stock_news.ts           # 수집 + Storage 저장

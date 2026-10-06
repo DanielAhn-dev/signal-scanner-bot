@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Import all batch modules
 from batch_modules.utils import load_env_file, get_last_trading_date
 from batch_modules.holiday_guard import should_skip_holiday_rerun
+from batch_modules import truncation_guard
 from batch_modules.backfill import auto_backfill_missing_dates
 from batch_modules.ohlcv import fetch_ohlcv_per_ticker
 from batch_modules.indicators import calculate_indicators
@@ -161,6 +162,8 @@ def main():
     print("[DEBUG] Loading environment...", flush=True)
     load_env_file()
     print("[DEBUG] Environment loaded", flush=True)
+    # 응답 1000행 잘림 감지 (batch_modules/truncation_guard.py)
+    truncation_guard.install()
     
     # Initialize Supabase client
     print("[DEBUG] Initializing Supabase...", flush=True)

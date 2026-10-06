@@ -1,3 +1,4 @@
+import "../../src/lib/installTruncationGuard";
 /**
  * 일일 배치 직후 결과 검증 — 오늘 거래일 데이터가 실제로, 충분히 적재됐는지 확인한다.
  *

@@ -1,3 +1,4 @@
+import '../src/lib/installTruncationGuard'
 // api/index.ts
 // 헬스체크 + 배포 시 봇 명령어 자동 등록
 

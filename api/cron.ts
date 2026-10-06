@@ -1,3 +1,4 @@
+import '../src/lib/installTruncationGuard'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 import cronMain from '../handlers/cron/index'

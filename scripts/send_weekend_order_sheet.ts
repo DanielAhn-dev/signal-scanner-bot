@@ -1,3 +1,4 @@
+import "../src/lib/installTruncationGuard";
 /**
  * 금요일 배치 후 다음 주 주문표 발송 — 자동매매가 켜진 계정마다 눌림목 PDF + 텍스트 주문표.
  *   pnpm exec tsx scripts/send_weekend_order_sheet.ts            # 미리보기 (발송 안 함)

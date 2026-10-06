@@ -1,3 +1,4 @@
+import "../src/lib/installTruncationGuard";
 /**
  * scripts/intraday_pullback_signals.ts
  * 장중간 눌림목 신호 계산 및 저장

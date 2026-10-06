@@ -1,3 +1,4 @@
+import '../src/lib/installTruncationGuard'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import economicCalendar from '../handlers/ui/economic-calendar'
 

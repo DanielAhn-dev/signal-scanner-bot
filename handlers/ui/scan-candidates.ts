@@ -266,13 +266,20 @@ async function fetchStockDailyLiquidityByCode(
   if (codes.length === 0) return map
 
   const fromDate = shiftDateText(asOfDate, 15)
-  const { data } = await supabase
-    .from('stock_daily')
-    .select('ticker,date,value')
-    .in('ticker', codes)
-    .gte('date', fromDate)
-    .lte('date', asOfDate)
-    .order('date', { ascending: false })
+  // 최신 거래일 행이 없는 종목(실계좌 ETF 등)은 잘린 뒤쪽에 있어 거래대금이 빠졌다 — 끝까지 받는다
+  const data = await selectPaged<any>(
+    async (from, to) =>
+      await supabase
+        .from('stock_daily')
+        .select('ticker,date,value')
+        .in('ticker', codes)
+        .gte('date', fromDate)
+        .lte('date', asOfDate)
+        .order('date', { ascending: false })
+        .order('ticker')
+        .range(from, to),
+    { logLabel: 'ui.scanCandidates.liquidity' }
+  ).catch(() => [] as any[])
 
   for (const row of data ?? []) {
     const code = String((row as any)?.ticker || '').trim()
@@ -661,12 +668,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const historyCodes = dedupedRows.map((row: any) => String(row.code)).filter(Boolean)
       if (historyCodes.length > 0) {
-        const { data: historyRows } = await supabase
-          .from('scan_signal_history')
-          .select('code,trade_date,is_quick_strict,is_quick_lite')
-          .in('code', historyCodes)
-          .lte('trade_date', String(latestDate))
-          .order('trade_date', { ascending: false })
+        // 하한 없이 전체 이력을 한 번에 받아 1000행에서 잘렸다(잘림 감지기가 2026-10-06 발견) — 오래된 신호가
+        // '신호 없음'으로 보였다. 끝까지 받는다
+        const historyRows = await selectPaged<SignalHistoryRow>(
+          async (from, to) =>
+            await supabase
+              .from('scan_signal_history')
+              .select('code,trade_date,is_quick_strict,is_quick_lite')
+              .in('code', historyCodes)
+              .lte('trade_date', String(latestDate))
+              .order('trade_date', { ascending: false })
+              .order('code')
+              .range(from, to),
+          { logLabel: 'ui.scanCandidates.signal_history' }
+        ).catch(() => [] as SignalHistoryRow[])
 
         const strictDateByCode = new Map<string, string>()
         const liteDateByCode = new Map<string, string>()

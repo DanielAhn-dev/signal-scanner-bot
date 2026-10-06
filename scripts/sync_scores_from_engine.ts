@@ -1,3 +1,4 @@
+import "../src/lib/installTruncationGuard";
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { syncScoresFromEngine } from "../src/services/scoreSyncService";

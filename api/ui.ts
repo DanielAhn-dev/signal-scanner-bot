@@ -1,3 +1,4 @@
+import '../src/lib/installTruncationGuard'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import accountPolicies from '../handlers/ui/account-policies'
 import accessUsers from '../handlers/ui/access-users'

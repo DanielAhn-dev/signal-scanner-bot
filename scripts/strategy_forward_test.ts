@@ -1,3 +1,4 @@
+import "../src/lib/installTruncationGuard";
 /**
  * 전략 경쟁 측정 실행 (src/services/strategyForwardTest.ts).
  *
