@@ -117,6 +117,24 @@ export const FORWARD_TEST_BOT_EQUITY_DIR = "forward-test/bot-equity";
 export type GateSnapshot = { asof: string; pass: string[]; fail: string[] };
 export type BotEquitySnapshot = EquityPoint;
 
+/**
+ * 입출금 없이 하루 평가액이 이만큼 넘게 변하면 기록 오류로 본다. 분산된 봇 계좌가 하루 ±15%를 넘는 일은 드물고,
+ * 2026-10-01엔 실계좌 동기화 버그로 현금이 0이 된 채 기록돼(평가액 -36%) 최대낙폭이 오염됐다.
+ */
+export const BOT_EQUITY_MAX_DAILY_MOVE = 0.15;
+
+/** 직전 기록 대비 비정상 변동이면 사유, 아니면 null */
+export function detectBotEquityJump(points: BotEquitySnapshot[], cur: BotEquitySnapshot): string | null {
+  const prev = points
+    .filter((p) => p.date < cur.date && p.total > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .pop();
+  if (!prev || cur.total <= 0 || isCapitalFlow(prev, cur)) return null;
+  const move = cur.total / prev.total - 1;
+  if (Math.abs(move) <= BOT_EQUITY_MAX_DAILY_MOVE) return null;
+  return `봇 평가액 ${prev.date} ${Math.round(prev.total).toLocaleString("ko-KR")} → ${cur.date} ${Math.round(cur.total).toLocaleString("ko-KR")} (${(move * 100).toFixed(1)}%, 입출금 아님)`;
+}
+
 /** asof 이하 가장 최근 스냅샷. 없으면(측정 첫 주) 가장 이른 스냅샷 — 분기 실적은 며칠 사이 거의 안 바뀐다 */
 export function pickSnapshotOnOrBefore<T extends { asof: string }>(snapshots: T[], asof: string): T | null {
   const sorted = [...snapshots].sort((a, b) => a.asof.localeCompare(b.asof));

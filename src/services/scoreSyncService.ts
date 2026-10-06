@@ -13,7 +13,7 @@ type InvestorDailyRow = {
   institution: number | null;
 };
 
-type ScoreUpsertRow = {
+export type ScoreUpsertRow = {
   code: string;
   asof: string;
   score: number;
@@ -237,26 +237,53 @@ export function mergeAddOnlyFactors(
   return merged;
 }
 
+export type RecordedScoreRow = Omit<ScoreUpsertRow, "factors"> & { factors: Record<string, unknown> | null };
+
+/**
+ * 재계산 행과 이미 기록된 행을 합친다. 기록된 행(engine_pit 제외)은 점수·신호를 그대로 두고 빈 팩터만 채운다.
+ * 업서트는 NOT NULL 검사를 충돌 판정보다 먼저 하므로 보존 행도 모든 컬럼을 실어야 한다
+ * (2026-10-05 대체공휴일: {code, asof, factors}만 보내 scores.score NOT NULL 위반 → 엔진 동기화 전체 실패).
+ */
+export function protectRecordedRow(row: ScoreUpsertRow, prev: RecordedScoreRow | undefined): { row: ScoreUpsertRow; preserved: boolean } {
+  const prevFactors = (prev?.factors ?? {}) as Record<string, unknown>;
+  // 행이 없거나, 앞선 재계산(engine_pit)이 만든 행이면 그대로 쓴다. 그 외는 실제 기록이므로 보존한다.
+  if (!prev || prevFactors.score_source === "engine_pit") return { row, preserved: false };
+  return {
+    row: {
+      code: row.code,
+      asof: row.asof,
+      score: prev.score ?? row.score,
+      signal: prev.signal ?? row.signal,
+      total_score: prev.total_score ?? row.total_score,
+      momentum_score: prev.momentum_score ?? row.momentum_score,
+      liquidity_score: prev.liquidity_score ?? row.liquidity_score,
+      value_score: prev.value_score ?? row.value_score,
+      factors: mergeAddOnlyFactors(prevFactors, row.factors),
+    },
+    preserved: true,
+  };
+}
+
 async function protectRecordedRows(
   supabase: SupabaseClient,
   asof: string,
   rows: ScoreUpsertRow[]
-): Promise<{ rows: Array<ScoreUpsertRow | { code: string; asof: string; factors: Record<string, unknown> }>; preserved: number }> {
-  const existing = new Map<string, Record<string, unknown>>();
+): Promise<{ rows: ScoreUpsertRow[]; preserved: number }> {
+  const existing = new Map<string, RecordedScoreRow>();
   for (const codes of chunkValues(rows.map((r) => r.code), 200)) {
-    const { data, error } = await supabase.from("scores").select("code, factors").eq("asof", asof).in("code", codes);
+    const { data, error } = await supabase
+      .from("scores")
+      .select("code, asof, score, signal, total_score, momentum_score, liquidity_score, value_score, factors")
+      .eq("asof", asof)
+      .in("code", codes);
     if (error) throw new Error(`기존 점수 조회 실패(${asof}): ${error.message}`);
-    for (const row of (data ?? []) as Array<{ code: string; factors: Record<string, unknown> | null }>) {
-      existing.set(row.code, (row.factors ?? {}) as Record<string, unknown>);
-    }
+    for (const row of (data ?? []) as RecordedScoreRow[]) existing.set(row.code, row);
   }
   let preserved = 0;
   const out = rows.map((row) => {
-    const prev = existing.get(row.code);
-    // 행이 없거나, 앞선 재계산(engine_pit)이 만든 행이면 그대로 쓴다. 그 외는 실제 기록이므로 보존한다.
-    if (!prev || prev.score_source === "engine_pit") return row;
-    preserved += 1;
-    return { code: row.code, asof: row.asof, factors: mergeAddOnlyFactors(prev, row.factors) };
+    const result = protectRecordedRow(row, existing.get(row.code));
+    if (result.preserved) preserved += 1;
+    return result.row;
   });
   return { rows: out, preserved };
 }

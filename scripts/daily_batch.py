@@ -10,7 +10,7 @@ Steps:
   1. Collect OHLCV data (stock_daily table)
   2. Calculate technical indicators (daily_indicators table)
   2.5. Collect investor flow data
-  2.6. Collect credit/short-selling data
+  2.6. (moved to 6.5) Collect credit/short-selling data — display only, runs after signals
   3-4. Update sector performance and scoring
   5. Calculate stock scores and signals
   6. Generate pullback trading signals
@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import all batch modules
 from batch_modules.utils import load_env_file, get_last_trading_date
+from batch_modules.holiday_guard import should_skip_holiday_rerun
 from batch_modules.backfill import auto_backfill_missing_dates
 from batch_modules.ohlcv import fetch_ohlcv_per_ticker
 from batch_modules.indicators import calculate_indicators
@@ -257,6 +258,19 @@ def main():
         print(f"   Trading date (auto-detected): {trading_date}", flush=True)
     run_status["processed_date"] = trading_date
 
+    # 휴장 평일 재실행 방지 (batch_modules/holiday_guard.py)
+    if "--date" not in sys.argv and "--force" not in sys.argv:
+        skip, reason = should_skip_holiday_rerun(supabase, f"{trading_date[:4]}-{trading_date[4:6]}-{trading_date[6:8]}")
+        if reason:
+            print(f"   [holiday-guard] {reason}", flush=True)
+        if skip:
+            github_output = os.environ.get("GITHUB_OUTPUT")
+            if github_output:
+                with open(github_output, "a", encoding="utf-8") as f:
+                    f.write("skipped=true\n")
+            print("[END] 휴장일 재실행 생략 (강제 실행: --force)", flush=True)
+            return finalize("skipped", "holiday_already_processed", 0)
+
     # Track execution times
     stage_times = {}
     start_time = time.time()
@@ -362,16 +376,8 @@ def main():
         stage_times["MarketInvestorFlow"] = time.time() - step_start
         mark_stage("MarketInvestorFlow", bool(market_flow_status.get("ok")), stage_times["MarketInvestorFlow"], market_flow_status)
 
-        # Step 2.6: Credit/short-selling data
-        print("\n[2.6/7] Collecting credit/short data...")
-        step_start = time.time()
-        fetch_credit_short_data(supabase, trading_date)
-        stage_times["CreditShortData"] = time.time() - step_start
-        print(f"   Completed in {stage_times['CreditShortData']:.1f}s")
-        mark_stage("CreditShortData", True, stage_times["CreditShortData"])
-        
         time.sleep(1)
-        
+
         # Step 3-4: Sector processing
         print("\n[3/7] Updating sector data...")
         step_start = time.time()
@@ -452,6 +458,16 @@ def main():
             mark_stage("PullbackSignals", False, 0.0, {"reason": "score_stage_failed"})
         
         time.sleep(0.5)
+
+        # Step 6.5: Credit/short-selling data — 화면 표시용이라 매매에 쓰는 점수·신호 뒤에 둔다.
+        # KRX 차단 대응(쉬었다 재개)으로 10~15분까지 걸려, 앞에 있으면 60분 한도에 걸릴 때 점수·신호가 잘린다.
+        # (etl_credit_short 워크플로는 KRX 차단으로 기본 skip이라 실제 수집은 여기서만 한다)
+        print("\n[6.5/7] Collecting credit/short data...")
+        step_start = time.time()
+        fetch_credit_short_data(supabase, trading_date)
+        stage_times["CreditShortData"] = time.time() - step_start
+        print(f"   Completed in {stage_times['CreditShortData']:.1f}s")
+        mark_stage("CreditShortData", True, stage_times["CreditShortData"])
     else:
         print("\n[WARN] Market data not available, skipping downstream steps")
         print("\n[INFO] Troubleshooting:")

@@ -34,6 +34,7 @@ import {
   pickSnapshotOnOrBefore,
   simulateBotAccount,
   computeBotCapture,
+  detectBotEquityJump,
   simulateGateCore,
   reviewStrategies,
   FORWARD_TEST_GATE_DIR,
@@ -58,6 +59,8 @@ const arg = (name: string, fallback: string) =>
 const START = arg("start", "2026-09-28");
 const SEND_TELEGRAM = process.argv.includes("--telegram");
 const RECORD = SEND_TELEGRAM || process.argv.includes("--record");
+// 이미 기록된 그날 관문·봇 평가액을 다시 쓴다(기록을 바로잡을 때만)
+const OVERWRITE = process.argv.includes("--overwrite");
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { persistSession: false },
@@ -333,7 +336,11 @@ async function main(): Promise<void> {
 
   // 실적 관문 스냅샷: 운영 실행이면 오늘 판정을 먼저 저장한다
   const gateSnapshots = await loadDatedSnapshots<GateSnapshot>(FORWARD_TEST_GATE_DIR, shiftDate(START, -10));
-  if (RECORD) {
+  // 이미 저장된 날은 다시 쓰지 않는다: 휴장일 재실행·수동 재실행이 그 뒤에 적재된 실적·보유 상태로
+  // 당시 기록을 바꾸면 전향 검증이 사후 값이 된다. 바로잡을 때만 --overwrite.
+  if (RECORD && !OVERWRITE && gateSnapshots.some((g) => g.asof === endDate)) {
+    console.log(`실적 관문 스냅샷 ${endDate}: 이미 기록됨 — 유지`);
+  } else if (RECORD) {
     const gate = await fetchFundamentalGateResults(supabase, universe, `${endDate}T12:00:00+09:00`);
     const snap: GateSnapshot = {
       asof: endDate,
@@ -352,9 +359,17 @@ async function main(): Promise<void> {
 
   // 봇 실제 계좌
   const botPoints = await loadDatedSnapshots<BotEquitySnapshot>(FORWARD_TEST_BOT_EQUITY_DIR, START);
-  if (RECORD) {
+  const botEquityWarnings: string[] = [];
+  if (RECORD && !OVERWRITE && botPoints.some((p) => p.date === endDate)) {
+    console.log(`봇 평가액 ${endDate}: 이미 기록됨 — 유지`);
+  } else if (RECORD) {
     const today = await readBotEquity(endDate);
-    if (today) {
+    const jump = today ? detectBotEquityJump(botPoints, today) : null;
+    if (jump) {
+      // 오염된 값을 남기면 최대낙폭·포착률이 영구히 틀어진다. 기록하지 않고 알린 뒤 원인(원장·현금)을 먼저 확인한다
+      botEquityWarnings.push(`⚠️ ${jump} — 기록하지 않음. 원장·현금을 확인하세요.`);
+      console.warn(botEquityWarnings[botEquityWarnings.length - 1]);
+    } else if (today) {
       await uploadJson(`${FORWARD_TEST_BOT_EQUITY_DIR}/${endDate}.json`, today);
       // 목표 트래커도 같은 평가액을 매일 쌓는다
       await recordGoalEquity(supabase, adminChatId()!, today).catch((e) => console.warn(`목표 기록 실패: ${e}`));
@@ -459,7 +474,8 @@ async function main(): Promise<void> {
     const now = await fetchAccountEquity(supabase, goalChat, endDate);
     if (now) {
       // 기록 모드가 아니면(로컬 확인) 저장하지 않고 읽기만 한다
-      const file = RECORD
+      // 봇 평가액이 비정상 변동으로 기록 보류됐으면 목표 트래커에도 쓰지 않는다
+      const file = RECORD && botEquityWarnings.length === 0
         ? await recordGoalEquity(supabase, goalChat, { date: now.date, seed: now.seed, total: now.total, realized: now.realized }).catch(() => null)
         : await loadGoalFile(supabase, goalChat).catch(() => null);
       if (file) {
@@ -469,6 +485,7 @@ async function main(): Promise<void> {
     }
   }
   const report = [
+    ...(botEquityWarnings.length ? [...botEquityWarnings, ""] : []),
     ...(goalLine ? [goalLine, ""] : []),
     formatForwardTestReport({ startDate: START, endDate, results }),
     "",
@@ -481,6 +498,19 @@ async function main(): Promise<void> {
   if (RECORD) {
     const snapshot: ForwardTestSnapshot = { startDate: START, endDate, generatedAt: new Date().toISOString(), results, review };
     await uploadJson(FORWARD_TEST_RESULT_PATH, snapshot);
+  }
+
+  // 기록 보류 경고는 금요일이 아니어도 바로 알린다
+  if (RECORD && !SEND_TELEGRAM && botEquityWarnings.length) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+    if (token && chatId) {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: `[전향 검증]\n${botEquityWarnings.join("\n")}` }),
+      }).catch((e) => console.warn(`경고 전송 실패: ${e}`));
+    }
   }
 
   if (SEND_TELEGRAM) {

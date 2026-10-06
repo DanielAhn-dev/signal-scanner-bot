@@ -27,6 +27,13 @@ def adjust_signal(signal: str, momentum_score: int) -> tuple:
     return signal, []
 
 
+def score_source_label(existing_source) -> str:
+    """같은 asof에 엔진 팩터가 이미 있으면(이번 실행이든 앞선 실행이든) 엔진 팩터 보유로 표시한다.
+    예전엔 이번 엔진 실행 성공 여부만 봐서, 휴장일 재실행에서 엔진이 실패하자 앞서 저장된 엔진 팩터가 있는
+    216행 전부가 legacy_fallback으로 강등됐다(2026-10-02 점수)."""
+    return "legacy_score+engine_factors" if "engine" in str(existing_source or "") else "legacy_fallback"
+
+
 def run_engine_score_sync(asof: str) -> bool:
     """Run score sync via engine command."""
     pnpm_bin = "pnpm.cmd" if os.name == "nt" else "pnpm"
@@ -48,6 +55,11 @@ def run_engine_score_sync(asof: str) -> bool:
             print("   engine score sync upserted 0 rows → treat as failure (legacy only)")
             return False
         return True
+    except subprocess.CalledProcessError as e:
+        # 원인이 로그에 남도록 출력 끝부분을 보여준다 (2026-10-05: 원인 없이 "exit status 1"만 남았다)
+        tail = "\n".join(((e.stderr or "") + "\n" + (e.stdout or "")).strip().splitlines()[-15:])
+        print(f"   engine score sync failed, fallback to legacy scoring: {e}\n{tail}")
+        return False
     except Exception as e:
         print(f"   engine score sync failed, fallback to legacy scoring: {e}")
         return False
@@ -212,7 +224,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
             existing_factors = existing_score.get("factors") if isinstance(existing_score.get("factors"), dict) else {}
             merged_factors = dict(existing_factors)
             merged_factors.update({
-                "score_source": "legacy_score+engine_factors" if engine_ok and existing_factors.get("score_source") in ("engine", "engine_pit") else "legacy_fallback",
+                "score_source": score_source_label(existing_factors.get("score_source")),
                 "rsi14": round(rsi, 2),
                 "roc14": round(roc14, 2),
                 "roc21": round(roc21, 2),
