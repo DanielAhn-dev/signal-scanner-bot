@@ -47,6 +47,17 @@ const WATCHED_TABLES: TableConfig[] = [
   { key: 'scores',      label: '종목 점수',                 table: 'scores',              dateColumn: 'asof',    maxBizDays: 1 },
 ]
 
+/**
+ * 부분 적재여도 신규 매수를 막지 않는 항목. 신용/공매도는 종목 상세 화면 표시용이고 점수·매매 판단에 쓰이지 않는데,
+ * KRX 차단(2026-10-02)으로 일부만 적재되자 가상 자동매매 신규 매수까지 막힐 뻔했다. 알림·감시는 계속 한다.
+ */
+const NON_GATING_KEYS = new Set(['credit'])
+
+/** 매수 품질 게이트에 반영할 부분 적재 항목 이름 (순수 함수) */
+export function selectGatingPartialLabels(items: FreshnessItem[]): string[] {
+  return items.filter((i) => i.isLowCoverage && !NON_GATING_KEYS.has(i.key)).map((i) => i.label)
+}
+
 async function fetchLatestDate(
   supabase: SupabaseClient,
   table: string,
@@ -179,7 +190,7 @@ const PARTIAL_LOAD_CACHE_MS = 10 * 60 * 1000
 export async function getPartialLoadLabels(supabase: SupabaseClient, nowMs = Date.now()): Promise<string[]> {
   if (partialLoadCache && nowMs - partialLoadCache.at < PARTIAL_LOAD_CACHE_MS) return partialLoadCache.labels
   const report = await checkDataFreshness(supabase).catch(() => null)
-  const labels = report ? report.staleItems.filter((i) => i.isLowCoverage).map((i) => i.label) : []
+  const labels = report ? selectGatingPartialLabels(report.staleItems) : []
   partialLoadCache = { at: nowMs, labels }
   return labels
 }

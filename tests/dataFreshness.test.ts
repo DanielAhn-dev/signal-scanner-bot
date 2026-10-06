@@ -38,3 +38,14 @@ test("buildFreshnessAlertMessage: 부분 적재 행 수를 함께 알린다", ()
   ]);
   assert.ok(msg?.includes("3행 / 직전 거래일 230행"));
 });
+
+test("신용/공매도 부분 적재는 매수 게이트에 반영하지 않고 시세·점수는 반영한다", async () => {
+  const { selectGatingPartialLabels } = await import("../src/services/dataFreshnessMonitorService");
+  const base = { latestDate: "2026-10-02", staleBizDays: 0, isStale: true, maxBizDays: 1 };
+  const labels = selectGatingPartialLabels([
+    { ...base, key: "credit", label: "신용/공매도", isLowCoverage: true },
+    { ...base, key: "scores", label: "종목 점수", isLowCoverage: true },
+    { ...base, key: "ohlcv", label: "OHLCV", isLowCoverage: false },
+  ]);
+  assert.deepEqual(labels, ["종목 점수"]);
+});

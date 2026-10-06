@@ -9,7 +9,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from supabase import Client
-from .utils import to_iso
+from .utils import to_iso, is_krx_trading_day
 
 
 def post_json_with_retry(sess: requests.Session, url: str, data: dict, timeout: int = 10, retries: int = 3) -> tuple[dict | None, bool]:
@@ -62,6 +62,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     supabase.table("stock_credit_short_daily")
                     .select("code", count="exact")
                     .eq("date", trading_iso)
+                    .eq("collection_status", "ok")
                     .limit(1)
                     .execute()
                 )
@@ -300,6 +301,21 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     print(f"  failed sample codes: {', '.join(sample_failed_codes)}")
         else:
             print(f"  No credit/short rows collected (success: {success_count}, fail: {fail_count})")
+
+        # KRX가 막혀 못 받았거나 부분인 종목은 한국투자증권 API로 거래량·신용잔고율만이라도 채운다(잔고는 KRX 전용).
+        if os.environ.get("CREDIT_SHORT_KIS_FALLBACK", "true").lower() not in ("0", "false", "no"):
+            try:
+                from .kis_credit_short import fill_with_kis
+                # 신용잔고는 결제일(T+2) 기준이라 당일치는 늦게 공시된다 → 최근 3거래일을 다시 본다(ok인 종목은 건너뜀)
+                recent, cur = [], datetime.strptime(trading_date, "%Y%m%d").date()
+                while len(recent) < 3 and (datetime.strptime(trading_date, "%Y%m%d").date() - cur).days < 10:
+                    if is_krx_trading_day(cur):
+                        recent.append(cur.strftime("%Y%m%d"))
+                    cur -= timedelta(days=1)
+                recent.sort()
+                fill_with_kis(supabase, recent[0], recent[-1], codes, recent)
+            except Exception as e:
+                print(f"  [KIS 보조] 실패(무시): {e}")
 
     except Exception as e:
         print(f"  credit/short collection failed: {e}")
