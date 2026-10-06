@@ -85,7 +85,27 @@ export function resolveCashSweepTopUpQty(input: {
   sweepPrice: number;
 }): number {
   if (input.sweepQty <= 0 || input.sweepPrice <= 0) return 0;
-  const shortfall = Math.max(0, input.cashNeeded - input.availableCash);
-  if (shortfall <= 0) return 0;
+  if (input.cashNeeded <= input.availableCash) return 0;
+  // 매수 뒤에도 청산 임계값만큼은 현금이 남게 판다. 부족분만 팔면 매수 직후 현금이 0 근처가 되어
+  // 같은 회차 끝의 청산 점검에 걸려 스윕을 또 팔았다(2026-10-06: 보충 11주 → 청산 45주 → 한 시간 뒤 28주 재매수).
+  const shortfall = input.cashNeeded + CASH_SWEEP_LIQUIDATE_THRESHOLD - input.availableCash;
   return Math.min(input.sweepQty, Math.ceil(shortfall / input.sweepPrice));
+}
+
+/**
+ * 현금이 청산 임계값 밑으로 떨어졌을 때 팔 스윕 수량: 고정 예비 현금(시드의 FLAT_RESERVE_PCT)을 채울 만큼만.
+ * 예전엔 전량 현금화해서, 다음 회차에 예비 현금을 넘는 금액이 유휴현금으로 잡혀 다시 사들이는 왕복이 생겼다
+ * (2026-10-01·10-06, 수백만 원 규모 매도 후 같은 날 재매수).
+ */
+export function resolveCashSweepRestoreQty(input: {
+  availableCash: number;
+  seedCapital: number;
+  sweepQty: number;
+  sweepPrice: number;
+}): number {
+  if (input.sweepQty <= 0 || input.sweepPrice <= 0 || input.seedCapital <= 0) return 0;
+  const reserve = input.seedCapital * (FLAT_RESERVE_PCT / 100);
+  const need = reserve - Math.max(0, input.availableCash);
+  if (need <= 0) return 0;
+  return Math.min(input.sweepQty, Math.ceil(need / input.sweepPrice));
 }

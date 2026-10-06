@@ -16,6 +16,7 @@ import {
   isIndexSweepCode,
   resolveCashSweepIdleAmount,
   resolveCashSweepTopUpQty,
+  resolveCashSweepRestoreQty,
   shouldLiquidateCashSweep,
 } from "./virtualAutoTradeCashSweep";
 
@@ -314,23 +315,31 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
         return { notes, liquidated: false, releasedCash: 0 };
       }
 
+      // 평소엔 예비 현금(시드의 10%)을 채울 만큼만 판다. 수동 학습(forceLiquidate)만 전량.
+      const sellQty = payload.forceLiquidate
+        ? holding.quantity
+        : resolveCashSweepRestoreQty({ availableCash, seedCapital, sweepQty: holding.quantity, sweepPrice: holding.price });
+      if (sellQty <= 0) return { notes, liquidated: false, releasedCash: 0 };
+      const isFull = sellQty >= holding.quantity;
+      const sellLabel = isFull ? "전량 현금화" : `${sellQty}주 현금화(예비 현금 복구)`;
+
       if (payload.dryRun) {
         notes.push(
-          `[유휴현금 스윕][테스트] ${holding.name} 전량 현금화 예정 (평가액 ${fmtKrw(sweepCurrentValue)})${payload.forceLiquidate ? " · 수동 학습 판단용" : ""}`
+          `[유휴현금 스윕][테스트] ${holding.name} ${sellLabel} 예정 (평가액 ${fmtKrw(Math.round(holding.price * sellQty))} / 보유 ${fmtKrw(sweepCurrentValue)})${payload.forceLiquidate ? " · 수동 학습 판단용" : ""}`
         );
-        return { notes, liquidated: false, releasedCash: estimateSweepSell(prefs, holding, holding.quantity).net };
+        return { notes, liquidated: false, releasedCash: estimateSweepSell(prefs, holding, sellQty).net };
       }
 
       const { net, pnl } = await sellSweepPosition({
         supabase: payload.supabase,
         chatId: payload.chatId,
         holding,
-        sellQty: holding.quantity,
+        sellQty,
         event: "sweep-liquidate",
-        note: "cash-sweep-liquidate",
+        note: isFull ? "cash-sweep-liquidate" : "cash-sweep-restore-reserve",
       });
       notes.push(
-        `[유휴현금 스윕] ${holding.name} 전량 현금화 · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)})${payload.forceLiquidate ? " · 수동 학습 판단용" : " · 참고: 유휴현금 파킹용이며 개별 종목 매수 신호가 아닙니다"}`
+        `[유휴현금 스윕] ${holding.name} ${sellLabel} · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)})${payload.forceLiquidate ? " · 수동 학습 판단용" : " · 참고: 유휴현금 파킹용이며 개별 종목 매수 신호가 아닙니다"}`
       );
       return { notes, liquidated: true, releasedCash: net };
     } catch (e) {
