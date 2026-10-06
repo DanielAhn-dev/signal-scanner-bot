@@ -204,3 +204,18 @@ def load_env_file(filepath=".env"):
         pass
 
 
+
+
+def select_all(build_query, page_size: int = 1000, max_rows: int = 500_000) -> list:
+    """응답 상한(1000행)을 넘는 조회를 끝까지 받는다. build_query()는 매번 새 쿼리(정렬 포함, execute 전)를 돌려줘야 한다.
+    예전엔 .execute() 한 번으로 받아 1000행에서 조용히 잘렸다(2026-10-06: 섹터 매핑 4,135종목 중 1,000개, 섹터 점수 90일 중 가장 오래된 5~6일)."""
+    out: list = []
+    offset = 0
+    while offset < max_rows:
+        res = build_query().range(offset, offset + page_size - 1).execute()
+        rows = res.data or []
+        out.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return out

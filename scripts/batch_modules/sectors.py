@@ -9,7 +9,7 @@ import numpy as np
 from datetime import datetime, date, timedelta
 from typing import Dict, List
 from supabase import Client
-from .utils import safe_float, to_iso
+from .utils import safe_float, to_iso, select_all
 
 
 def update_sector_data(supabase: Client, trading_date: str):
@@ -18,11 +18,13 @@ def update_sector_data(supabase: Client, trading_date: str):
     print(f"\n[3/7] Updating sector change rates (constituent based)...")
 
     try:
-        res_stocks = supabase.table("stocks") \
-            .select("code, sector_id, close") \
-            .not_.is_("sector_id", "null") \
-            .eq("is_active", True).execute()
-        stock_sector_map = {r["code"]: r["sector_id"] for r in (res_stocks.data or [])}
+        # 활성 종목 4천여 개 — 한 번에 받으면 1000개로 잘려 유니버스 230종목 중 101개만 섹터 계산에 들어갔다
+        stock_rows = select_all(lambda: supabase.table("stocks")
+            .select("code, sector_id, close")
+            .not_.is_("sector_id", "null")
+            .eq("is_active", True)
+            .order("code"))
+        stock_sector_map = {r["code"]: r["sector_id"] for r in stock_rows}
 
         dates_res = supabase.table("stock_daily") \
             .select("date") \
@@ -116,11 +118,11 @@ def populate_sector_daily(supabase: Client):
         latest_sector_date = max((v["date"] for v in last_known.values()), default="2025-01-01")
         print(f"  latest sector_daily date: {latest_sector_date}")
 
-        stocks_res = supabase.table("stocks") \
-            .select("code, sector_id") \
-            .not_.is_("sector_id", "null") \
-            .eq("is_active", True).execute()
-        stock_sector = {r["code"]: r["sector_id"] for r in (stocks_res.data or [])}
+        stock_sector = {r["code"]: r["sector_id"] for r in select_all(lambda: supabase.table("stocks")
+            .select("code, sector_id")
+            .not_.is_("sector_id", "null")
+            .eq("is_active", True)
+            .order("code"))}
         all_sector_ids = set(stock_sector.values())
 
         ref_ticker = "005930"
@@ -228,21 +230,22 @@ def aggregate_sector_investor_flows(supabase: Client, lookback_days: int = 5):
         cutoff = (date.today() - timedelta(days=lookback_days + 3)).isoformat()
 
         # 최근 investor_daily 로딩
-        inv_res = supabase.table("investor_daily") \
-            .select("ticker, date, institution_amount, foreign_amount") \
-            .gte("date", cutoff) \
-            .execute()
-        inv_rows = inv_res.data or []
+        # 전 종목 × 약 6거래일이면 1000행을 넘어 정렬 없이 잘렸다 — 끝까지 받는다
+        inv_rows = select_all(lambda: supabase.table("investor_daily")
+            .select("ticker, date, institution_amount, foreign_amount")
+            .gte("date", cutoff)
+            .order("ticker")
+            .order("date"))
         if not inv_rows:
             print("   investor_daily 데이터 없음, 스킵")
             return
 
         # 종목 → 섹터 매핑
-        stocks_res = supabase.table("stocks") \
-            .select("code, sector_id") \
-            .not_.is_("sector_id", "null") \
-            .eq("is_active", True).execute()
-        code_to_sector = {r["code"]: r["sector_id"] for r in (stocks_res.data or [])}
+        code_to_sector = {r["code"]: r["sector_id"] for r in select_all(lambda: supabase.table("stocks")
+            .select("code, sector_id")
+            .not_.is_("sector_id", "null")
+            .eq("is_active", True)
+            .order("code"))}
 
         # 섹터별 최근 N일 수급 합산
         from collections import defaultdict
@@ -291,13 +294,13 @@ def mark_sector_leaders(supabase: Client, top_n: int = 3):
     """각 섹터 내 시총 상위 top_n 종목을 is_sector_leader=true 로 마킹."""
     print(f"\n[3.8/7] Marking sector leaders (top {top_n} by market_cap per sector)...")
     try:
-        stocks_res = supabase.table("stocks") \
-            .select("code, sector_id, market_cap, is_sector_leader") \
-            .not_.is_("sector_id", "null") \
-            .eq("is_active", True) \
-            .in_("market", ["KOSPI", "KOSDAQ"]) \
-            .execute()
-        rows = stocks_res.data or []
+        # 1000개로 잘리면 섹터별 시총 상위가 일부 종목 중에서 골라졌다 — 끝까지 받는다
+        rows = select_all(lambda: supabase.table("stocks")
+            .select("code, sector_id, market_cap, is_sector_leader")
+            .not_.is_("sector_id", "null")
+            .eq("is_active", True)
+            .in_("market", ["KOSPI", "KOSDAQ"])
+            .order("code"))
         if not rows:
             print("   No stocks found")
             return
@@ -357,11 +360,13 @@ def calculate_sector_scores(supabase: Client):
             return
 
         from_date = (date.today() - timedelta(days=90)).isoformat()
-        sd_res = supabase.table("sector_daily") \
-            .select("sector_id, date, close, value") \
-            .gte("date", from_date) \
-            .order("date", desc=False).execute()
-        sd_df = pd.DataFrame(sd_res.data or [])
+        # 183섹터 × 90일 ≈ 1만 행을 오름차순 한 번으로 받아 가장 오래된 5~6일만 남았다 →
+        # 섹터 5·20일 수익률이 약 석 달 전 값이었다. 끝까지 받는다
+        sd_df = pd.DataFrame(select_all(lambda: supabase.table("sector_daily")
+            .select("sector_id, date, close, value")
+            .gte("date", from_date)
+            .order("sector_id")
+            .order("date", desc=False)))
 
         updates = []
         nan_count = 0

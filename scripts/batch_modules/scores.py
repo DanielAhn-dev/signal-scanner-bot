@@ -126,8 +126,9 @@ def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
         five_days_ago = (date.fromisoformat(trading_iso) - timedelta(days=7)).isoformat()
         investor_map: dict = {}
         try:
-            for i in range(0, len(codes), 200):
-                batch = codes[i:i+200]
+            # 응답 상한 1000행: 8일 창에 6거래일이 들어가는 주엔 200종목 × 6일 = 1200행이라 정렬 없이 잘렸다 → 100종목씩
+            for i in range(0, len(codes), 100):
+                batch = codes[i:i+100]
                 inv_res = supabase.table("investor_daily") \
                     .select("ticker, institution_amount, foreign_amount") \
                     .in_("ticker", batch) \
