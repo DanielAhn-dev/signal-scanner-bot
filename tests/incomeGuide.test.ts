@@ -341,3 +341,34 @@ test("나이대: 인컴 + 현금성이 100%를 넘지 않게 하한을 줄이고
   assert.equal(sanitizeIncomeGuideSettings({ ageBand: "" as never }, cur).ageBand, undefined);
   assert.equal(sanitizeIncomeGuideSettings({ ageBand: "50s" }, cur).ageBand, "50s");
 });
+
+test("withMonthlyEntry: 이번 달 기록이 없을 때만 자동 기록(수량 포함)을 더한다", async () => {
+  const { withMonthlyEntry } = await import("../src/lib/incomeGuide");
+  const settings = { ...DEFAULT_INCOME_GUIDE_SETTINGS };
+  const holdings = [h("069500", "KODEX 200", 1_000_000), h("069500", "KODEX 200", 1_000_000)];
+  const view = buildIncomeGuideView({ holdings, settings, today: "2026-10-06" });
+  const next = withMonthlyEntry([{ date: "2026-09-01", total: 1, groups: [] }], view, holdings)!;
+  assert.equal(next.length, 2);
+  assert.equal(next[1].auto, true);
+  assert.deepEqual(next[1].holdings, [{ code: "069500", name: "KODEX 200", quantity: holdings[0].quantity * 2 }]);
+  assert.equal(withMonthlyEntry(next, view, holdings), null);
+});
+
+test("splitChange: 그때 수량을 지금 가격으로 다시 계산해 시장 몫과 내 매매 몫을 나눈다", async () => {
+  const { toHistoryEntry, splitChange, distanceFromTarget } = await import("../src/lib/incomeGuide");
+  const settings = { ...DEFAULT_INCOME_GUIDE_SETTINGS };
+  const g = (code: string, name: string, quantity: number, price: number) => ({ code, name, quantity, price, accountKey: "a", accountLabel: "a" });
+  // 그때: 지수 90만 + 개별주 10만 (위성 10%)
+  const then = [g("069500", "KODEX 200", 90, 10_000), g("005930", "삼성전자", 10, 10_000)];
+  const base = toHistoryEntry(buildIncomeGuideView({ holdings: then, settings, today: "2026-09-01" }), undefined, { holdings: then });
+  // 지금 가격: 개별주가 4배 → 가만히 뒀다면 위성 약 31%. 실제로는 개별주를 팔아 지수로 옮겼다
+  const price: Record<string, number> = { "069500": 10_000, "005930": 40_000 };
+  const nowView = buildIncomeGuideView({ holdings: [g("069500", "KODEX 200", 125, 10_000), g("005930", "삼성전자", 1, 40_000)], settings, today: "2026-10-06" });
+  const s = splitChange(base, distanceFromTarget(nowView.groups), { settings, today: "2026-10-06", priceOf: (c) => price[c] })!;
+  assert.ok(s.marketPp > 0, "시장 몫은 멀어짐");
+  assert.ok(s.minePp < 0, "내 매매 몫은 가까워짐");
+  assert.match(s.text, /시장 움직임으로 .*멀어짐, 내 매매·입금으로 .*가까워짐/);
+  // 가격을 모르는 종목이 있으면 나누지 않는다
+  assert.equal(splitChange(base, 0, { settings, today: "2026-10-06", priceOf: () => null }), null);
+  assert.equal(splitChange({ ...base, holdings: undefined }, 0, { settings, today: "2026-10-06", priceOf: (c) => price[c] }), null);
+});

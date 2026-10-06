@@ -60,7 +60,12 @@ function Chart({ points }: { points: Point[] }) {
 }
 
 type HealthPoint = { date: string; total: number; distancePp: number; outOfBand: number; satellitePct: number; cashPct: number }
-type Health = { first: HealthPoint | null; monthAgo: HealthPoint | null; now: HealthPoint }
+type Health = {
+  first: HealthPoint | null
+  monthAgo: HealthPoint | null
+  now: HealthPoint
+  split: { heldDistancePp: number; marketPp: number; minePp: number; text: string } | null
+}
 
 /**
  * 계좌 건강 — 리밸런싱 가이드의 점검 기록으로 처음·한 달 전·지금을 나란히 본다. 수익률은 넣지 않는다:
@@ -100,7 +105,7 @@ function HealthCard() {
   const base = h.monthAgo ?? h.first
   const diff = base ? h.now.distancePp - base.distancePp : 0
   const summary = !base
-    ? '아직 비교할 기록이 없습니다. 리밸런싱 가이드에서 "오늘 비중 기록"을 눌러 두면 다음 달부터 비교됩니다.'
+    ? '오늘 첫 기록을 남겼습니다. 매달 자동으로 기록되니 다음 달부터 비교됩니다.'
     : Math.abs(diff) < 2
       ? `${h.monthAgo ? '한 달 전' : '처음'}과 비슷합니다. 목표 ±10%p 안이면 할 일이 없습니다.`
       : diff < 0
@@ -117,6 +122,7 @@ function HealthCard() {
     <section className="choice-card" aria-label="계좌 건강">
       <h2>계좌 건강 — 규칙대로 가고 있나요</h2>
       <p className="choice-wait">{summary}</p>
+      {h.split && <p className="choice-wait">그 사이 변화: {h.split.text}.</p>}
       <div style={{ overflowX: 'auto' }}>
         <table className="choice-health">
           <thead>
@@ -134,7 +140,8 @@ function HealthCard() {
       </div>
       <p className="choice-note">
         목표와의 거리 = 목표 비중에 맞추려면 전체의 몇 %를 옮겨야 하는지. 수익률은 일부러 넣지 않았습니다. 몇 달 수익은 운에 가깝고, 이 표는 규칙을 지켰는지만 봅니다.
-        기록은 <Link to="/income-guide">리밸런싱 가이드</Link>에서 "오늘 비중 기록"을 누른 날만 쌓입니다.
+        시장 몫은 그때 수량을 지금 가격으로 다시 잰 것이고, 내 몫에는 새로 넣은 돈도 들어갑니다.
+        기록은 매달 자동으로 쌓이고, <Link to="/income-guide">리밸런싱 가이드</Link>에서 직접 남길 수도 있습니다.
       </p>
     </section>
   )

@@ -18,6 +18,7 @@ type Order = {
   amount: number
   realizedGain: number | null
 }
+type ChangeSplit = { heldDistancePp: number; marketPp: number; minePp: number; text: string }
 type HealthPoint = { date: string; total: number; distancePp: number; outOfBand: number; satellitePct: number; cashPct: number; note?: string }
 type Unfilled = { group: Group; bucket?: string; amount: number }
 type View = {
@@ -48,13 +49,14 @@ type View = {
     unfilled: Unfilled[]
     stillOutOfBand: boolean
   } | null
-  history?: Array<{ date: string; total: number; groups: Array<{ group: Group; actualPct: number; targetPct: number }>; note?: string }>
+  history?: Array<{ date: string; total: number; groups: Array<{ group: Group; actualPct: number; targetPct: number }>; note?: string; auto?: boolean }>
   comparison?: {
     base: HealthPoint
     now: HealthPoint
     groups: Array<{ group: Group; beforePct: number; nowPct: number; targetPct: number }>
     verdict: 'closer' | 'farther' | 'same'
     text: string
+    split: ChangeSplit | null
   } | null
   total: number
   holdingCount: number
@@ -509,11 +511,16 @@ export default function IncomeGuidePage() {
                   </tbody>
                 </table>
               </div>
+              {view.comparison.split && (
+                <div style={{ marginTop: 4 }}>
+                  그 사이 변화: {view.comparison.split.text} (가만히 뒀다면 지금 거리 {view.comparison.split.heldDistancePp.toFixed(0)}%p)
+                </div>
+              )}
               {view.comparison.base.note && (
                 <div style={{ color: 'var(--color-text-secondary)' }}>그때 메모: {view.comparison.base.note}</div>
               )}
               <div style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                앞으로 할 일: {view.rebalance.reason} 비교는 내가 사고판 것과 시장 움직임이 합쳐진 결과이고, 할 일은 늘 지금 상태로만 계산합니다.
+                앞으로 할 일: {view.rebalance.reason} 할 일은 늘 지금 상태로만 계산합니다. "가만히 뒀다면"은 그때 수량을 지금 가격으로 다시 잰 값이고, 내 몫에는 새로 넣은 돈과 목표 변경도 들어갑니다.
               </div>
             </div>
           )}
@@ -529,7 +536,7 @@ export default function IncomeGuidePage() {
               {recordMsg && <span style={{ color: 'var(--color-text-secondary)' }}>{recordMsg}</span>}
             </div>
             <div style={{ color: 'var(--color-text-tertiary)' }}>
-              증권사에서 옮기기 전에 한 번, 옮기고 보유를 고친 뒤에 한 번 누르면 위에 전후 비교가 나옵니다.
+              매달 한 번은 자동으로 기록됩니다. 리밸런싱할 때는 증권사에서 옮기기 전에 한 번, 옮기고 보유를 고친 뒤에 한 번 누르면 위에 전후 비교가 나옵니다.
             </div>
             {view.history && view.history.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
@@ -559,7 +566,7 @@ export default function IncomeGuidePage() {
                           </td>
                         )
                       })}
-                      <td style={td}>{h.note ?? ''}</td>
+                      <td style={td}>{[h.auto ? '자동(매월)' : '', h.note ?? ''].filter(Boolean).join(' · ')}</td>
                     </tr>
                   ))}
                 </tbody>

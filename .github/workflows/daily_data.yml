@@ -122,6 +122,12 @@ jobs:
         continue-on-error: true
         run: pnpm exec tsx scripts/collect_stock_news.ts
 
+      # 리밸런싱 가이드 월 자동 기록 — 이번 달 기록이 없는 사용자만 (사실상 매월 첫 거래일 1회, scripts/income_guide_monthly.ts)
+      - name: Income guide monthly snapshot
+        if: always()
+        continue-on-error: true
+        run: pnpm exec tsx scripts/income_guide_monthly.ts
+
       # 금요일 배치(눌림목 신호 갱신) 직후 다음 주 주문표 발송 — 눌림목 PDF + 지정가·익절·손절 텍스트
       - name: Weekend order sheet (Fridays)
         if: always()

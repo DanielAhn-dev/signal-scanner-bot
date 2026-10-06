@@ -430,15 +430,40 @@ export type GuideHistoryEntry = {
   total: number;
   groups: Array<{ group: BucketGroup; actualPct: number; targetPct: number }>;
   note?: string;
+  /** 매월 자동으로 남긴 기록 (버튼으로 남긴 기록과 구분) */
+  auto?: boolean;
+  /** 그때 종목별 수량 — "가만히 뒀다면"을 지금 가격으로 다시 계산해 시장 몫과 내 매매 몫을 나눈다 */
+  holdings?: Array<{ code: string; name: string; quantity: number }>;
 };
 
-export function toHistoryEntry(view: IncomeGuideView, note?: string): GuideHistoryEntry {
+export function toHistoryEntry(
+  view: IncomeGuideView,
+  note?: string,
+  extra?: { holdings?: GuideHolding[]; auto?: boolean },
+): GuideHistoryEntry {
+  const qty = new Map<string, { code: string; name: string; quantity: number }>();
+  for (const h of extra?.holdings ?? []) {
+    if (!h.code || !(h.quantity > 0)) continue;
+    const cur = qty.get(h.code) ?? { code: h.code, name: h.name, quantity: 0 };
+    cur.quantity += h.quantity;
+    qty.set(h.code, cur);
+  }
   return {
     date: view.today,
     total: view.total,
     groups: view.groups.map((g) => ({ group: g.group, actualPct: Math.round(g.actualPct * 10) / 10, targetPct: Math.round(g.targetPct * 10) / 10 })),
     ...(note ? { note: String(note).slice(0, 200) } : {}),
+    ...(extra?.auto ? { auto: true } : {}),
+    ...(qty.size ? { holdings: [...qty.values()] } : {}),
   };
+}
+
+/** 이번 달 기록이 없으면 자동 기록을 하나 더한다. 더했으면 새 이력, 아니면 null */
+export function withMonthlyEntry(history: GuideHistoryEntry[], view: IncomeGuideView, holdings: GuideHolding[]): GuideHistoryEntry[] | null {
+  if (view.total <= 0) return null;
+  const month = view.today.slice(0, 7);
+  if (history.some((h) => h.date.slice(0, 7) === month)) return null;
+  return appendHistory(history, toHistoryEntry(view, undefined, { holdings, auto: true }));
 }
 
 /** 바구니 비중이 모두 0.5%p 안이면 같은 상태로 본다 (가격이 조금 움직인 것만으로 새 기록이 되지 않게) */
@@ -486,19 +511,59 @@ export function toHealthPoint(e: GuideHistoryEntry): HealthPoint {
   };
 }
 
+/**
+ * 바뀐 거리를 시장 몫과 내 몫으로 나눈 것(%p, +는 목표에서 멀어짐).
+ *   가만히 뒀다면 = 그때 수량을 지금 가격·지금 목표로 다시 계산한 거리
+ *   시장 몫 = 가만히 뒀다면 − 그때,  내 몫(매매·입금·목표 변경) = 지금 − 가만히 뒀다면
+ */
+export type ChangeSplit = { heldDistancePp: number; marketPp: number; minePp: number; text: string };
+
+/** 그때 수량을 지금 가격으로 — 가격을 모르는 종목이 하나라도 있으면 나누지 않는다(틀린 숫자보다 없는 게 낫다) */
+export function splitChange(
+  base: GuideHistoryEntry,
+  nowDistancePp: number,
+  ctx: { settings: IncomeGuideSettings; today: string; priceOf: (code: string) => number | null | undefined },
+): ChangeSplit | null {
+  if (!base.holdings?.length) return null;
+  const holdings: GuideHolding[] = [];
+  for (const h of base.holdings) {
+    const price = Number(ctx.priceOf(h.code));
+    if (!(price > 0)) return null;
+    holdings.push({ code: h.code, name: h.name, quantity: h.quantity, price, accountKey: "held", accountLabel: "그때 보유" });
+  }
+  const held = buildIncomeGuideView({ holdings, settings: ctx.settings, today: ctx.today });
+  if (held.total <= 0) return null;
+  const baseD = distanceFromTarget(base.groups);
+  const heldD = distanceFromTarget(held.groups);
+  const r = (v: number) => Math.round(v * 10) / 10;
+  const marketPp = r(heldD - baseD);
+  const minePp = r(nowDistancePp - heldD);
+  const say = (v: number, who: string) =>
+    Math.abs(v) < 1 ? `${who} 거의 영향 없음` : `${who} ${Math.abs(v).toFixed(0)}%p ${v > 0 ? "멀어짐" : "가까워짐"}`;
+  return {
+    heldDistancePp: r(heldD),
+    marketPp,
+    minePp,
+    text: `${say(marketPp, "시장 움직임으로")}, ${say(minePp, "내 매매·입금으로")}`,
+  };
+}
+
 export type GuideComparison = {
   base: HealthPoint;
   now: HealthPoint;
   groups: Array<{ group: BucketGroup; beforePct: number; nowPct: number; targetPct: number }>;
   verdict: "closer" | "farther" | "same";
   text: string;
+  split: ChangeSplit | null;
 };
+
+type SplitContext = Parameters<typeof splitChange>[2];
 
 /**
  * 직전 기록과 지금 비교 — "직전 점검 때 이랬는데 지금은 이렇다". 지금과 비중이 같은 기록(방금 누른 기록)은 건너뛰고
  * 그 앞의 다른 상태와 비교한다. 매매와 시장 움직임이 합쳐진 결과이고, 앞으로 할 일은 늘 지금 상태로만 계산한다.
  */
-export function compareWithHistory(view: IncomeGuideView, history: GuideHistoryEntry[]): GuideComparison | null {
+export function compareWithHistory(view: IncomeGuideView, history: GuideHistoryEntry[], ctx?: SplitContext): GuideComparison | null {
   if (view.total <= 0) return null;
   const nowEntry = toHistoryEntry(view);
   const base = [...history].reverse().find((h) => h.groups.length > 0 && !sameMix(h.groups, nowEntry.groups));
@@ -525,6 +590,7 @@ export function compareWithHistory(view: IncomeGuideView, history: GuideHistoryE
     })),
     verdict,
     text: `${head}. ${tail}`,
+    split: ctx ? splitChange(base, n.distancePp, ctx) : null,
   };
 }
 
@@ -532,19 +598,27 @@ export function compareWithHistory(view: IncomeGuideView, history: GuideHistoryE
  * 계좌 건강 흐름 — 처음 기록, 한 달쯤 전 기록, 지금. "내 선택 돌아보기"에서 월 1회 확인용으로 쓴다.
  * 한 달 전 = 오늘보다 28일 이상 앞선 마지막 기록(처음 기록과 같으면 생략).
  */
-export function healthTrend(view: IncomeGuideView, history: GuideHistoryEntry[]): { first: HealthPoint | null; monthAgo: HealthPoint | null; now: HealthPoint } | null {
+export function healthTrend(
+  view: IncomeGuideView,
+  history: GuideHistoryEntry[],
+  ctx?: SplitContext,
+): { first: HealthPoint | null; monthAgo: HealthPoint | null; now: HealthPoint; split: ChangeSplit | null } | null {
   if (view.total <= 0) return null;
   const now = toHealthPoint(toHistoryEntry(view));
-  const valid = history.filter((h) => h.groups.length > 0);
+  // 오늘 기록(방금 자동으로 남긴 것 포함)은 "지금"과 같으므로 비교 기준에서 뺀다
+  const valid = history.filter((h) => h.groups.length > 0 && h.date < view.today);
   const cutoff = new Date(`${view.today}T00:00:00Z`);
   cutoff.setUTCDate(cutoff.getUTCDate() - 28);
   const cut = cutoff.toISOString().slice(0, 10);
   const firstEntry = valid[0] ?? null;
   const monthEntry = [...valid].reverse().find((h) => h.date <= cut) ?? null;
+  // 나누는 기준은 표의 비교 기준과 같다 (한 달 전, 없으면 처음)
+  const baseEntry = monthEntry ?? firstEntry;
   return {
     first: firstEntry ? toHealthPoint(firstEntry) : null,
     monthAgo: monthEntry && monthEntry !== firstEntry ? toHealthPoint(monthEntry) : null,
     now,
+    split: ctx && baseEntry ? splitChange(baseEntry, now.distancePp, ctx) : null,
   };
 }
 
