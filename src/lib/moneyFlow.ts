@@ -322,6 +322,8 @@ export type FlowItem = {
   cut?: CutLevel;
   mustPart?: number;
   label?: string;
+  /** 자녀 계좌(childGifts)의 자녀 id. 없으면 가족 공통 */
+  childId?: string;
 };
 
 export type CutSplit = { must: number; trim: number; drop: number };

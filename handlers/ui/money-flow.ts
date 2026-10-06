@@ -59,7 +59,9 @@ function normalizeItem(raw: any): FlowItem | null {
   if (!payments.includes(payment) || (cut !== undefined && !cutLevels.includes(cut))) return null
   if (mustPart !== undefined && (amount(mustPart) === null || mustPart > value)) return null
   if (typeof label !== 'string' || label.length > 40) return null
-  return { categoryId: raw.categoryId, amount: value, payment, cut, mustPart, label: label.trim() }
+  const childId = raw.childId ?? undefined
+  if (childId !== undefined && (typeof childId !== 'string' || childId.length === 0 || childId.length > 40)) return null
+  return { categoryId: raw.categoryId, amount: value, payment, cut, mustPart, label: label.trim(), ...(childId ? { childId } : {}) }
 }
 
 function normalizeIrregular(raw: any): IrregularItem | null {

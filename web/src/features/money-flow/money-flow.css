@@ -66,3 +66,5 @@
 .mf-quiet { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px dashed var(--color-border-default); border-radius: 6px; }
 .mf-quiet > summary { cursor: pointer; font-size: 13px; color: var(--color-text-secondary); }
 .mf-quiet > .mf-draft, .mf-quiet > p { margin-top: 8px; }
+.mf-kid-add { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mf-kid-add small { flex-basis: 100%; }

@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { futureValue, REALISTIC_ANNUAL_PCT, suggestMonthly } from '../../lib/startPlan'
 import { useJourney } from '../../lib/journey'
+import { MAX_CHILDREN, sanitizeChildState, type Child, type ChildGiftState } from '../../lib/childGift'
+import { useUserState } from '../../lib/userState'
 import { EMPTY_HOUSEHOLD_INCOME, HOUSEHOLDS, householdTotal, useHouseholdIncome, withHousehold, type HouseholdIncome } from '../../lib/householdIncome'
 import {
-  FLOW_CATEGORIES, categoryById, compareSummaries, evaluateFlowCheck, toSeedExpenses,
+  FLOW_CATEGORIES, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, toSeedExpenses,
   type CutLevel, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
 } from '../../../../src/lib/moneyFlow'
 
@@ -58,7 +60,12 @@ function CatSelect({ kind, value, onChange, label }: { kind: FlowKind; value: st
   )
 }
 
-function ItemRows({ kind, rows, setRows, actual }: { kind: 'fixed' | 'variable'; rows: Row[]; setRows: (rows: Row[]) => void; actual?: Actual }) {
+type Kids = { list: Child[]; add: (alias: string, birth: string) => string | null }
+
+function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'variable'; rows: Row[]; setRows: (rows: Row[]) => void; actual?: Actual; kids?: Kids }) {
+  const [adding, setAdding] = useState<string | null>(null)
+  const [kidAlias, setKidAlias] = useState('')
+  const [kidBirth, setKidBirth] = useState('')
   const update = (key: string, patch: Partial<Row>) => setRows(rows.map((r) => r.key === key ? { ...r, ...patch } : r))
   // 같은 분류·결제 수단 줄이 여럿이면(전기·가스를 따로 적은 경우) 기록은 합계로만 비교한다 — 어느 줄 몫인지 알 수 없어 바꾸기 버튼은 없다
   const actualNote = (r: Row) => {
@@ -92,7 +99,31 @@ function ItemRows({ kind, rows, setRows, actual }: { kind: 'fixed' | 'variable';
             <select aria-label={`${name} 결제 수단`} value={r.payment ?? 'cash'} onChange={(e) => update(r.key, { payment: e.target.value as Payment })}>
               {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
+            {kids && (
+              <select aria-label={`${name} 누구 몫`} value={r.childId && kids.list.some((c) => c.id === r.childId) ? r.childId : ''} onChange={(e) => {
+                if (e.target.value === '__add') { setAdding(r.key); return }
+                setAdding(null)
+                update(r.key, { childId: e.target.value || undefined })
+              }}>
+                <option value="">가족 공통</option>
+                {kids.list.map((c) => <option key={c.id} value={c.id}>{c.alias}</option>)}
+                {kids.list.length < MAX_CHILDREN && <option value="__add">+ 자녀 추가</option>}
+              </select>
+            )}
             <button type="button" className="acc-link" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>빼기</button>
+            {kids && adding === r.key && (
+              <div className="mf-kid-add">
+                <input type="text" aria-label="자녀 별칭" maxLength={12} value={kidAlias} placeholder="별칭(예: 첫째)" onChange={(e) => setKidAlias(e.target.value)} />
+                <input type="month" aria-label="자녀 태어난 연월" value={kidBirth} max={kstMonth()} onChange={(e) => setKidBirth(e.target.value)} />
+                <button type="button" className="acc-primary" disabled={!/^\d{4}-(0[1-9]|1[0-2])$/.test(kidBirth)} onClick={() => {
+                  const id = kids.add(kidAlias, kidBirth)
+                  if (id) update(r.key, { childId: id })
+                  setAdding(null); setKidAlias(''); setKidBirth('')
+                }}>추가하고 고르기</button>
+                <button type="button" className="acc-link" onClick={() => setAdding(null)}>취소</button>
+                <small className="acc-note">자녀 계좌와 같은 목록입니다. 이름 대신 별칭과 태어난 연월만 저장합니다.</small>
+              </div>
+            )}
             {actualNote(r)}
           </div>
         )
@@ -129,6 +160,17 @@ function IrregularRows({ rows, setRows }: { rows: IrrRow[]; setRows: (rows: IrrR
 
 export default function FlowCheck({ entries, checks, onSaved, fromStart }: { entries: Entry[]; checks: SavedCheck[]; onSaved: () => Promise<void> | void; fromStart: boolean }) {
   const navigate = useNavigate()
+  const childStore = useUserState<ChildGiftState>('childGifts')
+  const childState = useMemo(() => sanitizeChildState(childStore.value), [childStore.value])
+  const kids: Kids = {
+    list: childState.children,
+    add: (alias, birth) => {
+      if (childState.children.length >= MAX_CHILDREN) return null
+      const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      childStore.set({ children: [...childState.children, { id, alias: alias.trim() || '자녀', birth, gifts: [] }] })
+      return id
+    },
+  }
   const latest = checks[0] ?? null
   const withKeys = <T,>(list: T[] | undefined) => (list ?? []).map((x) => ({ ...x, key: newKey() }))
   // 수입은 '우리 집 수입' 한 벌을 시작하기·시드 만들기와 같이 쓴다. 저장값이 생기기 전에는 지난 점검의 합계로 시작한다
@@ -179,6 +221,9 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
   const prev = latest && saved ? checks[1] ?? null : latest
   const prevResult = useMemo(() => (prev ? evaluateFlowCheck(prev.input) : null), [prev])
   const changes = prevResult ? compareSummaries(prevResult.summary, result.summary).filter((c) => c.difference !== 0).slice(0, 5) : []
+  const perChild = childState.children
+    .map((c) => ({ id: c.id, alias: c.alias, amount: [...input.fixed, ...input.variable].filter((i) => i.childId === c.id).reduce((sum, i) => sum + cashEffect(i), 0) }))
+    .filter((c) => c.amount !== 0)
   const hasAny = input.monthlyIncome > 0 && result.summary.consumption > 0
   const half = suggestMonthly(result.available)
   const dueMonths = Object.entries(result.irregularDueByMonth).sort((a, b) => b[1] - a[1]).slice(0, 3)
@@ -246,7 +291,7 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
       <section className="acc-card">
         <h2>고정지출</h2>
         <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다. 공과금처럼 달마다 조금씩 다른 건 평소 금액(높은 쪽)을 적으세요. 기록이 있으면 옆에 실제 금액이 보이고, 바꿀지는 직접 고릅니다.</p>
-        <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} />
+        <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} kids={kids} />
       </section>
 
       <section className="acc-card">
@@ -254,7 +299,7 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
         {recordedMonth
           ? <button type="button" className="acc-primary" onClick={fillFromRecords}>{recordedMonth.replace('-', '년 ')}월 기록으로 채우기</button>
           : <p className="acc-note">빠른 기록에 한 달 정도 적어 두면 여기서 한 번에 채울 수 있습니다. 지금은 대략 금액을 직접 넣어도 됩니다.</p>}
-        <ItemRows kind="variable" rows={variable} setRows={setVariable} />
+        <ItemRows kind="variable" rows={variable} setRows={setVariable} kids={kids} />
       </section>
 
       <section className="acc-card">
@@ -284,6 +329,15 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
                 {result.topCuttable.slice(0, 3).map((t) => <li key={t.categoryId}><span>{categoryById(t.categoryId)?.label} <small>{t.drop > 0 ? '끊을 수 있음' : '줄일 수 있음'}</small></span><span>{krw(t.trim + t.drop)}</span></li>)}
               </ul>
               <p className="acc-note">줄이라는 뜻이 아닙니다. 줄인다면 어디가 큰지 보여 드릴 뿐입니다.</p>
+            </>
+          )}
+          {perChild.length > 0 && (
+            <>
+              <h3>자녀별 한 달 비용</h3>
+              <ul className="mf-changes">
+                {perChild.map((c) => <li key={c.id}><span>{c.alias}</span><span>{krw(c.amount)}</span></li>)}
+              </ul>
+              <p className="acc-note">고정·변동지출에서 자녀를 고른 줄만 더한 현금 지출입니다. 고르지 않은 줄은 가족 공통입니다.</p>
             </>
           )}
           <h3>비상자금 기준</h3>

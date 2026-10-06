@@ -268,6 +268,15 @@ test('점검 저장 검증: 금액·소분류·달·항목 수를 확인한다',
   assert.equal(normalizeFlowCheck({ input, date: '2026-10-07' }, now), null)
 })
 
+test('점검 저장 검증: 자녀 id는 문자열만 받고, 없으면 필드를 만들지 않는다', () => {
+  const base = { monthlyIncome: 4_000_000, reserveMonthly: 0, variable: [], irregular: [] }
+  const withKid = normalizeFlowCheck({ input: { ...base, fixed: [{ categoryId: 'rent', amount: 1000, childId: 'abc1' }, { categoryId: 'rent', amount: 2000 }] } }, now)
+  assert.equal(withKid?.input.fixed[0].childId, 'abc1')
+  assert.equal('childId' in (withKid?.input.fixed[1] ?? {}), false)
+  assert.equal(normalizeFlowCheck({ input: { ...base, fixed: [{ categoryId: 'rent', amount: 1000, childId: 7 }] } }, now), null)
+  assert.equal(normalizeFlowCheck({ input: { ...base, fixed: [{ categoryId: 'rent', amount: 1000, childId: 'x'.repeat(41) }] } }, now), null)
+})
+
 test('로그인 없는 돈 흐름 조회는 차단한다', async () => {
   let statusCode = 0
   const response = {
