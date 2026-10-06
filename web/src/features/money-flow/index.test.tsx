@@ -144,7 +144,7 @@ describe('돈 흐름', () => {
       partnerShared: true, rules: [], checks: [],
       entries: [
         { id: 'a', mine: true, editedBy: 'partner', date: `${month}-02`, amount: 10000, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
-        { id: 'b', mine: false, editedBy: null, date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', mine: false, forWhom: 'partner', editedBy: null, date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
       ],
       deleted: [
         { id: 'c', mine: false, deletedBy: 'me', date: `${month}-01`, amount: 5000, memo: '편의점', categoryId: 'convenience', cut: null, mustPart: null, payment: 'cash' },
@@ -153,7 +153,7 @@ describe('돈 흐름', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderPage()
     expect(await screen.findByText(/기록 2건/)).toBeTruthy()
-    expect(screen.getByText('배우자')).toBeTruthy()
+    expect(screen.getByText('배우자 몫', { selector: 'em' })).toBeTruthy()
     expect(screen.getByText('배우자가 고침')).toBeTruthy()
     // 배우자 기록도 지울 수 있다
     fireEvent.click(screen.getByLabelText('배민 삭제'))
@@ -176,7 +176,7 @@ describe('돈 흐름', () => {
       partnerShared: true, rules: [], checks: [], deleted: [],
       entries: [
         { id: 'a', mine: true, date: `${month}-02`, amount: 10000, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
-        { id: 'b', mine: false, date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', mine: false, forWhom: 'partner', date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
       ],
     })
     renderPage()
@@ -200,5 +200,35 @@ describe('돌려받은 돈', () => {
     fireEvent.click(screen.getByRole('button', { name: '1건 저장' }))
     await waitFor(() => expect(postBodies()).toHaveLength(1))
     expect(postBodies()[0].entries[0]).toMatchObject({ amount: 23000, categoryId: 'transit', payment: 'refund_regular' })
+  })
+})
+
+describe('배우자 몫', () => {
+  it('"배우자"가 앞에 있든 중간에 있든 배우자 몫으로 읽고, 메모에서는 빼고 분류한다', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '배우자 모두의 카드 환급 23000원\n모두의 카드 배우자 환급 23000원\n배우자 교통카드 62000원\n교통카드 55000원' } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    const forWhom = screen.getAllByLabelText('모두의 카드 환급 누구 몫') as HTMLSelectElement[]
+    expect(forWhom.map((s) => s.value)).toEqual(['partner', 'partner'])
+    expect((screen.getAllByLabelText('모두의 카드 환급 결제 수단') as HTMLSelectElement[]).map((s) => s.value)).toEqual(['refund_regular', 'refund_regular'])
+    expect((screen.getAllByLabelText('교통카드 누구 몫') as HTMLSelectElement[]).map((s) => s.value)).toEqual(['partner', 'me'])
+    fireEvent.click(screen.getByRole('button', { name: '4건 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    expect(postBodies()[0].entries.map((e: any) => [e.memo, e.categoryId, e.payment, e.forWhom])).toEqual([
+      ['모두의 카드 환급', 'transit', 'refund_regular', 'partner'],
+      ['모두의 카드 환급', 'transit', 'refund_regular', 'partner'],
+      ['교통카드', 'transit', 'cash', 'partner'],
+      ['교통카드', 'transit', 'cash', 'me'],
+    ])
+  })
+
+  it('이번 달 보기에서 누구 몫 현금과 돌려받은 돈을 나눠 보여 준다', async () => {
+    const month = today.slice(0, 7)
+    const e = (id: string, amount: number, payment: string, forWhom: string) => ({ id, mine: true, forWhom, date: `${month}-01`, amount, memo: '교통카드', categoryId: 'transit', cut: null, mustPart: null, payment })
+    apiFetchMock.mockImplementation(() => Promise.resolve({ rules: [], checks: [], entries: [e('a', 55000, 'cash', 'me'), e('b', 62000, 'cash', 'partner'), e('c', 23000, 'refund_regular', 'partner')] }))
+    renderPage()
+    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
+    expect(await screen.findByText('나 55,000원 · 배우자 39,000원')).toBeTruthy()
+    expect(screen.getByText('돌려받은 돈: 나 0원 · 배우자 23,000원')).toBeTruthy()
   })
 })

@@ -3,16 +3,17 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, categoryById, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, categoryById, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
 
-type Entry = { id: string; mine?: boolean; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
+// mine = 내가 기록함, forWhom = 누구 몫(보는 사람 기준). 한 사람이 둘 몫을 다 적을 수 있어 둘은 다르다
+type Entry = { id: string; mine?: boolean; forWhom?: 'me' | 'partner'; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
 // baseMemo = 붙여 넣은 그대로, item = 통로(네이버페이·쿠팡 등) 이름만 있을 때 덧붙인 산 물건, memo = 저장할 메모
-type Draft = { key: string; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
+type Draft = { key: string; forPartner: boolean; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
 type Tab = 'record' | 'month' | 'check'
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -92,8 +93,9 @@ export default function MoneyFlowPage() {
   }, [month])
   useEffect(() => { void load() }, [load])
 
-  // 부부 연결로 상대 기록이 오면 '우리 집'(합계)과 '나만'을 고를 수 있다. 상대 기록은 읽기만 한다
-  const scoped = partnerShared && scope === 'home' ? entries : entries.filter((e) => e.mine !== false)
+  // 부부 연결로 상대 기록이 오면 '우리 집'(합계)과 '나만'(내 몫)을 고를 수 있다. 누가 적었든 배우자 몫은 '나만'에서 빠진다
+  // 부부 연결 없이 혼자 둘 몫을 적는 사람도 있으니, 직접 '나만'을 골랐을 때만 거른다
+  const scoped = partnerShared && scope === 'me' ? entries.filter((e) => e.forWhom !== 'partner') : entries
   const monthEntries = scoped.filter((e) => e.date.startsWith(month))
   // 기준 = 이 달 이전에 기록이 있는 가장 최근 달. 그사이 달을 건너뛰었어도 그 기록이 기준으로 남는다
   const baseMonth = scoped.map((e) => e.date.slice(0, 7)).filter((m) => m < month).sort().pop() ?? null
@@ -105,9 +107,11 @@ export default function MoneyFlowPage() {
     setFailed(bad)
     setNotice('')
     setDrafts(parsed.map((p, i) => {
-      const result = classifyMemo(p.memo, rules)
+      // "배우자"는 어디에 있든 배우자 몫 표시로 바꾸고, 분류·학습은 그 단어를 뺀 메모로 한다
+      const { memo, forPartner } = splitPartnerWord(p.memo)
+      const result = classifyMemo(memo, rules)
       // 줄 맨 앞에 날짜(261001 등)가 있으면 그 날짜, 없으면 아래 날짜 칸
-      return { key: `${Date.now()}-${i}`, date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: p.memo, item: '', askItem: needsItemName(p.memo), memo: p.memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: detectPayment(p.memo) }
+      return { key: `${Date.now()}-${i}`, forPartner, date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: memo, item: '', askItem: needsItemName(memo), memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: detectPayment(memo) }
     }))
   }
   const updateDraft = (key: string, patch: Partial<Draft>) => setDrafts((list) => list.map((d) => d.key === key ? { ...d, ...patch } : d))
@@ -131,7 +135,7 @@ export default function MoneyFlowPage() {
       const body = {
         action: 'add-entries',
         // 자동 분류를 고쳤거나, 모르던 메모를 직접 고른 경우만 기억한다(소액이라 묻지 않고 넘긴 줄은 기억하지 않는다)
-        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, learn: d.memo !== '' && ((!d.known && !isQuiet(d)) || d.categoryId !== d.autoCategoryId) })),
+        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, forWhom: d.forPartner ? 'partner' : 'me', learn: d.memo !== '' && ((!d.known && !isQuiet(d)) || d.categoryId !== d.autoCategoryId) })),
       }
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify(body), cacheMs: 0 })
       setNotice(`${drafts.length}건 기록했습니다.`)
@@ -150,7 +154,7 @@ export default function MoneyFlowPage() {
 
   const updateEntry = (entry: Entry, patch: Partial<Entry>, learn: boolean) => {
     const next = { ...entry, ...patch }
-    return apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'update-entry', id: entry.id, date: next.date, amount: next.amount, memo: next.memo, categoryId: next.categoryId, payment: next.payment, cut: next.cut, mustPart: next.mustPart && next.mustPart <= next.amount ? next.mustPart : null, learn }), cacheMs: 0 })
+    return apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'update-entry', id: entry.id, date: next.date, amount: next.amount, memo: next.memo, categoryId: next.categoryId, payment: next.payment, forWhom: next.forWhom ?? 'me', cut: next.cut, mustPart: next.mustPart && next.mustPart <= next.amount ? next.mustPart : null, learn }), cacheMs: 0 })
   }
 
   const changeAmount = async (entry: Entry, amount: number) => {
@@ -169,6 +173,16 @@ export default function MoneyFlowPage() {
       await updateEntry(entry, { categoryId }, entry.memo !== '')
       setEntries((list) => list.map((e) => e.id === entry.id ? { ...e, categoryId } : e))
       if (entry.memo) setNotice(`"${entry.memo}"은(는) 다음부터 ${categoryById(categoryId)?.label}(으)로 분류합니다.`)
+      void load()
+    } catch (error) {
+      setNotice(`수정 실패: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  const changeForWhom = async (entry: Entry, forWhom: 'me' | 'partner') => {
+    try {
+      await updateEntry(entry, { forWhom }, false)
+      setEntries((list) => list.map((e) => e.id === entry.id ? { ...e, forWhom } : e))
       void load()
     } catch (error) {
       setNotice(`수정 실패: ${error instanceof Error ? error.message : String(error)}`)
@@ -196,7 +210,7 @@ export default function MoneyFlowPage() {
       setNotice(`되돌리기 실패: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  const monthDeleted = deleted.filter((e) => e.date.startsWith(month) && (partnerShared && scope === 'home' ? true : e.mine !== false))
+  const monthDeleted = deleted.filter((e) => e.date.startsWith(month) && !(partnerShared && scope === 'me' && e.forWhom === 'partner'))
 
   const renderDraft = (d: Draft) => (
     <div key={d.key} className="mf-draft">
@@ -222,6 +236,10 @@ export default function MoneyFlowPage() {
       )}
       <div className="mf-draft-tools">
         <CategorySelect label={`${d.baseMemo || '메모 없음'} 분류`} value={d.categoryId} onChange={(id) => updateDraft(d.key, { categoryId: id })} />
+        <select aria-label={`${d.baseMemo || '메모 없음'} 누구 몫`} value={d.forPartner ? 'partner' : 'me'} onChange={(event) => updateDraft(d.key, { forPartner: event.target.value === 'partner' })}>
+          <option value="me">내 몫</option>
+          <option value="partner">배우자 몫</option>
+        </select>
         <select aria-label={`${d.baseMemo || '메모 없음'} 결제 수단`} value={d.payment} onChange={(event) => updateDraft(d.key, { payment: event.target.value as Payment })}>
           {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -253,7 +271,7 @@ export default function MoneyFlowPage() {
             <button type="button" aria-pressed={scope === 'home'} className={scope === 'home' ? 'is-active' : ''} onClick={() => setScope('home')}>우리 집 합계</button>
             <button type="button" aria-pressed={scope === 'me'} className={scope === 'me' ? 'is-active' : ''} onClick={() => setScope('me')}>나만</button>
           </div>
-          <p className="acc-note">배우자가 공유한 기록도 함께 셉니다. 서로의 기록을 고치거나 지울 수 있고, 누가 고치고 지웠는지 표시됩니다. 지운 기록은 둘 다 되돌릴 수 있습니다.</p>
+          <p className="acc-note">배우자가 공유한 기록도 함께 셉니다. '나만'은 누가 적었든 내 몫만 셉니다. 서로의 기록을 고치거나 지울 수 있고, 누가 고치고 지웠는지 표시됩니다. 지운 기록은 둘 다 되돌릴 수 있습니다.</p>
         </section>
       )}
 
@@ -265,7 +283,7 @@ export default function MoneyFlowPage() {
             <h2>빠른 기록</h2>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
-              <small className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 배우자에게 환급을 뺀 금액만 보냈다면 보낸 금액 그대로 적으면 됩니다(이미 빠져 있음).</small>
+              <small className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 배우자 몫은 앞이든 중간이든 "배우자"를 넣으면 됩니다(예: 배우자 교통카드 62000원, 모두의카드 배우자 환급 23000원).</small>
               <textarea
                 className="mf-input" rows={2} value={text} placeholder={'261002 CU제기점 1800원\n네이버페이 물티슈 12900원'}
                 onChange={(event) => setText(event.target.value)}
@@ -305,11 +323,15 @@ export default function MoneyFlowPage() {
                   <li key={e.id}>
                     <div className="mf-list-main">
                       <span className="mf-date-cell">{e.date.slice(5).replace('-', '/')}</span>
-                      <span className="mf-memo">{e.mine === false && <em className="mf-point mf-partner">배우자</em>}{e.memo || '메모 없음'}{PAYMENT_TAG[e.payment] && <em className="mf-point">{PAYMENT_TAG[e.payment]}</em>}{e.editedBy && <em className="mf-point mf-edited">{e.editedBy === 'me' ? '내가 고침' : '배우자가 고침'}</em>}</span>
+                      <span className="mf-memo">{e.forWhom === 'partner' ? <em className="mf-point mf-partner">배우자 몫</em> : e.mine === false && <em className="mf-point mf-partner">배우자가 적음</em>}{e.memo || '메모 없음'}{PAYMENT_TAG[e.payment] && <em className="mf-point">{PAYMENT_TAG[e.payment]}</em>}{e.editedBy && <em className="mf-point mf-edited">{e.editedBy === 'me' ? '내가 고침' : '배우자가 고침'}</em>}</span>
                       <strong>{isRefund(e.payment) ? '−' : ''}{krw(e.amount)}</strong>
                     </div>
                     <div className="mf-list-tools">
                       <CategorySelect label={`${e.memo || '메모 없음'} 분류 바꾸기`} value={e.categoryId} onChange={(id) => void changeCategory(e, id)} />
+                      <select aria-label={`${e.memo || '메모 없음'} 누구 몫 바꾸기`} value={e.forWhom ?? 'me'} onChange={(event) => void changeForWhom(e, event.target.value as 'me' | 'partner')}>
+                        <option value="me">내 몫</option>
+                        <option value="partner">배우자 몫</option>
+                      </select>
                       <input key={`${e.id}-${e.amount}`} className="mf-amount-edit" type="number" inputMode="numeric" min="1" aria-label={`${e.memo || '메모 없음'} 금액 고치기`} defaultValue={e.amount} onBlur={(event) => void changeAmount(e, Math.round(Number(event.target.value)))} />
                       <button type="button" className="mf-icon" aria-label={`${e.memo || '메모 없음'} 삭제`} onClick={() => void removeEntry(e)}><Trash2 size={15} /></button>
                     </div>
@@ -353,6 +375,12 @@ const monthLabel = (month: string) => `${month.slice(0, 4)}년 ${Number(month.sl
 
 function MonthView({ month, thisMonth, setMonth, entries, baseMonth, baseEntries, loading }: { month: string; thisMonth: string; setMonth: (m: string) => void; entries: Entry[]; baseMonth: string | null; baseEntries: Entry[]; loading: boolean }) {
   const summary = useMemo(() => summarizeItems(entries.map(toItem)), [entries])
+  // 배우자 몫이 하나라도 있으면 누구 돈이 얼마 나갔는지(환급 뺀 현금)와 돌려받은 돈을 나눠 보여 준다
+  const byWho = useMemo(() => {
+    if (!entries.some((e) => e.forWhom === 'partner')) return null
+    const of = (who: 'me' | 'partner') => summarizeItems(entries.filter((e) => (e.forWhom ?? 'me') === who).map(toItem))
+    return { me: of('me'), partner: of('partner') }
+  }, [entries])
   const prev = useMemo(() => summarizeItems(baseEntries.map(toItem)), [baseEntries])
   const changes = compareSummaries(prev, summary).filter((c) => c.difference !== 0).slice(0, 5)
   const cut = summary.cashByCut
@@ -371,6 +399,7 @@ function MonthView({ month, thisMonth, setMonth, entries, baseMonth, baseEntries
               <div className="is-main"><dt>현금 지출</dt><dd>{krw(summary.cash)}</dd>{summary.refundRegular + summary.refundOnce > 0 && <small>돌려받은 {krw(summary.refundRegular + summary.refundOnce)}을 뺀 금액</small>}</div>
               <div><dt>생활 소비(포인트 포함)</dt><dd>{krw(summary.consumption)}</dd></div>
               <div><dt>포인트·환급이 메운 금액</dt><dd>{krw(summary.pointRegular + summary.pointOnce + summary.refundRegular + summary.refundOnce)}</dd>{summary.pointOnce + summary.refundOnce > 0 && <small>이번만 들어온 {krw(summary.pointOnce + summary.refundOnce)}는 다음 달엔 없을 수 있습니다</small>}</div>
+              {byWho && <div><dt>누구 몫(현금)</dt><dd className="mf-small">나 {krw(byWho.me.cash)} · 배우자 {krw(byWho.partner.cash)}</dd>{byWho.me.refundRegular + byWho.me.refundOnce + byWho.partner.refundRegular + byWho.partner.refundOnce > 0 && <small>돌려받은 돈: 나 {krw(byWho.me.refundRegular + byWho.me.refundOnce)} · 배우자 {krw(byWho.partner.refundRegular + byWho.partner.refundOnce)}</small>}</div>}
               <div><dt>고정 · 변동 · 비정기</dt><dd className="mf-small">{krw(summary.byKind.fixed)} · {krw(summary.byKind.variable)} · {krw(summary.byKind.irregular)}</dd></div>
             </dl>
             <h3>현금 지출, 줄일 수 있나</h3>

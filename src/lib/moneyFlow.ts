@@ -187,6 +187,15 @@ export function classifyMemo(memo: string, learned: LearnedRule[] = []): Classif
 const PASS_THROUGH = ["네이버페이", "naverpay", "npay", "네이버쇼핑", "스마트스토어", "카카오페이", "kakaopay", "토스페이", "tosspay", "페이코", "payco", "스마일페이", "쿠페이", "쿠팡", "11번가", "g마켓", "지마켓", "옥션", "ssg", "ssg.com", "위메프", "티몬", "알리익스프레스", "알리", "테무", "temu", "아마존", "amazon"];
 const PASS_THROUGH_NOISE = ["결제", "주문", "구매", "간편결제", "(주)", "주식회사"];
 
+/**
+ * 메모에 "배우자"가 있으면(앞이든 중간이든) 배우자 몫으로 보고, 그 단어를 뺀 메모를 돌려준다.
+ * 한 사람이 둘의 지출·환급을 같이 적을 때 쓴다. "모두의 카드 배우자 환급" → { memo: "모두의 카드 환급", forPartner: true }
+ */
+export function splitPartnerWord(memo: string): { memo: string; forPartner: boolean } {
+  if (!memo.includes("배우자")) return { memo, forPartner: false };
+  return { memo: memo.replace(/배우자(의|꺼|거|것|용)?/g, " ").replace(/\s+/g, " ").trim(), forPartner: true };
+}
+
 /** 메모가 통로 이름뿐이라 "뭘 샀나요?"를 물어야 하는지. "네이버페이 32000" → true, "쿠팡 물티슈"·"쿠팡이츠" → false */
 export function needsItemName(memo: string): boolean {
   let text = normalizeMemo(memo);

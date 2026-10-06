@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
-  FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
+  FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
   parseLeadingDate, parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
-import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, toEntry } from '../handlers/ui/money-flow'
+import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, storedForPartner, toEntry } from '../handlers/ui/money-flow'
 
 test('분류표: id 중복 없음, 모든 소분류에 갈래·대분류·기본값·시드 항목이 있다', () => {
   const ids = FLOW_CATEGORIES.map((c) => c.id)
@@ -237,7 +237,7 @@ const now = new Date('2026-10-06T03:00:00Z')
 
 test('빠른 기록 입력 검증: 미래 날짜·없는 소분류·포인트 종류·못 줄이는 몫 초과 거절', () => {
   const ok = { date: '2026-10-06', amount: 15170, memo: '냉동피자 4판', categoryId: 'grocery_ready' }
-  assert.deepEqual(normalizeFlowEntry(ok, now), { spent_on: '2026-10-06', amount: 15170, memo: '냉동피자 4판', category_id: 'grocery_ready', cut_level: null, must_part: null, payment: 'cash' })
+  assert.deepEqual(normalizeFlowEntry(ok, now), { spent_on: '2026-10-06', amount: 15170, memo: '냉동피자 4판', category_id: 'grocery_ready', cut_level: null, must_part: null, payment: 'cash', for_partner: false })
   assert.equal(normalizeFlowEntry({ ...ok, date: '2026-10-07' }, now), null)
   assert.equal(normalizeFlowEntry({ ...ok, date: '2026-02-30' }, now), null)
   assert.equal(normalizeFlowEntry({ ...ok, amount: 0 }, now), null)
@@ -350,4 +350,40 @@ test('메모로 환급을 알아본다: 교통 환급 카드는 매달, 그 밖�
   const now = new Date('2026-10-06T03:00:00Z')
   assert.equal(normalizeFlowEntry({ date: '2026-10-05', amount: 23000, memo: '모두의카드 환급', categoryId: 'transit', payment: 'refund_regular' }, now)?.payment, 'refund_regular')
   assert.equal(normalizeFlowEntry({ date: '2026-10-05', amount: 23000, memo: '', categoryId: 'transit', payment: 'refund' }, now), null)
+})
+
+test('"배우자"는 메모 어디에 있어도 배우자 몫으로 보고, 분류는 그 단어를 뺀 메모로 한다', () => {
+  for (const memo of ['배우자 모두의 카드 환급', '모두의 카드 배우자 환급', '모두의카드 환급 배우자', '배우자의 모두의 카드 환급']) {
+    const { memo: rest, forPartner } = splitPartnerWord(memo)
+    assert.equal(forPartner, true, memo)
+    assert.ok(!rest.includes('배우자'), memo)
+    assert.equal(classifyMemo(rest).categoryId, 'transit', memo)
+    assert.equal(detectPayment(rest), 'refund_regular', memo)
+  }
+  assert.deepEqual(splitPartnerWord('교통카드 충전'), { memo: '교통카드 충전', forPartner: false })
+  const now = new Date('2026-10-06T03:00:00Z')
+  const ok = { date: '2026-10-05', amount: 62000, memo: '교통카드', categoryId: 'transit' }
+  assert.equal(normalizeFlowEntry({ ...ok, forWhom: 'partner' }, now)?.for_partner, true)
+  assert.equal(normalizeFlowEntry(ok, now)?.for_partner, false)
+  assert.equal(normalizeFlowEntry({ ...ok, forWhom: 'kid' }, now), null)
+})
+
+test('누구 몫은 보는 사람 기준으로 뒤집어 보여 준다', () => {
+  const row = { id: 'x', client_id: 'wife', spent_on: '2026-10-05', amount: 62000, memo: '교통카드', category_id: 'transit', payment: 'cash' }
+  // 아내가 자기 몫으로 적은 기록: 아내에겐 '나', 남편에겐 '배우자'
+  assert.equal(toEntry({ ...row, for_partner: false }, 'wife').forWhom, 'me')
+  assert.equal(toEntry({ ...row, for_partner: false }, 'husband').forWhom, 'partner')
+  // 아내가 남편 몫으로 적은 기록: 아내에겐 '배우자', 남편에겐 '나'
+  assert.equal(toEntry({ ...row, for_partner: true }, 'wife').forWhom, 'partner')
+  assert.equal(toEntry({ ...row, for_partner: true }, 'husband').forWhom, 'me')
+})
+
+test('누구 몫을 고쳐 저장하면 고친 사람 화면에 고른 그대로 보인다(배우자 기록을 고쳐도)', () => {
+  const row = { id: 'x', client_id: 'wife', spent_on: '2026-10-05', amount: 62000, memo: '교통카드', category_id: 'transit', payment: 'cash' }
+  for (const viewer of ['wife', 'husband']) {
+    for (const pick of ['me', 'partner'] as const) {
+      const stored = storedForPartner(pick === 'partner', row.client_id, viewer)
+      assert.equal(toEntry({ ...row, for_partner: stored }, viewer).forWhom, pick, `${viewer} ${pick}`)
+    }
+  }
 })
