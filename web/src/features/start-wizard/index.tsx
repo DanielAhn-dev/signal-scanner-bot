@@ -20,8 +20,9 @@ import {
   type InvestorProfile,
 } from '../../lib/startPlan'
 import { userScopedKey, writeUserState } from '../../lib/userState'
+import { HOUSEHOLDS, useHouseholdIncome, type Household } from '../../lib/householdIncome'
 import { START_DONE_EVENT } from '../../lib/useStartGate'
-import type { FlowCheckInput } from '../../../../src/lib/moneyFlow'
+import { cashEffect, type FlowCheckInput, type FlowItem } from '../../../../src/lib/moneyFlow'
 import './start-wizard.css'
 
 // 월수입·대출 같은 민감한 입력이라 사용자별 키로만 보관하고 로그아웃 때 지운다 (lib/userState.ts)
@@ -32,16 +33,13 @@ const num = (v: string) => { const n = Number(v.replace(/,/g, '').trim()); retur
 // 시드 만들기는 지출을 항목별로 받고 마법사는 카드값과 '그 밖의 고정지출' 두 칸만 받는다 — 카드 외 항목 합이 '그 밖의 고정지출'에 해당한다
 const nonCardExpenses = (expenses: Record<string, unknown> | undefined) =>
   Object.entries(expenses ?? {}).reduce((sum, [k, v]) => (k === 'card' ? sum : sum + (Number(v) || 0)), 0)
-// 돈 흐름 '지금 상태 점검'을 마법사 칸으로 옮긴다: 고정지출 → 그 밖의 고정지출, 변동 + 비정기 월할 → 카드값 (현금 기준, 포인트 제외)
+// 돈 흐름 '지금 상태 점검'을 마법사 칸으로 옮긴다: 고정지출 → 그 밖의 고정지출, 변동 + 비정기 월할 → 카드값 (현금 기준, 포인트 제외, 환급은 뺌)
 export function wizardFromCheck(input: FlowCheckInput): { income: number; otherFixed: number; card: number } {
-  const cash = (items: Array<{ amount: number; payment?: string }>) => items.reduce((sum, i) => sum + ((i.payment ?? 'cash') === 'cash' ? i.amount : 0), 0)
-  const irregular = input.irregular.reduce((sum, i) => sum + ((i.payment ?? 'cash') === 'cash' ? Math.round(i.yearlyAmount / 12) : 0), 0)
-  return { income: input.monthlyIncome, otherFixed: cash(input.fixed), card: cash(input.variable) + irregular }
+  const cash = (items: FlowItem[]) => items.reduce((sum, i) => sum + cashEffect(i), 0)
+  const irregular = input.irregular.reduce((sum, i) => sum + cashEffect({ amount: Math.round(i.yearlyAmount / 12), payment: i.payment }), 0)
+  return { income: input.monthlyIncome, otherFixed: Math.max(0, cash(input.fixed)), card: Math.max(0, cash(input.variable) + irregular) }
 }
 const monthKeyKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
-
-type Household = 'solo' | 'single-income' | 'dual-income'
-const HOUSEHOLDS: ReadonlyArray<[Household, string]> = [['solo', '혼자'], ['single-income', '외벌이'], ['dual-income', '맞벌이']]
 
 type Form = {
   household: Household; partnerIncome: string
@@ -82,6 +80,21 @@ export default function StartWizardPage() {
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
   const set = (patch: Partial<Form>) => setForm((cur) => ({ ...cur, ...patch }))
+  // 가구 형태·수입은 '우리 집 수입'(돈 흐름 점검·시드 만들기와 같은 값) — 고치는 즉시 저장해 시작을 끝내지 않아도 남는다
+  const incomeStore = useHouseholdIncome()
+  const [incomeLoaded, setIncomeLoaded] = useState(false)
+  useEffect(() => {
+    if (incomeLoaded || !incomeStore.ready) return
+    const v = incomeStore.value
+    if (v) set({ household: v.household, income: v.ownIncome > 0 ? String(v.ownIncome) : '', partnerIncome: v.partnerIncome > 0 ? String(v.partnerIncome) : '' })
+    setIncomeLoaded(true)
+  }, [incomeStore.ready, incomeStore.value, incomeLoaded])
+  const setIncome = (patch: Partial<Pick<Form, 'household' | 'income' | 'partnerIncome'>>) => {
+    const next = { ...form, ...patch }
+    set(patch)
+    const base = incomeStore.value
+    incomeStore.set({ household: next.household, ownIncome: num(next.income), partnerIncome: num(next.partnerIncome), ownPayday: base?.ownPayday ?? null, partnerPayday: base?.partnerPayday ?? null })
+  }
 
   useEffect(() => {
     try { const key = storageKey(); if (key) window.localStorage.setItem(key, JSON.stringify(form)) } catch { /* 저장 불가 환경은 이번 세션만 */ }
@@ -110,7 +123,7 @@ export default function StartWizardPage() {
     const year = Number(monthKeyKst().slice(0, 4))
     const latestWithIncome = (y: number) => apiFetch(`/api/ui/seed-builder?year=${y}`, { cacheMs: 0, retries: 0 })
       .then((res) => [...(Array.isArray(res?.data) ? res.data : [])].reverse().find((r: any) => Number(r?.ownIncome) > 0))
-    // 돈 흐름에서 '지금 상태 점검'을 해 뒀다면 그 값이 가장 자세하다 — 먼저 쓰고, 없으면 시드 만들기 기록
+    // 지출: 돈 흐름에서 '지금 상태 점검'을 해 뒀다면 그 값이 가장 자세하다 — 먼저 쓰고, 없으면 시드 만들기 기록 (수입은 우리 집 수입에서)
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
     apiFetch(`/api/ui/money-flow?from=${today}&to=${today}`, { cacheMs: 0, retries: 0 })
       .then((res) => (Array.isArray(res?.checks) ? res.checks[0] : null))
@@ -118,7 +131,7 @@ export default function StartWizardPage() {
       .then((check: { input?: FlowCheckInput } | null) => {
         if (check?.input) {
           const w = wizardFromCheck(check.input)
-          fillEmpty({ income: str(w.income), otherFixed: str(w.otherFixed), card: str(w.card) })
+          fillEmpty({ otherFixed: str(w.otherFixed), card: str(w.card) })
           return
         }
         return seedFallback()
@@ -128,10 +141,7 @@ export default function StartWizardPage() {
       .then((m) => m ?? latestWithIncome(year - 1))
       .then((m: any) => {
         if (!m) return
-        // 시드 만들기에 맞벌이로 적어 둔 사람은 배우자 수입까지 가져와야 여유가 반쪽으로 잡히지 않는다
-        const household: Household = HOUSEHOLDS.some(([h]) => h === m.household) ? m.household : 'solo'
-        setForm((cur) => cur.income === '' && cur.household === empty.household ? { ...cur, household } : cur)
-        fillEmpty({ income: str(m.ownIncome), partnerIncome: household === 'dual-income' ? str(m.partnerIncome) : '', card: str(m.expenses?.card), otherFixed: str(nonCardExpenses(m.expenses)) })
+        fillEmpty({ card: str(m.expenses?.card), otherFixed: str(nonCardExpenses(m.expenses)) })
       })
       .catch(() => {})
   }, [clientId])
@@ -247,11 +257,11 @@ export default function StartWizardPage() {
 
       {step === 0 && <section className="start-card">
         <div className="start-segment" role="group" aria-label="가구 형태">
-          {HOUSEHOLDS.map(([value, label]) => <button key={value} type="button" className={form.household === value ? 'is-active' : ''} aria-pressed={form.household === value} onClick={() => set({ household: value })}>{label}</button>)}
+          {HOUSEHOLDS.map(([value, label]) => <button key={value} type="button" className={form.household === value ? 'is-active' : ''} aria-pressed={form.household === value} onClick={() => setIncome({ household: value })}>{label}</button>)}
         </div>
-        <MoneyField label={form.household === 'solo' ? '월 수입(세후)' : '본인 월 수입(세후)'} value={form.income} onChange={(v) => set({ income: v })} />
-        {form.household === 'dual-income' && <MoneyField label="배우자 월 수입(세후)" value={form.partnerIncome} onChange={(v) => set({ partnerIncome: v })} />}
-        {form.household !== 'solo' && <p className="start-note">카드값·고정지출은 가족 전체 기준으로 적어 주세요.{form.household === 'dual-income' && partnerIncome > 0 ? ` 합산 수입 ${won(income)}.` : ''}</p>}
+        <MoneyField label={form.household === 'solo' ? '월 수입(세후)' : '본인 월 수입(세후)'} value={form.income} onChange={(v) => setIncome({ income: v })} />
+        {form.household === 'dual-income' && <MoneyField label="배우자 월 수입(세후)" value={form.partnerIncome} onChange={(v) => setIncome({ partnerIncome: v })} />}
+        <p className="start-note">{form.household !== 'solo' ? '카드값·고정지출은 가족 전체 기준으로 적어 주세요. ' : ''}{form.household === 'dual-income' && partnerIncome > 0 ? `합산 수입 ${won(income)}. ` : ''}수입은 적는 즉시 저장되고 돈 흐름 점검·시드 만들기와 같은 값을 씁니다.</p>
         <MoneyField label="카드값(월 평균)" value={form.card} onChange={(v) => set({ card: v })} />
         <MoneyField label="그 밖의 고정지출(월세·보험 등)" value={form.otherFixed} onChange={(v) => set({ otherFixed: v })} />
         <MoneyField label="대출 상환(월)" value={form.loanPayment} onChange={(v) => set({ loanPayment: v })} />

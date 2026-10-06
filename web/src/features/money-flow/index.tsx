@@ -3,10 +3,10 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, categoryById, classifyMemo, compareSummaries, needsItemName, parseQuickLines, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, categoryById, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
-import FlowCheck, { type SavedCheck } from './FlowCheck'
+import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
 
@@ -28,6 +28,7 @@ const monthEnd = (month: string) => {
 }
 const CUT_LABEL: Record<CutLevel, string> = { must: '못 줄임', trim: '줄일 수 있음', drop: '끊을 수 있음' }
 const KIND_LABEL = { fixed: '고정', variable: '변동', irregular: '비정기' } as const
+const PAYMENT_TAG: Partial<Record<Payment, string>> = { point_regular: '포인트', point_once: '포인트·이번만', refund_regular: '환급·매달', refund_once: '환급·이번만' }
 const toItem = (entry: Entry): FlowItem => ({ categoryId: entry.categoryId, amount: entry.amount, payment: entry.payment, cut: entry.cut ?? undefined, mustPart: entry.mustPart ?? undefined })
 
 function CategorySelect({ value, onChange, label }: { value: string; onChange: (id: string) => void; label: string }) {
@@ -106,7 +107,7 @@ export default function MoneyFlowPage() {
     setDrafts(parsed.map((p, i) => {
       const result = classifyMemo(p.memo, rules)
       // 줄 맨 앞에 날짜(261001 등)가 있으면 그 날짜, 없으면 아래 날짜 칸
-      return { key: `${Date.now()}-${i}`, date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: p.memo, item: '', askItem: needsItemName(p.memo), memo: p.memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: 'cash' }
+      return { key: `${Date.now()}-${i}`, date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: p.memo, item: '', askItem: needsItemName(p.memo), memo: p.memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: detectPayment(p.memo) }
     }))
   }
   const updateDraft = (key: string, patch: Partial<Draft>) => setDrafts((list) => list.map((d) => d.key === key ? { ...d, ...patch } : d))
@@ -222,13 +223,11 @@ export default function MoneyFlowPage() {
       <div className="mf-draft-tools">
         <CategorySelect label={`${d.baseMemo || '메모 없음'} 분류`} value={d.categoryId} onChange={(id) => updateDraft(d.key, { categoryId: id })} />
         <select aria-label={`${d.baseMemo || '메모 없음'} 결제 수단`} value={d.payment} onChange={(event) => updateDraft(d.key, { payment: event.target.value as Payment })}>
-          <option value="cash">카드·현금</option>
-          <option value="point_regular">포인트(매달 꾸준히)</option>
-          <option value="point_once">포인트(이번만)</option>
+          {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <button type="button" className="acc-link" onClick={() => setDrafts((list) => list.filter((x) => x.key !== d.key))}>빼기</button>
       </div>
-      <p className="mf-cut">{KIND_LABEL[categoryById(d.categoryId)!.kind]} · {CUT_LABEL[categoryById(d.categoryId)!.cut]}</p>
+      <p className="mf-cut">{isRefund(d.payment) ? `돌려받은 돈 · ${categoryById(d.categoryId)!.label} 지출에서 빼고 그만큼 투자 가능액에 더합니다` : `${KIND_LABEL[categoryById(d.categoryId)!.kind]} · ${CUT_LABEL[categoryById(d.categoryId)!.cut]}`}</p>
     </div>
   )
 
@@ -266,7 +265,7 @@ export default function MoneyFlowPage() {
             <h2>빠른 기록</h2>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
-              <small className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다.</small>
+              <small className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 배우자에게 환급을 뺀 금액만 보냈다면 보낸 금액 그대로 적으면 됩니다(이미 빠져 있음).</small>
               <textarea
                 className="mf-input" rows={2} value={text} placeholder={'261002 CU제기점 1800원\n네이버페이 물티슈 12900원'}
                 onChange={(event) => setText(event.target.value)}
@@ -306,8 +305,8 @@ export default function MoneyFlowPage() {
                   <li key={e.id}>
                     <div className="mf-list-main">
                       <span className="mf-date-cell">{e.date.slice(5).replace('-', '/')}</span>
-                      <span className="mf-memo">{e.mine === false && <em className="mf-point mf-partner">배우자</em>}{e.memo || '메모 없음'}{e.payment !== 'cash' && <em className="mf-point">{e.payment === 'point_once' ? '포인트·이번만' : '포인트'}</em>}{e.editedBy && <em className="mf-point mf-edited">{e.editedBy === 'me' ? '내가 고침' : '배우자가 고침'}</em>}</span>
-                      <strong>{krw(e.amount)}</strong>
+                      <span className="mf-memo">{e.mine === false && <em className="mf-point mf-partner">배우자</em>}{e.memo || '메모 없음'}{PAYMENT_TAG[e.payment] && <em className="mf-point">{PAYMENT_TAG[e.payment]}</em>}{e.editedBy && <em className="mf-point mf-edited">{e.editedBy === 'me' ? '내가 고침' : '배우자가 고침'}</em>}</span>
+                      <strong>{isRefund(e.payment) ? '−' : ''}{krw(e.amount)}</strong>
                     </div>
                     <div className="mf-list-tools">
                       <CategorySelect label={`${e.memo || '메모 없음'} 분류 바꾸기`} value={e.categoryId} onChange={(id) => void changeCategory(e, id)} />
@@ -369,9 +368,9 @@ function MonthView({ month, thisMonth, setMonth, entries, baseMonth, baseEntries
         {loading ? <p className="acc-note">불러오는 중…</p> : entries.length === 0 ? <p className="acc-note">이 달은 기록하지 않았습니다. 매달 적을 필요는 없습니다.{baseMonth && ` 지금 기준은 ${monthLabel(baseMonth)} 기록입니다.`}</p> : (
           <>
             <dl className="acc-tiles">
-              <div className="is-main"><dt>현금 지출</dt><dd>{krw(summary.cash)}</dd></div>
+              <div className="is-main"><dt>현금 지출</dt><dd>{krw(summary.cash)}</dd>{summary.refundRegular + summary.refundOnce > 0 && <small>돌려받은 {krw(summary.refundRegular + summary.refundOnce)}을 뺀 금액</small>}</div>
               <div><dt>생활 소비(포인트 포함)</dt><dd>{krw(summary.consumption)}</dd></div>
-              <div><dt>포인트가 메운 금액</dt><dd>{krw(summary.pointRegular + summary.pointOnce)}</dd>{summary.pointOnce > 0 && <small>이번만 포인트 {krw(summary.pointOnce)}는 다음 달엔 현금이 됩니다</small>}</div>
+              <div><dt>포인트·환급이 메운 금액</dt><dd>{krw(summary.pointRegular + summary.pointOnce + summary.refundRegular + summary.refundOnce)}</dd>{summary.pointOnce + summary.refundOnce > 0 && <small>이번만 들어온 {krw(summary.pointOnce + summary.refundOnce)}는 다음 달엔 없을 수 있습니다</small>}</div>
               <div><dt>고정 · 변동 · 비정기</dt><dd className="mf-small">{krw(summary.byKind.fixed)} · {krw(summary.byKind.variable)} · {krw(summary.byKind.irregular)}</dd></div>
             </dl>
             <h3>현금 지출, 줄일 수 있나</h3>

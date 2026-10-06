@@ -113,7 +113,7 @@ describe('돈 흐름', () => {
     fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('18,860원')
     expect(screen.getByText('생활 소비(포인트 포함)').nextElementSibling?.textContent).toBe('40,360원')
-    expect(screen.getByText(/이번만 포인트 21,500원/)).toBeTruthy()
+    expect(screen.getByText(/이번만 들어온 21,500원/)).toBeTruthy()
     const cut = screen.getByLabelText('줄일 수 있나')
     expect(cut.textContent).toContain('못 줄임3,690원')
     expect(cut.textContent).toContain('줄일 수 있음15,170원')
@@ -186,5 +186,19 @@ describe('돈 흐름', () => {
     fireEvent.click(screen.getByRole('button', { name: '우리 집 합계' }))
     fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('40,000원')
+  })
+})
+
+describe('돌려받은 돈', () => {
+  it('"모두의카드 환급"은 대중교통의 매달 환급으로 읽고 그대로 저장한다', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '모두의카드 환급 23000원' } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    expect((screen.getByLabelText('모두의카드 환급 분류') as HTMLSelectElement).value).toBe('transit')
+    expect((screen.getByLabelText('모두의카드 환급 결제 수단') as HTMLSelectElement).value).toBe('refund_regular')
+    expect(screen.getByText(/돌려받은 돈 · 대중교통 지출에서 빼고/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '1건 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    expect(postBodies()[0].entries[0]).toMatchObject({ amount: 23000, categoryId: 'transit', payment: 'refund_regular' })
   })
 })

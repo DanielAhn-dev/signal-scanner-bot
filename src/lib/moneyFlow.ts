@@ -7,14 +7,26 @@
  *   - 소분류는 "어떻게 먹었나(쓰임새)"가 아니라 "무슨 물건인가"로 나눈다. 냉동피자는 식사든 간식이든 간편식·냉동.
  *   - 줄일 수 있나(must/trim/drop)는 사용자가 정한다. 기본값만 제안하고 화면은 줄이라고 판단하지 않는다.
  *   - 포인트로 낸 소비도 생활 소비에 넣는다. 다만 현금 지출과 따로 보여 주고, "이번만" 포인트는 다음 달 현금이 된다고 본다.
+ *   - 환급·캐시백(모두의카드 교통 환급, 카드 캐시백 등)은 돌려받은 만큼 현금 지출에서 뺀다 — 그만큼 투자할 수 있는 돈이 생긴다.
+ *     소비 자체는 줄지 않으므로 생활 소비·비상자금 기준에는 그대로 두고, 포인트처럼 "매달"과 "이번만"을 나눈다.
  *   - 자동 분류는 무료·즉시·재현 가능해야 한다: 사용자가 고친 기록 > 기본 단어 사전 > 자주 쓰는 소분류 제안. AI 호출 없음.
  */
 
 export type FlowKind = "fixed" | "variable" | "irregular";
 /** must = 못 줄임, trim = 줄일 수 있음(금액 조절), drop = 끊을 수 있음 */
 export type CutLevel = "must" | "trim" | "drop";
-/** point_regular = 매달 꾸준히 들어오는 포인트, point_once = 이번만(이벤트·선물·소멸 직전) */
-export type Payment = "cash" | "point_regular" | "point_once";
+/**
+ * point_regular = 매달 꾸준히 들어오는 포인트, point_once = 이번만(이벤트·선물·소멸 직전).
+ * refund_regular / refund_once = 계좌로 돌려받은 돈(환급·캐시백). 금액은 양수로 적고, 그 지출의 소분류에 붙인다.
+ */
+export type Payment = "cash" | "point_regular" | "point_once" | "refund_regular" | "refund_once";
+export const isRefund = (payment: Payment | undefined) => payment === "refund_regular" || payment === "refund_once";
+/** 통장 기준 효과: 현금 지출은 +, 환급은 −, 포인트는 0 */
+export const cashEffect = (item: { amount: number; payment?: Payment }) => {
+  const payment = item.payment ?? "cash";
+  const amount = Math.max(0, item.amount);
+  return payment === "cash" ? amount : isRefund(payment) ? -amount : 0;
+};
 /** 시드 만들기(seed_builder_months.expenses)의 큰 항목. 소분류를 여기로 묶어 넘긴다. */
 export type SeedExpenseKey = "food" | "housing" | "vehicle" | "education" | "tax" | "subscriptions" | "other";
 
@@ -95,7 +107,7 @@ const DICTIONARY: Record<string, string[]> = {
   hygiene: ["세제", "휴지", "화장지", "샴푸", "치약", "칫솔", "물티슈", "기저귀", "섬유유연제"],
   kitchen: ["수세미", "지퍼백", "키친타올", "주방"],
   gadget: ["체중계", "충전기", "케이블", "전구", "건전지", "멀티탭"],
-  transit: ["버스", "지하철", "교통카드", "교통요금", "교통비", "티머니", "ktx", "srt"],
+  transit: ["버스", "지하철", "교통카드", "교통요금", "교통비", "티머니", "ktx", "srt", "모두의카드", "k패스", "k-패스", "케이패스", "기후동행"],
   fuel: ["주유", "주유소", "기름값"],
   taxi: ["택시", "카카오t"],
   parking: ["주차", "하이패스", "통행료"],
@@ -187,6 +199,15 @@ export function needsItemName(memo: string): boolean {
 
 /** 이 금액 미만인데 분류를 못 한 줄은 묻지 않고 '기타 생활'로 둔다. 작은 금액은 틀려도 점검 결론이 바뀌지 않는다 */
 export const SMALL_UNKNOWN_LIMIT = 10_000;
+
+/** 메모에 환급·캐시백이 있으면 돌려받은 돈으로 본다. 교통 환급 카드처럼 매달 들어오는 것은 "매달" */
+const REFUND_WORDS = ["환급", "캐시백", "페이백", "돌려받"];
+const REGULAR_REFUND_WORDS = ["모두의카드", "k패스", "케이패스", "기후동행"];
+export function detectPayment(memo: string): Payment {
+  const text = normalizeMemo(memo).replace(/[ -]/g, "");
+  if (!REFUND_WORDS.some((w) => text.includes(w))) return "cash";
+  return REGULAR_REFUND_WORDS.some((w) => text.includes(w)) ? "refund_regular" : "refund_once";
+}
 
 /** 분류를 못 했을 때 보여 줄 버튼: 최근 기록에서 자주 쓴 소분류 순, 모자라면 흔한 소분류로 채운다. */
 export function suggestCategories(recentCategoryIds: string[], count = 3): string[] {
@@ -312,6 +333,9 @@ export type FlowSummary = {
   cash: number;
   pointRegular: number;
   pointOnce: number;
+  /** 돌려받은 돈(환급·캐시백). cash에서 이미 뺐다 */
+  refundRegular: number;
+  refundOnce: number;
   /** 현금 기준 줄일 수 있나 */
   cashByCut: CutSplit;
   /** 소비(포인트 포함) 기준 줄일 수 있나 — 비상자금 기준은 여기 must를 쓴다(포인트가 끊겨도 필요한 돈) */
@@ -326,7 +350,7 @@ const addSplit = (target: CutSplit, source: CutSplit) => { target.must += source
 
 export function summarizeItems(items: FlowItem[]): FlowSummary {
   const summary: FlowSummary = {
-    consumption: 0, cash: 0, pointRegular: 0, pointOnce: 0,
+    consumption: 0, cash: 0, pointRegular: 0, pointOnce: 0, refundRegular: 0, refundOnce: 0,
     cashByCut: emptySplit(), consumptionByCut: emptySplit(),
     byKind: { fixed: 0, variable: 0, irregular: 0 }, byMajor: [], byCategory: [],
   };
@@ -337,6 +361,16 @@ export function summarizeItems(items: FlowItem[]): FlowSummary {
     const amount = Math.max(0, item.amount);
     const payment = item.payment ?? "cash";
     const split = splitByCut(item);
+    if (isRefund(payment)) {
+      // 소비는 그대로, 통장에서 나간 돈만 줄인다(같은 소분류·같은 줄일 수 있나 칸에서)
+      summary.cash -= amount;
+      if (payment === "refund_regular") summary.refundRegular += amount; else summary.refundOnce += amount;
+      summary.cashByCut.must -= split.must; summary.cashByCut.trim -= split.trim; summary.cashByCut.drop -= split.drop;
+      const cat = cats.get(category.id) ?? { categoryId: category.id, amount: 0, cash: 0 };
+      cat.cash -= amount;
+      cats.set(category.id, cat);
+      continue;
+    }
     summary.consumption += amount;
     addSplit(summary.consumptionByCut, split);
     if (payment === "cash") { summary.cash += amount; addSplit(summary.cashByCut, split); }
@@ -352,6 +386,8 @@ export function summarizeItems(items: FlowItem[]): FlowSummary {
     if (payment === "cash") cat.cash += amount;
     cats.set(category.id, cat);
   }
+  // 환급이 그 칸 지출보다 크게 적힌 경우(다른 달에 쓴 돈의 환급 등) 칸이 음수가 되지 않게 한다
+  for (const level of ["must", "trim", "drop"] as const) summary.cashByCut[level] = Math.max(0, summary.cashByCut[level]);
   summary.byMajor = [...majors.values()].sort((a, b) => b.amount - a.amount);
   summary.byCategory = [...cats.values()].sort((a, b) => b.amount - a.amount);
   return summary;
@@ -390,9 +426,9 @@ export type FlowCheckResult = {
   summary: FlowSummary;
   /** 지금 투자 가능액 = 수입 − 현금 지출 − 비상자금 적립 (꾸준한 포인트는 계속 들어온다고 본다) */
   available: number;
-  /** "이번만" 포인트가 끊기면: 그 소비가 현금이 된다 */
+  /** "이번만" 포인트·환급이 끊기면: 그 소비가 현금이 된다 */
   availableWithoutOncePoints: number;
-  /** 포인트가 전부 없으면 */
+  /** 포인트·환급이 전부 없으면 */
   availableWithoutPoints: number;
   /** 최대로 줄이면 = 수입 − 현금 지출 중 못 줄임 − 비상자금 적립. 투자 가능액의 상한 */
   maxIfCut: number;
@@ -420,12 +456,14 @@ export function evaluateFlowCheck(input: FlowCheckInput): FlowCheckResult {
   const available = income - summary.cash - reserve;
   const cuttable = new Map<string, { categoryId: string; trim: number; drop: number }>();
   for (const item of all) {
-    if ((item.payment ?? "cash") !== "cash") continue;
+    const payment = item.payment ?? "cash";
+    if (payment !== "cash" && !isRefund(payment)) continue;
     const split = splitByCut(item);
     if (split.trim + split.drop === 0) continue;
+    const sign = isRefund(payment) ? -1 : 1;
     const row = cuttable.get(item.categoryId) ?? { categoryId: item.categoryId, trim: 0, drop: 0 };
-    row.trim += split.trim;
-    row.drop += split.drop;
+    row.trim += sign * split.trim;
+    row.drop += sign * split.drop;
     cuttable.set(item.categoryId, row);
   }
   const irregularDueByMonth: Record<number, number> = {};
@@ -441,24 +479,24 @@ export function evaluateFlowCheck(input: FlowCheckInput): FlowCheckResult {
   return {
     summary,
     available,
-    availableWithoutOncePoints: available - summary.pointOnce,
-    availableWithoutPoints: available - summary.pointOnce - summary.pointRegular,
+    availableWithoutOncePoints: available - summary.pointOnce - summary.refundOnce,
+    availableWithoutPoints: available - summary.pointOnce - summary.pointRegular - summary.refundOnce - summary.refundRegular,
     maxIfCut: income - summary.cashByCut.must - reserve,
     room: summary.cashByCut.trim + summary.cashByCut.drop,
-    topCuttable: [...cuttable.values()].sort((a, b) => b.trim + b.drop - (a.trim + a.drop)),
+    topCuttable: [...cuttable.values()].map((r) => ({ ...r, trim: Math.max(0, r.trim), drop: Math.max(0, r.drop) })).filter((r) => r.trim + r.drop > 0).sort((a, b) => b.trim + b.drop - (a.trim + a.drop)),
     mustMonthly: summary.consumptionByCut.must,
     fixedRatio: summary.consumption > 0 ? summary.byKind.fixed / summary.consumption : null,
     irregularDueByMonth,
   };
 }
 
-/** 시드 만들기 지출 칸으로 넘길 금액(포인트 제외, 현금 기준). 시드 만들기는 통장 흐름을 다룬다. */
+/** 시드 만들기 지출 칸으로 넘길 금액(포인트 제외, 환급은 뺀 현금 기준). 시드 만들기는 통장 흐름을 다룬다. */
 export function toSeedExpenses(items: FlowItem[]): Record<SeedExpenseKey, number> {
   const out: Record<SeedExpenseKey, number> = { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: 0 };
   for (const item of items) {
-    if ((item.payment ?? "cash") !== "cash") continue;
     const category = categoryById(item.categoryId) ?? categoryById(FALLBACK_CATEGORY_ID)!;
-    out[category.seed] += Math.max(0, item.amount);
+    out[category.seed] += cashEffect(item);
   }
+  for (const key of Object.keys(out) as SeedExpenseKey[]) out[key] = Math.max(0, out[key]);
   return out;
 }

@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Save, Wallet } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { useCurrentClientId } from '../../stores/profileStore'
+import { HOUSEHOLDS, useHouseholdIncome, type Household, type HouseholdIncome } from '../../lib/householdIncome'
+import { irregularMonthly, toSeedExpenses, type FlowCheckInput } from '../../../../src/lib/moneyFlow'
 import './seed-builder.css'
 
-type Household = 'solo' | 'single-income' | 'dual-income'
 type ExpenseKey = 'food' | 'housing' | 'vehicle' | 'education' | 'tax' | 'subscriptions' | 'other' | 'card' | 'water' | 'gas' | 'residentTax' | 'propertyTax' | 'vehicleTax' | 'taxAdjustment'
 type ExtraIncomeKey = 'incentive' | 'vacation' | 'taxRefund' | 'other'
 type Entry = { id: string; date: string; amount: number; deposited: number; memo: string; cancelled: boolean }
@@ -79,6 +80,8 @@ const monthIncome = (record: MonthRecord) => record.ownIncome + (record.househol
 // 여력은 0으로 자르지 않는다. 적자 규모를 그대로 보여줘야 이번 달 목표를 쉬어갈지 판단할 수 있다.
 const monthAvailable = (record: MonthRecord) => monthIncome(record) - sumValues(record.expenses) - record.reserve
 const monthKey = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
+const incomeOf = (r: MonthRecord): HouseholdIncome => ({ household: r.household, ownIncome: r.ownIncome, partnerIncome: r.partnerIncome, ownPayday: r.ownPayday, partnerPayday: r.partnerPayday })
+const sameIncome = (a: HouseholdIncome, b: HouseholdIncome) => JSON.stringify(a) === JSON.stringify(b)
 
 function AmountHint({ id, value }: { id: string; value: number }) {
   return <small className="seed-hint" id={id}>{value > 0 ? `약 ${koreanAmount(value)}` : ' '}</small>
@@ -115,7 +118,13 @@ export default function SeedBuilderPage() {
   const [annualGoal, setAnnualGoal] = useState('')
   const [confirmTransfer, setConfirmTransfer] = useState(false)
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
+  const [latestCheck, setLatestCheck] = useState<{ date: string; input: FlowCheckInput } | null>(null)
   amountMask = masked
+  // 수입·급여일은 '우리 집 수입'(시작하기·돈 흐름 점검과 같은 값). 기록 안 한 이번 달·다음 달은 그 값으로 채워 두고,
+  // 이번 달 이후의 수입을 고치면 우리 집 수입도 바로 바뀐다. 지난달 기록은 그달 실제 값이라 건드리지 않는다
+  const incomeStore = useHouseholdIncome()
+  const incomeBase = incomeStore.value
+  const blankFor = (key: string): MonthRecord => (key >= monthKey(new Date()) && incomeBase ? { ...emptyRecord(), ...incomeBase } : emptyRecord())
 
   const year = Number(selectedMonth.slice(0, 4))
   const month = Number(selectedMonth.slice(5))
@@ -137,7 +146,7 @@ export default function SeedBuilderPage() {
           return [key, { ...defaults, ...record, expenses: { ...defaults.expenses, ...record.expenses }, extraIncome: { ...defaults.extraIncome, ...record.extraIncome } }]
         }))
         setRecords(loaded)
-        setDraft(loaded[selectedMonth] ?? emptyRecord())
+        setDraft(loaded[selectedMonth] ?? blankFor(selectedMonth))
         // 월 자동 입금(목표 트래커가 따르는 값)이 이번 달 계획의 기준 — 다른 화면에서 바꿨어도 여기 계획이 같이 보이게 한다
         const nowKey = monthKey(new Date())
         void apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 }).then((prefsRes) => {
@@ -162,7 +171,7 @@ export default function SeedBuilderPage() {
   const available = monthAvailable(draft)
   const isDeficit = income > 0 && available < 0
   const isTight = !isDeficit && income > 0 && draft.plan > 0 && draft.plan <= available && draft.plan >= available * 0.8
-  const dirty = JSON.stringify(draft) !== JSON.stringify(records[selectedMonth] ?? emptyRecord())
+  const dirty = JSON.stringify(draft) !== JSON.stringify(records[selectedMonth] ?? blankFor(selectedMonth))
   const previousKey = monthKey(new Date(year, month - 2, 15))
   const previous = records[previousKey]
   const previousExpense = previous ? sumValues(previous.expenses) : null
@@ -203,6 +212,23 @@ export default function SeedBuilderPage() {
   const price = Number(sharePrice)
   const canCompare = confirmedCash !== '' && sharePrice !== '' && Number.isSafeInteger(cash) && cash >= 0 && Number.isSafeInteger(price) && price > 0
 
+  // 우리 집 수입은 늦게 도착할 수 있다 — 아직 아무것도 적지 않은 빈 달이면 그때 채운다
+  const incomeBaseJson = JSON.stringify(incomeBase)
+  useEffect(() => {
+    if (loading || records[selectedMonth]) return
+    setDraft((current) => (JSON.stringify(current) === JSON.stringify(emptyRecord()) ? blankFor(selectedMonth) : current))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomeBaseJson, loading, selectedMonth])
+
+  // 점검에서 정한 평소 한 달 지출을 이번 달 지출 칸으로 가져올 수 있게 최근 점검을 읽어 둔다
+  useEffect(() => {
+    if (!clientId) return
+    const today = todayKst()
+    apiFetch(`/api/ui/money-flow?from=${today}&to=${today}`, { cacheMs: 0, retries: 0 })
+      .then((res) => { const c = Array.isArray(res?.checks) ? res.checks[0] : null; setLatestCheck(c?.input ? { date: String(c.date), input: c.input } : null) })
+      .catch(() => {})
+  }, [clientId])
+
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault() }
@@ -216,14 +242,31 @@ export default function SeedBuilderPage() {
     const next = monthKey(new Date(year, month - 1 + offset, 15))
     setSelectedMonth(next)
     setEntryForm({ date: '', amount: '', memo: '' })
-    setDraft(next.slice(0, 4) === selectedMonth.slice(0, 4) ? records[next] ?? emptyRecord() : emptyRecord())
+    setDraft(next.slice(0, 4) === selectedMonth.slice(0, 4) ? records[next] ?? blankFor(next) : blankFor(next))
     setNotice('')
   }
 
-  const updateAmount = (field: 'ownIncome' | 'partnerIncome' | 'reserve' | 'plan', value: string) => {
+  const updateAmount = (field: 'reserve' | 'plan', value: string) => {
     const parsed = Number(value)
     setDraft((current) => ({ ...current, [field]: Number.isFinite(parsed) ? parsed : 0 }))
     setNotice('')
+  }
+
+  // 수입 칸을 고칠 때 — 이번 달 이후면 우리 집 수입에도 바로 저장한다(이번 달 저장 버튼을 누르지 않아도 남는다)
+  const editIncome = (patch: Partial<MonthRecord>) => {
+    const next = { ...draft, ...patch }
+    setDraft(next)
+    setNotice('')
+    if (selectedMonth >= monthKey(new Date())) incomeStore.set(incomeOf(next))
+  }
+  const incomeMismatch = !!incomeBase && incomeStore.saved && selectedMonth >= monthKey(new Date()) && !sameIncome(incomeOf(draft), incomeBase)
+
+  const fillFromCheck = () => {
+    if (!latestCheck) return
+    const { input } = latestCheck
+    const seed = toSeedExpenses([...input.fixed, ...input.variable, ...input.irregular.map((i) => ({ categoryId: i.categoryId, amount: irregularMonthly(i), payment: i.payment }))])
+    setDraft((current) => ({ ...current, expenses: { ...emptyRecord().expenses, ...seed }, reserve: input.reserveMonthly }))
+    setNotice(`${latestCheck.date} 점검의 평소 한 달 지출(현금 기준, 환급 뺀 금액)과 비상자금 적립을 채웠습니다. 이번 달에 다르게 나간 것만 고치고 저장하세요.`)
   }
 
   const fillFromPrevious = () => {
@@ -354,7 +397,7 @@ export default function SeedBuilderPage() {
 
   const householdButtons = (
     <div className="seed-segments" role="group" aria-label="가구 형태">
-                  {([['solo', '혼자'], ['single-income', '외벌이'], ['dual-income', '맞벌이']] as const).map(([value, label]) => <button key={value} type="button" className={draft.household === value ? 'is-active' : ''} aria-pressed={draft.household === value} onClick={() => setDraft((current) => ({ ...current, household: value, partnerIncome: value === 'dual-income' ? current.partnerIncome : 0, partnerPayday: value === 'dual-income' ? current.partnerPayday : null }))}>{label}</button>)}
+      {HOUSEHOLDS.map(([value, label]) => <button key={value} type="button" className={draft.household === value ? 'is-active' : ''} aria-pressed={draft.household === value} onClick={() => editIncome({ household: value, partnerIncome: value === 'dual-income' ? draft.partnerIncome : 0, partnerPayday: value === 'dual-income' ? draft.partnerPayday : null })}>{label}</button>)}
     </div>
   )
 
@@ -416,14 +459,15 @@ export default function SeedBuilderPage() {
         {onboardStep === 0 && <div className="seed-input-group">
           <h3>수입</h3>
           {householdButtons}
-          <label>{draft.household === 'solo' ? '월수입' : '본인 월수입'} <input type="number" inputMode="numeric" min="0" step="1000" value={draft.ownIncome || ''} placeholder="0" aria-describedby="hint-ob-own" onChange={(event) => updateAmount('ownIncome', event.target.value)} /> <span>원</span></label>
+          <label>{draft.household === 'solo' ? '월수입' : '본인 월수입'} <input type="number" inputMode="numeric" min="0" step="1000" value={draft.ownIncome || ''} placeholder="0" aria-describedby="hint-ob-own" onChange={(event) => editIncome({ ownIncome: Number(event.target.value) || 0 })} /> <span>원</span></label>
           <AmountHint id="hint-ob-own" value={draft.ownIncome} />
-          {draft.household === 'dual-income' && <><label>배우자 월수입 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.partnerIncome || ''} placeholder="0" aria-describedby="hint-ob-partner" onChange={(event) => updateAmount('partnerIncome', event.target.value)} /> <span>원</span></label><AmountHint id="hint-ob-partner" value={draft.partnerIncome} /></>}
+          {draft.household === 'dual-income' && <><label>배우자 월수입 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.partnerIncome || ''} placeholder="0" aria-describedby="hint-ob-partner" onChange={(event) => editIncome({ partnerIncome: Number(event.target.value) || 0 })} /> <span>원</span></label><AmountHint id="hint-ob-partner" value={draft.partnerIncome} /></>}
         </div>}
         {onboardStep === 1 && <div className="seed-input-group">
           <h3>이번 달 큰 지출</h3>
-          <label>한 달 지출 합계(대략) <input type="number" inputMode="numeric" min="0" step="10000" value={draft.expenses.other || ''} placeholder="0" aria-describedby="hint-ob-expense" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, other: Number.isFinite(value) ? value : 0 } })) }} /> <span>원</span></label>
-          <AmountHint id="hint-ob-expense" value={draft.expenses.other} />
+          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>지금 상태 점검 값 가져오기</button>}
+          <label>한 달 지출 합계(대략) <input type="number" inputMode="numeric" min="0" step="10000" value={expenseTotal || ''} placeholder="0" aria-describedby="hint-ob-expense" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...emptyRecord().expenses, other: Number.isFinite(value) ? value : 0 } })) }} /> <span>원</span></label>
+          <AmountHint id="hint-ob-expense" value={expenseTotal} />
           <p className="seed-payday-help">항목을 나누지 않고 합계만 적어도 됩니다. 지금은 &lsquo;기타&rsquo;로 기록되고, 나중에 항목별로 나눌 수 있습니다. 카드대금까지 포함한 대략의 금액이면 충분합니다.</p>
         </div>}
         {onboardStep === 2 && <div className="seed-input-group">
@@ -438,24 +482,29 @@ export default function SeedBuilderPage() {
           <button type="button" className="seed-link-button" onClick={() => { finishOnboarding() }}>자세히 직접 입력하기</button>
           <p role="status">{notice}</p>
           {onboardStep > 0 && <button type="button" className="seed-secondary" onClick={() => setOnboardStep(onboardStep - 1)}>이전</button>}
-          {onboardStep < 2 ? <button type="button" className="seed-primary" onClick={() => setOnboardStep(onboardStep + 1)}>{onboardStep === 1 && draft.expenses.other === 0 ? '건너뛰기' : '다음'}</button>
+          {onboardStep < 2 ? <button type="button" className="seed-primary" onClick={() => setOnboardStep(onboardStep + 1)}>{onboardStep === 1 && expenseTotal === 0 ? '건너뛰기' : '다음'}</button>
             : <button type="button" className="seed-primary" disabled={saving} onClick={async () => { if (await save()) finishOnboarding() }}><Save size={16} /> 저장하고 시작</button>}
         </div>
       </section>) : <>
       <section className="seed-editor">
         <div className="seed-section-title"><div><h2>이번 달 돈의 흐름</h2><p>큰 금액만 입력해도 됩니다. 항목별 거래 내역은 필요하지 않습니다.</p></div></div>
-        {previous && <div className="seed-fill-row"><button type="button" className="seed-secondary" onClick={fillFromPrevious}>지난달 값 채우기</button><Detail><span>수입·급여일·식비 등 반복 항목만 채웁니다. 일시 항목은 복사하지 않습니다.</span></Detail></div>}
+        {(previous || latestCheck) && <div className="seed-fill-row">
+          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>지금 상태 점검 값으로 지출 채우기</button>}
+          {previous && <button type="button" className="seed-secondary" onClick={fillFromPrevious}>지난달 값 채우기</button>}
+          <Detail><span>점검 값은 평소 한 달 기준(비정기는 1년 ÷ 12)입니다. 지난달 값은 수입·급여일·식비 등 반복 항목만 채우고 일시 항목은 복사하지 않습니다.</span></Detail>
+        </div>}
+        {incomeMismatch && incomeBase && <p className="seed-warning">이 달 수입이 우리 집 수입(시작하기·돈 흐름 점검과 같은 값)과 다릅니다. <button type="button" className="seed-link-button" onClick={() => setDraft((current) => ({ ...current, ...incomeBase }))}>우리 집 수입으로 맞추기</button> 이 달만 다르다면 그대로 저장해도 됩니다.</p>}
         <div className="seed-form-grid">
           <div className="seed-input-group">
             <h3>수입</h3>
             {householdButtons}
-            <label> {draft.household === 'solo' ? '월수입' : '본인 월수입'} <input type="number" inputMode="numeric" min="0" step="1000" value={draft.ownIncome || ''} placeholder="0" aria-describedby="hint-own-income" onChange={(event) => updateAmount('ownIncome', event.target.value)} /> <span>원</span></label>
+            <label> {draft.household === 'solo' ? '월수입' : '본인 월수입'} <input type="number" inputMode="numeric" min="0" step="1000" value={draft.ownIncome || ''} placeholder="0" aria-describedby="hint-own-income" onChange={(event) => editIncome({ ownIncome: Number(event.target.value) || 0 })} /> <span>원</span></label>
             <AmountHint id="hint-own-income" value={draft.ownIncome} />
-            {draft.household === 'dual-income' && <label>배우자 월수입 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.partnerIncome || ''} placeholder="0" aria-describedby="hint-partner-income" onChange={(event) => updateAmount('partnerIncome', event.target.value)} /> <span>원</span></label>}
+            {draft.household === 'dual-income' && <label>배우자 월수입 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.partnerIncome || ''} placeholder="0" aria-describedby="hint-partner-income" onChange={(event) => editIncome({ partnerIncome: Number(event.target.value) || 0 })} /> <span>원</span></label>}
             {draft.household === 'dual-income' && <AmountHint id="hint-partner-income" value={draft.partnerIncome} />}
             <div className="seed-paydays">
-              <label>본인 급여일 <input type="number" inputMode="numeric" min="1" max="31" value={draft.ownPayday ?? ''} placeholder="선택" onChange={(event) => { setDraft((current) => ({ ...current, ownPayday: event.target.value === '' ? null : Number(event.target.value) })); setNotice('') }} /> <span>일</span></label>
-              {draft.household === 'dual-income' && <label>배우자 급여일 <input type="number" inputMode="numeric" min="1" max="31" value={draft.partnerPayday ?? ''} placeholder="선택" onChange={(event) => { setDraft((current) => ({ ...current, partnerPayday: event.target.value === '' ? null : Number(event.target.value) })); setNotice('') }} /> <span>일</span></label>}
+              <label>본인 급여일 <input type="number" inputMode="numeric" min="1" max="31" value={draft.ownPayday ?? ''} placeholder="선택" onChange={(event) => editIncome({ ownPayday: event.target.value === '' ? null : Number(event.target.value) })} /> <span>일</span></label>
+              {draft.household === 'dual-income' && <label>배우자 급여일 <input type="number" inputMode="numeric" min="1" max="31" value={draft.partnerPayday ?? ''} placeholder="선택" onChange={(event) => editIncome({ partnerPayday: event.target.value === '' ? null : Number(event.target.value) })} /> <span>일</span></label>}
             </div>
             {paydays.length > 0 && <p className="seed-payday-summary">{paydays.map((entry) => `${entry.day}일 ${entry.label} ${krw(entry.amount)}`).join(' · ')}</p>}
             <button className="seed-link-button" type="button" onClick={() => setShowExtraIncome(!showExtraIncome)}>{showExtraIncome ? '추가 수입 접기' : '인센티브·휴가비 등 추가 수입'}</button>
@@ -537,7 +586,7 @@ export default function SeedBuilderPage() {
           {riseTip && <p className="seed-insight-tip">{riseTip.label} 지출이 지난달보다 {krw(riseTip.difference)} 늘었습니다. 반복되는 지출인지 확인해 보세요. 이 중 월 {krw(Math.min(riseTip.difference, 10_000))}을 실제로 줄여 시드로 확보한다면 1년 추가 원금은 {krw(Math.min(riseTip.difference, 10_000) * 12)}입니다. 자동으로 모인 돈은 아닙니다. 세금·공과금 같은 일시 항목은 반복 지출로 판단하지 않습니다.</p>}
         </> : <p className="seed-empty">이번 달과 지난달 기록을 저장하면 항목별 변화가 보입니다.</p>}
       </section></Detail>
-      <Detail><p className="seed-next-note">지난달 기록은 변화 비교에만 사용합니다. 새 달 수입·카드대금·고정비·비정기 항목은 자동으로 가져오지 않으며, 그달 금액을 직접 입력한 뒤 투자 여력을 확인합니다.</p></Detail>
+      <Detail><p className="seed-next-note">지난달 기록은 변화 비교에만 사용합니다. 새 달 수입·급여일은 우리 집 수입으로 미리 채우고, 카드대금·고정비·비정기 항목은 그달 금액을 직접 입력하거나 점검 값으로 채운 뒤 투자 여력을 확인합니다.</p></Detail>
       <section className="seed-next-step" id="seed-next-step">
         <div className="seed-section-title"><div><h2>시드에 맞는 다음 행동</h2><p>저렴한 종목을 억지로 고르지 않아도 됩니다. 매수하지 않고 모으는 것도 선택입니다.</p></div></div>
         <div className="seed-next-inputs">

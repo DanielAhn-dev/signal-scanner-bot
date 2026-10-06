@@ -7,7 +7,7 @@ import { wizardFromCheck } from '../start-wizard'
 
 const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
-vi.mock('../../stores/profileStore', () => ({ useCurrentClientId: () => 'test-user' }))
+vi.mock('../../stores/profileStore', () => ({ useCurrentClientId: () => 'test-user', getCurrentClientIdFromStore: () => 'test-user' }))
 
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 const month = today.slice(0, 7)
@@ -82,5 +82,43 @@ describe('지금 상태 점검', () => {
   it('시작하기 마법사로 옮길 때는 현금 기준으로 고정·카드값을 나눈다', () => {
     expect(wizardFromCheck({ ...savedInput, variable: [...savedInput.variable, { categoryId: 'gadget', amount: 21_500, payment: 'point_once' }] }))
       .toEqual({ income: 4_000_000, otherFixed: 917_000, card: 600_000 })
+  })
+})
+
+describe('우리 집 수입(시작하기·시드 만들기와 같은 값)', () => {
+  const stored = { household: 'dual-income', ownIncome: 3_000_000, partnerIncome: 2_000_000, ownPayday: 25, partnerPayday: 10 }
+  const route = (userState: unknown) => (path: string, o?: { method?: string }) => {
+    if (path === '/api/ui/user-state') return Promise.resolve(o?.method === 'POST' ? { ok: true } : { data: userState })
+    if (path.startsWith('/api/ui/seed-builder')) return Promise.resolve(o?.method === 'PUT' ? { ok: true } : { data: [] })
+    return Promise.resolve({ entries: [], rules: [], checks: [{ id: 'c1', date: '2026-09-30', label: '', input: savedInput }] })
+  }
+
+  it('저장된 맞벌이 수입을 사람별로 보여 주고, 시드 만들기에 반영할 때 나눈 그대로 보낸다', async () => {
+    window.localStorage.clear()
+    apiFetchMock.mockImplementation(route({ householdIncome: { value: stored, updatedAt: Date.now() } }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderCheck()
+    await waitFor(() => expect((screen.getByLabelText('배우자 월 수입(세후)') as HTMLInputElement).value).toBe('2000000'))
+    expect((screen.getByLabelText('본인 월 수입(세후)') as HTMLInputElement).value).toBe('3000000')
+    // 5,000,000 − 현금 지출 1,517,000 − 비상자금 200,000
+    expect(screen.getByLabelText('점검 결과')).toHaveTextContent('지금 투자 가능액(월)3,283,000원')
+    fireEvent.click(screen.getByRole('button', { name: '시드 만들기 이번 달에 반영' }))
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'PUT' })))
+    const body = JSON.parse(apiFetchMock.mock.calls.find(([p, o]) => p === '/api/ui/seed-builder' && o?.method === 'PUT')![1].body)
+    expect(body).toMatchObject({ household: 'dual-income', ownIncome: 3_000_000, partnerIncome: 2_000_000, ownPayday: 25, partnerPayday: 10 })
+  })
+
+  it('저장값이 없으면 지난 점검 합계로 시작하고, 나눠 적으면 점검을 저장하지 않아도 우리 집 수입에 저장된다', async () => {
+    window.localStorage.clear()
+    apiFetchMock.mockImplementation(route({}))
+    renderCheck()
+    await waitFor(() => expect((screen.getByLabelText('월 수입(세후)') as HTMLInputElement).value).toBe('4000000'))
+    fireEvent.click(screen.getByRole('button', { name: '맞벌이' }))
+    fireEvent.change(screen.getByLabelText('본인 월 수입(세후)'), { target: { value: '2500000' } })
+    fireEvent.change(screen.getByLabelText('배우자 월 수입(세후)'), { target: { value: '1500000' } })
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/user-state', expect.objectContaining({ method: 'POST' })), { timeout: 2000 })
+    const posted = apiFetchMock.mock.calls.filter(([p, o]) => p === '/api/ui/user-state' && o?.method === 'POST').map(([, o]) => JSON.parse(o.body)).pop()
+    expect(posted).toMatchObject({ key: 'householdIncome', value: { household: 'dual-income', ownIncome: 2_500_000, partnerIncome: 1_500_000 } })
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/ui/money-flow', expect.objectContaining({ method: 'POST' }))
   })
 })

@@ -9,7 +9,7 @@ const maxAmount = 100_000_000_000
 const maxEntriesPerPost = 50
 const maxCheckItems = 80
 const cutLevels = ['must', 'trim', 'drop'] as const
-const payments = ['cash', 'point_regular', 'point_once'] as const
+const payments = ['cash', 'point_regular', 'point_once', 'refund_regular', 'refund_once'] as const
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function amount(value: unknown, min = 0): number | null {

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { futureValue, REALISTIC_ANNUAL_PCT, suggestMonthly } from '../../lib/startPlan'
 import { useJourney } from '../../lib/journey'
+import { EMPTY_HOUSEHOLD_INCOME, HOUSEHOLDS, householdTotal, useHouseholdIncome, withHousehold, type HouseholdIncome } from '../../lib/householdIncome'
 import {
   FLOW_CATEGORIES, categoryById, compareSummaries, evaluateFlowCheck, toSeedExpenses,
   type CutLevel, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
@@ -16,6 +17,11 @@ type IrrRow = IrregularItem & { key: string }
 const krw = (value: number) => `${value < 0 ? '−' : ''}${Math.abs(Math.round(value)).toLocaleString('ko-KR')}원`
 const man = (value: number) => `${Math.round(value / 10_000).toLocaleString('ko-KR')}만원`
 const CUT_LABEL: Record<CutLevel, string> = { must: '못 줄임', trim: '줄일 수 있음', drop: '끊을 수 있음' }
+/** 결제 수단 고르기 — 환급·캐시백은 돌려받은 돈이라 그만큼 현금 지출에서 빠진다 */
+export const PAYMENT_OPTIONS: Array<[Payment, string]> = [
+  ['cash', '카드·현금'], ['point_regular', '포인트(매달 꾸준히)'], ['point_once', '포인트(이번만)'],
+  ['refund_regular', '환급·캐시백(매달)'], ['refund_once', '환급·캐시백(이번만)'],
+]
 const newKey = () => Math.random().toString(36).slice(2)
 const num = (v: string) => { const n = Math.round(Number(v.replace(/,/g, ''))); return Number.isFinite(n) && n > 0 ? n : 0 }
 const catsOf = (kind: FlowKind) => FLOW_CATEGORIES.filter((c) => c.kind === kind)
@@ -66,7 +72,7 @@ function ItemRows({ kind, rows, setRows }: { kind: 'fixed' | 'variable'; rows: R
             </select>
             {level !== 'must' && <input type="number" inputMode="numeric" min="0" aria-label={`${name} 못 줄이는 몫`} value={r.mustPart || ''} placeholder="이 중 못 줄이는 몫(선택)" onChange={(e) => update(r.key, { mustPart: Math.min(num(e.target.value), r.amount) || undefined })} />}
             <select aria-label={`${name} 결제 수단`} value={r.payment ?? 'cash'} onChange={(e) => update(r.key, { payment: e.target.value as Payment })}>
-              <option value="cash">카드·현금</option><option value="point_regular">포인트(꾸준히)</option><option value="point_once">포인트(이번만)</option>
+              {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
             <button type="button" className="acc-link" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>빼기</button>
           </div>
@@ -106,7 +112,10 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
   const navigate = useNavigate()
   const latest = checks[0] ?? null
   const withKeys = <T,>(list: T[] | undefined) => (list ?? []).map((x) => ({ ...x, key: newKey() }))
-  const [income, setIncome] = useState(latest ? String(latest.input.monthlyIncome) : '')
+  // 수입은 '우리 집 수입' 한 벌을 시작하기·시드 만들기와 같이 쓴다. 저장값이 생기기 전에는 지난 점검의 합계로 시작한다
+  const incomeStore = useHouseholdIncome()
+  const [household, setHousehold] = useState<HouseholdIncome>(() => (latest ? { ...EMPTY_HOUSEHOLD_INCOME, ownIncome: latest.input.monthlyIncome } : EMPTY_HOUSEHOLD_INCOME))
+  const [householdLoaded, setHouseholdLoaded] = useState(false)
   const [reserve, setReserve] = useState(latest ? String(latest.input.reserveMonthly) : '')
   const [fixed, setFixed] = useState<Row[]>(() => withKeys(latest?.input.fixed))
   const [variable, setVariable] = useState<Row[]>(() => withKeys(latest?.input.variable))
@@ -117,16 +126,14 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
   // 저장하고 나면 길잡이의 다음 단계를 바로 보여 준다(시작하기에서 온 사람은 돌아가기 버튼이 그 역할)
   const journey = useJourney(saved && !fromStart)
 
-  // 처음 점검이면 시드 만들기의 최근 수입을 미리 채운다(비어 있을 때만)
+  // 저장된 우리 집 수입이 있으면 그 값이 기준. 없고 지난 점검도 없으면 시드 만들기 기록에서 가져온 값을 보여 준다
   useEffect(() => {
-    if (latest) return
-    const year = Number(kstMonth().slice(0, 4))
-    const recent = (y: number) => apiFetch(`/api/ui/seed-builder?year=${y}`, { cacheMs: 0, retries: 0 })
-      .then((res) => [...(Array.isArray(res?.data) ? res.data : [])].reverse().find((r: any) => Number(r?.ownIncome) > 0))
-    recent(year).then((m) => m ?? recent(year - 1)).then((m: any) => {
-      if (m) setIncome((cur) => cur || String(Number(m.ownIncome) + (m.household === 'dual-income' ? Number(m.partnerIncome) || 0 : 0)))
-    }).catch(() => {})
-  }, [latest])
+    if (householdLoaded || !incomeStore.ready) return
+    if (incomeStore.value && (incomeStore.saved || !latest)) setHousehold(incomeStore.value)
+    setHouseholdLoaded(true)
+  }, [incomeStore.ready, incomeStore.value, incomeStore.saved, householdLoaded, latest])
+  const editHousehold = (next: HouseholdIncome) => { setHousehold(next); incomeStore.set(next) }
+  const dual = household.household === 'dual-income'
 
   // 가장 최근에 기록한 달(이번 달 포함)의 지출로 채운다 — 매달 적지 않아도 마지막 기록이 기준
   const recordedMonth = entries.map((e) => e.date.slice(0, 7)).sort().pop() ?? null
@@ -141,10 +148,10 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
   }
 
   const input: FlowCheckInput = useMemo(() => ({
-    monthlyIncome: num(income), reserveMonthly: num(reserve),
+    monthlyIncome: householdTotal(household), reserveMonthly: num(reserve),
     fixed: stripKeys(fixed).filter((r) => r.amount > 0), variable: stripKeys(variable).filter((r) => r.amount > 0),
     irregular: stripKeys(irregular).filter((r) => r.yearlyAmount > 0),
-  }), [income, reserve, fixed, variable, irregular])
+  }), [household, reserve, fixed, variable, irregular])
   const result = useMemo(() => evaluateFlowCheck(input), [input])
   const prev = latest && saved ? checks[1] ?? null : latest
   const prevResult = useMemo(() => (prev ? evaluateFlowCheck(prev.input) : null), [prev])
@@ -176,14 +183,14 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
       const month = kstMonth()
       const rows: any[] = await apiFetch(`/api/ui/seed-builder?year=${month.slice(0, 4)}`, { cacheMs: 0, retries: 0 }).then((r) => (Array.isArray(r?.data) ? r.data : []))
       const cur = rows.find((r) => r?.month === month)
-      const dual = cur?.household === 'dual-income'
-      const partnerIncome = dual ? Math.min(Number(cur.partnerIncome) || 0, input.monthlyIncome) : 0
+      // 수입은 사람별로 나눠 둔 우리 집 수입 그대로 — 합계만 넘기면 맞벌이가 '혼자'로 바뀐다
+      const partnerIncome = dual ? household.partnerIncome : 0
       const seed = toSeedExpenses([...input.fixed, ...input.variable, ...input.irregular.map((i) => ({ categoryId: i.categoryId, amount: Math.round(i.yearlyAmount / 12), payment: i.payment }))])
       await apiFetch('/api/ui/seed-builder', {
         method: 'PUT', cacheMs: 0,
         body: JSON.stringify({
-          month, status: 'recorded', household: cur?.household ?? 'solo', ownIncome: input.monthlyIncome - partnerIncome, partnerIncome,
-          ownPayday: cur?.ownPayday ?? null, partnerPayday: dual ? cur?.partnerPayday ?? null : null,
+          month, status: 'recorded', household: household.household, ownIncome: household.ownIncome, partnerIncome,
+          ownPayday: cur?.ownPayday ?? household.ownPayday, partnerPayday: dual ? cur?.partnerPayday ?? household.partnerPayday : null,
           expenses: { card: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0, ...seed },
           extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, ...cur?.extraIncome }, reserve: input.reserveMonthly, plan: Number(cur?.plan ?? 0),
         }),
@@ -199,15 +206,23 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
       <section className="acc-card">
         <h2>지금 상태 점검</h2>
         <p className="acc-note">한 번 해 두면 다음 점검 때 그대로 불러옵니다. 바뀐 것만 고치면 됩니다. 금액은 모두 한 달 기준입니다(비정기는 1년 합계).</p>
+        <h3>우리 집 수입</h3>
+        <div className="acc-seg" role="group" aria-label="가구 형태">
+          {HOUSEHOLDS.map(([value, label]) => <button key={value} type="button" aria-pressed={household.household === value} className={household.household === value ? 'is-active' : ''} onClick={() => editHousehold(withHousehold(household, value))}>{label}</button>)}
+        </div>
         <div className="acc-row">
-          <label className="acc-field"><span>월 수입(세후, 우리 집 합계)</span><input type="number" inputMode="numeric" min="0" value={income} onChange={(e) => setIncome(e.target.value)} placeholder="0" /></label>
+          <label className="acc-field"><span>{household.household === 'solo' ? '월 수입(세후)' : '본인 월 수입(세후)'}</span><input type="number" inputMode="numeric" min="0" value={household.ownIncome || ''} onChange={(e) => editHousehold({ ...household, ownIncome: num(e.target.value) })} placeholder="0" /></label>
+          {dual && <label className="acc-field"><span>배우자 월 수입(세후)</span><input type="number" inputMode="numeric" min="0" value={household.partnerIncome || ''} onChange={(e) => editHousehold({ ...household, partnerIncome: num(e.target.value) })} placeholder="0" /></label>}
+        </div>
+        <p className="acc-note">{dual && household.partnerIncome > 0 ? `합계 ${krw(householdTotal(household))}. ` : ''}시작하기·시드 만들기와 같은 값이라 여기서 고치면 바로 저장되고 거기에도 반영됩니다. 성과급처럼 가끔 들어오는 돈은 시드 만들기의 그달 추가 수입에 적습니다.</p>
+        <div className="acc-row">
           <label className="acc-field"><span>매달 비상자금으로 떼는 돈</span><input type="number" inputMode="numeric" min="0" value={reserve} onChange={(e) => setReserve(e.target.value)} placeholder="0" /></label>
         </div>
       </section>
 
       <section className="acc-card">
         <h2>고정지출</h2>
-        <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다.</p>
+        <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다.</p>
         <ItemRows kind="fixed" rows={fixed} setRows={setFixed} />
       </section>
 
@@ -236,8 +251,8 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
             <div><dt>줄일 여지</dt><dd>{krw(result.room)}</dd></div>
             <div><dt>고정지출 비율</dt><dd>{result.fixedRatio === null ? '-' : `${Math.round(result.fixedRatio * 100)}%`}</dd></div>
           </dl>
-          {result.summary.pointRegular + result.summary.pointOnce > 0 && (
-            <p className="acc-note">포인트가 없으면 투자 가능액은 <strong>{krw(result.availableWithoutPoints)}</strong>입니다.{result.summary.pointOnce > 0 && ` "이번만" 포인트(${krw(result.summary.pointOnce)})가 끝나면 ${krw(result.availableWithoutOncePoints)}.`}</p>
+          {result.summary.pointRegular + result.summary.pointOnce + result.summary.refundRegular + result.summary.refundOnce > 0 && (
+            <p className="acc-note">포인트·환급이 없으면 투자 가능액은 <strong>{krw(result.availableWithoutPoints)}</strong>입니다.{result.summary.pointOnce + result.summary.refundOnce > 0 && ` "이번만" 포인트·환급(${krw(result.summary.pointOnce + result.summary.refundOnce)})이 끝나면 ${krw(result.availableWithoutOncePoints)}.`}{result.summary.refundRegular > 0 && ` 매달 돌려받는 ${krw(result.summary.refundRegular)}은 투자 가능액에 이미 들어 있습니다.`}</p>
           )}
           {result.topCuttable.length > 0 && (
             <>

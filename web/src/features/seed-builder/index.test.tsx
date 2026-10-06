@@ -5,7 +5,7 @@ import SeedBuilderPage from './index'
 
 const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
-vi.mock('../../stores/profileStore', () => ({ useCurrentClientId: () => 'test-user', useProfileStore: (select: (state: { isAdmin: boolean }) => unknown) => select({ isAdmin: true }) }))
+vi.mock('../../stores/profileStore', () => ({ useCurrentClientId: () => 'test-user', getCurrentClientIdFromStore: () => 'test-user', useProfileStore: (select: (state: { isAdmin: boolean }) => unknown) => select({ isAdmin: true }) }))
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -123,7 +123,7 @@ describe('시드 만들기', () => {
     expect(screen.getByText(/1년 추가 원금은 120,000원/)).toBeInTheDocument()
     expect(screen.getByLabelText('시드 현황')).toHaveTextContent('올해 모은 돈50,000원')
     expect(screen.getByText(/월간 계산상 여력 1,870,000원/)).toBeInTheDocument()
-    expect(screen.getByText(/새 달 수입·카드대금·고정비·비정기 항목은 자동으로 가져오지 않으며/)).toBeInTheDocument()
+    expect(screen.getByText(/새 달 수입·급여일은 우리 집 수입으로 미리 채우고/)).toBeInTheDocument()
     expect(screen.getByText(/지난달 대비 투자 여력/)).toHaveTextContent('-20,000원')
   })
 
@@ -246,5 +246,19 @@ describe('시드 만들기', () => {
     expect(screen.getByText('일시')).toBeInTheDocument()
     expect(document.querySelector('.seed-expense-rows')).not.toHaveTextContent('식비·생활')
     expect(screen.getByText(/기타 지출이 지난달보다 40,000원 늘었습니다/)).toBeInTheDocument()
+  })
+})
+
+describe('우리 집 수입으로 채우기', () => {
+  it('기록 없는 이번 달은 저장된 우리 집 수입으로 채우고, 채운 값만으로는 저장 안 됨 표시를 하지 않는다', async () => {
+    const stored = { household: 'dual-income', ownIncome: 3_000_000, partnerIncome: 2_000_000, ownPayday: 25, partnerPayday: 10 }
+    apiFetchMock.mockImplementation((path: string) => Promise.resolve(path === '/api/ui/user-state' ? { data: { householdIncome: { value: stored, updatedAt: Date.now() } } } : { data: [] }))
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await waitFor(() => expect((screen.getByLabelText(/배우자 월수입/) as HTMLInputElement).value).toBe('2000000'))
+    expect((screen.getByLabelText(/본인 월수입/) as HTMLInputElement).value).toBe('3000000')
+    expect(screen.getByRole('button', { name: '맞벌이' })).toHaveAttribute('aria-pressed', 'true')
+    await openEditor()
+    expect((await screen.findByLabelText(/본인 급여일/) as HTMLInputElement).value).toBe('25')
+    expect(screen.queryByText('저장 안 됨')).not.toBeInTheDocument()
   })
 })

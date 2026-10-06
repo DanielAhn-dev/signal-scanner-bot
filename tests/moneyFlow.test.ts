@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
-  FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
+  FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
   parseLeadingDate, parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, toEntry } from '../handlers/ui/money-flow'
@@ -303,4 +303,51 @@ test('통로 이름(간편결제·종합 쇼핑몰)만 적으면 산 물건을 �
   for (const memo of ['네이버페이', 'NAVERPAY 결제', '쿠팡(주)', '카카오페이 주문', 'G마켓', '11번가']) assert.equal(needsItemName(memo), true, memo)
   // 물건이 함께 있거나, 통로 이름 뒤에 다른 가게 이름이 붙으면 묻지 않는다
   for (const memo of ['쿠팡 물티슈', '쿠팡이츠', '네이버플러스 멤버십', 'CU(씨유)제기한신점', '', '알리오올리오']) assert.equal(needsItemName(memo), false, memo)
+})
+
+test('환급·캐시백: 소비는 그대로, 현금 지출에서 빼고 그만큼 투자 가능액이 는다', () => {
+  // 배우자 교통비 100,000원 중 모두의카드 환급 30,000원, 이벤트 캐시백 5,000원(카페)
+  const items = [
+    { categoryId: 'transit', amount: 100_000 },
+    { categoryId: 'transit', amount: 30_000, payment: 'refund_regular' as const },
+    { categoryId: 'cafe', amount: 20_000 },
+    { categoryId: 'cafe', amount: 5_000, payment: 'refund_once' as const },
+  ]
+  const s = summarizeItems(items)
+  assert.equal(s.consumption, 120_000)
+  assert.equal(s.cash, 85_000)
+  assert.deepEqual([s.refundRegular, s.refundOnce], [30_000, 5_000])
+  // 대중교통은 못 줄임, 카페는 끊을 수 있음 — 환급은 같은 칸에서 빠진다
+  assert.deepEqual(s.cashByCut, { must: 70_000, trim: 0, drop: 15_000 })
+  assert.equal(s.consumptionByCut.must, 100_000)
+  assert.equal(s.byCategory.find((r) => r.categoryId === 'transit')?.cash, 70_000)
+
+  const r = evaluateFlowCheck({ monthlyIncome: 1_000_000, reserveMonthly: 0, fixed: [], variable: items, irregular: [] })
+  assert.equal(r.available, 915_000)
+  assert.equal(r.availableWithoutOncePoints, 910_000)
+  assert.equal(r.availableWithoutPoints, 880_000)
+  assert.deepEqual(r.topCuttable, [{ categoryId: 'cafe', trim: 0, drop: 15_000 }])
+  assert.equal(r.mustMonthly, 100_000)
+  assert.equal(toSeedExpenses(items).vehicle, 70_000)
+  assert.equal(toSeedExpenses(items).food, 15_000)
+})
+
+test('환급이 그 칸 지출보다 커도 줄일 수 있나 칸과 시드 지출은 음수가 되지 않는다', () => {
+  const items = [{ categoryId: 'cafe', amount: 9_000, payment: 'refund_once' as const }]
+  assert.deepEqual(summarizeItems(items).cashByCut, { must: 0, trim: 0, drop: 0 })
+  assert.equal(summarizeItems(items).cash, -9_000)
+  assert.equal(toSeedExpenses(items).food, 0)
+})
+
+test('메모로 환급을 알아본다: 교통 환급 카드는 매달, 그 밖의 캐시백은 이번만', () => {
+  assert.equal(detectPayment('모두의카드 환급'), 'refund_regular')
+  assert.equal(detectPayment('K-패스 환급금'), 'refund_regular')
+  assert.equal(classifyMemo('K-패스 환급금').categoryId, 'transit')
+  assert.equal(detectPayment('모두의 카드 환급'), 'refund_regular')
+  assert.equal(detectPayment('신한카드 캐시백'), 'refund_once')
+  assert.equal(detectPayment('스타벅스'), 'cash')
+  assert.equal(classifyMemo('모두의카드 환급').categoryId, 'transit')
+  const now = new Date('2026-10-06T03:00:00Z')
+  assert.equal(normalizeFlowEntry({ date: '2026-10-05', amount: 23000, memo: '모두의카드 환급', categoryId: 'transit', payment: 'refund_regular' }, now)?.payment, 'refund_regular')
+  assert.equal(normalizeFlowEntry({ date: '2026-10-05', amount: 23000, memo: '', categoryId: 'transit', payment: 'refund' }, now), null)
 })
