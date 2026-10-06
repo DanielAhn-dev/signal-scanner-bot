@@ -5,7 +5,7 @@ import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
   parseLeadingDate, parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
-import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, storedForPartner, toEntry } from '../handlers/ui/money-flow'
+import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, storedForWhom, toEntry } from '../handlers/ui/money-flow'
 
 test('분류표: id 중복 없음, 모든 소분류에 갈래·대분류·기본값·시드 항목이 있다', () => {
   const ids = FLOW_CATEGORIES.map((c) => c.id)
@@ -237,7 +237,7 @@ const now = new Date('2026-10-06T03:00:00Z')
 
 test('빠른 기록 입력 검증: 미래 날짜·없는 소분류·포인트 종류·못 줄이는 몫 초과 거절', () => {
   const ok = { date: '2026-10-06', amount: 15170, memo: '냉동피자 4판', categoryId: 'grocery_ready' }
-  assert.deepEqual(normalizeFlowEntry(ok, now), { spent_on: '2026-10-06', amount: 15170, memo: '냉동피자 4판', category_id: 'grocery_ready', cut_level: null, must_part: null, payment: 'cash', for_partner: false })
+  assert.deepEqual(normalizeFlowEntry(ok, now), { spent_on: '2026-10-06', amount: 15170, memo: '냉동피자 4판', category_id: 'grocery_ready', cut_level: null, must_part: null, payment: 'cash', for_whom: 'shared' })
   assert.equal(normalizeFlowEntry({ ...ok, date: '2026-10-07' }, now), null)
   assert.equal(normalizeFlowEntry({ ...ok, date: '2026-02-30' }, now), null)
   assert.equal(normalizeFlowEntry({ ...ok, amount: 0 }, now), null)
@@ -372,27 +372,32 @@ test('"배우자"는 메모 어디에 있어도 배우자 몫으로 보고, 분�
   assert.deepEqual(splitPartnerWord('교통카드 충전'), { memo: '교통카드 충전', forPartner: false })
   const now = new Date('2026-10-06T03:00:00Z')
   const ok = { date: '2026-10-05', amount: 62000, memo: '교통카드', categoryId: 'transit' }
-  assert.equal(normalizeFlowEntry({ ...ok, forWhom: 'partner' }, now)?.for_partner, true)
-  assert.equal(normalizeFlowEntry(ok, now)?.for_partner, false)
+  assert.equal(normalizeFlowEntry({ ...ok, forWhom: 'partner' }, now)?.for_whom, 'partner')
+  assert.equal(normalizeFlowEntry({ ...ok, forWhom: 'me' }, now)?.for_whom, 'me')
+  // 따로 고르지 않으면 공용 — 기록은 한 사람이 해도 지출은 대부분 집 공용이다
+  assert.equal(normalizeFlowEntry(ok, now)?.for_whom, 'shared')
   assert.equal(normalizeFlowEntry({ ...ok, forWhom: 'kid' }, now), null)
 })
 
 test('누구 몫은 보는 사람 기준으로 뒤집어 보여 준다', () => {
   const row = { id: 'x', client_id: 'wife', spent_on: '2026-10-05', amount: 62000, memo: '교통카드', category_id: 'transit', payment: 'cash' }
   // 아내가 자기 몫으로 적은 기록: 아내에겐 '나', 남편에겐 '배우자'
-  assert.equal(toEntry({ ...row, for_partner: false }, 'wife').forWhom, 'me')
-  assert.equal(toEntry({ ...row, for_partner: false }, 'husband').forWhom, 'partner')
+  assert.equal(toEntry({ ...row, for_whom: 'me' }, 'wife').forWhom, 'me')
+  assert.equal(toEntry({ ...row, for_whom: 'me' }, 'husband').forWhom, 'partner')
   // 아내가 남편 몫으로 적은 기록: 아내에겐 '배우자', 남편에겐 '나'
-  assert.equal(toEntry({ ...row, for_partner: true }, 'wife').forWhom, 'partner')
-  assert.equal(toEntry({ ...row, for_partner: true }, 'husband').forWhom, 'me')
+  assert.equal(toEntry({ ...row, for_whom: 'partner' }, 'wife').forWhom, 'partner')
+  assert.equal(toEntry({ ...row, for_whom: 'partner' }, 'husband').forWhom, 'me')
+  // 공용은 누가 보든 공용
+  assert.equal(toEntry({ ...row, for_whom: 'shared' }, 'wife').forWhom, 'shared')
+  assert.equal(toEntry({ ...row, for_whom: 'shared' }, 'husband').forWhom, 'shared')
 })
 
 test('누구 몫을 고쳐 저장하면 고친 사람 화면에 고른 그대로 보인다(배우자 기록을 고쳐도)', () => {
   const row = { id: 'x', client_id: 'wife', spent_on: '2026-10-05', amount: 62000, memo: '교통카드', category_id: 'transit', payment: 'cash' }
   for (const viewer of ['wife', 'husband']) {
-    for (const pick of ['me', 'partner'] as const) {
-      const stored = storedForPartner(pick === 'partner', row.client_id, viewer)
-      assert.equal(toEntry({ ...row, for_partner: stored }, viewer).forWhom, pick, `${viewer} ${pick}`)
+    for (const pick of ['shared', 'me', 'partner'] as const) {
+      const stored = storedForWhom(pick, row.client_id, viewer)
+      assert.equal(toEntry({ ...row, for_whom: stored }, viewer).forWhom, pick, `${viewer} ${pick}`)
     }
   }
 })

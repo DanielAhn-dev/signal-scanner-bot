@@ -10,7 +10,8 @@ const maxEntriesPerPost = 50
 const maxCheckItems = 80
 const cutLevels = ['must', 'trim', 'drop'] as const
 const payments = ['cash', 'point_regular', 'point_once', 'refund_regular', 'refund_once'] as const
-const forWhoms = ['me', 'partner'] as const
+const forWhoms = ['shared', 'me', 'partner'] as const
+type ForWhom = (typeof forWhoms)[number]
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function amount(value: unknown, min = 0): number | null {
@@ -42,10 +43,10 @@ export function normalizeFlowEntry(body: any, now = new Date()) {
   if (!payments.includes(payment)) return null
   const mustPart = body.mustPart ?? null
   if (mustPart !== null && (amount(mustPart) === null || mustPart > value)) return null
-  // 누구 몫인지는 보내는 사람 기준(me/partner). 저장은 기록한 사람 기준 for_partner로 — 상대 기록을 고칠 때는 핸들러가 뒤집는다
-  const forWhom = body.forWhom ?? 'me'
+  // 누구 몫은 보내는 사람 기준(shared/me/partner), 기본은 공용. 저장은 기록한 사람 기준 — 상대 기록을 고칠 때는 핸들러가 뒤집는다
+  const forWhom = body.forWhom ?? 'shared'
   if (!forWhoms.includes(forWhom)) return null
-  return { spent_on: body.date, amount: value, memo: memo.trim(), category_id: body.categoryId, cut_level: cut, must_part: mustPart, payment, for_partner: forWhom === 'partner' }
+  return { spent_on: body.date, amount: value, memo: memo.trim(), category_id: body.categoryId, cut_level: cut, must_part: mustPart, payment, for_whom: forWhom as ForWhom }
 }
 
 function normalizeItem(raw: any): FlowItem | null {
@@ -93,26 +94,32 @@ export function normalizeFlowCheck(body: any, now = new Date()): { checked_on: s
   }
 }
 
-const entryColumns = 'id,client_id,spent_on,amount,memo,category_id,cut_level,must_part,payment,for_partner,updated_by_client_id,deleted_at,deleted_by_client_id'
+const entryColumns = 'id,client_id,spent_on,amount,memo,category_id,cut_level,must_part,payment,for_whom,updated_by_client_id,deleted_at,deleted_by_client_id'
 
 /**
  * 보는 사람 기준으로 바꾼다. client_id는 내보내지 않고 '나/배우자'로만 알린다. 기록한 사람이 아닌 쪽이 고쳤을 때만 editedBy를 준다.
- * forWhom(누구 몫)도 보는 사람 기준: 배우자가 자기 몫으로 적은 건 내 화면에서 '배우자', 나를 위해 적은 건 '나'
+ * forWhom(누구 몫)도 보는 사람 기준: 배우자가 자기 것으로 적은 건 내 화면에서 '배우자', 나를 위해 적은 건 '나'. 공용은 그대로
  */
 export function toEntry(row: any, viewer: string) {
   const who = (id: string | null) => (id ? (id === viewer ? 'me' : 'partner') : null)
   const mine = row.client_id === viewer
   return {
-    id: row.id, mine, forWhom: (row.for_partner === true) === mine ? 'partner' : 'me', date: String(row.spent_on).slice(0, 10), amount: Number(row.amount), memo: row.memo, categoryId: row.category_id,
+    id: row.id, mine, forWhom: flipForWhom(row.for_whom ?? 'shared', mine), date: String(row.spent_on).slice(0, 10), amount: Number(row.amount), memo: row.memo, categoryId: row.category_id,
     cut: row.cut_level ?? null, mustPart: row.must_part == null ? null : Number(row.must_part), payment: row.payment,
     editedBy: row.updated_by_client_id && row.updated_by_client_id !== row.client_id ? who(row.updated_by_client_id) : null,
     deletedBy: row.deleted_at ? who(row.deleted_by_client_id ?? row.client_id) : null,
   }
 }
 
-/** 보는 사람 기준 '배우자 몫인가'를 기록한 사람 기준으로 바꾼다 — 배우자 기록을 고칠 때 뒤집힌다(toEntry의 반대) */
-export function storedForPartner(viewerSaysPartner: boolean, ownerClientId: string, viewer: string): boolean {
-  return ownerClientId === viewer ? viewerSaysPartner : !viewerSaysPartner
+/** 기록한 사람 기준 ↔ 보는 사람 기준. 남의 기록이면 나/배우자를 맞바꾸고 공용은 그대로 둔다(자기 자신이 역함수) */
+function flipForWhom(value: ForWhom, sameSide: boolean): ForWhom {
+  if (sameSide || value === 'shared') return value
+  return value === 'me' ? 'partner' : 'me'
+}
+
+/** 보는 사람이 고른 '누구 몫'을 기록한 사람 기준으로 바꾼다 — 배우자 기록을 고칠 때 뒤집힌다(toEntry의 반대) */
+export function storedForWhom(viewerPick: ForWhom, ownerClientId: string, viewer: string): ForWhom {
+  return flipForWhom(viewerPick, ownerClientId === viewer)
 }
 
 /** 고치거나 지울 수 있는 기록의 주인: 나, 그리고 지출을 공유한 배우자 */
@@ -162,7 +169,7 @@ async function handlePost(supabase: any, clientId: string, body: any, res: Verce
     const { data: owner, error: ownerError } = await supabase.from('money_flow_entries').select('client_id').in('client_id', owners).eq('id', body.id).maybeSingle()
     if (ownerError) return res.status(500).json({ error: ownerError.message })
     if (!owner) return res.status(404).json({ error: 'Entry not found' })
-    row.for_partner = storedForPartner(row.for_partner, owner.client_id, clientId)
+    row.for_whom = storedForWhom(row.for_whom, owner.client_id, clientId)
     const { data, error } = await supabase.from('money_flow_entries')
       .update({ ...row, updated_at: new Date().toISOString(), updated_by_client_id: clientId })
       .in('client_id', owners).eq('id', body.id).is('deleted_at', null).select(entryColumns).maybeSingle()
