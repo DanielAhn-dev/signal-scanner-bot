@@ -26,6 +26,7 @@ export const MIX_PRESETS: Array<{ key: string; label: string; weights: Weights; 
   { key: 'domestic-aw', label: '코스피200 40 · 국고채 40 · 금 20', weights: { kospi200: 40, kbond10: 40, gold: 20 }, note: '국내형 올웨더 근사' },
   { key: 'mix4', label: '코스피 30 · 나스닥 30 · 국고채 25 · 금 15', weights: { kospi200: 30, nasdaq100: 30, kbond10: 25, gold: 15 }, note: '한국 상장 4종' },
   { key: 'half', label: '코스피200 50 · 나스닥100 50', weights: { kospi200: 50, nasdaq100: 50 }, note: '주식만 반반' },
+  { key: 'nps', label: '국민연금형(근사) 코스피200 20.8 · S&P500 34.7 · 국고채 23.1 · 미국장기채 7.4', weights: { kospi200: 20.8, sp500: 34.7, kbond10: 23.1, usbond20: 7.4 }, note: '2026년 목표 비중 중 대체투자(약 14%)는 뺀 근사. 채권 만기·환헤지는 실제와 다름' },
   { key: 'us-aw', label: '미국 올웨더 근사', weights: { sp500: 30, usbond20: 55, gold: 15 }, note: '주식 30 · 장기채 55 · 금 15 (원자재 제외)' },
 ]
 

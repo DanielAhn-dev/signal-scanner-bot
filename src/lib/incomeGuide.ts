@@ -62,6 +62,27 @@ export const GROUP_LABEL: Record<BucketGroup, string> = {
 export const DISTRIBUTION_YIELD_PCT = 4.5;
 /** 목표 비중에서 이만큼(%p) 벗어나면 정기 점검을 기다리지 않고 옮긴다 */
 export const REBALANCE_BAND_PP = 10;
+
+/**
+ * 국민연금 2026년 목표 비중(보도 기준, 2026-10-06 확인) — 참고 지표일 뿐 목표·주문에는 쓰지 않는다.
+ * 주식 = 국내 20.8 + 해외 34.7, 채권 = 국내 23.1 + 해외 7.4, 대체투자 약 14. 비중이 바뀌면 이 값과 asOf만 고친다.
+ */
+export const NPS_REFERENCE = { asOf: "2026", equityPct: 55.5, bondPct: 30.5, altPct: 14 } as const;
+
+export type NpsReferenceRow = { label: string; actualPct: number; refPct: number; diffPp: number };
+
+/** 내 보유를 주식·채권·대체로 묶어 국민연금 목표와 나란히 본다. 보유가 없으면 null. */
+export function buildNpsReference(byBucket: Map<AssetBucket, number>, total: number): NpsReferenceRow[] | null {
+  if (total <= 0) return null;
+  const sum = (buckets: AssetBucket[]) => buckets.reduce((s, b) => s + (byBucket.get(b) ?? 0), 0);
+  const pct = (v: number) => (v / total) * 100;
+  const row = (label: string, v: number, refPct: number): NpsReferenceRow => ({ label, actualPct: pct(v), refPct, diffPp: pct(v) - refPct });
+  return [
+    row("주식(지수·배당·개별주·테마)", sum(["kr_index", "global_index", "dividend", "covered_call", "stock", "leveraged", "other_etf"]), NPS_REFERENCE.equityPct),
+    row("채권·현금성", sum(["bond_cash"]), NPS_REFERENCE.bondPct),
+    row("대체(리츠·인프라)", sum(["reit_infra"]), NPS_REFERENCE.altPct),
+  ];
+}
 /** 인컴 시작 몇 년 전부터 분배형으로 옮기기 시작하는지 */
 export const TRANSITION_YEARS = 5;
 /** 모으는 동안 분배형 비중 — 분배금이 실제로 어떻게 들어오는지 경험·기록하는 정도 */
@@ -331,6 +352,8 @@ export type IncomeGuideView = {
     /** 일반 계좌 과세 분배금 중 커버드콜 몫 */
     taxableFromCoveredCall: number;
   };
+  /** 국민연금 목표와의 거리 — 읽기 전용 참고, 주문·목표에 영향 없음 */
+  npsReference: NpsReferenceRow[] | null;
   warnings: GuideWarning[];
   accounts: Array<{
     key: string;
@@ -1047,6 +1070,7 @@ export function buildIncomeGuideView(input: {
     targetSource,
     age: settings.ageBand && AGE_BANDS[settings.ageBand] ? buildAgeGuide(settings.ageBand, targets.stage, targets.cashPct, custom?.cash != null) : null,
     distributions,
+    npsReference: buildNpsReference(byBucket, total),
     warnings,
     accounts,
     holdings: rows.map((r) => ({ ...r, pct: pct(r.value) })).sort((a, b) => b.value - a.value),

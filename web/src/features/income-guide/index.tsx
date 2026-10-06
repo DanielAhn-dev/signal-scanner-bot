@@ -72,6 +72,7 @@ type View = {
   groups: Array<{ group: Group; label: string; value: number; actualPct: number; targetPct: number; diffPct: number; diffAmount: number }>
   growthSplit: { krValue: number; globalValue: number; globalPct: number; targetGlobalPct: number }
   buckets: Array<{ bucket: string; label: string; value: number; pct: number }>
+  npsReference?: Array<{ label: string; actualPct: number; refPct: number; diffPp: number }> | null
   rebalance: {
     needed: boolean
     reason: string
@@ -368,6 +369,15 @@ export default function IncomeGuidePage() {
             <div style={{ marginTop: 2, color: 'var(--color-text-tertiary)' }}>
               세부: {view.buckets.map((b) => `${b.label} ${pct(b.pct)}`).join(' · ')}
             </div>
+            {view.npsReference && (
+              <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+                참고 · 국민연금 2026년 목표와 비교(주문·목표에는 쓰지 않음):{' '}
+                {view.npsReference.map((r) => `${r.label} ${pct(r.actualPct)} (국민연금 ${pct(r.refPct)})`).join(' · ')}
+                <div style={{ color: 'var(--color-text-tertiary)' }}>
+                  보도된 목표 비중을 묶은 근사이며, 국민연금은 장기 기금이라 나이·인출 계획이 있는 내 계좌와 같을 필요는 없습니다.
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ ...box, borderColor: view.rebalance.needed ? 'var(--color-error)' : 'var(--color-border-default)' }}>

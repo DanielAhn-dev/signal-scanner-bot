@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   buildIncomeGuideView,
+  buildNpsReference,
+  NPS_REFERENCE,
   classifyHolding,
   isTaxAdvantagedAccount,
   resolveStageTargets,
@@ -371,4 +373,14 @@ test("splitChange: 그때 수량을 지금 가격으로 다시 계산해 시장 
   // 가격을 모르는 종목이 있으면 나누지 않는다
   assert.equal(splitChange(base, 0, { settings, today: "2026-10-06", priceOf: () => null }), null);
   assert.equal(splitChange({ ...base, holdings: undefined }, 0, { settings, today: "2026-10-06", priceOf: (c) => price[c] }), null);
+});
+
+test("국민연금 참고 비교: 주식·채권·대체로 묶고 목표 합계는 100", () => {
+  assert.equal(NPS_REFERENCE.equityPct + NPS_REFERENCE.bondPct + NPS_REFERENCE.altPct, 100);
+  const rows = buildNpsReference(new Map([["kr_index", 600], ["bond_cash", 300], ["reit_infra", 100]]), 1000)!;
+  assert.equal(rows[0].actualPct, 60);
+  assert.equal(rows[1].actualPct, 30);
+  assert.equal(rows[2].actualPct, 10);
+  assert.ok(Math.abs(rows[0].diffPp - 4.5) < 1e-9);
+  assert.equal(buildNpsReference(new Map(), 0), null);
 });
