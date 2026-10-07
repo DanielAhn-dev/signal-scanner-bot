@@ -14,6 +14,9 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   stale_or_frozen_close: "시세 동결/신선도 미달",
   strategy_blocked_buy: "전략 매수 차단",
   regime_defense_no_new_buy: "방어장 신규매수 중지",
+  event_risk_no_new_buy: "경제이벤트 임박 신규매수 중지",
+  add_on_anti_pyramiding: "추가매수 제한(물타기·불타기 방지)",
+  rebalance_signal_gate_reject: "리밸런싱 신호 관문 탈락",
   other: "기타(원문 미분류)",
 };
 

@@ -15,6 +15,8 @@ import { expectedTradingDay } from "../../src/services/batchVerifyDay";
 
 /** 배치가 당일 거래일 값으로 채워야 하는 테이블. 수급·신용은 공급처 게시가 늦어 제외한다 */
 const MUST_BE_TODAY = new Set(["ohlcv", "indicators", "scores"]);
+/** 일부만 적재돼도 매수 게이트에 반영되지 않는 항목(dataFreshnessMonitorService.NON_GATING_KEYS와 같다). 실패 처리·알림 대상이 아니다 */
+const NON_GATING_KEYS = new Set(["credit"]);
 
 async function fetchBars(supabase: SupabaseClient, ymd: string): Promise<DailyBar[]> {
   const rows: DailyBar[] = [];
@@ -55,8 +57,13 @@ async function main() {
     }
   }
   const problems = [...report.freshItems, ...report.staleItems].filter(
-    (i) => i.isLowCoverage || (MUST_BE_TODAY.has(i.key) && i.latestDate !== batchDay)
+    (i) => (i.isLowCoverage && !NON_GATING_KEYS.has(i.key)) || (MUST_BE_TODAY.has(i.key) && i.latestDate !== batchDay)
   );
+  for (const i of [...report.freshItems, ...report.staleItems]) {
+    if (i.isLowCoverage && NON_GATING_KEYS.has(i.key)) {
+      console.warn(`참고: ${i.label} 일부만 적재(${i.latestCount ?? "?"}행, 직전 ${i.prevCount ?? "?"}행) — 매수 판단에 쓰이지 않아 알림 생략`);
+    }
+  }
   if (problems.length === 0 && distributionIssues.length === 0) {
     console.log("배치 결과 정상:", report.freshItems.map((i) => `${i.key}=${i.latestDate}(${i.latestCount ?? "?"}행)`).join(" "));
     return;
