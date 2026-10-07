@@ -116,6 +116,18 @@ jobs:
             pnpm exec tsx scripts/strategy_forward_test.ts --record
           fi
 
+      # 규칙 점수판: 급등 추격·윗꼬리·급락 회피와 선호 점수가 가리킨 종목을 매일 기록하고(--record),
+      # 금·토에는 20거래일 지난 기록을 집계해 텔레그램으로 보낸다 (scripts/rule_scoreboard.ts).
+      - name: Rule scoreboard
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ "$(TZ=Asia/Seoul date +%u)" = "5" ] || [ "$(TZ=Asia/Seoul date +%u)" = "6" ]; then
+            pnpm exec tsx scripts/rule_scoreboard.ts --telegram
+          else
+            pnpm exec tsx scripts/rule_scoreboard.ts --record
+          fi
+
       # 종목 뉴스 헤드라인 일일 보관 — 매매에 쓰지 않고 2~3개월 뒤 효과 검증용 (src/services/newsArchive.ts)
       - name: Archive stock news headlines
         if: always()

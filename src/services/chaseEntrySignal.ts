@@ -145,6 +145,28 @@ export function computeChaseEntry(bars: DailyBar[]): ChaseEntryResult | null {
   return null;
 }
 
+/**
+ * 걸리는 회피 규칙을 모두 돌려준다(computeChaseEntry는 우선순위로 첫 하나만). 규칙별 전향 기록용 — 판정 기준은 같다.
+ */
+export function computeEntryGuardKinds(bars: DailyBar[]): EntryGuardKind[] {
+  if (bars.length < CHASE_MIN_BARS) return [];
+  const kinds: EntryGuardKind[] = [];
+  const n = bars.length - 1;
+  for (let i = n; i > n - CHASE_BLOCK_DAYS && i >= 21; i -= 1) {
+    if (chaseAt(bars, i)) {
+      kinds.push("chase");
+      break;
+    }
+  }
+  const lastBar = bars[n];
+  if (valid(lastBar) && lastBar.high / lastBar.close - 1 >= WICK_MIN_RATIO) kinds.push("wick");
+  if (bars.length > KNIFE_LOOKBACK) {
+    const a = bars[n - KNIFE_LOOKBACK];
+    if (valid(a) && valid(lastBar) && lastBar.close / a.close - 1 <= KNIFE_MAX_RETURN) kinds.push("knife");
+  }
+  return kinds;
+}
+
 export function entryGuardLabel(kind: EntryGuardKind): string {
   return kind === "chase" ? "급등 추격" : kind === "wick" ? "긴 윗꼬리" : "한 달 급락";
 }
