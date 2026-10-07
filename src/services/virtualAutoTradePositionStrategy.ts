@@ -17,6 +17,8 @@ export type ParsedPositionStrategyState = {
   takeProfitTranchesDone: number;
   /** 보유 기간 중 최고가 (트레일링 스탑 계산용, memo에서 복원) */
   peakPrice: number | null;
+  /** 1차 방어선(halfExitStopPct) 절반 손절을 이미 했는지 (memo half_stop=1) */
+  halfStopDone: boolean;
 };
 
 export type ResolvedPositionTradeProfile = {
@@ -155,11 +157,13 @@ export function parsePositionStrategyState(
   const takeProfitTranchesDone = Math.max(0, Math.floor(toNumber(map.get("tp_tranches"), 0)));
   const rawPeak = toNumber(map.get("peak_price"), 0);
   const peakPrice = rawPeak > 0 ? rawPeak : null;
+  const halfStopDone = map.get("half_stop") === "1";
 
   return {
     profile,
     takeProfitTranchesDone,
     peakPrice,
+    halfStopDone,
   };
 }
 
@@ -170,6 +174,8 @@ export function buildPositionStrategyMemo(input: {
   takeProfitTranchesDone?: number;
   /** 보유 중 최고가 (트레일링 스탑용) */
   peakPrice?: number | null;
+  /** 절반 손절을 이미 했으면 true — 다음 판단에서 절반 손절을 반복하지 않게 남긴다 */
+  halfStopDone?: boolean;
 }): string {
   const profile = normalizePositionStrategyProfile(input.profile);
   const takeProfitTranchesDone = Math.max(0, Math.floor(toNumber(input.takeProfitTranchesDone, 0)));
@@ -184,6 +190,7 @@ export function buildPositionStrategyMemo(input: {
     `tp_tranches=${takeProfitTranchesDone}`,
   ];
   if (peakPriceVal != null) parts.push(`peak_price=${peakPriceVal}`);
+  if (input.halfStopDone) parts.push("half_stop=1");
 
   return parts.join(";");
 }
@@ -545,6 +552,8 @@ export function planAutoTradeExit(input: {
   catastrophicStopPct?: number;
   /** 경직 손절선 도달 전 절반 청산되는 1차 방어선 (기본 -7%) */
   halfExitStopPct?: number;
+  /** 이 보유분에서 절반 손절을 이미 했는지. 했으면 1차 방어선은 건너뛰고 손절선·경직 손절선만 본다 */
+  halfStopDone?: boolean;
 }): PlannedAutoTradeExit {
   const quantity = Math.max(0, Math.floor(toNumber(input.quantity, 0)));
   const pnlPct = toNumber(input.pnlPct, 0);
@@ -581,7 +590,10 @@ export function planAutoTradeExit(input: {
   // 잡혀서 -5%에선 전량, 더 깊은 -8%에선 절반만 파는 역전이 있었다.
   // action·reason은 손절이다 — 예전엔 TAKE_PROFIT/take-profit-partial로 돌려줘서 손실 중인 매도가
   // MTS 따라하기 주문서·거래기록에 "부분익절"로 보였다(2026-10-01, S-Oil -8.4%인데 부분익절로 표시됨).
-  if (pnlPct <= -halfExitStopPct && stopLossPct > halfExitStopPct) {
+  // 절반 손절은 한 번만 한다. 예전엔 했다는 기록이 없어 -7% 아래에서 점검이 돌 때마다 남은 수량의 절반을
+  // 또 팔았다(2026-10-07 이수페타시스 12주 → 6 → 3 → 1, -7.3%·-7.7%·-8.3%). "절반만 팔고 -10%까지는 지켜본다"는
+  // 설계가 사실상 "-7%부터 점검마다 반씩 정리"로 돌았다.
+  if (pnlPct <= -halfExitStopPct && stopLossPct > halfExitStopPct && !input.halfStopDone) {
     const halfQty = Math.max(1, Math.ceil(quantity / 2));
     return {
       action: "STOP_LOSS",

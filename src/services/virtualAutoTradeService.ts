@@ -5328,6 +5328,7 @@ async function runDailyReviewForUser(payload: {
             profile: tradeProfile.profile,
             takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
             peakPrice: updatedPeakPrice,
+            halfStopDone: strategyState.halfStopDone,
           });
         }
         if (plannedReviewExtensionAt) {
@@ -5404,6 +5405,8 @@ async function runDailyReviewForUser(payload: {
         nextTakeProfitTranchesDone: finalExitPlan.nextTakeProfitTranchesDone,
         dryRun: payload.dryRun,
         peakPrice: updatedPeakPrice,
+        halfStopDone:
+          strategyState.halfStopDone || (finalExitPlan.action === "STOP_LOSS" && finalExitPlan.isPartial),
       });
 
       if (!result.sold) {

@@ -1315,3 +1315,20 @@ test("planAutoTradeExit: 손절선(-9%)이 넓으면 -7.5%에서 절반 청산 (
   assert.equal(plan.isPartial, true);
   assert.equal(plan.reason, "stop-loss");
 });
+
+test("planAutoTradeExit: 절반 손절은 한 번만 — 이미 했으면 손절선 전까지 보유, 손절선·경직 손절선에선 전량 (2026-10-07 이수페타시스 6→3→2주 반복 매도)", () => {
+  const base = { takeProfitPct: 12, stopLossPct: 9, takeProfitSplitCount: 2, takeProfitTranchesDone: 0, halfStopDone: true };
+  assert.equal(planAutoTradeExit({ ...base, quantity: 6, pnlPct: -7.7 }).action, "HOLD");
+  const atStop = planAutoTradeExit({ ...base, quantity: 6, pnlPct: -9.2 });
+  assert.equal(atStop.action, "STOP_LOSS");
+  assert.equal(atStop.quantityToSell, 6);
+  const atHard = planAutoTradeExit({ ...base, quantity: 6, pnlPct: -10.5 });
+  assert.equal(atHard.quantityToSell, 6);
+});
+
+test("buildPositionStrategyMemo/parsePositionStrategyState: 절반 손절 완료 표시(half_stop)를 남기고 읽는다", () => {
+  const memo = buildPositionStrategyMemo({ event: "partial-stop-loss", profile: "SWING", peakPrice: 132700, halfStopDone: true });
+  assert.match(memo, /half_stop=1/);
+  assert.equal(parsePositionStrategyState(memo).halfStopDone, true);
+  assert.equal(parsePositionStrategyState("profile=SWING;tp_tranches=0").halfStopDone, false);
+});

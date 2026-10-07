@@ -143,6 +143,8 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     dryRun: boolean;
     /** 보유 중 최고가. 부분 매도 후 남은 포지션 memo에 보존한다. */
     peakPrice?: number | null;
+    /** 이번 매도 뒤 남은 포지션의 절반 손절 완료 여부. 부분 매도 후 memo에 남긴다. */
+    halfStopDone?: boolean;
   }): Promise<{
     sold: boolean;
     partial: boolean;
@@ -325,12 +327,14 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
             invested_amount: remainInvested,
             buy_price: nextBuyPrice,
             memo: buildPositionStrategyMemo({
-              event: "partial-take-profit",
-              note: "autotrade-partial-take-profit",
+              // 손실 중 부분 매도(절반 손절)를 익절로 남기지 않는다
+              event: payload.reason === "stop-loss" ? "partial-stop-loss" : "partial-take-profit",
+              note: payload.reason === "stop-loss" ? "autotrade-partial-stop-loss" : "autotrade-partial-take-profit",
               profile: payload.strategyProfile,
               takeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
               // 부분익절 후에도 수익잠금 트레일링이 고점 기준을 잃지 않도록 유지
               peakPrice: payload.peakPrice ?? null,
+              halfStopDone: payload.halfStopDone ?? false,
             }),
             status: "holding",
           })

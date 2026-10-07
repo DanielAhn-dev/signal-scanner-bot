@@ -135,7 +135,7 @@ export type HoldingExitInput = {
     expectedHorizonDays: number;
   };
   /** parsePositionStrategyState 결과 */
-  strategyState: { takeProfitTranchesDone: number; peakPrice: number | null };
+  strategyState: { takeProfitTranchesDone: number; peakPrice: number | null; halfStopDone?: boolean };
   scoreRow: Pick<ScoreSnapshotRow, "total_score" | "signal" | "factors"> | undefined;
   market: string;
   marketPolicy: Pick<AutoTradeMarketPolicy, "mode">;
@@ -205,6 +205,7 @@ export function decideHoldingExit(input: HoldingExitInput): HoldingExitDecision 
     // 가치투자+스윙(VALUE_SWING_CORE)은 단기 노이즈에 흔들리지 않도록 경직 손절선을 넓게 적용
     catastrophicStopPct: isValueSwing ? 15 : 10,
     halfExitStopPct: isValueSwing ? 12 : 7,
+    halfStopDone: strategyState.halfStopDone ?? false,
   });
 
   // 수익잠금 트레일링: 보유 중 최고가(종가 기준) 추적 → 고점 수익의 일정 비율 아래로 밀리면 청산
