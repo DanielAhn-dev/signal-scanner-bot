@@ -12,6 +12,7 @@ Supabase 무료 플랜 용량과도 무관하다(운영 DB에 연구용 대용�
 
 사용:
   python scripts/research/sync_cache.py pull   # 최신 캐시를 받아 .research-cache/ 에 풀기
+  python scripts/research/sync_cache.py pull-minute   # 자동 수집된 분봉만 .research-cache/minute/ 로 받기
   python scripts/research/sync_cache.py push   # 지금 .research-cache/ 를 release로 올리기 (갱신)
 
 필요: gh CLI 로그인 상태(gh auth status) + CACHE_REPO에 대한 접근 권한.
@@ -92,13 +93,25 @@ def cmd_pull() -> None:
     print("완료:", CACHE_DIR, "에 캐시를 받았음")
 
 
+def cmd_pull_minute() -> None:
+    """GitHub Actions가 주 2회 병합하는 분봉(release minute-bars)을 .research-cache/minute/ 로 받는다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run(["gh", "release", "download", "minute-bars", "--repo", CACHE_REPO, "-p", "minute-bars.tar.gz", "-D", tmp, "--clobber"], check=True)
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with tarfile.open(os.path.join(tmp, "minute-bars.tar.gz"), "r:gz") as tar:
+            tar.extractall(CACHE_DIR)
+    print("완료:", CACHE_DIR + "/minute/ 에 분봉을 받았음")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("action", choices=["push", "pull"])
+    ap.add_argument("action", choices=["push", "pull", "pull-minute"])
     args = ap.parse_args()
 
     if args.action == "push":
         cmd_push()
+    elif args.action == "pull-minute":
+        cmd_pull_minute()
     else:
         cmd_pull()
 
