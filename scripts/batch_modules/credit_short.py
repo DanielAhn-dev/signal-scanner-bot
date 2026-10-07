@@ -138,11 +138,18 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
         consecutive_fail = 0
         cooldowns_used = 0
         aborted_codes: list[str] = []
+        # 화면 표시용 자료라 배치 60분 제한을 잠식하면 안 된다. 총 수집 시간에 상한을 두고, 남은 종목은 다음 실행이 이어받는다.
+        time_budget_sec = int(os.environ.get("CREDIT_SHORT_TIME_BUDGET_SEC", "480"))
+        started_at = time.time()
 
         for idx, code in enumerate(codes):
             if code in already_ok:
                 success_count += 1
                 continue
+            if time.time() - started_at >= time_budget_sec:
+                aborted_codes = [c for c in codes[idx:] if c not in already_ok]
+                print(f"  수집 시간 상한 {time_budget_sec}초 도달: 남은 {len(aborted_codes)}종목은 다음 실행이 이어받음")
+                break
             if idx % 50 == 0 and idx > 0:
                 print(f"  progress: {idx}/{len(codes)} (success: {success_count}, fail: {fail_count})")
 
