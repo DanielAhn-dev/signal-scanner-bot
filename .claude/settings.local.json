@@ -18,7 +18,16 @@
       "WebFetch(domain:m.stock.naver.com)",
       "WebFetch(domain:polling.finance.naver.com)",
       "Bash(npx vite *)",
-      "Bash(git -C d:/Dev/Github/signal-scanner-bot status)"
+      "Bash(git -C d:/Dev/Github/signal-scanner-bot status)",
+      "Bash(gh run *)",
+      "Bash(pnpm -s tsx scripts/check_data_sync_health.ts)",
+      "Bash(pnpm -s tsx scripts/ops/report_autotrade_skip_reasons.ts)",
+      "Bash(pnpm -s tsx scripts/ops/report_bot_vs_index.ts)",
+      "Read(//d/Work/dev/**)",
+      "Bash(cd /d/Work/dev && sed -n 495,515p scratch_daily_1006.log | cut -c1-260; echo ----; sed -n 700,730p scratch_daily_1006.log | cut -c1-260; echo ----; grep -n -E \"Step|단계|\\\\[truncation|잘림|holiday|휴장|Elapsed|총 소요|duration|BATCH\" scratch_daily_1006.log | cut -c1-220 | head -60)",
+      "Bash(grep -v -E \"^\\\\s*$\")",
+      "Bash(pnpm -s tsx scripts/ops/_tmp_dup_check.ts)",
+      "Bash(git commit *)"
     ]
   }
 }
