@@ -7,6 +7,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { apiFetch } from '../../lib/api'
 import { PushNotificationToggle } from '../../components/PushNotificationToggle'
 import InviteCard from '../invites/InviteCard'
+import LifeProfileCard from './LifeProfileCard'
 
 const STATUS_IDLE    = 'idle'
 const STATUS_LOADING = 'loading'
@@ -161,6 +162,12 @@ export default function ProfilePage(){
           <Detail><p className="profile-hint">앱 내에서만 사용되며, 텔레그램 이름과 별개입니다.</p></Detail>
         </section>
       </div>
+
+      {isSignedIn && (
+        <div className="card mb-4">
+          <LifeProfileCard />
+        </div>
+      )}
 
       <div className="card mb-4">
         <section className="profile-section">

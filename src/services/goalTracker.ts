@@ -175,6 +175,202 @@ export function requiredMonthlyContribution(input: {
   return (input.target - grown) / factor;
 }
 
+/**
+ * 나이·은퇴 시점 — 목표를 "언젠가"가 아니라 사용자가 정한 은퇴 나이에 맞춘다.
+ * 은퇴 시점과 지금 나이가 정해지면 "그때까지 매달 얼마를 모으면 된다"가 나온다.
+ * 그 금액을 어떻게 만드는지(급여 − 생활비, 부업·N잡, 지출 줄이기)는 사용자의 몫이고, 화면은 기준만 보여 준다.
+ * 출생은 연월(YYYY-MM)만 받는다. 일(日)은 계산에 영향이 없고, 개인정보는 최소로 둔다(자녀 증여 계좌와 같은 원칙).
+ * users.prefs.life_birth_month / life_retire_age 에 저장한다. 표시용이며 매매 규칙은 바꾸지 않는다.
+ */
+export type LifeProfile = { birthMonth: string; retireAge: number };
+
+export const DEFAULT_RETIRE_AGE = 60;
+export const RETIRE_AGE_MIN = 45;
+export const RETIRE_AGE_MAX = 75;
+/** 통계청 2023 생명표 기대수명 83.5세 — "그때까지 살아 있을까"를 가늠하는 참고선으로만 쓴다 */
+export const LIFE_EXPECTANCY = 83.5;
+/** 비교해 보여 줄 은퇴 나이 — 사용자가 고른 나이는 따로 더한다 */
+export const COMPARE_RETIRE_AGES = [55, 60, 65];
+
+const BIRTH_MONTH_RE = /^(19|20)\d{2}-(0[1-9]|1[0-2])$/;
+
+/** prefs에서 나이 정보를 읽는다. 출생 연월이 없거나 형식이 틀리면 null */
+export function readLifeProfile(prefs: Record<string, unknown> | null | undefined): LifeProfile | null {
+  const birth = String(prefs?.life_birth_month ?? "");
+  if (!BIRTH_MONTH_RE.test(birth)) return null;
+  const age = Number(prefs?.life_retire_age);
+  const retireAge = Number.isFinite(age) && age > 0 ? Math.min(RETIRE_AGE_MAX, Math.max(RETIRE_AGE_MIN, Math.round(age))) : DEFAULT_RETIRE_AGE;
+  return { birthMonth: birth, retireAge };
+}
+
+/** 입력을 prefs에 넣을 값으로 고른다. 출생 연월 ""는 삭제(null 반환). 형식 오류·미래 날짜는 error */
+export function sanitizeLifeInput(
+  input: { birthMonth?: unknown; retireAge?: unknown },
+  today: string
+): { ok: true; value: LifeProfile | null } | { ok: false; error: string } {
+  const birth = String(input.birthMonth ?? "").trim();
+  if (birth === "") return { ok: true, value: null };
+  if (!BIRTH_MONTH_RE.test(birth)) return { ok: false, error: "출생 연월은 YYYY-MM 형식으로 입력하세요" };
+  if (birth > today.slice(0, 7)) return { ok: false, error: "출생 연월이 오늘보다 뒤입니다" };
+  const age = input.retireAge == null || input.retireAge === "" ? DEFAULT_RETIRE_AGE : Number(input.retireAge);
+  if (!Number.isFinite(age) || age < RETIRE_AGE_MIN || age > RETIRE_AGE_MAX) {
+    return { ok: false, error: `은퇴 나이는 ${RETIRE_AGE_MIN}~${RETIRE_AGE_MAX}세로 입력하세요` };
+  }
+  return { ok: true, value: { birthMonth: birth, retireAge: Math.round(age) } };
+}
+
+/** 만 나이 (월 단위 정밀도 — 생일이 든 달에 한 살 올린다) */
+export function ageAt(birthMonth: string, date: string): number {
+  const [by, bm] = birthMonth.split("-").map(Number);
+  const [y, m] = date.slice(0, 7).split("-").map(Number);
+  return y - by - (m < bm ? 1 : 0);
+}
+
+/** 그 나이가 되는 달 (출생 연월 + 나이) */
+export function monthAtAge(birthMonth: string, age: number): string {
+  const [by, bm] = birthMonth.split("-").map(Number);
+  return `${by + age}-${String(bm).padStart(2, "0")}`;
+}
+
+export type LifeStage = "20s" | "30s" | "40s" | "50s" | "60plus";
+
+export function lifeStageOf(age: number): LifeStage {
+  if (age < 30) return "20s";
+  if (age < 40) return "30s";
+  if (age < 50) return "40s";
+  if (age < 60) return "50s";
+  return "60plus";
+}
+
+/**
+ * 나이대별로 무엇이 결과를 정하는지 — 남은 시간이 다르니 같은 목표라도 필요한 월 적립과 쓸 수 있는 손잡이가 다르다.
+ * 근거: 기간이 짧을수록 필요 월 적립이 빠르게 커지고(requiredMonthlyContribution),
+ * 계획 수익률을 올려 메우는 것은 위험만 키운다(지수 장기 평균 연 8% 안팎).
+ */
+export const LIFE_STAGE_GUIDE: Record<LifeStage, { label: string; text: string }> = {
+  "20s": {
+    label: "20대",
+    text: "시간이 가장 큰 자산이라 필요한 월 적립이 가장 작은 시기입니다. 금액보다 매달 빠짐없이 모으는 습관이 결과를 정합니다.",
+  },
+  "30s": {
+    label: "30대",
+    text: "아직 복리가 일할 시간이 충분합니다. 소득이 오를 때마다 월 적립을 같이 올리는 것이 가장 효과적입니다. 지출이 커지는 시기라 적립을 멈추지 않는 것이 핵심입니다.",
+  },
+  "40s": {
+    label: "40대",
+    text: "남은 기간이 20년 안팎이라 수익률보다 매달 모으는 금액이 결과를 정합니다. 모자라면 수익률을 올리려 하지 말고, 남는 돈 늘리기·은퇴 몇 년 늦추기·목표 낮추기 중에서 고르세요.",
+  },
+  "50s": {
+    label: "50대",
+    text: "남은 기간이 짧아 큰 손실 한 번이 회복되지 않을 수 있습니다. 부족분을 공격적인 투자로 메우지 마세요. 국민연금 예상액을 더해 생활비를 다시 보고, 은퇴 직전 몇 년치 생활비는 현금성으로 옮겨 두세요.",
+  },
+  "60plus": {
+    label: "60대 이상",
+    text: "모으기보다 꺼내 쓰기 단계입니다. 지금 자산에서 원금을 지키며 꺼낼 수 있는 금액에 생활비를 맞추고, 2~3년치 생활비는 현금성으로 두어 하락장에 주식을 팔지 않게 하세요.",
+  },
+};
+
+export type RetireAgeOption = {
+  retireAge: number;
+  retireMonth: string;
+  months: number;
+  /** 그 나이에 필요 시드에 닿으려면 매달 모을 금액 (이미 충분하면 0) */
+  contribution: number;
+  /** 지금 계획(수익률·월 적립)대로면 그 나이에 모이는 금액과, 거기서 매달 꺼낼 수 있는 금액 */
+  projected: number;
+  monthlyWithdrawal: number;
+  isChosen: boolean;
+};
+
+export type LifePlan = {
+  birthMonth: string;
+  currentAge: number;
+  retireAge: number;
+  retireMonth: string;
+  /** 은퇴까지 남은 개월 (지났으면 0) */
+  monthsToRetire: number;
+  /** 예상 도달 시점의 나이 (50년 안에 못 닿으면 null) */
+  etaAge: number | null;
+  /** 지금 계획대로면 은퇴 때 모이는 금액과 매달 꺼낼 수 있는 금액 */
+  projectedAtRetire: number;
+  monthlyAtRetire: number;
+  /** 고른 은퇴 나이에 맞추려면 매달 모을 금액 — 화면의 기준 숫자 */
+  contributionForTarget: number;
+  /** 지금 월 적립과의 차이 (양수면 더 모아야 함) */
+  contributionGap: number;
+  /** on-track: 은퇴 전 도달 / late: 은퇴 뒤 도달 / beyond-life: 기대수명 뒤이거나 50년 이상 / retired: 이미 은퇴 나이 */
+  status: "on-track" | "late" | "beyond-life" | "retired";
+  /** 은퇴 나이별 비교 (지난 나이는 뺀다) */
+  options: RetireAgeOption[];
+  stage: LifeStage;
+  stageGuide: { label: string; text: string };
+  lifeExpectancy: number;
+};
+
+export function buildLifePlan(input: {
+  life: LifeProfile;
+  today: string;
+  equity: number;
+  requiredSeed: number;
+  planAnnualPct: number;
+  monthlyContribution: number;
+  withdrawalPct: number;
+  etaMonth: string | null;
+}): LifePlan {
+  const { life, today } = input;
+  const currentAge = ageAt(life.birthMonth, today);
+  const optionFor = (retireAge: number): RetireAgeOption => {
+    const retireMonth = monthAtAge(life.birthMonth, retireAge);
+    const months = Math.max(0, monthsUntil(today, retireMonth));
+    const projected = planValueAt(
+      { startDate: today, startEquity: input.equity, planAnnualPct: input.planAnnualPct, targetMonthlyProfit: 0, monthlyContribution: input.monthlyContribution },
+      months
+    );
+    return {
+      retireAge,
+      retireMonth,
+      months,
+      contribution: Math.round(
+        requiredMonthlyContribution({ fromEquity: input.equity, target: input.requiredSeed, planAnnualPct: input.planAnnualPct, months })
+      ),
+      projected: Math.round(projected),
+      monthlyWithdrawal: Math.round((projected * input.withdrawalPct) / 100 / 12),
+      isChosen: retireAge === life.retireAge,
+    };
+  };
+  const chosen = optionFor(life.retireAge);
+  const ages = [...new Set([...COMPARE_RETIRE_AGES, life.retireAge])].sort((a, b) => a - b);
+  const options = ages.map(optionFor).filter((o) => o.months > 0 || o.isChosen);
+  const etaAge = input.etaMonth ? ageAt(life.birthMonth, input.etaMonth) : null;
+  const etaYears = input.etaMonth ? monthsUntil(`${life.birthMonth}-01`, input.etaMonth) / 12 : null;
+  const status: LifePlan["status"] =
+    chosen.months === 0
+      ? "retired"
+      : etaYears == null || etaYears >= LIFE_EXPECTANCY
+        ? "beyond-life"
+        : (input.etaMonth as string) <= chosen.retireMonth
+          ? "on-track"
+          : "late";
+  const stage = lifeStageOf(currentAge);
+  return {
+    birthMonth: life.birthMonth,
+    currentAge,
+    retireAge: life.retireAge,
+    retireMonth: chosen.retireMonth,
+    monthsToRetire: chosen.months,
+    etaAge,
+    projectedAtRetire: chosen.projected,
+    monthlyAtRetire: chosen.monthlyWithdrawal,
+    contributionForTarget: chosen.contribution,
+    contributionGap: Math.round(chosen.contribution - Math.max(0, input.monthlyContribution)),
+    status,
+    options,
+    stage,
+    stageGuide: LIFE_STAGE_GUIDE[stage],
+    lifeExpectancy: LIFE_EXPECTANCY,
+  };
+}
+
 /** 기간 수익률: 날짜별 평가액을 이어 붙이고, 입금·출금이 있던 날은 수익 0으로 본다 */
 export function chainedReturn(points: EquityPoint[]): number | null {
   const pts = [...points].filter((p) => p.total > 0 && p.seed > 0).sort((a, b) => a.date.localeCompare(b.date));
@@ -214,7 +410,7 @@ export async function fetchAccountEquity(
   supabase: SupabaseClientAny,
   chatId: number,
   date: string
-): Promise<(EquityPoint & { cash: number; holdings: number; monthlyDeposit: number | null; principal: number | null }) | null> {
+): Promise<(EquityPoint & { cash: number; holdings: number; monthlyDeposit: number | null; principal: number | null; life: LifeProfile | null }) | null> {
   const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
   const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
   const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
@@ -247,6 +443,8 @@ export async function fetchAccountEquity(
       : null,
     // 시작 시드 + 월 입금 누적 (monthlyDeposit.ts). 기록이 없는 거치식 계정은 null → 목표 트래커 시작 금액을 쓴다
     principal: Number(prefs.virtual_total_deposited) > 0 ? Math.round(Number(prefs.virtual_total_deposited)) : null,
+    // 프로필의 출생 연월·은퇴 나이 (없으면 null — 나이 없이 예전처럼 보여 준다)
+    life: readLifeProfile(prefs),
   };
 }
 
@@ -382,7 +580,9 @@ export type GoalTrackerView = {
   /** 지금 평가액에서 원금을 지키며 매달 꺼내 쓸 수 있는 금액 (인출률 기준) */
   currentMonthlyWithdrawal: number;
   /** 시점별 필요 월 입금 — 1·2·3·5년과 설정한 목표 시점. 2차면 빈 배열 */
-  schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>;
+  schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean; isRetire?: boolean }>;
+  /** 프로필에 출생 연월이 있을 때: 은퇴 나이 기준 계획. 없으면 null */
+  life: LifePlan | null;
   normalRange: typeof NORMAL_MONTHLY_RANGE;
   /** 월 입금이 계정의 월 자동 입금 설정에서 온 값인지 (그러면 목표 트래커에서 따로 바꾸지 않는다) */
   contributionLinked: boolean;
@@ -397,7 +597,7 @@ export type GoalTrackerView = {
 
 export function buildGoalTrackerView(input: {
   file: GoalTrackerFile;
-  now: EquityPoint & { cash: number; holdings: number; monthlyDeposit?: number | null; principal?: number | null };
+  now: EquityPoint & { cash: number; holdings: number; monthlyDeposit?: number | null; principal?: number | null; life?: LifeProfile | null };
   realized: { swing: number; sweep: number; sells: number; wins: number };
 }): GoalTrackerView {
   const { file, now, realized } = input;
@@ -427,12 +627,34 @@ export function buildGoalTrackerView(input: {
         title: "1차 · 시드 모으기",
         text: "수익은 전부 재투자합니다. 도달 시점을 앞당기는 가장 큰 방법은 매매 수익률보다 추가 입금입니다.",
       };
-  const horizons = [12, 24, 36, 60].map((months) => ({ months, isTarget: false }));
-  const targetMonths = s.targetDate ? monthsUntil(now.date, s.targetDate) : 0;
-  if (targetMonths > 0) {
-    const i = horizons.findIndex((h) => h.months === targetMonths);
-    if (i >= 0) horizons[i].isTarget = true;
-    else horizons.push({ months: targetMonths, isTarget: true });
+  const life = now.life
+    ? buildLifePlan({
+        life: now.life,
+        today: now.date,
+        equity: now.total,
+        requiredSeed: need,
+        planAnnualPct: s.planAnnualPct,
+        monthlyContribution: s.monthlyContribution,
+        withdrawalPct,
+        etaMonth,
+      })
+    : null;
+  const horizons: Array<{ months: number; isTarget: boolean; isRetire: boolean }> = [12, 24, 36, 60].map((months) => ({
+    months,
+    isTarget: false,
+    isRetire: false,
+  }));
+  const mark = (months: number, key: "isTarget" | "isRetire") => {
+    if (!(months > 0)) return;
+    const h = horizons.find((x) => x.months === months);
+    if (h) h[key] = true;
+    else horizons.push({ months, isTarget: key === "isTarget", isRetire: key === "isRetire" });
+  };
+  mark(s.targetDate ? monthsUntil(now.date, s.targetDate) : 0, "isTarget");
+  // 은퇴 시점 행 — 목표 시점을 따로 정하지 않았으면 은퇴 시점이 곧 목표다
+  if (life && life.monthsToRetire > 0) {
+    mark(life.monthsToRetire, "isRetire");
+    if (!s.targetDate) mark(life.monthsToRetire, "isTarget");
   }
   const schedule = reached
     ? []
@@ -445,6 +667,7 @@ export function buildGoalTrackerView(input: {
             requiredMonthlyContribution({ fromEquity: now.total, target: need, planAnnualPct: s.planAnnualPct, months: h.months })
           ),
           isTarget: h.isTarget,
+          isRetire: h.isRetire,
         }));
   const mtd = monthToDateReturn(file.history, now.date);
   const monthStartEquity =
@@ -479,6 +702,7 @@ export function buildGoalTrackerView(input: {
     currentMonthlyProfit: Math.round(now.total * monthlyRate(s.planAnnualPct)),
     currentMonthlyWithdrawal: Math.round((now.total * withdrawalPct) / 100 / 12),
     schedule,
+    life,
     normalRange: NORMAL_MONTHLY_RANGE,
     contributionLinked,
     progress: (() => {
@@ -510,5 +734,21 @@ export function formatGoalLine(v: GoalTrackerView): string {
     `  이번 달 ${mtd} · 스윙 확정 ${man(v.thisMonth.realizedSwing)}원 · 계획 월 평균 ${man(v.thisMonth.expectedProfit)}원 · 계획선 대비 ${v.plan.gapPct >= 0 ? "+" : ""}${v.plan.gapPct.toFixed(1)}%`,
     `  예상 도달 ${v.target.etaMonth ?? "50년 이상"} (연 ${v.settings.planAnnualPct}% 재투자${v.settings.monthlyContribution > 0 ? ` + 월 ${man(v.settings.monthlyContribution)}원 입금` : ""})`,
     target ? `  ${v.phase.title} · ${target.month}까지 닿으려면 월 ${man(target.contribution)}원 입금 필요` : `  ${v.phase.title}`,
+    ...(v.life ? [`  [나이] 만 ${v.life.currentAge}세 · ${lifeVerdict(v.life)}`] : []),
   ].join("\n");
+}
+
+/** 나이 기준 판단 한 줄 — 텔레그램 보고와 화면이 같은 문구를 쓴다 */
+export function lifeVerdict(l: LifePlan): string {
+  const man = (x: number) => `${Math.round(x / 10_000).toLocaleString("ko-KR")}만원`;
+  switch (l.status) {
+    case "retired":
+      return `이미 은퇴 나이(${l.retireAge}세)입니다. 지금 자산에서 원금을 지키며 꺼낼 수 있는 금액을 기준으로 보세요.`;
+    case "on-track":
+      return `${l.retireAge}세 은퇴(${l.retireMonth}) 전인 ${l.etaAge}세에 필요 시드에 닿는 계획입니다. 지금 적립을 유지하면 됩니다.`;
+    case "late":
+      return `${l.retireAge}세(${l.retireMonth})에 맞추려면 매달 ${man(l.contributionForTarget)}을 모으면 됩니다. 지금 적립대로면 ${l.etaAge}세에 닿고, ${l.retireAge}세 때는 월 ${man(l.monthlyAtRetire)}을 꺼내 쓸 수 있습니다.`;
+    case "beyond-life":
+      return `${l.retireAge}세(${l.retireMonth})에 맞추려면 매달 ${man(l.contributionForTarget)}을 모으면 됩니다. 지금 적립대로면 ${l.etaAge != null ? `${l.etaAge}세` : "50년 넘게 걸려"}에야 닿아, ${l.retireAge}세 때는 월 ${man(l.monthlyAtRetire)}만 꺼내 쓸 수 있습니다.`;
+  }
 }

@@ -15,6 +15,7 @@ import {
 } from '../../src/services/monthlyDeposit'
 import { toKstDateKey } from '../../src/lib/krxCalendar'
 import { normalizeNotifyChannel } from '../../src/services/notifyChannel'
+import { readLifeProfile, sanitizeLifeInput } from '../../src/services/goalTracker'
 
 function toPositiveInt(raw: unknown): number | null {
   const num = Number(String(raw ?? '').trim())
@@ -98,6 +99,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
           strategy_mode: normalizeStrategyMode(prefs.virtual_strategy_mode),
           notify_channel: normalizeNotifyChannel(prefs.notify_channel),
+          // 프로필의 나이·은퇴 시점 (목표 트래커가 은퇴 나이에 맞춰 계산한다)
+          life: readLifeProfile(prefs),
           ...depositView(prefs),
         }
       })
@@ -118,6 +121,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { error: chError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: chPrefs }, { onConflict: 'tg_id' })
         if (chError) return res.status(500).json({ error: chError.message })
         return res.status(200).json({ data: { notify_channel: body.notify_channel } })
+      }
+
+      // 나이·은퇴 시점만 바꾸는 요청 — 출생 연월(YYYY-MM)과 은퇴 나이. 출생 연월을 비우면 지운다 (src/services/goalTracker.ts)
+      if (body.life_profile !== undefined && body.virtual_seed_capital === undefined) {
+        const lp = (body.life_profile ?? {}) as { birthMonth?: unknown; retireAge?: unknown }
+        const parsed = sanitizeLifeInput(lp, toKstDateKey())
+        if (!parsed.ok) return res.status(400).json({ error: parsed.error })
+        const { data: lifeRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const lifePrefs: Record<string, unknown> = { ...((lifeRow?.prefs as Record<string, unknown>) || {}) }
+        if (parsed.value) {
+          lifePrefs.life_birth_month = parsed.value.birthMonth
+          lifePrefs.life_retire_age = parsed.value.retireAge
+        } else {
+          delete lifePrefs.life_birth_month
+          delete lifePrefs.life_retire_age
+        }
+        const { error: lifeError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: lifePrefs }, { onConflict: 'tg_id' })
+        if (lifeError) return res.status(500).json({ error: lifeError.message })
+        return res.status(200).json({ data: { life: parsed.value } })
       }
 
       // 직접 입금: 금액이 들쭉날쭉한 추가 입금을 그때그때 가상 현금·시드에 더한다 (src/services/monthlyDeposit.ts)

@@ -7,6 +7,7 @@ import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { man, signed, useGoalTracker } from './useGoalTracker'
 import { judgeRealism, requiredAnnualPct } from '../../lib/startPlan'
 import { monthsUntil } from '../../../../src/services/goalTracker'
+import LifePlanCard from './LifePlanCard'
 import './goal-tracker.css'
 
 const UP = 'var(--color-stock-up)'
@@ -144,13 +145,19 @@ export default function GoalTrackerPage() {
   const cross = p?.crossover ?? null
   const pct = Math.min(100, Math.max(0, view.target.progressPct))
   const withdrawPct = s.withdrawalPct ?? 4
-  // 아직 필요 시드에 못 닿았을 때만: 목표 시점(없으면 10년) 안에 닿으려면 연 몇 %가 필요한지
+  const life = view.life ?? null
+  // 아직 필요 시드에 못 닿았을 때만: 목표 시점(없으면 은퇴 시점, 그것도 없으면 10년) 안에 닿으려면 연 몇 %가 필요한지
   const realism = (() => {
     if (view.equity >= view.target.requiredSeed) return null
-    const months = s.targetDate ? monthsUntil(view.today, s.targetDate) : 120
+    const months = s.targetDate
+      ? monthsUntil(view.today, s.targetDate)
+      : life && life.monthsToRetire > 0
+        ? life.monthsToRetire
+        : 120
     const years = Math.max(1, Math.round(months / 12))
     const need = requiredAnnualPct({ seed: view.equity, monthly: s.monthlyContribution, years, target: view.target.requiredSeed })
-    return { years, ...judgeRealism(need) }
+    const basis = s.targetDate ? `${years}년 기준` : life && life.monthsToRetire > 0 ? `${life.retireAge}세 은퇴까지 ${years}년` : `${years}년 기준`
+    return { years, basis, ...judgeRealism(need) }
   })()
   const assessColor =
     t.assessment?.level === 'good' ? UP : t.assessment?.level === 'rare' ? 'var(--color-error)' : 'var(--color-text-secondary)'
@@ -228,7 +235,7 @@ export default function GoalTrackerPage() {
             ) : (
               field('contribMan', '월 추가 입금 (만원)', '매달 새로 넣는 돈')
             )}
-            {field('targetDate', '필요 시드 도달 목표 시점', '이 시점에 맞추려면 매달 얼마를 넣어야 하는지 아래 표에 표시', 'month')}
+            {field('targetDate', '필요 시드 도달 목표 시점', life ? `비워 두면 은퇴 시점(${life.retireMonth}, ${life.retireAge}세)이 목표입니다` : '이 시점에 맞추려면 매달 얼마를 넣어야 하는지 아래 표에 표시', 'month')}
           </div>
           {saveError && <div className="goal-error" style={{ marginTop: 8 }}>{saveError}</div>}
           <div className="goal-actions">
@@ -270,6 +277,11 @@ export default function GoalTrackerPage() {
             <div className="goal-tile__label">예상 도달</div>
             <div className="goal-tile__value">{view.target.etaMonth ?? '50년 이상'}</div>
             <div className="goal-tile__sub">
+              {life?.etaAge != null && (
+                <span style={{ color: life.etaAge > life.retireAge ? DOWN : undefined }}>
+                  {life.etaAge}세{life.etaAge > life.retireAge ? ` (은퇴 ${life.retireAge}세보다 늦음)` : ''} ·{' '}
+                </span>
+              )}
               연 {s.planAnnualPct}% 재투자{s.monthlyContribution > 0 ? ` + 월 ${man(s.monthlyContribution)} 입금` : ''}
             </div>
           </div>
@@ -289,10 +301,12 @@ export default function GoalTrackerPage() {
         </div>
         {realism && (
           <div className="goal-note" role="status">
-            <strong>목표 현실성 ({realism.years}년 기준)</strong>: {realism.text}
+            <strong>목표 현실성 ({realism.basis})</strong>: {realism.text}
           </div>
         )}
       </section>
+
+      <LifePlanCard view={view} reload={() => void load()} />
 
       <section className="goal-card" aria-label="계획 대비">
         <h2>계획대로 가고 있나요?</h2>
@@ -415,6 +429,7 @@ export default function GoalTrackerPage() {
                   <td>
                     {r.month}
                     {r.isTarget && <span className="goal-badge">목표</span>}
+                    {r.isRetire && <span className="goal-badge">은퇴</span>}
                   </td>
                   <td>{r.months % 12 === 0 ? `${r.months / 12}년` : `${r.months}개월`}</td>
                   {/* "적용"이 만원 단위로 올려 저장하므로, 표도 같은 올림 금액을 보여 준다 */}
