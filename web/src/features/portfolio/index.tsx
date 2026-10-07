@@ -2235,7 +2235,7 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                   <label className="ui-label">기존 계좌 선택</label>
                   <select
                     className="input"
-                    value={[maintBrokerName, maintAccountName].filter(Boolean).join('||')}
+                    value={maintBrokerName || maintAccountName ? `${maintBrokerName}||${maintAccountName}` : ''}
                     onChange={(e) => {
                       const val = e.target.value
                       if (val === '__new__') {
@@ -2251,7 +2251,8 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                   >
                     <option value="">계좌를 선택하세요</option>
                     {accountFolders.map((f) => {
-                      const val = [f.brokerName, f.accountName].filter(Boolean).join('||')
+                      // 빈 칸도 자리를 지켜야 계좌명만 있는 계좌가 증권사 칸으로 밀려 들어가지 않는다
+                      const val = `${f.brokerName || ''}||${f.accountName || ''}`
                       return (
                         <option key={f.key} value={val}>
                           {accountLabel(f.brokerName, f.accountName)} ({f.count}종목)

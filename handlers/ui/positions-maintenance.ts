@@ -335,39 +335,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (mode === 'holdingrestore') {
-      const code = normalizeCode(body.code)
+      const input = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
       const quantity = Math.max(1, Math.trunc(Number(body.quantity || 1)))
       const buyDate = normalizeYmdDate(body.buy_date) || toKstDateKey()
       const brokerName = normalizeLabel(body.broker_name)
       const accountName = normalizeLabel(body.account_name)
 
-      if (!code) return res.status(400).json({ error: 'code required' })
+      if (!input) return res.status(400).json({ error: 'code required' })
       if (!buyPrice) return res.status(400).json({ error: 'buy_price must be > 0' })
       if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'quantity must be >= 1' })
 
-      // 종목 존재 여부 확인
-      const { data: stock, error: stockErr } = await supabase
+      // 종목 존재 여부 확인 — 코드로 먼저, 없으면 종목명 정확 일치로 찾는다(목록에서 안 고르고 이름만 친 경우)
+      let { data: stock, error: stockErr } = await supabase
         .from('stocks')
         .select('code,name')
-        .eq('code', code)
+        .eq('code', input)
         .maybeSingle()
       if (stockErr) return res.status(500).json({ error: stockErr.message })
-      if (!stock) return res.status(404).json({ error: `종목코드 ${code}를 찾을 수 없습니다` })
+      if (!stock) {
+        const { data: byName, error: nameErr } = await supabase
+          .from('stocks')
+          .select('code,name')
+          .ilike('name', String(body.code || '').trim().replace(/[%_\\]/g, '\\$&'))
+          .limit(2)
+        if (nameErr) return res.status(500).json({ error: nameErr.message })
+        if (byName && byName.length === 1) stock = byName[0]
+      }
+      if (!stock) return res.status(404).json({ error: `'${input}' 종목을 찾지 못했습니다. 입력창 아래 목록에서 종목을 골라 주세요.` })
+      const code = String(stock.code)
 
       const investedAmount = Math.round(buyPrice * quantity)
       const nowIso = new Date().toISOString()
       const acquiredAtIso = `${buyDate}T00:00:00.000Z`
 
-      // 기존 포지션 조회 (없으면 신규 생성) — 같은 종목이어도 다른 계좌 행은 못 보게 account_name까지 건다
-      const { data: existing, error: posErr } = await scopeByAccountName(
+      // 기존 포지션 조회 (없으면 신규 생성) — 같은 종목이어도 다른 계좌 행은 못 보게 증권사·계좌명까지 건다.
+      // 계좌명 없이 증권사만 있는 계좌가 봇 가상 계좌(둘 다 NULL) 행을 집지 않게 broker_name도 맞춘다.
+      const scoped = scopeByAccountName(
         supabase
           .from('virtual_positions')
           .select('id,code,chat_id,quantity,status,broker_name,account_name')
           .eq('chat_id', chatId)
           .eq('code', code),
         accountName
-      ).maybeSingle()
+      )
+      const { data: existing, error: posErr } = await (brokerName == null ? scoped.is('broker_name', null) : scoped.eq('broker_name', brokerName))
+        .maybeSingle()
       if (posErr) return res.status(500).json({ error: posErr.message })
       const restoreConflict = findPositionAccountConflict({ mode: 'holdingrestore', existing: existing as any, brokerName, accountName })
       if (restoreConflict) return res.status(409).json({ error: restoreConflict })

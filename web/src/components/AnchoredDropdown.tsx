@@ -68,7 +68,8 @@ export default function AnchoredDropdown({ anchorRef, className, style, maxHeigh
         bottom: pos.bottom ?? 'auto',
         maxHeight: pos.maxHeight,
         overflowY: 'auto',
-        zIndex: 10000,
+        // 모달(.modal-overlay 10020) 안의 입력창에서도 목록이 모달 뒤로 숨지 않게 그보다 위에 둔다
+        zIndex: 10030,
       }}
     >
       {children}
