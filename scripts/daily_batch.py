@@ -500,8 +500,9 @@ def main():
             pct = (elapsed / total_time * 100) if total_time > 0 else 0
             print(f"      {stage}: {elapsed:.1f}s ({pct:.1f}%)")
     
-    if total_time > 600:
-        print(f"[WARN] Batch took {total_time/60:.1f}min (target: <10min)")
+    # 워크플로 제한은 60분(daily_data.yml timeout-minutes). 예전 '목표 10분' 경고는 정상 배치(20~46분)마다 떠서 오탐이었다.
+    if total_time > 50 * 60:
+        print(f"[WARN] Batch took {total_time/60:.1f}min (workflow limit: 60min)")
 
     run_status["summary"] = {
         "total_time_seconds": round(total_time, 3),
