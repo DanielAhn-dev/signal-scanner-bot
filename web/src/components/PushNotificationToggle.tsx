@@ -33,11 +33,11 @@ export function PushNotificationToggle({ isSignedIn }: Props) {
         if (!silent) toast.show('알림 권한이 허용되지 않았습니다')
         return
       }
-      const ok = await registerPushToken(token)
-      if (!ok) {
+      const result = await registerPushToken(token)
+      if (!result.ok) {
         setStatus('error')
         localStorage.removeItem(pushEnabledStorageKey())
-        if (!silent) toast.show('토큰 등록에 실패했습니다 — 로그인 상태를 확인해주세요')
+        if (!silent) toast.show(`알림 등록 실패: ${result.reason}`)
         return
       }
       tokenRef.current = token

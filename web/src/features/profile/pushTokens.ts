@@ -27,19 +27,33 @@ function getDeviceId(): string | null {
 
 /** 이 레포는 웹 UI가 Supabase에 직접 쓰지 않고 API 핸들러(service_role)를 통해서만 접근하는
  *  컨벤션이라(RLS가 anon 직접 접근을 막아둠), 토큰 등록도 서버 라우트를 거친다. */
-export async function registerPushToken(token: string): Promise<boolean> {
+export type RegisterPushResult = { ok: true } | { ok: false; reason: string }
+
+/** 등록 실패 원인을 사용자가 알아볼 말로 — 예전엔 무조건 "로그인 상태 확인"만 떠서 원인을 알 수 없었다 */
+export function describePushRegisterError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  if (/timed out/i.test(msg)) return '서버 응답이 늦습니다. 잠시 뒤 다시 켜 보세요'
+  if (/Network error/i.test(msg)) return '네트워크 연결을 확인하세요'
+  if (/\(401\)/.test(msg)) return '로그인이 풀렸거나 아직 가입 승인 전입니다. 다시 로그인해 보세요'
+  const status = msg.match(/\((\d{3})\)/)?.[1]
+  const detail = msg.match(/"error"\s*:\s*"([^"]{1,120})"/)?.[1]
+  return `서버 오류${status ? ` ${status}` : ''}${detail ? `: ${detail}` : ''}`
+}
+
+/** 서버 첫 호출(콜드 스타트)이 인증 확인까지 하면 10초를 넘길 수 있어 넉넉히 둔다 */
+export async function registerPushToken(token: string): Promise<RegisterPushResult> {
   try {
     const json = await apiFetch('/api/ui/push-token', {
       method: 'POST',
       body: JSON.stringify({ token, device_id: getDeviceId() }),
       cacheMs: 0,
-      timeoutMs: 10_000,
+      timeoutMs: 25_000,
       retries: 0,
     })
-    return Boolean(json?.ok)
+    return json?.ok ? { ok: true } : { ok: false, reason: '서버가 등록을 확인해 주지 않았습니다' }
   } catch (e) {
     console.error('[pushTokens] registerPushToken error:', e)
-    return false
+    return { ok: false, reason: describePushRegisterError(e) }
   }
 }
 
