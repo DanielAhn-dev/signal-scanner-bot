@@ -4,6 +4,7 @@ import {
   estimatePropertyPoints,
   netCashPlan,
   pensionAccountTaxRate,
+  pensionAccountTaxRateForAnnual,
   regionalHealthPremium,
   rentalPropertyValue,
   voluntaryContinuationPremium,
@@ -108,5 +109,30 @@ describe('netCashPlan', () => {
     const r = netCashPlan({ ...base, publicPensionMonthlyWon: 2_000_000, insurance: 'dependent' })
     expect(r.dependent?.eligible).toBe(false)
     expect(r.healthMonthly).toBeGreaterThan(0)
+  })
+})
+
+describe('pensionAccountTaxRateForAnnual', () => {
+  it('연 1,500만원 이하이면 나이별 저율, 넘으면 전체 16.5%', () => {
+    expect(pensionAccountTaxRateForAnnual(65, 15_000_000)).toBe(0.055)
+    expect(pensionAccountTaxRateForAnnual(65, 15_000_001)).toBe(0.165)
+    expect(pensionAccountTaxRateForAnnual(82, 12_000_000)).toBe(0.033)
+  })
+})
+
+describe('사적연금과 건강보험료', () => {
+  const base = { monthlyFromAssetsWon: 0, distributionAnnualWon: 0, publicPensionMonthlyWon: 0, propertyBaseWon: 100_000_000, insurance: 'regional' as const }
+  it('연금계좌 수령액은 지역가입자 소득 보험료를 올리지 않는다', () => {
+    const none = netCashPlan({ ...base })
+    const withAccount = netCashPlan({ ...base, pensionAccountMonthlyWon: 2_000_000, pensionAccountAge: 65 })
+    expect(withAccount.healthMonthly).toBe(none.healthMonthly)
+  })
+  it('연금계좌 수령액이 많아도 피부양자 요건 판정에 넣지 않는다', () => {
+    const r = netCashPlan({ ...base, pensionAccountMonthlyWon: 3_000_000, pensionAccountAge: 65, insurance: 'dependent' })
+    expect(r.dependent?.eligible).toBe(true)
+  })
+  it('연금계좌 연 수령액이 1,500만원을 넘으면 세금이 16.5%로 오른다', () => {
+    const r = netCashPlan({ ...base, pensionAccountMonthlyWon: 1_500_000, pensionAccountAge: 65 })
+    expect(r.pensionAccountTaxMonthly).toBe(Math.round(1_500_000 * 0.165))
   })
 })

@@ -7,6 +7,7 @@
  *  - 여러 안내 자료가 일치(공식 원문은 직접 확인 못 함): 지역가입자 소득 반영 — 사업·이자·배당·기타 100%, 근로·연금 50%,
  *    금융소득은 연 1,000만원 초과일 때만 반영, 재산 기본공제 1억, 자동차 부과 폐지(2024-02), 피부양자 소득 2,000만원·재산 5.4억/9억
  *  - 근사: 재산 점수표(60등급)는 1·2·60등급만 원문으로 확인했고 중간 구간은 앵커 점 사이를 로그 보간한 값이다 → 재산 보험료는 ±10% 안팎 오차
+ * 사적연금(연금저축·IRP 수령액)은 건보료 부과 소득과 피부양자 소득 요건에 넣지 않는다(2026-10-07 수정: 이전엔 공적연금처럼 50% 반영해 보험료를 과대 추정). 여러 안내 자료가 일치하는 내용이며 공단 원문은 확인하지 못했다.
  * 제외: 국민연금 소득세(연금소득공제 후 월 100만원 수준이면 연 수십만원 이하), 금융소득 2,000만원 초과 종합과세, 임의계속가입(직장 보수 기준 유지, 최대 36개월)
  */
 
@@ -105,6 +106,18 @@ export function pensionAccountTaxRate(age: number): number {
   return 0.055
 }
 
+/** 사적연금(연금저축·IRP) 연 수령액 이 금액 이하이면 위 저율 분리과세, 넘으면 수령액 전체에 16.5% 분리과세(또는 종합과세 선택) */
+export const PENSION_SEPARATE_LIMIT_ANNUAL_WON = 15_000_000
+export const PENSION_OVER_LIMIT_RATE = 0.165
+
+/**
+ * 연 수령액까지 반영한 연금소득세율. 연 1,500만원을 넘으면 '넘는 부분'이 아니라 수령액 전체에 적용되는 쪽(16.5% 분리과세 선택)으로 보수적으로 잡는다.
+ * 종합과세를 고르는 쪽이 유리한 소득 구간도 있어 실제 세금은 이보다 낮을 수 있다.
+ */
+export function pensionAccountTaxRateForAnnual(age: number, annualWon: number): number {
+  return annualWon > PENSION_SEPARATE_LIMIT_ANNUAL_WON ? PENSION_OVER_LIMIT_RATE : pensionAccountTaxRate(age)
+}
+
 export type CashPlanInput = {
   /** 금융자산에서 매달 꺼내는 금액(세전). 이 중 분배금·이자 부분은 distributionAnnualWon */
   monthlyFromAssetsWon: number
@@ -134,15 +147,15 @@ export function netCashPlan(i: CashPlanInput): CashPlan {
   const pensionAccountMonthly = i.pensionAccountMonthlyWon ?? 0
   const gross = i.monthlyFromAssetsWon + i.publicPensionMonthlyWon + pensionAccountMonthly
   const dividendTax = (i.distributionAnnualWon * DIVIDEND_TAX_RATE) / 12
-  const pensionTax = pensionAccountMonthly * pensionAccountTaxRate(i.pensionAccountAge ?? 65)
+  const pensionTax = pensionAccountMonthly * pensionAccountTaxRateForAnnual(i.pensionAccountAge ?? 65, pensionAccountMonthly * 12)
   const pensionAnnual = i.publicPensionMonthlyWon * 12
   let health = 0
   let dependent: DependentCheck | null = null
   if (i.insurance === 'dependent') {
-    dependent = dependentEligibility({ financialIncomeAnnualWon: i.distributionAnnualWon, publicPensionAnnualWon: pensionAnnual, otherIncomeAnnualWon: pensionAccountMonthly * 12, propertyBaseWon: i.propertyBaseWon })
+    dependent = dependentEligibility({ financialIncomeAnnualWon: i.distributionAnnualWon, publicPensionAnnualWon: pensionAnnual, propertyBaseWon: i.propertyBaseWon })
   }
   if (i.insurance === 'regional' || (dependent && !dependent.eligible)) {
-    health = regionalHealthPremium({ propertyBaseWon: i.propertyBaseWon, financialIncomeAnnualWon: i.distributionAnnualWon, publicPensionAnnualWon: pensionAnnual + pensionAccountMonthly * 12 }).total
+    health = regionalHealthPremium({ propertyBaseWon: i.propertyBaseWon, financialIncomeAnnualWon: i.distributionAnnualWon, publicPensionAnnualWon: pensionAnnual }).total
   }
   const net = gross - dividendTax - pensionTax - health
   return {
