@@ -618,6 +618,7 @@ export default function Portfolio() {
     code: String(r.code ?? ''),
     name: r.stock_name ?? null,
     value: holdingValue(r),
+    etf: r?.etf_key ?? null,
   }))), [holdingAll])
   const virtualHoldingRows = useMemo(() => holdingAll.filter((r: any) => isVirtualPositionRow(r)), [holdingAll])
 
@@ -1512,6 +1513,8 @@ export default function Portfolio() {
             pnlPct: r.unrealized_pct != null ? Number(r.unrealized_pct) : null,
             accountWeightPct: accountSummary.weightPct(rowAccountKey, holdingValue(r)),
             coveredCallShareOfIncomePct: accountSummary.coveredCallShareOfIncomePct(rowAccountKey),
+            incomePeers: accountSummary.incomePeers(rowAccountKey),
+            etf: r?.etf_key ?? null,
             weightCaution: r?.weight_caution ?? null,
             isBotAccount: rowAccountKey === '|||',
           })
@@ -1615,11 +1618,17 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                 </div>
                 <div className="portfolio-action-todo">{action.todo}</div>
                 <details className="portfolio-action-more" open={action.tone !== 'keep'}>
-                  <summary>언제 움직이나</summary>
+                  <summary>{action.facts.length ? '이 종목 숫자 · 언제 움직이나' : '언제 움직이나'}</summary>
+                  {action.facts.length > 0 && (
+                    <ul className="portfolio-action-facts">
+                      {action.facts.map((f) => <li key={f}>{f}</li>)}
+                    </ul>
+                  )}
                   <dl className="portfolio-action-lines">
                     <div><dt>지금 상태</dt><dd>{action.now}</dd></div>
                     <div><dt>언제 움직이나</dt><dd>{action.when}</dd></div>
                   </dl>
+                  {action.source && <div className="caption muted portfolio-action-source">{action.source}</div>}
                 </details>
               </div>
 

@@ -2231,6 +2231,8 @@ a:focus-visible {
 .portfolio-action-more > summary { cursor: pointer; color: var(--color-text-secondary); font-size: var(--font-size-xs); width: fit-content; }
 .portfolio-action-more > summary:hover { color: var(--color-text-primary); }
 .portfolio-action-more .portfolio-action-lines { margin-top: var(--space-1); }
+.portfolio-action-facts { margin: var(--space-1) 0 0; padding-left: 1.1em; display: grid; gap: 2px; color: var(--color-text-secondary); font-size: var(--font-size-sm, 13px); line-height: 1.5; font-variant-numeric: tabular-nums; }
+.portfolio-action-source { margin-top: var(--space-2); font-size: var(--font-size-xs); line-height: 1.4; }
 
 .portfolio-meta-account { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
 .portfolio-meta-account::before { content: '·'; margin-right: 3px; }

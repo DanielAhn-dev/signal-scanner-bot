@@ -31,6 +31,7 @@
 2. `validate_weight_caution.py`·`validate_market_flow_caution.py` 재실행 → 숫자가 바뀌면 `weightCautionSignal.ts`·`marketFlowCaution.ts` 근거 상수와 연구 문서 갱신
 3. 시장 비교·인컴 분배율·재미 몫 비용의 변화를 `research-income-then-growth` 부록에 한 줄 추가
 4. 신형 커버드콜 분배금이 들어오면 아래 "남은 일" 1번 수행
+5. `python scripts/research/build_etf_history_facts.py [--fetch <새로 보유한 ETF 코드>]` → `web/src/data/etfHistoryFacts.ts`(보유 카드 "이 종목 대응"의 분배금 증감·줄어든 해·가격 잠식·코스피200 대비). 분배금 이력이 없는 종목은 운용사 파일을 `incoming/`에 넣고 `import_incoming_dividends.py` 먼저
 
 ## 남은 일
 1. **신형 커버드콜 분배금 이력**: 9종 변환·분석 완료(부록 11, `import_incoming_dividends.py`). 남은 것은 KODEX 금융고배당TOP10타겟위클리커버드콜(498410) 분배금(파일이 보유종목 표였음)과 신형 상품 하락장 이력(없음).

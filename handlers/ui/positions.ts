@@ -13,6 +13,8 @@ import {
 import { fetchWeightCautions, type WeightCautionResult } from '../../src/services/weightCautionSignal'
 import { entryGuardLabel, fetchChaseEntries, type ChaseEntryResult } from '../../src/services/chaseEntrySignal'
 import { toKstDateKey } from '../../src/lib/krxCalendar'
+import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
+import { ETF_BENCHMARK_CODE, fetchEtfKeyIndicators, type EtfKeyIndicator } from '../../src/services/etfKeyIndicator'
 import { selectPaged } from '../../src/services/supabasePaging'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
@@ -199,6 +201,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ])
       : Promise.resolve(new Map())
 
+    // ETF 분배율·보수·수익률 — 카드 "이 종목 대응"이 종목별 숫자로 말하게 (6시간 캐시, 늦으면 없이 응답)
+    const etfCodes = Array.from(new Set((data ?? [])
+      .filter((r: any) => r.code && isExchangeTradedProduct(String(r.code), r.stock?.name))
+      .map((r: any) => String(r.code).trim())))
+    const etfKeyPromise: Promise<Map<string, EtfKeyIndicator>> = etfCodes.length > 0
+      ? Promise.race([
+          fetchEtfKeyIndicators([...etfCodes, ETF_BENCHMARK_CODE]).catch(() => new Map<string, EtfKeyIndicator>()),
+          new Promise<Map<string, EtfKeyIndicator>>((resolve) =>
+            setTimeout(() => resolve(new Map()), POSITIONS_CAUTION_TIMEOUT_MS)),
+        ])
+      : Promise.resolve(new Map())
+
     const scoreByCode = new Map<string, { totalScore: number | null; signal: string | null }>()
     if (codes.length > 0) {
       const { data: latestScoreRows } = await supabase
@@ -356,6 +370,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const weightCautionByCode = await weightCautionPromise
     const entryGuardByCode = await entryGuardPromise
+    const etfKeyByCode = await etfKeyPromise
+    const benchmarkReturn1y = etfKeyByCode.get(ETF_BENCHMARK_CODE)?.return1y ?? null
     let fallbackToCloseCount = 0
     const mapped = (data ?? []).map((row: any) => {
       // 현재가 우선, 없으면 DB 종가 (폴백)
@@ -447,6 +463,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return c && c.level !== 'none'
             ? { level: c.level, overheat: c.overheat, volSpike: c.volSpike, ma200Gap: c.ma200Gap, volRatio: c.volRatio, message: c.message }
             : null
+        })(),
+        etf_key: (() => {
+          const k = etfKeyByCode.get(code)
+          return k ? { ...k, benchmarkReturn1y } : null
         })(),
         entry_guard: (() => {
           const g = entryGuardByCode.get(code)
