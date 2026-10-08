@@ -77,6 +77,17 @@ export function resolveCorpCode(code: string): { corpCode: string; preferred: bo
   return null;
 }
 
+/** 종목코드 → DART 회사코드. 표에 없으면 하루 한 번까지 corpCode.xml을 새로 받아 다시 찾는다(ETF·ETN 제외) */
+export async function resolveCorpCodeWithRefresh(
+  code: string,
+  apiKey = process.env.DART_API_KEY,
+  fetchImpl: typeof fetch = fetch
+): Promise<{ corpCode: string; preferred: boolean } | null> {
+  let corp = resolveCorpCode(code);
+  if (!corp && apiKey && !isExchangeTradedProduct(code) && (await refreshCorpCodesOnMiss(apiKey, fetchImpl))) corp = resolveCorpCode(code);
+  return corp;
+}
+
 const plain = (xml: string) =>
   xml
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
