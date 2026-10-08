@@ -1083,7 +1083,8 @@ export default function Portfolio() {
 
   return (
     <section className="container-app portfolio-page">
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+      <div className="portfolio-head-sheet">
+      <table className="xls-table xls-fit" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
           <col style={{ width: '18%' }} />
           <col style={{ width: '18%' }} />
@@ -1103,31 +1104,26 @@ export default function Portfolio() {
             </td>
           </tr>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
-              <div className="portfolio-head-controls" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
-                  {refreshing ? '새로고침 중...' : '새로고침'}
-                </Button>
-                <span className="portfolio-total-pill">
-                  {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
-                </span>
-                <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
-              </div>
-            </td>
-            <td className="xls-cell" colSpan={2} style={{ padding: '8px 10px' }}>
-              <div
-                className="portfolio-head-maintenance"
-                role="group"
-                aria-label="포트폴리오 유지보수 작업"
-                style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', borderLeft: '1px solid var(--color-border-default)', paddingLeft: 'var(--space-2)' }}
-              >
-                <span className="caption muted" style={{ whiteSpace: 'nowrap' }}>유지보수</span>
-                <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-                  계좌/보유 추가
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>
-                  전체매도
-                </Button>
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <div className="portfolio-head-row">
+                <div className="portfolio-head-controls">
+                  <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
+                    {refreshing ? '새로고침 중...' : '새로고침'}
+                  </Button>
+                  <span className="portfolio-total-pill">
+                    {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
+                  </span>
+                  <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
+                </div>
+                <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업">
+                  <span className="caption muted" style={{ whiteSpace: 'nowrap' }}>유지보수</span>
+                  <Button variant="secondary" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
+                    계좌/보유 추가
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>
+                    전체매도
+                  </Button>
+                </div>
               </div>
             </td>
           </tr>
@@ -1170,6 +1166,7 @@ export default function Portfolio() {
           </tr>
         </tbody>
       </table>
+      </div>
 
       {/* 필터 */}
       <div className="card mb-4 portfolio-filter-card">

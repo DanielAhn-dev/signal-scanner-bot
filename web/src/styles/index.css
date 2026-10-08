@@ -1844,12 +1844,19 @@ a:focus-visible {
   color: var(--color-text-muted);
 }
 
+.portfolio-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .portfolio-head-controls {
   @apply flex items-center;
   gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
-  margin-left: auto;
 }
 
 .portfolio-head-maintenance {
@@ -2861,18 +2868,30 @@ a:focus-visible {
     width: 100%;
   }
 
+  .portfolio-head-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .portfolio-head-maintenance {
     width: 100%;
-    @apply flex-col;
-    gap: var(--space-1);
-    padding-top: var(--space-2);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+    padding: var(--space-2) 0 0;
+    margin-left: 0;
     border-top: 1px solid var(--color-border-muted);
     border-left: 0;
   }
 
+  .portfolio-head-maintenance > .caption {
+    grid-column: 1 / -1;
+  }
+
   .portfolio-head-maintenance .ui-button {
     width: 100%;
-    justify-content: flex-start;
+    min-height: 40px;
+    justify-content: center;
   }
 
   .portfolio-share-history-actions {
@@ -8300,17 +8319,30 @@ a:focus-visible {
   }
 }
 
-/* 포트폴리오: 표(셀) 아래 카드형 영역은 좌우 여백을 공통으로 둔다 */
-.container-app.portfolio-page > .portfolio-asset-overview-card,
-.container-app.portfolio-page > .portfolio-cards-list,
-.container-app.portfolio-page > .portfolio-error-wrap,
-.container-app.portfolio-page > .pagination-wrap,
-.container-app.portfolio-page > .portfolio-reference-head,
-.container-app.portfolio-page > .portfolio-macro-card,
-.container-app.portfolio-page > .portfolio-policy-card,
-.container-app.portfolio-page > .portfolio-performance-card {
+/* 포트폴리오: 표와 카드가 모두 같은 좌우 여백·폭을 갖도록 직계 자식에 공통 규칙을 건다.
+   (min-width:100% 표나 내용이 넓은 카드가 컨테이너를 밀어내 폭이 어긋나던 문제 방지) */
+.container-app.portfolio-page > * {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  max-width: none;
   margin-left: var(--space-3);
   margin-right: var(--space-3);
+  overflow-x: clip;
+}
+
+.container-app.portfolio-page > .portfolio-head-sheet {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.container-app.portfolio-page {
+  padding-bottom: var(--space-6) !important;
+}
+
+.container-app.portfolio-page > .portfolio-head-sheet > .xls-table {
+  width: 100%;
+  min-width: 0;
 }
 
 /* 종목 카드 버튼: 사기·팔기 기록은 같은 폭 버튼 2개, 고치기·지우기는 오른쪽 작은 글자 버튼 */
