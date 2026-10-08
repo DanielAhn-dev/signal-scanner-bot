@@ -26,6 +26,18 @@ export function resolveStrategyGateStatus(metrics: StrategyGateMetrics): Strateg
   return "hold";
 }
 
+const GATE_STRICTNESS: Record<StrategyGateStatus, number> = { promote: 0, hold: 1, watch: 2, pause: 3 };
+
+/** 두 게이트 중 더 엄격한 쪽. 점검 도중 다시 계산할 땐 조이기만 하고 풀지는 않는다. */
+export function stricterGateStatus(
+  a: StrategyGateStatus | undefined,
+  b: StrategyGateStatus | undefined
+): StrategyGateStatus | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return GATE_STRICTNESS[b] > GATE_STRICTNESS[a] ? b : a;
+}
+
 export async function upsertStrategyGateState(input: {
   supabase: SupabaseClientAny;
   chatId: number;

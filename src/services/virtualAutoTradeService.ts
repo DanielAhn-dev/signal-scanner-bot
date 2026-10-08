@@ -162,6 +162,7 @@ import {
   fetchStrategyGateState,
   upsertStrategyGateState,
   resolveStrategyGateStatus,
+  stricterGateStatus,
 } from "./strategyGateStateService";
 import { businessDaysBehindExpected } from "../utils/dataFreshness";
 import { checkAutotradeBuyBlock } from "./macroEventWarningService";
@@ -4789,7 +4790,7 @@ async function runDailyReviewForUser(payload: {
     baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
     perf: dailySellPerf,
   });
-  const persistedGuard = applyPersistedGateGuard({
+  let persistedGuard = applyPersistedGateGuard({
     requestedSlots: perfGuard.requestedSlots,
     baseMinBuyScore: perfGuard.baseMinBuyScore,
     gateStatus:
@@ -4797,6 +4798,9 @@ async function runDailyReviewForUser(payload: {
         ? "hold"
         : persistedGateState?.status,
   });
+  // 매수 단계가 쓰는 성과·게이트. 이번 회차에 매도가 나면 매수 전에 다시 계산한다(아래 추가매수 직전).
+  let buySellPerf = dailySellPerf;
+  let buyGateStatus = persistedGateState?.status;
   if (perfGuard.note) {
     summary.notes.push(perfGuard.note);
   }
@@ -5599,6 +5603,37 @@ async function runDailyReviewForUser(payload: {
     // 계정별 1회 캐시되는 값이라 루프 밖에서 한 번 읽는다
     const adaptiveRule = await getAdaptiveConvictionRule(chatId);
 
+    // 이번 회차에 매도가 났으면 성과·전략 게이트를 매수 전에 다시 계산한다. 예전엔 점검 시작 때 읽은 값으로
+    // 매수까지 갔다(2026-10-08 09:29 이수페타시스 손절로 연속손실 3→4회·'중단 후보'가 됐는데, 같은 회차의
+    // 추가·신규매수 판단은 '유지' 게이트로 진행 — 현금이 모자라 우연히 안 샀을 뿐). 회차 중엔 조이기만 한다.
+    if (summary.sells > 0) {
+      const refreshedPerf = await getRecentAutoTradeSellPerformance({
+        supabase: payload.supabase,
+        chatId,
+        windowDays: 45,
+      }).catch(() => null);
+      if (refreshedPerf) {
+        const prevGateStatus = buyGateStatus;
+        buySellPerf = refreshedPerf;
+        buyGateStatus = stricterGateStatus(buyGateStatus, resolveStrategyGateStatus(refreshedPerf));
+        const refreshedPerfGuard = applyPerformanceBuyGuard({
+          requestedSlots: toPositiveInt(payload.setting.monday_buy_slots, 2),
+          baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+          perf: refreshedPerf,
+        });
+        persistedGuard = applyPersistedGateGuard({
+          requestedSlots: refreshedPerfGuard.requestedSlots,
+          baseMinBuyScore: refreshedPerfGuard.baseMinBuyScore,
+          gateStatus: payload.manualLearning && buyGateStatus === "watch" ? "hold" : buyGateStatus,
+        });
+        if (buyGateStatus !== prevGateStatus || refreshedPerf.maxLossStreak !== dailySellPerf?.maxLossStreak) {
+          summary.notes.push(
+            `[매도 후 게이트 재계산] 연속손실 ${dailySellPerf?.maxLossStreak ?? 0}→${refreshedPerf.maxLossStreak}회 · 게이트 ${toGateLabel(prevGateStatus ?? "hold")}→${toGateLabel(buyGateStatus ?? "hold")}`
+          );
+        }
+      }
+    }
+
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
       requestedSlots: recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily ? 0 : persistedGuard.requestedSlots,
@@ -5871,12 +5906,12 @@ async function runDailyReviewForUser(payload: {
     const perfAdjustedRebalance = applyPerformanceBuyGuard({
       requestedSlots: rawBuySlots,
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
-      perf: dailySellPerf,
+      perf: buySellPerf,
     });
     const persistedRebalanceGuard = applyPersistedGateGuard({
       requestedSlots: perfAdjustedRebalance.requestedSlots,
       baseMinBuyScore: perfAdjustedRebalance.baseMinBuyScore,
-      gateStatus: persistedGateState?.status,
+      gateStatus: buyGateStatus,
     });
     const buyConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
