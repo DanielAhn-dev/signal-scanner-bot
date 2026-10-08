@@ -76,7 +76,7 @@ import { describeScanFilterReasons } from "../bot/commands/scanFilters";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes, type ScoreSnapshotRow } from "./scoreSourceService";
 import type { SignalGateResult } from "./virtualAutoTradeSignalGate";
-import type { AutoTradeSizingResult } from "./virtualAutoTradeSizing";
+import { describeSizingSkips, type AutoTradeSizingResult } from "./virtualAutoTradeSizing";
 import { sendMessage } from "../telegram/api";
 import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
@@ -4063,6 +4063,7 @@ async function runMondayBuyForUser(payload: {
   let trustGateNoteAdded = false;
   let slotsLeft = remainSlots;
   let insufficientCashCount = 0;
+  const sizingSkips: AutoTradeSizingResult[] = [];
 
   // 적응형 피드백: 최근 90일 점수대·등급별 승률로 확신도를 가감하고, 반복 손실 패턴은 신규 매수에서 제외
   const adaptiveRule = await getAdaptiveConvictionRule(chatId);
@@ -4198,6 +4199,7 @@ async function runMondayBuyForUser(payload: {
       if (qty <= 0 || investedAmount <= 0) {
         summary.skipped += 1;
         insufficientCashCount += 1;
+        sizingSkips.push(sizing);
         // 슬롯을 소모하여 다음 후보가 더 큰 예산을 배정받도록 함
         slotsLeft -= 1;
         await writeActionLog({
@@ -4209,6 +4211,8 @@ async function runMondayBuyForUser(payload: {
           reason: "insufficient-cash",
           detail: {
             availableCash,
+            skipReason: sizing.skipReason,
+            meaningfulFloor: sizing.meaningfulFloor,
             budget: sizing.budget,
             totalBudget: sizing.totalBudget,
             budgetPerSlot: sizing.budgetPerSlot,
@@ -4269,7 +4273,7 @@ async function runMondayBuyForUser(payload: {
 
   if (insufficientCashCount > 0) {
     summary.notes.push(
-      `현금 부족으로 매수 스킵 ${insufficientCashCount}건 (회당 예산/종목가격 조합으로 최소주문 500,000원 미달 포함)`
+      describeSizingSkips(sizingSkips, marketPolicy.minCashReservePct) ?? `현금 부족으로 매수 보류 ${insufficientCashCount}건`
     );
   }
 
@@ -5059,6 +5063,7 @@ async function runDailyReviewForUser(payload: {
   let addOnBuyCount = 0;
   let rebalanceBuyCount = 0;
   let insufficientCashCount = 0;
+  const sizingSkips: AutoTradeSizingResult[] = [];
   const overweightReducedCodes: string[] = [];
   let holdTakeProfitMin = Number.POSITIVE_INFINITY;
   let holdTakeProfitMax = 0;
@@ -6189,6 +6194,7 @@ async function runDailyReviewForUser(payload: {
         const qty = sizing.quantity;
         if (qty <= 0) {
           insufficientCashCount += 1;
+        sizingSkips.push(sizing);
           summary.skipped += 1;
           // 슬롯을 소모하여 다음 후보가 더 큰 예산을 배정받도록 함
           slotsLeft -= 1;
@@ -6201,6 +6207,8 @@ async function runDailyReviewForUser(payload: {
             reason: "insufficient-cash",
             detail: {
               availableCash,
+              skipReason: sizing.skipReason,
+              meaningfulFloor: sizing.meaningfulFloor,
               budget: sizing.budget,
               totalBudget: sizing.totalBudget,
               budgetPerSlot: sizing.budgetPerSlot,
@@ -6272,7 +6280,9 @@ async function runDailyReviewForUser(payload: {
     `일일판단 요약: 보유유지 ${holdCount}건 · 익절 ${takeProfitCount}건 · 손절 ${stopLossCount}건 · 추가매수 ${addOnBuyCount}건 · 신규매수 ${rebalanceBuyCount}건`
   );
   if (insufficientCashCount > 0) {
-    summary.notes.push(`현금 부족으로 매수 스킵 ${insufficientCashCount}건`);
+    summary.notes.push(
+      describeSizingSkips(sizingSkips, marketPolicy.minCashReservePct) ?? `현금 부족으로 매수 보류 ${insufficientCashCount}건`
+    );
   }
 
   if (!payload.dryRun) {

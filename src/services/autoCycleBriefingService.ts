@@ -1,7 +1,7 @@
 import { runVirtualAutoTradingForChat } from "./virtualAutoTradeService";
 
 const SKIP_REASON_KO: Record<string, string> = {
-  "insufficient-cash": "현금부족",
+  "insufficient-cash": "매수금액 부족",
   "no-available-cash": "가용현금없음",
   "cash-reserve-floor": "현금하한도달",
   "strategy-blocked-buy": "전략차단",
@@ -21,7 +21,7 @@ function resolveCurrentRunCause(action: { buys: number; sells: number; skipped: 
   if (notes.some((note) => /선택 전략으로 신규 매수 중지|안전 전략 유지|제한 진입|기존 포지션만 관리/.test(note))) {
     return "전략 제한";
   }
-  if (notes.some((note) => /투자 가능 현금 0원|현금 하한 유지 구간|현금 부족으로 매수 스킵/.test(note))) {
+  if (notes.some((note) => /투자 가능 현금 0원|현금 하한 유지 구간|현금 부족으로 매수 (?:스킵|보류)|매수 보류 \d+건:/.test(note))) {
     return "현금/사이징 제약";
   }
   if (notes.some((note) => /매수 후보 없음|신규 매수 후보 0건/.test(note))) {

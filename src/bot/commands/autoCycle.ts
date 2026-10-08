@@ -287,7 +287,7 @@ function buildThreeLineSummary(input: {
   const line1 = `결과: 매수 ${action.buys}건 · 매도 ${action.sells}건 · 미체결 ${action.skipped}건 · 오류 ${action.errors}건`;
 
   const SKIP_REASON_KO: Record<string, string> = {
-    "insufficient-cash": "현금부족",
+    "insufficient-cash": "매수금액 부족",
     "no-available-cash": "가용현금없음",
     "cash-reserve-floor": "현금하한도달",
     "strategy-blocked-buy": "전략차단",
@@ -309,7 +309,7 @@ function buildThreeLineSummary(input: {
     if (notes.some((note) => /선택 전략으로 신규 매수 중지|안전 전략 유지|제한 진입|기존 포지션만 관리/.test(note))) {
       return "전략 제한";
     }
-    if (notes.some((note) => /투자 가능 현금 0원|현금 하한 유지 구간|현금 부족으로 매수 스킵/.test(note))) {
+    if (notes.some((note) => /투자 가능 현금 0원|현금 하한 유지 구간|현금 부족으로 매수 (?:스킵|보류)|매수 보류 \d+건:/.test(note))) {
       return "현금/사이징 제약";
     }
     if (latestRejectNote) {
@@ -401,7 +401,7 @@ function buildFriendlyGuide(action: {
     const hasStrategyBlock = notes.some((note) =>
       /선택 전략으로 신규 매수 중지|기존 포지션만 관리|안전 전략 유지|최소 진입|제한 진입|보수 분산/.test(note)
     );
-    const hasNoCandidate = notes.some((note) => /후보 없음|미체결|현금 0원|현금 부족으로 매수 스킵|최소주문/.test(note));
+    const hasNoCandidate = notes.some((note) => /후보 없음|미체결|현금 0원|현금 부족으로 매수 (?:스킵|보류)|매수 보류 \d+건:|최소주문/.test(note));
 
     const lines = [
       "안내",
@@ -449,7 +449,7 @@ function buildRecentMetricsLines(metrics: AutoTradeRecentMetrics | null): string
 
   if (metrics.topSkipReasons.length > 0) {
     const SKIP_REASON_KO: Record<string, string> = {
-      "insufficient-cash": "현금부족",
+      "insufficient-cash": "매수금액 부족",
       "no-available-cash": "가용현금없음",
       "cash-reserve-floor": "현금하한도달",
       "strategy-blocked-buy": "전략차단",

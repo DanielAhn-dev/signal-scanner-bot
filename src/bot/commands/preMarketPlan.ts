@@ -117,7 +117,7 @@ function formatSignedKrw(value: number): string {
 }
 
 const SKIP_REASON_KO: Record<string, string> = {
-  "insufficient-cash": "현금부족",
+  "insufficient-cash": "매수금액 부족",
   "no-available-cash": "가용현금없음",
   "cash-reserve-floor": "현금하한도달",
   "strategy-blocked-buy": "전략차단",

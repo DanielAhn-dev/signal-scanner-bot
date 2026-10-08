@@ -41,6 +41,10 @@ export type AutoTradeSizingResult = {
   baseTargetBudget: number;
   /** quantity가 0인 경우 사이징 단계의 사유 */
   skipReason: AutoTradeSizingSkipReason;
+  /** 이 금액보다 작게 잡히면 매수를 보류한다 (최소주문, 기본 목표의 50% 중 큰 값) */
+  meaningfulFloor: number;
+  /** 총 목표 예산이 넘겨받은 현금(최소현금을 뺀 쓸 수 있는 돈)에 걸려 줄었는지 */
+  cashLimited: boolean;
 };
 
 const MIN_ORDER_FLOOR_KRW = 100_000;
@@ -255,6 +259,8 @@ export function calculateAutoTradeBuySizing(
     baseTargetBudget,
     minOrderAmount,
     skipReason,
+    meaningfulFloor,
+    cashLimited: scaledBudget > availableCash,
     targetWeightPct:
       seedCapital > 0 && totalBudget > 0
         ? Number(((totalBudget / seedCapital) * 100).toFixed(2))
@@ -282,4 +288,48 @@ export function calculateAutoTradeBuySizing(
   }
 
   return buildResult(quantity, investedAmount, budget, splitCount, skipReason);
+}
+
+function formatWon(value: number): string {
+  return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+/**
+ * 사이징에서 걸러진 매수 보류를 사유별 한 줄로 쓴다. 예전엔 전부 "현금 부족"이라 적어서, 2026-10-08처럼
+ * 현금이 161만원 있는데 최소현금 25%를 남기고 쓸 수 있는 돈(96만원)이 한 종목 최소 크기(100만원)에
+ * 못 미쳐 보류한 경우도 현금이 없는 것처럼 보였다.
+ */
+export function describeSizingSkips(
+  skips: Array<Pick<AutoTradeSizingResult, "skipReason" | "totalBudget" | "meaningfulFloor" | "minOrderAmount" | "cashLimited">>,
+  minCashReservePct?: number | null
+): string | null {
+  if (skips.length === 0) return null;
+  const parts: string[] = [];
+  const small = skips.filter((s) => s.skipReason === "below-meaningful-size");
+  const cashSmall = small.filter((s) => s.cashLimited);
+  const scaledSmall = small.filter((s) => !s.cashLimited);
+  if (cashSmall.length > 0) {
+    const usable = Math.max(...cashSmall.map((s) => s.totalBudget));
+    const floor = Math.min(...cashSmall.map((s) => s.meaningfulFloor));
+    const reserveText = minCashReservePct != null && minCashReservePct > 0 ? `최소현금 ${minCashReservePct}%를 남기고 ` : "";
+    parts.push(
+      `매수 보류 ${cashSmall.length}건: ${reserveText}쓸 수 있는 돈 ${formatWon(usable)}이 한 종목 최소 매수 금액 ${formatWon(floor)}보다 적음 (작은 매수 방지)`
+    );
+  }
+  if (scaledSmall.length > 0) {
+    const sized = Math.max(...scaledSmall.map((s) => s.totalBudget));
+    const floor = Math.min(...scaledSmall.map((s) => s.meaningfulFloor));
+    parts.push(
+      `매수 보류 ${scaledSmall.length}건: 손실·위험 한도로 줄인 매수 금액 ${formatWon(sized)}이 한 종목 최소 매수 금액 ${formatWon(floor)}보다 적음`
+    );
+  }
+  const minOrder = skips.filter((s) => s.skipReason === "below-min-order");
+  if (minOrder.length > 0) {
+    parts.push(
+      `매수 보류 ${minOrder.length}건: 1주 가격이 커서 첫 매수 금액이 최소 주문 ${formatWon(minOrder[0].minOrderAmount)}에 못 미침`
+    );
+  }
+  const other = skips.length - small.length - minOrder.length;
+  if (other > 0) parts.push(`현금 부족으로 매수 보류 ${other}건`);
+  return parts.join(" · ");
 }

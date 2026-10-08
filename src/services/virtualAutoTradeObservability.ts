@@ -15,7 +15,7 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   daily_loss_limit: "일손실 한도 도달",
   no_deployable_cash: "투자 가능 현금 없음",
   cash_reserve_floor: "현금 하한 유지",
-  insufficient_cash: "현금 부족",
+  insufficient_cash: "매수 금액 부족(현금·최소금액)",
   no_buy_slots: "매수 슬롯 없음",
   stale_or_frozen_close: "시세 동결/신선도 미달",
   strategy_blocked_buy: "전략 매수 차단",
@@ -33,7 +33,7 @@ export function resolveAutoTradeSkipReasonCode(note: string): string | null {
   if (value.includes("일손실 한도 도달")) return "daily_loss_limit";
   if (value.includes("투자 가능 현금 0원")) return "no_deployable_cash";
   if (value.includes("현금 하한 유지 구간")) return "cash_reserve_floor";
-  if (value.includes("현금 부족으로 매수 스킵")) return "insufficient_cash";
+  if (/현금 부족으로 매수 (?:스킵|보류)|매수 보류 \d+건:/.test(value)) return "insufficient_cash";
   if (value.includes("매수 슬롯 없음") || value.includes("신규 진입 슬롯 없음") || value.includes("추가 매수 슬롯 없음")) return "no_buy_slots";
   if (value === "stale-or-frozen-close") return "stale_or_frozen_close";
   if (value === "strategy-blocked-buy") return "strategy_blocked_buy";

@@ -32,7 +32,7 @@ test("buildAutoTradeSkipReasonStats: 액션 메모에서 스킵 사유를 집계
   assert.deepEqual(stats, [
     { code: "cash_reserve_floor", label: "현금 하한 유지", count: 1 },
     { code: "duplicate_window", label: "동일 실행창 중복 스킵", count: 1 },
-    { code: "insufficient_cash", label: "현금 부족", count: 1 },
+    { code: "insufficient_cash", label: "매수 금액 부족(현금·최소금액)", count: 1 },
   ]);
 });
 
