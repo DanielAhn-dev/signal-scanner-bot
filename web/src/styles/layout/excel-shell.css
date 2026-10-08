@@ -4228,6 +4228,10 @@
   .xls-content-inner table.xls-fit--stack colgroup {
     display: none;
   }
+  /* .xls-row의 고정 높이는 표 행일 땐 최소 높이지만 block이 되면 진짜 고정 높이가 되어 내용이 아래 행과 겹친다 */
+  .xls-content-inner table.xls-fit--stack tr {
+    height: auto;
+  }
   .xls-content-inner table.xls-fit--stack td.xls-cell {
     min-width: 0;
   }
