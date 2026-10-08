@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
+import { fetchGuidePdf, type GuidePdfName } from '../../src/services/guidePdf'
 import { createDailyCandidatePlanningReportResult } from '../../src/services/marketInsightService'
 import {
   buildConvictionRecommendationText,
@@ -64,11 +63,8 @@ function resolveTopic(raw: unknown): ReportTopic {
   return '추천'
 }
 
-function resolveGuidePath(topic: ReportTopic): string {
-  if (topic === '자동매매') {
-    return path.join(process.cwd(), 'docs', 'generated', 'automate-trade-command-guide.pdf')
-  }
-  return path.join(process.cwd(), 'docs', 'generated', 'user-operating-guide.pdf')
+function resolveGuideName(topic: ReportTopic): GuidePdfName {
+  return topic === '자동매매' ? 'automate-trade-command-guide.pdf' : 'user-operating-guide.pdf'
 }
 
 function asInt(value: unknown): number | null {
@@ -119,8 +115,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const chatId = user.chatId ?? resolveChatId(req)
 
     if (topic === '가이드' || topic === '자동매매') {
-      const fullPath = resolveGuidePath(topic)
-      const bytes = await readFile(fullPath)
+      const bytes = await fetchGuidePdf(resolveGuideName(topic))
       const fileName = topic === '자동매매' ? 'automate-trade-command-guide.pdf' : 'user-operating-guide.pdf'
       const inline = String(req.query.inline || req.query.display || '').toLowerCase() === 'inline' || String(req.query.inline) === '1'
       res.setHeader('Content-Type', 'application/pdf')

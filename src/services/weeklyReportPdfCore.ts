@@ -9,7 +9,8 @@ export async function loadFontBytes(): Promise<{ light: Uint8Array; regular: Uin
   const lightPath = path.join(base, "Pretendard-Light.ttf");
   const regularPath = path.join(base, "Pretendard-Regular.ttf");
   const boldPath = path.join(base, "Pretendard-Bold.ttf");
-  const fallback = path.join(base, "NotoSansCJKkr-Regular.otf");
+  // 예비 글꼴(NotoSansCJKkr 16MB)은 뺐다 — Pretendard가 늘 함께 배포돼 쓰인 적이 없는데, 경로가 코드에 있으면
+  // cron·ui·worker 함수마다 통째로 묶여 Vercel 함수 저장 용량을 차지했다(2026-10-08 무료 한도 75% 경고).
 
   async function tryLoad(...paths: string[]): Promise<Uint8Array> {
     for (const filePath of paths) {
@@ -22,9 +23,9 @@ export async function loadFontBytes(): Promise<{ light: Uint8Array; regular: Uin
     throw new Error(`[PDF] 폰트 파일을 찾을 수 없습니다. 확인 경로: ${paths.join(", ")}`);
   }
 
-  const regular = await tryLoad(regularPath, fallback);
-  const bold = await tryLoad(boldPath, regularPath, fallback);
-  const light = await tryLoad(lightPath, regularPath, fallback);
+  const regular = await tryLoad(regularPath);
+  const bold = await tryLoad(boldPath, regularPath);
+  const light = await tryLoad(lightPath, regularPath);
   return { light, regular, bold };
 }
 

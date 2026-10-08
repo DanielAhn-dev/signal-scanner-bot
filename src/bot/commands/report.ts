@@ -2,8 +2,7 @@ import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { PDFDocument, rgb, type RGB } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { fetchGuidePdf } from "../../services/guidePdf";
 import {
   createWeeklyReportPdf,
   describeWeeklyReportFailure,
@@ -454,7 +453,6 @@ const supabase = createClient(
 );
 
 async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<void> {
-  const guidePdfPath = path.join(process.cwd(), "docs", "generated", "user-operating-guide.pdf");
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
@@ -462,7 +460,7 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
   });
 
   try {
-    const bytes = await readFile(guidePdfPath);
+    const bytes = await fetchGuidePdf("user-operating-guide.pdf");
     const nowKst = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false });
     const caption = [
       "Nexora 운영 가이드",
@@ -505,7 +503,6 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
 }
 
   async function handleAutoTradeCommandGuidePdf(ctx: ChatContext, tgSend: any): Promise<void> {
-    const guidePdfPath = path.join(process.cwd(), "docs", "generated", "automate-trade-command-guide.pdf");
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -513,7 +510,7 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
     });
 
     try {
-      const bytes = await readFile(guidePdfPath);
+      const bytes = await fetchGuidePdf("automate-trade-command-guide.pdf");
       const nowKst = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false });
       const caption = [
         "Nexora 자동매매 명령어 운영 가이드",
