@@ -7,6 +7,7 @@ import {
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
+import MaturityTab from './MaturityTab'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
 
@@ -15,7 +16,7 @@ type ForWhom = 'shared' | 'me' | 'partner'
 type Entry = { id: string; mine?: boolean; forWhom?: ForWhom; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
 // baseMemo = 붙여 넣은 그대로, item = 통로(네이버페이·쿠팡 등) 이름만 있을 때 덧붙인 산 물건, memo = 저장할 메모
 type Draft = { key: string; forWhom: ForWhom; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
-type Tab = 'record' | 'month' | 'check'
+type Tab = 'record' | 'month' | 'check' | 'maturity'
 type EditForm = { id: string; date: string; amount: number; memo: string; categoryId: string; forWhom: ForWhom; payment: Payment }
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -69,7 +70,7 @@ export default function MoneyFlowPage() {
   const today = kstToday()
   const thisMonth = today.slice(0, 7)
   const [params] = useSearchParams()
-  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'check' ? 'check' : 'record'))
+  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'check' ? 'check' : params.get('tab') === 'maturity' ? 'maturity' : 'record'))
   const fromStart = params.get('from') === 'start'
   const [checks, setChecks] = useState<SavedCheck[]>([])
   const [checksLoaded, setChecksLoaded] = useState(false)
@@ -266,6 +267,7 @@ export default function MoneyFlowPage() {
           <button type="button" role="tab" aria-selected={tab === 'record'} className={tab === 'record' ? 'is-active' : ''} onClick={() => setTab('record')}>기록</button>
           <button type="button" role="tab" aria-selected={tab === 'month'} className={tab === 'month' ? 'is-active' : ''} onClick={() => setTab('month')}>이번 달 보기</button>
           <button type="button" role="tab" aria-selected={tab === 'check'} className={tab === 'check' ? 'is-active' : ''} onClick={() => setTab('check')}>지금 상태 점검</button>
+          <button type="button" role="tab" aria-selected={tab === 'maturity'} className={tab === 'maturity' ? 'is-active' : ''} onClick={() => setTab('maturity')}>만기 예·적금</button>
         </div>
       </section>
 
@@ -395,6 +397,8 @@ export default function MoneyFlowPage() {
       {tab === 'check' && (checksLoaded
         ? <FlowCheck entries={scoped} checks={checks} onSaved={load} fromStart={fromStart} />
         : <p className="acc-note mf-notice">불러오는 중…</p>)}
+
+      {tab === 'maturity' && <MaturityTab />}
 
       {tab === 'month' && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
 
