@@ -28,7 +28,7 @@ export default function DropPlanCard({ tolerance }: { tolerance: number }) {
         <h2>하락이 오면 내가 할 일</h2>
         <p className="acc-note">{saved.savedAt}에 정했습니다. 잃어도 버틸 수 있다고 정한 선은 {saved.tolerancePct}%입니다. 하락이 오면 모아가기 화면의 "지금 상황"에서 이 계획을 다시 보여드립니다.</p>
         <ul className="acc-note">{dropPlanLines(saved).map((l) => <li key={l}>{l}</li>)}</ul>
-        <button type="button" className="acc-link" onClick={() => setEditing(true)}>계획 고치기</button>
+        <button type="button" className="acc-secondary" onClick={() => setEditing(true)}>계획 고치기</button>
       </section>
     )
   }

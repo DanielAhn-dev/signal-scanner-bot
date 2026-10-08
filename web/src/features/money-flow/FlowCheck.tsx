@@ -78,7 +78,7 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
     return (
       <p className="acc-note mf-actual">
         {month} 기록 {krw(recorded)}{group.length > 1 ? ` · 이 분류 ${group.length}줄 합계 ${krw(base)}` : ''} ({recorded > base ? '기준보다 ' + krw(recorded - base) + ' 많음' : '기준보다 ' + krw(base - recorded) + ' 적음'})
-        {group.length === 1 && <> <button type="button" className="acc-link" onClick={() => update(r.key, { amount: recorded, mustPart: r.mustPart && r.mustPart > recorded ? recorded : r.mustPart })}>기록 금액으로 바꾸기</button></>}
+        {group.length === 1 && <> <button type="button" className="acc-secondary" onClick={() => update(r.key, { amount: recorded, mustPart: r.mustPart && r.mustPart > recorded ? recorded : r.mustPart })}>기록 금액으로 바꾸기</button></>}
       </p>
     )
   }
@@ -110,7 +110,7 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
                 {kids.list.length < MAX_CHILDREN && <option value="__add">+ 자녀 추가</option>}
               </select>
             )}
-            <button type="button" className="acc-link" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>빼기</button>
+            <button type="button" className="acc-remove" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>빼기</button>
             {kids && adding === r.key && (
               <div className="mf-kid-add">
                 <input type="text" aria-label="자녀 별칭" maxLength={12} value={kidAlias} placeholder="별칭(예: 첫째)" onChange={(e) => setKidAlias(e.target.value)} />
@@ -120,7 +120,7 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
                   if (id) update(r.key, { childId: id })
                   setAdding(null); setKidAlias(''); setKidBirth('')
                 }}>추가하고 고르기</button>
-                <button type="button" className="acc-link" onClick={() => setAdding(null)}>취소</button>
+                <button type="button" className="acc-secondary" onClick={() => setAdding(null)}>취소</button>
                 <small className="acc-note">자녀 계좌와 같은 목록입니다. 이름 대신 별칭과 태어난 연월만 저장합니다.</small>
               </div>
             )}
@@ -128,7 +128,7 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
           </div>
         )
       })}
-      <button type="button" className="acc-link" onClick={() => setRows([...rows, { key: newKey(), categoryId: catsOf(kind)[0].id, amount: 0, label: '' }])}>+ {kind === 'fixed' ? '고정지출' : '변동지출'} 추가</button>
+      <button type="button" className="acc-add" onClick={() => setRows([...rows, { key: newKey(), categoryId: catsOf(kind)[0].id, amount: 0, label: '' }])}>+ {kind === 'fixed' ? '고정지출' : '변동지출'} 추가</button>
     </div>
   )
 }
@@ -149,11 +149,11 @@ function IrregularRows({ rows, setRows }: { rows: IrrRow[]; setRows: (rows: IrrR
                 <button key={m} type="button" aria-pressed={r.months.includes(m)} className={r.months.includes(m) ? 'is-active' : ''} onClick={() => update(r.key, { months: r.months.includes(m) ? r.months.filter((x) => x !== m) : [...r.months, m].sort((a, b) => a - b) })}>{m}</button>
               ))}
             </div>
-            <button type="button" className="acc-link" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>빼기</button>
+            <button type="button" className="acc-remove" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>빼기</button>
           </div>
         )
       })}
-      <button type="button" className="acc-link" onClick={() => setRows([...rows, { key: newKey(), categoryId: 'tax', label: '', yearlyAmount: 0, months: [] }])}>+ 비정기 지출 추가</button>
+      <button type="button" className="acc-add" onClick={() => setRows([...rows, { key: newKey(), categoryId: 'tax', label: '', yearlyAmount: 0, months: [] }])}>+ 비정기 지출 추가</button>
     </div>
   )
 }
@@ -369,8 +369,8 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
 
           <div className="mf-check-actions">
             <button type="button" className="acc-primary" disabled={saving} onClick={() => void save()}>{saving ? '저장 중…' : '이 점검 저장'}</button>
-            <button type="button" className="acc-link" onClick={() => void applyToSeed()}>시드 만들기 이번 달에 반영</button>
-            {fromStart && <button type="button" className="acc-link" onClick={() => navigate('/start')}>시작하기로 돌아가기</button>}
+            <button type="button" className="acc-secondary" onClick={() => void applyToSeed()}>시드 만들기 이번 달에 반영</button>
+            {fromStart && <button type="button" className="acc-secondary" onClick={() => navigate('/start')}>시작하기로 돌아가기</button>}
           </div>
           {journey && journey.next.key !== 'money' && (
             <p className="acc-summary">다음 할 일: <strong>{journey.next.label}</strong> — {journey.next.desc} <Link to={`/${journey.next.route}`}>지금 하기 →</Link></p>

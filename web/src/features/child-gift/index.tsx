@@ -62,7 +62,7 @@ export default function ChildGiftPage() {
           <ProjectionCard child={child} today={today} />
           <SimpleWayCard />
           <section className="acc-card">
-            <button type="button" className="acc-link" onClick={() => { if (window.confirm(`${child.alias}의 기록을 모두 지울까요?`)) { save({ children: state.children.filter((c) => c.id !== child.id) }); setSelected('') } }}>
+            <button type="button" className="acc-danger" onClick={() => { if (window.confirm(`${child.alias}의 기록을 모두 지울까요?`)) { save({ children: state.children.filter((c) => c.id !== child.id) }); setSelected('') } }}>
               이 자녀 기록 지우기
             </button>
           </section>
@@ -164,7 +164,7 @@ function GiftsCard({ child, today, full, onAdd, onToggle, onRemove }: { child: C
                 <td>{man(g.amount)}</td>
                 <td>{filingDeadline(g.date)}{daysBetween(today, filingDeadline(g.date)) < 0 && !g.reported ? ' (지남)' : ''}</td>
                 <td><input type="checkbox" checked={g.reported} aria-label={`${g.date} 신고함`} onChange={() => onToggle(g.id)} /></td>
-                <td><button type="button" className="acc-link" onClick={() => onRemove(g.id)}>삭제</button></td>
+                <td><button type="button" className="acc-remove" onClick={() => onRemove(g.id)}>삭제</button></td>
               </tr>
             ))}
           </tbody>

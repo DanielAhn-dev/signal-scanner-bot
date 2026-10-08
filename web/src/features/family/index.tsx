@@ -128,7 +128,7 @@ export default function FamilyPage() {
                 <p className="acc-note">{kstDate(view.expiresAt)}까지 쓸 수 있습니다. 배우자가 연결하면 이 화면에 바로 나타납니다.</p>
                 <div className="fam-actions">
                   <button type="button" className="acc-primary" onClick={() => void share(view.code)}>링크 보내기</button>
-                  <button type="button" className="acc-link" disabled={busy} onClick={() => void run({ action: 'cancel-code' }, '코드를 취소했습니다.')}>코드 취소</button>
+                  <button type="button" className="acc-secondary" disabled={busy} onClick={() => void run({ action: 'cancel-code' }, '코드를 취소했습니다.')}>코드 취소</button>
                 </div>
               </>
             )}
@@ -143,7 +143,7 @@ export default function FamilyPage() {
             </label>
             <div className="fam-actions">
               <button type="button" className="acc-primary" disabled={busy || !code.trim()} onClick={() => void accept()}>연결하기</button>
-              {fromLink && <button type="button" className="acc-link" onClick={() => { clearStashedCouple(); setCode('') }}>연결하지 않기</button>}
+              {fromLink && <button type="button" className="acc-secondary" onClick={() => { clearStashedCouple(); setCode('') }}>연결하지 않기</button>}
             </div>
           </section>
         </>
@@ -237,7 +237,7 @@ function Linked({ view, busy, run }: { view: Extract<View, { status: 'active' }>
       <section className="acc-card">
         <h2>연결 끊기</h2>
         <p className="acc-note">둘 중 누구나 끊을 수 있습니다. 끊으면 서로 화면에서 바로 사라지고, 각자 기록은 각자 계정에 그대로 남습니다.</p>
-        <button type="button" className="acc-link fam-danger" disabled={busy} onClick={() => { if (window.confirm(`${name}님과 연결을 끊을까요?`)) void run({ action: 'end' }, '연결을 끊었습니다.') }}>연결 끊기</button>
+        <button type="button" className="acc-danger" disabled={busy} onClick={() => { if (window.confirm(`${name}님과 연결을 끊을까요?`)) void run({ action: 'end' }, '연결을 끊었습니다.') }}>연결 끊기</button>
       </section>
     </>
   )

@@ -248,7 +248,7 @@ export default function MoneyFlowPage() {
         <select aria-label={`${d.baseMemo || '메모 없음'} 결제 수단`} value={d.payment} onChange={(event) => updateDraft(d.key, { payment: event.target.value as Payment })}>
           {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
-        <button type="button" className="acc-link" onClick={() => setDrafts((list) => list.filter((x) => x.key !== d.key))}>빼기</button>
+        <button type="button" className="acc-remove" onClick={() => setDrafts((list) => list.filter((x) => x.key !== d.key))}>빼기</button>
       </div>
       <p className="mf-cut">{isRefund(d.payment) ? `돌려받은 돈 · ${categoryById(d.categoryId)!.label} 지출에서 빼고 그만큼 투자 가능액에 더합니다` : `${KIND_LABEL[categoryById(d.categoryId)!.kind]} · ${CUT_LABEL[categoryById(d.categoryId)!.cut]}`}</p>
     </div>
@@ -345,7 +345,7 @@ export default function MoneyFlowPage() {
                         </div>
                         <div className="mf-list-tools">
                           <button type="button" className="acc-primary" onClick={() => void saveEdit(e)} disabled={saving}>{saving ? '저장 중…' : '저장'}</button>
-                          <button type="button" className="acc-link" onClick={() => setEditing(null)}>취소</button>
+                          <button type="button" className="acc-secondary" onClick={() => setEditing(null)}>취소</button>
                         </div>
                       </li>
                     )
@@ -384,7 +384,7 @@ export default function MoneyFlowPage() {
                         <span className="mf-memo">{e.memo || '메모 없음'} <em className="mf-point">{e.deletedBy === 'me' ? '내가 지움' : '배우자가 지움'}</em></span>
                         <strong>{krw(e.amount)}</strong>
                       </div>
-                      <button type="button" className="acc-link" aria-label={`${e.memo || '메모 없음'} 되돌리기`} onClick={() => void restoreEntry(e)}>되돌리기</button>
+                      <button type="button" className="acc-secondary" aria-label={`${e.memo || '메모 없음'} 되돌리기`} onClick={() => void restoreEntry(e)}>되돌리기</button>
                     </li>
                   ))}
                 </ul>

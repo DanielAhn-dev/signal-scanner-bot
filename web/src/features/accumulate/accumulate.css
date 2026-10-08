@@ -62,6 +62,15 @@
 .acc-guide.is-stale, .acc-guide.is-short { border-left-color: var(--color-error, #d32f2f); }
 .acc-primary { align-self: flex-start; padding: 11px 18px; border: 0; border-radius: 8px; background: var(--color-brand); color: var(--color-text-inverse); font: inherit; font-weight: 700; cursor: pointer; }
 .acc-primary:disabled { opacity: .4; cursor: not-allowed; }
+/* 버튼 위계: acc-primary(주 행동) > acc-secondary(보조) > acc-add(추가) · acc-remove(빼기) · acc-danger(되돌릴 수 없는 행동) */
+.acc-secondary, .acc-add, .acc-danger { align-self: flex-start; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--color-border-default); border-radius: 18px; background: var(--color-bg-surface); color: var(--color-text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
+.acc-secondary:hover, .acc-add:hover { color: var(--color-text-primary); background: var(--color-bg-sunken); }
+.acc-add { border-style: dashed; color: var(--color-brand); }
+.acc-danger { color: var(--color-error); }
+.acc-danger:hover { background: var(--color-error-bg); }
+.acc-remove { align-self: center; min-height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--color-text-tertiary); font: inherit; font-size: 13px; cursor: pointer; }
+.acc-remove:hover { color: var(--color-error); background: var(--color-bg-sunken); }
+.acc-secondary:disabled, .acc-danger:disabled, .acc-remove:disabled { opacity: .4; cursor: not-allowed; }
 .acc-link { align-self: flex-start; border: 0; background: none; color: var(--color-text-secondary); font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
 .acc summary { cursor: pointer; color: var(--color-text-secondary); }
 @media (max-width: 420px) { .acc-seg button { flex-basis: 100%; } }

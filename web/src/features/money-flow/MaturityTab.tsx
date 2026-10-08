@@ -101,15 +101,19 @@ export default function MaturityTab() {
                     </span>
                     <strong>{formatKrwMan(item.amount)}</strong>
                   </div>
-                  <div className="mf-list-tools">
-                    <span className="acc-note mf-small">
-                      {status === 'done' ? STATUS_TEXT.done : `${ddayLabel(daysUntil(item.date, today))}${STATUS_TEXT[status] ? ` · ${STATUS_TEXT[status]}` : ''}`}
+                  <div className="mf-maturity-tools">
+                    <span className="mf-maturity-info">
+                      <span className={`mf-maturity-status${status === 'done' ? '' : ' is-live'}`}>
+                        {status === 'done' ? STATUS_TEXT.done : `${ddayLabel(daysUntil(item.date, today))}${STATUS_TEXT[status] ? ` · ${STATUS_TEXT[status]}` : ''}`}
+                      </span>
+                      <button type="button" className="acc-link mf-maturity-toggle" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : item.id)}>
+                        {isOpen ? '접기' : '갈 곳 보기'}
+                      </button>
                     </span>
-                    <button type="button" className="acc-link" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : item.id)}>
-                      {isOpen ? '접기' : '갈 곳 보기'}
-                    </button>
-                    <button type="button" className="acc-link" onClick={() => toggleDone(item.id)}>{item.done ? '처리 취소' : '처리했어요'}</button>
-                    <button type="button" className="mf-icon" aria-label={`${item.name} 삭제`} onClick={() => remove(item.id)}><Trash2 size={16} /></button>
+                    <span className="mf-maturity-actions">
+                      <button type="button" className={`mf-chip-btn${item.done ? '' : ' is-primary'}`} onClick={() => toggleDone(item.id)}>{item.done ? '처리 취소' : '처리했어요'}</button>
+                      <button type="button" className="mf-icon mf-icon-quiet" aria-label={`${item.name} 삭제`} onClick={() => remove(item.id)}><Trash2 size={16} /></button>
+                    </span>
                   </div>
                   {isOpen && (
                     <div className="mf-notice">

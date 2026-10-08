@@ -181,7 +181,7 @@ export default function AccumulatePage() {
           <div className="acc-pick">
             <div className="acc-pick-head"><span className="acc-badge acc-badge-user">직접 지정</span><strong>{custom.name}</strong><span className="acc-code">{custom.code}</span></div>
             {!isIndexTarget && <p className="acc-warn">추천 기준 밖의 종목입니다. 아래 시뮬레이션은 이 종목의 이력이 아니라 코스피200 장기 이력으로 계산하므로 참고용입니다. 상황 안내는 이 종목의 시세로 합니다.</p>}
-            <button type="button" className="acc-link" onClick={() => update({ target: null })}>추천으로 되돌리기</button>
+            <button type="button" className="acc-secondary" onClick={() => update({ target: null })}>추천으로 되돌리기</button>
           </div>
         )}
         <label className="acc-field">
@@ -335,7 +335,7 @@ export default function AccumulatePage() {
                   <td>{m}{m === ym ? ' (진행 중)' : ''}</td>
                   <td>{state.received.find(([x]) => x === m)?.[1]?.toLocaleString('ko-KR') ?? '-'}</td>
                   <td>{state.deposits.find(([x]) => x === m)?.[1]?.toLocaleString('ko-KR') ?? '-'}</td>
-                  <td><button type="button" className="acc-link" onClick={() => update({ received: upsertMonth(state.received, m, 0), deposits: upsertMonth(state.deposits, m, 0) })}>삭제</button></td>
+                  <td><button type="button" className="acc-remove" onClick={() => update({ received: upsertMonth(state.received, m, 0), deposits: upsertMonth(state.deposits, m, 0) })}>삭제</button></td>
                 </tr>
               ))}
             </tbody>

@@ -62,7 +62,7 @@ function GoalItem({ goal, today, onChange, onRemove }: { goal: AccountGoal; toda
       <More>
         <p className="acc-note">폭락한 직후에 기계적으로 내리지 마세요. 연구에서 대공황 직전에 시작한 계좌는 폭락 뒤 비중을 내리는 바람에 끝까지 들고 있던 경우보다 결과가 나빴습니다(최악 0.78 대 0.95). 큰 하락 중이라면 전환 시점을 몇 달 늦추는 것을 고려하고, 사용 시점이 가까운 돈은 처음부터 낮은 비중이 맞습니다.</p>
       </More>
-      <button type="button" className="acc-link" onClick={() => { if (window.confirm(`${goal.label} 설정을 지울까요?`)) onRemove() }}>이 설정 지우기</button>
+      <button type="button" className="acc-danger" onClick={() => { if (window.confirm(`${goal.label} 설정을 지울까요?`)) onRemove() }}>이 설정 지우기</button>
     </section>
   )
 }
