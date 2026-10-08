@@ -145,6 +145,8 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     peakPrice?: number | null;
     /** 이번 매도 뒤 남은 포지션의 절반 손절 완료 여부. 부분 매도 후 memo에 남긴다. */
     halfStopDone?: boolean;
+    /** 청산 판단 근거 라벨(추세이탈·수익잠금·예정검토일 등). 나중에 "왜 팔았나"를 로그만으로 볼 수 있게 남긴다. */
+    exitReasonLabel?: string | null;
   }): Promise<{
     sold: boolean;
     partial: boolean;
@@ -425,6 +427,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
         net,
         pnl,
         isFullExit,
+        exitReasonLabel: payload.exitReasonLabel ?? null,
         stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
         takeProfitTranchesDone: payload.takeProfitTranchesDone,
         nextTakeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
@@ -451,6 +454,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
         referencePrice: payload.close,
         slippageBps: execution.slippageBps,
         pnl,
+        exitReasonLabel: payload.exitReasonLabel ?? null,
       },
       linkedTradeId: tradeId ?? undefined,
     }).catch((err: unknown) => console.error("[autoTrade] decision log SELL failed", err));

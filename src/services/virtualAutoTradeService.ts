@@ -5416,6 +5416,7 @@ async function runDailyReviewForUser(payload: {
         peakPrice: updatedPeakPrice,
         halfStopDone:
           strategyState.halfStopDone || (finalExitPlan.action === "STOP_LOSS" && finalExitPlan.isPartial),
+        exitReasonLabel,
       });
 
       if (!result.sold) {
