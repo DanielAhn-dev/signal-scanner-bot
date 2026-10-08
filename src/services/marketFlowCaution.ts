@@ -99,7 +99,22 @@ export function computeMarketFlowCaution(days: MarketFlowDay[]): MarketFlowCauti
 
 const NAVER_HEADERS = { "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36" };
 
-async function fetchKospiCloses(pages: number): Promise<Map<string, number>> {
+// 수급 경고와 시장 분위기 카드가 같은 7페이지를 받으므로 한 인스턴스 안에서 30분 공유한다(외부 호출·실행 시간 절약).
+// 실패한 응답(빈 결과)은 캐시하지 않는다
+const closesCache = new Map<number, { expiresAt: number; value: Promise<Map<string, number>> }>();
+
+export function fetchKospiCloses(pages: number): Promise<Map<string, number>> {
+  const hit = closesCache.get(pages);
+  if (hit && Date.now() < hit.expiresAt) return hit.value;
+  const value = fetchKospiClosesUncached(pages).then((m) => {
+    if (m.size === 0) closesCache.delete(pages);
+    return m;
+  });
+  closesCache.set(pages, { expiresAt: Date.now() + 30 * 60_000, value });
+  return value;
+}
+
+async function fetchKospiClosesUncached(pages: number): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   const results = await Promise.all(
     Array.from({ length: pages }, (_, p) =>

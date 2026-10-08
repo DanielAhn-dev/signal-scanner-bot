@@ -34,6 +34,7 @@ import { withIndexTrendRatios } from '../../src/services/indexTrendRatios'
 import { detectAutoTradeMarketPolicy } from '../../src/services/virtualAutoTradeSelection'
 import { createClient } from '@supabase/supabase-js'
 import { fetchMarketFlowCaution, MARKET_FLOW_EVIDENCE, type MarketFlowCaution } from '../../src/services/marketFlowCaution'
+import { fetchMarketShift, type MarketShift } from '../../src/services/marketShiftSignal'
 
 interface MarketOverviewResponse {
   diagnosis: MarketDiagnosis
@@ -48,6 +49,8 @@ interface MarketOverviewResponse {
   botBuyGate: BotBuyGate | null
   /** 신고가 부근 + 외국인 1년 최대 순매도 경고(안내용). 시장 수급 데이터가 310거래일 미만이면 null */
   marketFlowCaution: (MarketFlowCaution & { evidence: typeof MARKET_FLOW_EVIDENCE }) | null
+  /** 네 지표의 자기 과거 대비 위치·변화(현황 표시, 예측 아님). 종가가 80일 미만이거나 조회 실패면 null */
+  marketShift: MarketShift | null
   fetchedAt: string
 }
 
@@ -66,6 +69,17 @@ async function resolveMarketFlowCaution(): Promise<MarketOverviewResponse['marke
     const supabase = createClient(url, key, { auth: { persistSession: false } })
     const caution = await fetchMarketFlowCaution(supabase)
     return caution ? { ...caution, evidence: MARKET_FLOW_EVIDENCE } : null
+  } catch {
+    return null
+  }
+}
+
+async function resolveMarketShift(): Promise<MarketShift | null> {
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  try {
+    return await fetchMarketShift(createClient(url, key, { auth: { persistSession: false } }))
   } catch {
     return null
   }
@@ -148,9 +162,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const economicPhase = diagnoseEconomicPhase(marketData, cpi.yoy)
     const globalCorrelation = analyzeGlobalCorrelation(marketData)
     const tradingSignal = generateTradingSignal(diagnosis, economicPhase, globalCorrelation)
-    const [botBuyGate, marketFlowCaution] = await Promise.all([
+    const [botBuyGate, marketFlowCaution, marketShift] = await Promise.all([
       resolveBotBuyGate(marketData),
       resolveMarketFlowCaution(),
+      resolveMarketShift(),
     ])
 
     const payload: MarketOverviewResponse = {
@@ -165,6 +180,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tradingSignal,
       botBuyGate,
       marketFlowCaution,
+      marketShift,
       fetchedAt: new Date().toISOString(),
     }
 

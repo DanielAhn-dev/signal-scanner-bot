@@ -29,6 +29,41 @@ type SectorItem = {
   change_rate?: number
 }
 
+type MarketShiftView = {
+  asOf: string
+  unusualCount: number
+  message: string
+  indicators: Array<{
+    key: 'gap60' | 'breadth' | 'foreign20' | 'vol20'
+    label: string
+    value: number | null
+    asOf: string
+    samples: number
+    rank: number | null
+    move: 'up' | 'down' | 'flat' | null
+    unusual: boolean
+  }>
+  evidence: { windowDays: number; lookbackDays: number; unusualRule: string; limit: string }
+}
+
+function fmtShiftValue(key: MarketShiftView['indicators'][number]['key'], v: number | null): string {
+  if (v == null) return '—'
+  if (key === 'foreign20') return `${v >= 0 ? '+' : ''}${(v / 10_000).toFixed(1)}조원`
+  if (key === 'breadth') return `${(v * 100).toFixed(0)}% 상승`
+  if (key === 'gap60') return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`
+  return `${(v * 100).toFixed(2)}%`
+}
+
+/** 위치 0~1 → "상위 8%" / "하위 20%" / "중간대" */
+function fmtShiftRank(rank: number | null): string {
+  if (rank == null) return '자료 부족'
+  if (rank >= 0.7) return `상위 ${Math.max(1, Math.round((1 - rank) * 100))}%`
+  if (rank <= 0.3) return `하위 ${Math.max(1, Math.round(rank * 100))}%`
+  return '중간대'
+}
+
+const SHIFT_MOVE_TEXT = { up: '▲ 높아짐', down: '▼ 낮아짐', flat: '→ 비슷함' } as const
+
 type PortfolioSummary = {
   total_pnl?: number
   positions?: unknown[]
@@ -140,7 +175,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [topSector, setTopSector] = useState<string>('')
   const [lastScan, setLastScan] = useState<{ tradeDate: string | null; updatedAt: string | null } | null>(null)
   const [fillerRows, setFillerRows] = useState(0)
-  const [indices, setIndices] = useState<Partial<Record<MarketTileKey, { price?: number; changeRate?: number }>> | null>(null)
+  const [marketShift, setMarketShift] = useState<MarketShiftView | null>(null)
+  const [indices, setIndices] =useState<Partial<Record<MarketTileKey, { price?: number; changeRate?: number }>> | null>(null)
   const [realHoldings, setRealHoldings] = useState<Holding[] | null>(null)
   const [news, setNews] = useState<Array<{ title: string; link?: string; source?: string }>>([])
 
@@ -174,7 +210,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   // 오늘의 시장·뉴스: 누구에게나 보이는 사실 정보
   useEffect(() => {
     apiFetch('/api/market-overview', { cacheMs: 60_000, timeoutMs: 20_000, retries: 0 })
-      .then(res => { if (res?.data?.indices) setIndices(res.data.indices) })
+      .then(res => {
+        if (res?.data?.indices) setIndices(res.data.indices)
+        if (res?.data?.marketShift) setMarketShift(res.data.marketShift)
+      })
       .catch(() => {})
     apiFetch('/api/ui/news?page=1&pageSize=8', { cacheMs: 60_000, timeoutMs: 12_000 })
       .then(res => {
@@ -313,6 +352,39 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               </td>
             </tr>
           ))}
+
+          {/* ── 시장 분위기 변화: 자기 과거 대비 위치·변화 현황(예측 아님). 관리자 또는 자세히 보기에서만 ── */}
+          {(isAdmin || detailed) && marketShift && (<>
+            <tr className="xls-row">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>시장 분위기 변화</td>
+              <td className="xls-cell" colSpan={4} style={{ ...S.header, fontWeight: 400, color: 'var(--color-text-tertiary)' }}>
+                코스피 · {marketShift.asOf} 기준 · 최근 {marketShift.evidence.windowDays}거래일 대비 위치
+              </td>
+            </tr>
+            {marketShift.indicators.map((x, i) => (
+              <tr key={x.key} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
+                <td className="xls-row-num">{rowNum()}</td>
+                <td className="xls-cell" colSpan={2} style={{ ...S.midBorder, fontSize: 10 }}>{x.label}</td>
+                <td className="xls-cell" style={{ fontSize: 10 }}>{fmtShiftValue(x.key, x.value)}</td>
+                <td className="xls-cell" style={{ fontSize: 10, fontWeight: x.unusual ? 700 : 400, color: x.unusual ? 'var(--color-brand)' : undefined }}>
+                  {x.rank == null ? `자료 부족 (${x.samples}/120일)` : fmtShiftRank(x.rank)}
+                  {x.rank != null && x.asOf !== marketShift.asOf && (
+                    <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> ({x.asOf.slice(5)} 기준)</span>
+                  )}
+                </td>
+                <td className="xls-cell" colSpan={2} style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
+                  {x.move ? `${SHIFT_MOVE_TEXT[x.move]} (${marketShift.evidence.lookbackDays}거래일 전 대비)` : '—'}
+                </td>
+              </tr>
+            ))}
+            <tr className="xls-row">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={6} style={{ fontSize: 10, whiteSpace: 'normal', lineHeight: 1.5, color: 'var(--color-text-secondary)' }}>
+                {marketShift.message} · {marketShift.evidence.limit}
+              </td>
+            </tr>
+          </>)}
 
           {/* ── 구분선 ── */}
           <tr className="xls-row">
