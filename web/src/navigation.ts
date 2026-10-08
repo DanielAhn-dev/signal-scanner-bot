@@ -2,6 +2,8 @@ export type NavItem = {
   key: string
   label: string
   adminOnly?: boolean
+  /** 일반 사용자 메뉴에만 보인다 (관리자는 같은 화면을 다른 탭에서 이미 봄) */
+  userOnly?: boolean
 }
 
 export type NavGroup = {
@@ -57,25 +59,44 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'home',
     label: '홈',
     groups: [
-      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }] },
-      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'money-flow', label: '돈 흐름' }, { key: 'seed-builder', label: '시드 만들기' }, { key: 'child', label: '자녀 계좌' }, { key: 'family', label: '부부 연결' }] },
+      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }] },
+    ],
+  },
+  {
+    key: 'money',
+    label: '모으기',
+    groups: [
+      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'money-flow', label: '돈 흐름' }, { key: 'seed-builder', label: '시드 만들기' }, { key: 'follow', label: '따라 사기' }] },
+    ],
+  },
+  {
+    key: 'plan',
+    label: '계획',
+    groups: [
       { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드' }] },
+      { category: '계산·주문 정리', items: [{ key: 'simulator', label: '시뮬레이터', userOnly: true }, { key: 'execution-guide', label: '실행가이드', userOnly: true }] },
     ],
   },
   {
     key: 'review',
     label: '기록',
     groups: [
-      { category: '돌아보기', items: [{ key: 'trades', label: '거래기록' }, { key: 'choices', label: '내 선택 돌아보기' }, { key: 'follow', label: '따라 사기' }] },
+      { category: '돌아보기', items: [{ key: 'trades', label: '거래기록' }, { key: 'choices', label: '내 선택 돌아보기' }] },
       { category: '받아보기', items: [{ key: 'alerts', label: '알림' }, { key: 'reports', label: '리포트' }] },
+    ],
+  },
+  {
+    key: 'family',
+    label: '가족',
+    groups: [
+      { category: '함께하기', items: [{ key: 'child', label: '자녀 계좌' }, { key: 'family', label: '부부 연결' }] },
     ],
   },
   {
     key: 'research',
     label: '종목 연구',
-    userLabel: '직접 주문',
     groups: [
-      { category: '봇 판단 흐름', userCategory: '계산·주문 정리', items: FLOW_STEPS.map((s) => ({ key: s.key, label: flowLabel(s) })) },
+      { category: '봇 판단 흐름', items: FLOW_STEPS.map((s) => ({ key: s.key, label: flowLabel(s) })) },
       { category: '후보 더 보기', items: [{ key: 'scan', label: '스캔' }, { key: 'discovery', label: '발굴' }, { key: 'backtest', label: '백테스트' }, { key: 'watchlist', label: '감시목록' }] },
     ],
   },
@@ -96,12 +117,15 @@ export const MENU_SECTIONS: MenuSection[] = [
   },
 ]
 
-/** 하단 시트 탭 — 매일 여는 화면만. 나머지는 리본·'전체 메뉴'로 연다 */
-export const SHEET_NAV_KEYS: readonly string[] = ['dashboard', 'portfolio', 'accumulate', 'seed-builder', 'goal-tracker', 'market']
+/**
+ * 하단 시트 탭 — 사용자 여정 단계마다 대표 화면 하나(홈 → 모으기 → 계획 → 내 계좌). 나머지는 리본·'전체 메뉴'로 연다.
+ * 일반 사용자 리본에는 이 화면들이 다시 나오지 않는다(menuSectionsFor).
+ */
+export const SHEET_NAV_KEYS: readonly string[] = ['dashboard', 'accumulate', 'goal-tracker', 'portfolio']
 
 /** 권한으로 거르고, 일반 사용자는 앞 탭에 이미 나온 화면을 다시 보여 주지 않는다. 빈 그룹·빈 탭은 뺀다 */
 export function menuSectionsFor(isAdmin: boolean): MenuSection[] {
-  const seen = new Set<string>()
+  const seen = new Set<string>(isAdmin ? [] : SHEET_NAV_KEYS)
   return MENU_SECTIONS.map((section) => ({
     ...section,
     label: isAdmin ? section.label : section.userLabel ?? section.label,
@@ -170,7 +194,10 @@ export function plainNavItems<T extends { label: string }>(items: T[]): T[] {
 
 export function filterNavGroups(groups: NavGroup[], isAdmin: boolean): NavGroup[] {
   return groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => (isAdmin || !i.adminOnly) && canSeeNav(i.key, isAdmin)) }))
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) => (isAdmin ? !i.userOnly : !i.adminOnly) && canSeeNav(i.key, isAdmin)),
+    }))
     .filter((g) => g.items.length > 0)
 }
 
