@@ -81,6 +81,11 @@ def merge_row(existing: Optional[dict], code: str, date_iso: str, short_volume: 
     """
     ex = existing or {}
     if ex.get("collection_status") == "ok":
+        # 정상 행은 그대로 두되, 비어 있는 신용잔고율만 채운다(KRX 경로에는 신용비율이 없다)
+        if ex.get("credit_ratio") is None and credit_ratio is not None:
+            return {**{k: ex.get(k) for k in ("short_ratio", "short_balance", "short_volume", "volume_status", "balance_status")},
+                    "code": code, "date": date_iso, "credit_ratio": credit_ratio,
+                    "collection_status": "ok", "missing_reason": None}
         return None
     if short_volume is None and credit_ratio is None:
         return None
@@ -122,6 +127,8 @@ def fill_with_kis(supabase: Client, start_yyyymmdd: str, end_yyyymmdd: str, code
                 supabase.table("stock_credit_short_daily")
                 .select("code,date,credit_ratio,short_ratio,short_balance,short_volume,collection_status,volume_status,balance_status")
                 .in_("date", iso_dates)
+                .order("date")
+                .order("code")  # 정렬 없는 range 페이징은 행이 빠지거나 겹쳐, 빠진 행을 "기존 없음"으로 덮어쓰게 된다
                 .range(off, off + 999)
                 .execute()
             )
@@ -137,7 +144,8 @@ def fill_with_kis(supabase: Client, start_yyyymmdd: str, end_yyyymmdd: str, code
     fail = 0
     for idx, code in enumerate(codes):
         # 이미 모든 대상 날짜가 ok면 요청하지 않는다
-        if all((existing_by_key.get((code, d)) or {}).get("collection_status") == "ok" for d in iso_dates):
+        if all((existing_by_key.get((code, d)) or {}).get("collection_status") == "ok"
+               and (existing_by_key.get((code, d)) or {}).get("credit_ratio") is not None for d in iso_dates):
             continue
         short_body = _kis_get(app_key, app_secret, token, SHORT_PATH, "FHPST04830000", {
             "FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code,

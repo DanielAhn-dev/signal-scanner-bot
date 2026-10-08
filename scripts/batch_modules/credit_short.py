@@ -121,7 +121,8 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     .select("code")
                     .eq("date", trading_iso)
                     .eq("collection_status", "ok")
-                    .range(0, 4999)
+                    .order("code")
+                    .range(0, 999)
                     .execute()
                 )
                 already_ok = {r["code"] for r in (ex.data or [])}
@@ -244,8 +245,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 cs_rows.append({
                     "code": code,
                     "date": trading_iso,
-                    "credit_ratio": None,
-                    "short_ratio": short_ratio,
+                        "short_ratio": short_ratio,
                     "short_balance": short_balance,
                     "short_volume": short_volume,
                     "collection_status": collection_status,

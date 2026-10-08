@@ -277,6 +277,8 @@ def backfill_credit_short_daily(
                     .gte("date", to_iso(trading_dates[0]))
                     .lte("date", to_iso(trading_dates[-1]))
                     .eq("collection_status", "ok")
+                    .order("date")
+                    .order("code")
                     .range(off, off + 999)
                     .execute()
                 )
@@ -314,7 +316,6 @@ def backfill_credit_short_daily(
                 batch_rows.append({
                     "code": code,
                     "date": to_iso(date_str),
-                    "credit_ratio": None,
                     "short_ratio": short_ratio,
                     "short_balance": short_balance,
                     "short_volume": short_volume,
