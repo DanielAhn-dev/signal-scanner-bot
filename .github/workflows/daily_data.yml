@@ -104,6 +104,18 @@ jobs:
         if: always() && steps.batch.outputs.skipped != 'true'
         run: pnpm exec tsx scripts/ops/verify_batch_result.ts
 
+      # 시장 폭(상승·하락 종목 수 등) 일일 집계 — 대시보드 '시장 분위기 변화'의 입력(scripts/aggregate_market_breadth.py).
+      # 실패해도 배치 결과를 가리지 않는다. 휴장으로 배치를 건너뛴 날은 최신 거래일을 다시 계산할 뿐이라 안전하다
+      - name: Aggregate market breadth
+        if: always()
+        continue-on-error: true
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.trading_date }}" ]; then
+            ARGS="--date ${{ github.event.inputs.trading_date }}"
+          fi
+          python -u scripts/aggregate_market_breadth.py $ARGS
+
       # 전략 경쟁 측정(전향 검증): 매일 그날의 실적 관문 판정·봇 계좌 평가액을 저장하고(--record) 웹 결과를 갱신한다.
       # 텔레그램 보고는 금요일 배치에서만 (scripts/strategy_forward_test.ts).
       - name: Strategy forward test
