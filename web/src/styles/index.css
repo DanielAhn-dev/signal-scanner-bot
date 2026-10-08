@@ -376,11 +376,11 @@ a:focus-visible {
 }
 
 .trades-log-pnl.is-profit {
-  color: #1f5fd6;
+  color: var(--color-stock-up);
 }
 
 .trades-log-pnl.is-loss {
-  color: #c24141;
+  color: var(--color-stock-down);
 }
 
 .trades-log-details {
