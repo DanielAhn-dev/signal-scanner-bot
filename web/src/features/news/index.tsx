@@ -373,7 +373,7 @@ export default function NewsPage() {
                           <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>제목에서 종목을 찾지 못했습니다.</span>
                         )}
                         {!isLoading && stocks && stocks.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          <div className="news-related-list">
                             {stocks.map(s => (
                               <Button key={s.code} variant="ghost" size="sm" onClick={() => openModal(s)}>
                                 {s.name} 시세

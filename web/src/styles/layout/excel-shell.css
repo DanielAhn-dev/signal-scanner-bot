@@ -2656,6 +2656,21 @@
   cursor: pointer;
 }
 
+/* 관련주 버튼 줄이 표 너비를 한 줄로 늘려 다른 행까지 가로 스크롤로 밀어내지 않도록,
+   보이는 영역 너비에서 줄바꿈하고 가로 스크롤해도 왼쪽에 붙어 있게 한다 */
+.news-sheet__table-scroll {
+  container-type: inline-size;
+}
+
+.news-sheet .news-related-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: calc(100cqw - 20px);
+  position: sticky;
+  left: 8px;
+}
+
 /* ── Analyze sheet page ── */
 .analyze-sheet {
   min-width: 0;
