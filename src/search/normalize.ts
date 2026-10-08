@@ -2,6 +2,7 @@
 import { supabase } from "../db/client";
 import { getCache, setCache } from "../cache/memory";
 import { getUniverse } from "../adapters";
+import { selectPaged } from "../services/supabasePaging";
 
 export type Hit = { code: string; name: string };
 
@@ -110,11 +111,13 @@ async function loadUniverse(): Promise<Hit[]> {
   const cached = await getCache<Hit[]>("universe:all");
   if (cached?.length) return cached;
 
-  const { data: dbRows } = await supabase
-    .from("stocks")
-    .select("code,name")
-    .limit(50000);
-  let items: Hit[] = (dbRows || []).map((r: any) => ({
+  // 응답 상한이 1000행이라 limit(50000)이어도 잘린다 — 1000번째 이후 종목은 검색·이름 조회에서 빠졌다. 끝까지 받는다
+  const dbRows = await selectPaged<{ code: string; name: string }>(
+    async (from, to) =>
+      await supabase.from("stocks").select("code,name").order("code").range(from, to),
+    { logLabel: "search_universe" }
+  ).catch(() => []);
+  let items: Hit[] = dbRows.map((r) => ({
     code: r.code,
     name: r.name,
   }));
