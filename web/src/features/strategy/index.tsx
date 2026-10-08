@@ -32,17 +32,6 @@ type AutoTradeSettings = {
   take_profit_pct?: number
   stop_loss_pct?: number
   long_term_ratio?: number
-  // 동적 포지션 사이징
-  use_dynamic_sizing?: boolean
-  base_max_positions?: number
-  bull_multiplier?: number
-  bear_multiplier?: number
-  min_confidence_pct?: number
-  // 적응형 손익 조정
-  use_adaptive_exit?: boolean
-  stop_loss_range?: [number, number]
-  take_profit_range?: [number, number]
-  volatility_adjustment?: number
 }
 
 type ActivityRow = {
@@ -637,44 +626,6 @@ export default function StrategyPage() {
                 </div>
               </div>
 
-              {settings?.use_dynamic_sizing && (
-                <div className="card mb-4" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.05), rgba(16,185,129,0.05))' }}>
-                  <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>
-                    동적 포지션 사이징 · 설정값 참고 범위 (봇 미적용)
-                  </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 'var(--space-3)' }}>
-                    <div style={{ padding: 12, background: 'var(--color-stock-down-bg)', borderRadius: 'var(--radius-sm)' }}>
-                      <div className="caption">약세장</div>
-                      <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, color: 'var(--color-stock-down)', marginTop: 4 }}>
-                        {Math.round((settings.base_max_positions ?? 3) * (settings.bear_multiplier ?? 0.5))} ~ {Math.ceil((settings.base_max_positions ?? 3) * (settings.bear_multiplier ?? 0.5))}종목
-                      </div>
-                      <div className="muted" style={{ fontSize: 'var(--font-size-xs)', marginTop: 4 }}>현금 보유 우선</div>
-                    </div>
-
-                    <div style={{ padding: 12, background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-sm)' }}>
-                      <div className="caption">중립/횡보장</div>
-                      <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, marginTop: 4 }}>
-                        {settings.base_max_positions ?? 3}종목
-                      </div>
-                      <div className="muted" style={{ fontSize: 'var(--font-size-xs)', marginTop: 4 }}>기본 설정값</div>
-                    </div>
-
-                    <div style={{ padding: 12, background: 'var(--color-stock-up-bg)', borderRadius: 'var(--radius-sm)' }}>
-                      <div className="caption">강세장</div>
-                      <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, color: 'var(--color-stock-up)', marginTop: 4 }}>
-                        {Math.round((settings.base_max_positions ?? 3) * (settings.bull_multiplier ?? 1.5))} ~ {Math.ceil((settings.base_max_positions ?? 3) * (settings.bull_multiplier ?? 1.5))}종목
-                      </div>
-                      <div className="muted" style={{ fontSize: 'var(--font-size-xs)', marginTop: 4 }}>공격적 진입</div>
-                    </div>
-                  </div>
-
-                  <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6, borderTop: '1px solid var(--color-border-default)', paddingTop: 12 }}>
-                    <strong>현재 자동매매에는 반영되지 않습니다.</strong><br/>
-                    위 숫자는 저장된 설정값으로 계산한 참고 범위입니다. 실제 보유 상한과 회차당 매수 수는 기본 설정의 최대 보유 종목과 신규 매수 슬롯을 따릅니다.
-                  </div>
-                </div>
-              )}
             </>
           )}
 
@@ -1069,61 +1020,8 @@ export default function StrategyPage() {
                 </div>
               </Collapsible>
 
-              <Collapsible title="저장만 되는 설정" hint="지금은 바꿔도 봇 매매가 달라지지 않습니다">
-                <Checkbox
-                  label="동적 포지션 사이징 사용 · 현재 봇 미적용"
-                  checked={!!settings?.use_dynamic_sizing}
-                  onChange={(value) => setSettings({ ...settings, use_dynamic_sizing: value })}
-                />
-                <div className="muted mt-2" style={{ marginBottom: 'var(--space-3)' }}>
-                  체크와 아래 값은 저장만 되며 현재 자동매매의 주문 규모나 보유 종목 수 계산에는 반영되지 않습니다.
-                </div>
-
-                {settings?.use_dynamic_sizing && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: 'var(--color-bg-sunken)', padding: 12, borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)' }}>
-                    <Input
-                      label="기본 최대 종목 수 (base) · 봇 미적용"
-                      type="number"
-                      value={settings?.base_max_positions ?? 3}
-                      onChange={(e: any) => setSettings({ ...settings, base_max_positions: Number(e.target.value) })}
-                    />
-                    <Input
-                      label="강세장 배수 (×) · 봇 미적용"
-                      type="number"
-                      step="0.1"
-                      value={settings?.bull_multiplier ?? 1.5}
-                      onChange={(e: any) => setSettings({ ...settings, bull_multiplier: Number(e.target.value) })}
-                    />
-                    <Input
-                      label="약세장 배수 (×) · 봇 미적용"
-                      type="number"
-                      step="0.1"
-                      value={settings?.bear_multiplier ?? 0.5}
-                      onChange={(e: any) => setSettings({ ...settings, bear_multiplier: Number(e.target.value) })}
-                    />
-                    <Input
-                      label="최소 신뢰도 임계 (%) · 봇 미적용"
-                      type="number"
-                      value={settings?.min_confidence_pct ?? 65}
-                      onChange={(e: any) => setSettings({ ...settings, min_confidence_pct: Number(e.target.value) })}
-                    />
-                  </div>
-                )}
-
-                <Checkbox
-                  label="적응형 손익 조정 사용 · 봇 미적용"
-                  checked={!!settings?.use_adaptive_exit}
-                  onChange={(value) => setSettings({ ...settings, use_adaptive_exit: value })}
-                />
-                <div className="muted mt-2">
-                  현재 봇 매매 로직은 이 설정을 읽지 않습니다(저장만 됨).
-                </div>
-              </Collapsible>
 
               <Collapsible title="전략별 동작 방식" hint="세 전략이 각각 무엇을 하는지">
-                <div className="muted" style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-sm)' }}>
-                  아래 "권장 설정"의 기본 종목 수·강세장/약세장 배수는 위 "저장만 되는 설정"의 값입니다. 지금은 저장만 되고 봇 매매에는 적용되지 않습니다.
-                </div>
                 
                 {STRATEGY_OPTIONS.map((option) => (
                   <div
