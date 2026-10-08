@@ -42,6 +42,8 @@ test("처음 설정한 달에 입금일이 지났으면 다음 달부터, 아직
   assert.equal(resolveLastDepositMonthOnSave({ depositDay: 28, previousLastDepositMonth: null, todayKey: "2026-09-20" }), null);
   // 이번 달 이미 입금했으면 금액을 바꿔도 이번 달 두 번 들어가지 않는다
   assert.equal(resolveLastDepositMonthOnSave({ depositDay: 28, previousLastDepositMonth: "2026-09", todayKey: "2026-09-20" }), "2026-09");
+  // 입금 내역 없이 건너뛴 표시만 있던 달은 입금일을 늦추면 이번 달부터 다시 받는다
+  assert.equal(resolveLastDepositMonthOnSave({ depositDay: 25, previousLastDepositMonth: "2026-10", todayKey: "2026-10-08", depositLog: [] }), "2026-09");
 });
 
 test("다음 입금 예정일", () => {

@@ -173,6 +173,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             depositDay,
             previousLastDepositMonth: readDepositSettings(current).lastDepositMonth,
             todayKey: toKstDateKey(),
+            depositLog: readDepositLog(current),
           }),
         }
         const { error: depError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: next }, { onConflict: 'tg_id' })

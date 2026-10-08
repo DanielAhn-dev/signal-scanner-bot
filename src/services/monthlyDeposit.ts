@@ -55,16 +55,26 @@ export function isDepositDue(settings: DepositSettings, todayKey: string): boole
 
 /**
  * 금액·입금일을 새로 저장할 때의 "마지막 입금 달" — 이번 달 입금일이 이미 지났으면 이번 달은 처리한 것으로 둔다.
- * 이미 이번 달에 입금했다면 그대로 둔다 (금액을 바꿔도 같은 달에 두 번 들어가지 않게).
+ * 이번 달에 실제로 자동 입금이 들어갔다면 그대로 둔다 (금액을 바꿔도 같은 달에 두 번 들어가지 않게).
+ * 입금 내역 없이 "처리함"으로만 표시된 달(이전 저장에서 입금일이 이미 지났다고 건너뛴 경우)은 새 입금일로 다시 판단한다.
  */
 export function resolveLastDepositMonthOnSave(input: {
   depositDay: number;
   previousLastDepositMonth: string | null;
   todayKey: string;
+  depositLog?: DepositRecord[];
 }): string | null {
   const month = input.todayKey.slice(0, 7);
-  if (input.previousLastDepositMonth != null && input.previousLastDepositMonth >= month) return input.previousLastDepositMonth;
-  return Number(input.todayKey.slice(8, 10)) >= input.depositDay ? month : input.previousLastDepositMonth;
+  const prev = input.previousLastDepositMonth;
+  if (prev != null && prev >= month) {
+    const paid = !input.depositLog || input.depositLog.some((r) => !r.manual && r.date.slice(0, 7) === month);
+    if (paid) return prev;
+    // 건너뛴 표시였다면 이번 달 이전 값으로 되돌릴 수 없으므로 직전 달로 둔다
+    const [y, m] = month.split("-").map(Number);
+    const before = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+    return Number(input.todayKey.slice(8, 10)) >= input.depositDay ? month : before;
+  }
+  return Number(input.todayKey.slice(8, 10)) >= input.depositDay ? month : prev;
 }
 
 /** 다음 입금 예정일 (입금일 기준, 거래일 보정 없음). 적립 안 하면 null */
