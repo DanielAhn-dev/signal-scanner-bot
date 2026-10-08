@@ -15,6 +15,8 @@ import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { useJourney } from '../../lib/journey'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 import { adviseHoldings, type Holding } from '../../lib/holdingAdvice'
+import { satelliteStatus, SATELLITE_LOSS_LIMIT_PCT, SATELLITE_MAX_WEIGHT_PCT } from '../../lib/satelliteGuard'
+import { formatKrw } from '../../lib/format'
 import { readUserState } from '../../lib/userState'
 import { personalSetup, type InvestorProfile } from '../../lib/startPlan'
 
@@ -221,6 +223,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     return adviseHoldings({ holdings: realHoldings, level, sellCostPct: (code) => resolveSellCostPct({ code, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct }) })
   })()
 
+  const satellite = realHoldings ? satelliteStatus(realHoldings) : null
+
   const posCount = portfolio?.positions?.length ?? 0
   // 포트폴리오 화면의 매매비용 설정(차감 여부·요율)을 그대로 따른다
   const pnl = (() => {
@@ -376,6 +380,30 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                         <span style={{ display: 'block', color: 'var(--color-text-tertiary)', fontSize: 10 }}>과거 평균일 뿐 보장이 아닙니다. 개별 종목을 직접 사셨다면 포트폴리오에 입력하면 종목별 대응을 알려드려요.</span>
                       </>
                     ) : '시작하기를 마치면 예상 달성 시점을 보여드립니다.'}
+                  </td>
+                </tr>
+              )}
+              {/* 개별주 묶음 전체: 상한 10%·손실 한도 -15% (종목 하나씩은 아래 행) */}
+              {satellite && (satellite.overWeight || satellite.overLoss) && (
+                <tr className="xls-row">
+                  <td className="xls-row-num">{rowNum()}</td>
+                  <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.5, fontSize: 11, padding: '6px 8px', background: 'var(--color-warning-bg)' }}>
+                    <span style={{ fontWeight: 700 }}>개별주 묶음 {satellite.stockCount}종목</span>
+                    <span style={{ marginLeft: 6, fontSize: 10, color: changeColor(satellite.pnlPct) }}>{fmtChange(satellite.pnlPct)}</span>
+                    <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-text-tertiary)' }}>비중 {satellite.weightPct.toFixed(0)}%</span>
+                    {satellite.overWeight && (
+                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 700 }}>
+                        → 개별주가 전체의 {SATELLITE_MAX_WEIGHT_PCT}%를 넘었어요. 새로 사지 말고, 약 {formatKrw(satellite.trimAmount)}만큼 줄이면 {SATELLITE_MAX_WEIGHT_PCT}%로 돌아와요
+                      </span>
+                    )}
+                    {satellite.overLoss && (
+                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 700 }}>
+                        → 개별주 묶음이 {SATELLITE_LOSS_LIMIT_PCT}% 손실 한도에 닿았어요. 이번 분기엔 개별주를 새로 사지 않는 걸 권해요
+                      </span>
+                    )}
+                    <span style={{ display: 'block', color: 'var(--color-text-secondary)', fontSize: 10 }}>
+                      종목 고르기로 지수를 이긴 근거를 못 찾았기 때문에(검증 C1·C15~C27) 개별주는 작게, 잃는 한도를 정해 두는 게 원칙이에요. 비중은 이 앱에 입력한 실계좌 보유 기준이고, 이미 팔아 확정한 손실은 빠져 있어요.
+                    </span>
                   </td>
                 </tr>
               )}
