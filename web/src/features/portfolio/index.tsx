@@ -1951,6 +1951,30 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
               />
             </div>
 
+            {/* 기록 뒤 보유를 미리 보여 증권사 앱과 맞춰 보게 한다 — 2026-10-08 1주씩 나눠 체결된 걸 옮기다 1주가 빠져
+                보유를 직접 고쳐야 했다. 저장 전에 수량이 다르면 바로 알 수 있게. */}
+            {modalSide === 'buy' && Number(tradeQty) > 0 && (() => {
+              const curQty = Number(modalRow.quantity || 0)
+              const curAvg = Number(modalRow.avg_price || 0)
+              const addQty = Number(tradeQty)
+              const addPrice = tradePrice !== '' ? Number(tradePrice) : Number(modalRow.stock?.close ?? modalRow.avg_price ?? 0)
+              const nextQty = curQty + addQty
+              const nextAvg = nextQty > 0 ? (curQty * curAvg + addQty * addPrice) / nextQty : 0
+              const isRealAccount = !!(String(modalRow?.broker_name || '').trim() || String(modalRow?.account_name || '').trim())
+              return (
+                <div className="portfolio-modal-lots" style={{ marginBottom: 'var(--space-4)' }}>
+                  <div>
+                    기록하면 <strong>{formatNumber(nextQty, 0)}주</strong> · 평균 {formatKrw(Math.round(nextAvg))}
+                  </div>
+                  {isRealAccount && (
+                    <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+                      증권사 앱의 보유 수량과 같은지 확인하세요. 여러 번 나눠 체결됐으면 합친 수량과 평균 체결가로 한 번에 적어도 돼요.
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             {canBackdateTrade && (
               <div style={{ marginBottom: 'var(--space-4)' }}>
                 <Input
