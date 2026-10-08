@@ -5,7 +5,7 @@
 접근 권한만 있으면 다시 받을 수 있다 — DART는 순차 호출만 되고 일일 호출 한도가 있어서,
 매번 처음부터 새로 받으면 몇 시간씩 걸린다.
 
-signal-scanner-bot(public)가 아니라 별도 private 저장소(starrichuniverse/signal-scanner-research-cache,
+signal-scanner-bot(public)가 아니라 별도 private 저장소(DanielAhn-dev/signal-scanner-research-cache,
 앱 코드 없이 캐시 전용으로 새로 만듦)의 GitHub Release 자산을 쓴다 — 연구 데이터가 공개되지 않고,
 Supabase 무료 플랜 용량과도 무관하다(운영 DB에 연구용 대용량 데이터를 얹지 않음). GitHub 개인
 계정은 private 저장소가 무료다(2019년부터 개수 제한 없음).
@@ -26,7 +26,7 @@ import subprocess
 import tarfile
 import tempfile
 
-CACHE_REPO = "starrichuniverse/signal-scanner-research-cache"
+CACHE_REPO = "DanielAhn-dev/signal-scanner-research-cache"
 RELEASE_TAG = "research-cache"
 ASSET_NAME = "research-cache.tar.gz"
 CACHE_DIR = ".research-cache"
