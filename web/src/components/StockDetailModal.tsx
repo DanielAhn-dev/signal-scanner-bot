@@ -3,6 +3,7 @@ import Modal from './Modal'
 import Skeleton from './Skeleton'
 import { apiFetch } from '../lib/api'
 import { formatKstDateTime } from '../lib/format'
+import ChaseWarningNote from './ChaseWarningNote'
 
 type DetailSeriesRow = {
   date: string
@@ -16,6 +17,7 @@ type DetailSeriesRow = {
 
 type DetailMeta = {
   latest: DetailSeriesRow | null
+  changePct: number | null
   profile: {
     market_cap?: number | null
     per?: number | null
@@ -122,6 +124,7 @@ export default function StockDetailModal({ code, name, isOpen, onClose }: Props)
                 value: asNum(res.latest.value),
               }
             : normalized[0] ?? null,
+          changePct: asNum(res?.price_meta?.changePct ?? res?.profile?.change_pct),
           profile: res?.profile ?? null,
           flow: res?.flow ?? null,
         })
@@ -161,6 +164,7 @@ export default function StockDetailModal({ code, name, isOpen, onClose }: Props)
       )}
       {!loading && !error && detailData && detailData.length > 0 && (
         <div className="dbview-detail-list">
+          <ChaseWarningNote changePct={detailMeta?.changePct} />
           {detailMeta?.latest && (
             <div className="dbview-detail-summary">
               <div className="dbview-detail-summary-head">최신 기준 {detailMeta.latest.date}</div>

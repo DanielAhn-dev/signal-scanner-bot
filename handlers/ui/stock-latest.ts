@@ -1500,10 +1500,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fallbackClose = asNum(latest?.close ?? (stock as any)?.close)
     const hasRealtimePrice = realtimePrice != null && realtimePrice > 0
     const currentPrice = hasRealtimePrice ? realtimePrice : fallbackClose
+    // 전일 대비 등락률: 실시간이면 네이버 등락률, 아니면 일봉 마지막 두 종가
+    const prevSeriesClose = asNum(normalizedSeries[1]?.close)
+    const changePct = hasRealtimePrice
+      ? asNum(realtimeData?.changeRate)
+      : fallbackClose != null && prevSeriesClose != null && prevSeriesClose > 0
+        ? (fallbackClose / prevSeriesClose - 1) * 100
+        : null
     const priceMeta = {
       source: hasRealtimePrice ? 'realtime' : 'close',
       marketStatus: realtimeData?.marketStatus ?? null,
       fetchedAt: hasRealtimePrice ? toIsoDate(realtimeData?.fetchedAt) : null,
+      changePct,
     }
 
     const resolvedEps = asNum((stock as any)?.eps) ?? asNum(fund?.eps)
@@ -1643,6 +1651,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             price_source: priceMeta.source,
             price_market_status: priceMeta.marketStatus,
             price_fetched_at: priceMeta.fetchedAt,
+            change_pct: priceMeta.changePct,
           }
         : null,
       flow: flow

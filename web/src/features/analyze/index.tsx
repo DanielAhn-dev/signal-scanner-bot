@@ -16,6 +16,7 @@ import { LayoutDashboard, TrendingUp, Flag, Activity, Search, Link2, HelpCircle 
 import type { OhlcvCandle } from '../../lib/types'
 import { useCurrentChatId } from '../../stores/profileStore'
 import { defaultPlanItem, readSimulationPlan, saveSimulationPlan } from '../simulator/planStore'
+import ChaseWarningNote from '../../components/ChaseWarningNote'
 
 type SignalTone = 'positive' | 'warning' | 'negative' | 'neutral'
 type NarrativeSignal = { label: string; detail: string; tone: SignalTone }
@@ -744,6 +745,8 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
               </tr>
             </tbody>
           </table>
+
+          <ChaseWarningNote changePct={result.change_pct} />
 
           <section className={`analyze-decision analyze-decision--${entryDecision.tone}`} aria-label="현재 진입 판단">
             <div className="analyze-decision__primary">
