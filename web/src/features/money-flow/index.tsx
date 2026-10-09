@@ -1,3 +1,4 @@
+import More from '../../components/ui/More'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
@@ -289,13 +290,14 @@ export default function MoneyFlowPage() {
             <h2>빠른 기록</h2>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
-              <small className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 누가 적고 누구 카드로 냈든 기본은 집 공용입니다. 배우자만 쓴 건 앞이든 중간이든 "배우자"를 넣으면 됩니다(예: 배우자 교통카드 62000원, 모두의카드 배우자 환급 23000원).</small>
+              <small className="acc-note">가게 이름과 금액만 적어도 됩니다. 자세한 규칙은 아래 "쓰는 법"에서 봅니다.</small>
               <textarea
                 className="mf-input" rows={2} value={text} placeholder={'261002 CU제기점 1800원\n네이버페이 물티슈 12900원'}
                 onChange={(event) => setText(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !text.includes('\n')) { event.preventDefault(); readInput() } }}
               />
             </label>
+            <More label="쓰는 법과 예시 보기"><p className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 누가 적고 누구 카드로 냈든 기본은 집 공용입니다. 배우자만 쓴 건 앞이든 중간이든 "배우자"를 넣으면 됩니다(예: 배우자 교통카드 62000원, 모두의카드 배우자 환급 23000원).</p></More>
             <div className="mf-row">
               <label className="acc-field mf-date"><span>날짜 (줄 앞에 날짜가 없을 때)</span><input type="date" value={date} max={today} onChange={(event) => setDate(event.target.value)} /></label>
               <button type="button" className="acc-primary" onClick={readInput} disabled={!text.trim()}>읽기</button>
