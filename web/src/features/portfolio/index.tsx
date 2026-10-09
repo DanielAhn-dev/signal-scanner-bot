@@ -12,7 +12,7 @@ import Modal from '../../components/Modal'
 import StockSearchInput from '../../components/StockSearchInput'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
-import { resolveSellCostPct, loadTradeCostSettings } from '../../lib/tradeCost'
+import { loadTradeCostSettings } from '../../lib/tradeCost'
 import { resolveHoldingAction, summarizeAccounts } from '../../lib/holdingAction'
 import { useSyncedSettings } from '../../lib/userState'
 import Pagination from '../../components/Pagination'
@@ -23,6 +23,9 @@ import { buildAccountKey, accountLabel, isVirtualPositionRow, holdingAccountKey,
 import { toSignalLabel, toWarnLabel, WEIGHT_CAUTION_SOURCE_NOTE, BADGE_TOOLTIPS } from './lib/labels'
 import { pickLatestActiveShare } from './lib/share'
 import { getTodayLocalYmd, toKstYmd, shiftYmd } from './lib/dates'
+import { selectAccountRows, extractSectors, filterHoldings } from './lib/filtering'
+import { summarizeHoldings, rowTradeCost } from './lib/summary'
+import { ALLOCATION_COLORS, buildAllocationRows, buildDonutGradient } from './lib/allocation'
 import { computeMacroRisk } from './lib/macroRisk'
 import { clampRuleSettings, applyMacroToRules, resolveAdvisoryThresholds } from './lib/thresholds'
 import { evaluateHoldingState as evaluateHoldingStateFor, getPerformanceGrade as getPerformanceGradeFor, getScoreValue, type HoldingStateContext, type HoldingStateKind } from './lib/holdingState'
@@ -378,55 +381,25 @@ export default function Portfolio() {
     value: holdingValue(r),
     etf: r?.etf_key ?? null,
   }))), [holdingAll])
-  const virtualHoldingRows = useMemo(() => holdingAll.filter((r: any) => isVirtualPositionRow(r)), [holdingAll])
 
-  const sectors = useMemo(() => {
-    const base = holdingAll
-    const seen = new Map<string, { id: string; name: string }>()
-    for (const r of base) {
-      const s = r.stock?.sector
-      if (s?.id && s?.name && !seen.has(String(s.id))) {
-        seen.set(String(s.id), { id: String(s.id), name: String(s.name) })
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [holdingAll])
+  const virtualHoldingRows = useMemo(() => selectAccountRows(holdingAll, 'virtual'), [holdingAll])
 
-  const filteredRows = useMemo(() => {
-    let result: any[] = holdingAll
-    if (selectedAccountKey === 'virtual') {
-      result = result.filter((r: any) => isVirtualPositionRow(r))
-    } else if (selectedAccountKey !== 'all') {
-      result = result.filter((r: any) => buildAccountKey(r?.broker_name, r?.account_name) === selectedAccountKey)
-    }
-    if (selectedSector) result = result.filter((r: any) => String(r.stock?.sector_id ?? '') === selectedSector)
-    if (search) {
-      const q = search.toLowerCase()
-      result = result.filter((r: any) =>
-        (r.code || '').toLowerCase().includes(q) ||
-        (r.stock_name || '').toLowerCase().includes(q)
-      )
-    }
+  const sectors = useMemo(() => extractSectors(holdingAll), [holdingAll])
 
-    if (holdingStateFilter !== 'all') {
-      result = result.filter((r: any) => getHoldingState(r) === holdingStateFilter)
-    }
-
-    if (gradeFilter !== 'all') {
-      result = result.filter((r: any) => getPerformanceGrade(r) === gradeFilter)
-    }
-
-    return result
-  }, [holdingAll, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPctWithMacro, safePartialWarnScoreMin, safeAddEntryMinScoreWithMacro, safeGradeAThreshold, safeGradeBThreshold])
+  const filteredRows = useMemo(
+    () => filterHoldings(
+      holdingAll,
+      { accountKey: selectedAccountKey, sectorId: selectedSector, search, stateFilter: holdingStateFilter, gradeFilter },
+      getHoldingState,
+      getPerformanceGrade,
+    ),
+    [holdingAll, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPctWithMacro, safePartialWarnScoreMin, safeAddEntryMinScoreWithMacro, safeGradeAThreshold, safeGradeBThreshold],
+  )
 
   const total = filteredRows.length
   const totalPages = Math.ceil(total / pageSize)
   const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
-  const summaryRows = selectedAccountKey === 'all'
-    ? holdingAll
-    : selectedAccountKey === 'virtual'
-      ? virtualHoldingRows
-      : holdingAll.filter((r: any) => buildAccountKey(r?.broker_name, r?.account_name) === selectedAccountKey)
+  const summaryRows = selectAccountRows(holdingAll, selectedAccountKey)
   const selectedAccountLabel = selectedAccountKey === 'all'
     ? '전체 계좌'
     : selectedAccountKey === 'virtual'
@@ -435,81 +408,13 @@ export default function Portfolio() {
           accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
           accountFolders.find(f => f.key === selectedAccountKey)?.accountName,
         )
-  const totalUnrealized = summaryRows.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
-  const totalInvested = summaryRows.reduce((acc: number, r: any) => acc + (Number(r.quantity || 0) * Number(r.avg_price || 0)), 0)
-  // 비용 계산: 매수비용(이미 발생) + 매도예상비용(현재가 기준)
-  const totalTradeCost = summaryRows.reduce((acc: number, r: any) => {
-    const invested = Number(r.quantity || 0) * Number(r.avg_price || 0)
-    const currentValue = invested + Number(r.unrealized_pnl || 0)
-    const buyCost = invested * (buyFeeRatePct / 100)
-    const sellPct = resolveSellCostPct({ code: r.code ?? r.ticker, name: r.stock_name, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
-    const sellCost = currentValue > 0 ? currentValue * (sellPct / 100) : 0
-    return acc + buyCost + sellCost
-  }, 0)
-  const adjustedUnrealized = includeCost ? totalUnrealized - totalTradeCost : totalUnrealized
-  const totalReturnPct = totalInvested > 0 ? (adjustedUnrealized / totalInvested) * 100 : 0
-  const totalEvaluationValue = totalInvested + adjustedUnrealized
-  const estimatedCash = initialCapital - totalInvested
-  const totalAssetValue = totalEvaluationValue + estimatedCash
-  const allocationRows = useMemo(() => {
-    const items = summaryRows
-      .map((r: any) => {
-        const quantity = Number(r.quantity || 0)
-        const avgPrice = Number(r.avg_price || 0)
-        const unrealized = Number(r.unrealized_pnl || 0)
-        const marketValue = quantity > 0 ? (quantity * avgPrice + unrealized) : 0
-        const safeValue = Number.isFinite(marketValue) ? marketValue : 0
-        return {
-          code: String(r.code || '-'),
-          name: String(r.stock_name || r.ticker || r.symbol || r.code || '-'),
-          value: Math.max(0, safeValue),
-        }
-      })
-      .filter((row) => row.value > 0)
-      .sort((a, b) => b.value - a.value)
-
-    if (estimatedCash > 0) {
-      items.push({
-        code: 'CASH',
-        name: '현금',
-        value: estimatedCash,
-      })
-    }
-
-    const sum = items.reduce((acc, row) => acc + row.value, 0)
-    if (sum <= 0) return [] as Array<{ code: string; name: string; value: number; ratio: number }>
-
-    return items.map((row) => ({
-      ...row,
-      ratio: (row.value / sum) * 100,
-    }))
-  }, [summaryRows, estimatedCash])
-
-  const allocationColors = [
-    '#2f7ae5',
-    '#14b8a6',
-    '#f59e0b',
-    '#ef4444',
-    '#8b5cf6',
-    '#06b6d4',
-    '#84cc16',
-    '#f97316',
-    '#ec4899',
-    '#64748b',
-  ]
-
-  const allocationChartStyle = useMemo(() => {
-    if (allocationRows.length === 0) return 'conic-gradient(#e5e7eb 0deg 360deg)'
-    let currentAngle = 0
-    const parts = allocationRows.map((row, idx) => {
-      const start = currentAngle
-      const angle = (row.ratio / 100) * 360
-      currentAngle += angle
-      const end = idx === allocationRows.length - 1 ? 360 : currentAngle
-      return `${allocationColors[idx % allocationColors.length]} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`
-    })
-    return `conic-gradient(${parts.join(', ')})`
-  }, [allocationRows])
+  const {
+    totalUnrealized, totalInvested, totalTradeCost, adjustedUnrealized,
+    totalReturnPct, totalEvaluationValue, estimatedCash, totalAssetValue,
+  } = summarizeHoldings(summaryRows, { includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital })
+  const tradeCostOpts = { buyFeeRatePct, sellFeeRatePct }
+  const allocationRows = useMemo(() => buildAllocationRows(summaryRows, estimatedCash), [summaryRows, estimatedCash])
+  const allocationChartStyle = useMemo(() => buildDonutGradient(allocationRows), [allocationRows])
 
   const captureGeneratedAt = useMemo(
     () => new Intl.DateTimeFormat('ko-KR', {
@@ -1213,7 +1118,7 @@ export default function Portfolio() {
                   allocationRows.map((row, idx) => (
                     <div key={`${row.code}-${idx}`} className="portfolio-allocation-item">
                       <div className="portfolio-allocation-item-name">
-                        <span className="portfolio-allocation-dot" style={{ background: allocationColors[idx % allocationColors.length] }} />
+                        <span className="portfolio-allocation-dot" style={{ background: ALLOCATION_COLORS[idx % ALLOCATION_COLORS.length] }} />
                         <span>{row.name}</span>
                       </div>
                       <div className="portfolio-allocation-item-values">
@@ -1331,10 +1236,7 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                     let displayPct = r.unrealized_pct != null ? Number(r.unrealized_pct) : null
                     if (includeCost && rawPnl != null) {
                       const inv = Number(r.quantity || 0) * Number(r.avg_price || 0)
-                      const curVal = inv + rawPnl
-                      const sellPct = resolveSellCostPct({ code: r.code ?? r.ticker, name: r.stock_name, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
-                      const cost = inv * (buyFeeRatePct / 100) + (curVal > 0 ? curVal * (sellPct / 100) : 0)
-                      displayPnl = rawPnl - cost
+                      displayPnl = rawPnl - rowTradeCost(r, tradeCostOpts)
                       displayPct = inv > 0 ? (displayPnl / inv) * 100 : null
                     }
                     return (
