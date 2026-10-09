@@ -1,38 +1,35 @@
 ﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown, ChevronRight, ChevronUp } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
-import { formatKrw, formatKrwCompact, formatNumber } from '../../lib/format'
-import Skeleton from '../../components/Skeleton'
 import Detail from '../../components/ui/Detail'
-import Collapsible from '../../components/ui/Collapsible'
 import Button from '../../components/ui/Button'
-import Input from '../../components/ui/Input'
-import Modal from '../../components/Modal'
-import { EmptyState, ErrorState } from '../../components/StateViews'
+import { ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import { loadTradeCostSettings } from '../../lib/tradeCost'
-import { resolveHoldingAction, summarizeAccounts } from '../../lib/holdingAction'
+import { summarizeAccounts } from '../../lib/holdingAction'
 import { useSyncedSettings } from '../../lib/userState'
 import Pagination from '../../components/Pagination'
-import EconomicEventBadge from '../../components/EconomicEventBadge'
-import SheetHeaderBar from '../../components/SheetHeaderBar'
 import type { AccountFolder, AccountPolicy, AdvisorPerformanceData, PortfolioShareHistoryItem } from './types'
-import { buildAccountKey, accountLabel, isVirtualPositionRow, holdingAccountKey, holdingValue } from './lib/accountKey'
-import { toSignalLabel, toWarnLabel, WEIGHT_CAUTION_SOURCE_NOTE, BADGE_TOOLTIPS } from './lib/labels'
+import { buildAccountKey, accountLabel, holdingAccountKey, holdingValue } from './lib/accountKey'
 import { pickLatestActiveShare } from './lib/share'
 import { getTodayLocalYmd } from './lib/dates'
 import { selectAccountRows, extractSectors, filterHoldings } from './lib/filtering'
-import { summarizeHoldings, rowTradeCost } from './lib/summary'
-import { ALLOCATION_COLORS, buildAllocationRows, buildDonutGradient } from './lib/allocation'
+import { summarizeHoldings } from './lib/summary'
+import { buildAllocationRows, buildDonutGradient } from './lib/allocation'
+import PortfolioHeader from './components/PortfolioHeader'
+import FilterCard from './components/FilterCard'
+import AssetOverviewCard from './components/AssetOverviewCard'
+import HoldingList from './components/HoldingList'
+import MacroCard from './components/MacroCard'
+import PolicyCard from './components/PolicyCard'
+import PerformanceCard from './components/PerformanceCard'
 import TradeModal from './components/modals/TradeModal'
 import ShareModal from './components/modals/ShareModal'
 import MaintenanceModal from './components/modals/MaintenanceModal'
 import DeleteConfirmModal from './components/modals/DeleteConfirmModal'
-import { formatSignedKrw } from './lib/format'
 import { computeMacroRisk } from './lib/macroRisk'
 import { clampRuleSettings, applyMacroToRules, resolveAdvisoryThresholds } from './lib/thresholds'
-import { evaluateHoldingState as evaluateHoldingStateFor, getPerformanceGrade as getPerformanceGradeFor, getScoreValue, type HoldingStateContext, type HoldingStateKind } from './lib/holdingState'
+import { evaluateHoldingState as evaluateHoldingStateFor, getPerformanceGrade as getPerformanceGradeFor, type HoldingStateContext, type HoldingStateKind } from './lib/holdingState'
 
 const DEFAULT_INITIAL_CAPITAL = 10_000_000
 
@@ -578,7 +575,6 @@ export default function Portfolio() {
     }
   }
 
-  const visibleSectors = showAllSectors ? sectors : sectors.slice(0, 8)
 
   const onSectorChange = (sectorId: string | null) => {
     setSelectedSector(sectorId)
@@ -744,312 +740,36 @@ export default function Portfolio() {
 
   return (
     <section className="container-app portfolio-page">
-      <div className="portfolio-head-sheet">
-      <table className="xls-table xls-fit" style={{ width: '100%', tableLayout: 'fixed' }}>
-        <colgroup>
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-        </colgroup>
-        <tbody>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
-              <SheetHeaderBar
-                title="포트폴리오"
-                subtitle={portfolioHeaderSubtitle}
-                action={<EconomicEventBadge onNavigateToCalendar={() => navigate('/market')} />}
-              />
-            </td>
-          </tr>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
-              <div className="portfolio-head-row">
-                <div className="portfolio-head-controls">
-                  <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
-                    {refreshing ? '새로고침 중...' : '새로고침'}
-                  </Button>
-                  <span className="portfolio-total-pill">
-                    {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
-                  </span>
-                  <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
-                </div>
-                <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업">
-                  <span className="caption muted" style={{ whiteSpace: 'nowrap' }}>유지보수</span>
-                  <Button variant="secondary" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-                    계좌/보유 추가
-                  </Button>
-                  <Button variant="secondary" size="sm" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>
-                    전체매도
-                  </Button>
-                </div>
-              </div>
-            </td>
-          </tr>
-          <tr className="xls-row">
-            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
-              <div className="portfolio-account-tabs" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
-                <button className={`portfolio-tab ${selectedAccountKey === 'all' ? 'active' : ''}`} onClick={() => { setSelectedAccountKey('all'); setPage(1) }} style={{ padding: 'var(--space-2) var(--space-3)', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: selectedAccountKey === 'all' ? 'var(--font-weight-bold)' : 'normal', color: selectedAccountKey === 'all' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', borderBottom: selectedAccountKey === 'all' ? '2px solid var(--color-primary)' : 'none', fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', flexShrink: 0 }}>전체</button>
-                <button className={`portfolio-tab ${selectedAccountKey === 'virtual' ? 'active' : ''}`} onClick={() => { setSelectedAccountKey('virtual'); setPage(1) }} style={{ padding: 'var(--space-2) var(--space-3)', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: selectedAccountKey === 'virtual' ? 'var(--font-weight-bold)' : 'normal', color: selectedAccountKey === 'virtual' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', borderBottom: selectedAccountKey === 'virtual' ? '2px solid var(--color-primary)' : 'none', fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', flexShrink: 0 }}>가상매매 ({virtualHoldingRows.length})</button>
-                {accountFolders.map((account) => (
-                  <button key={account.key} className={`portfolio-tab ${selectedAccountKey === account.key ? 'active' : ''}`} onClick={() => { setSelectedAccountKey(account.key); setPage(1) }} style={{ padding: 'var(--space-2) var(--space-3)', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: selectedAccountKey === account.key ? 'var(--font-weight-bold)' : 'normal', color: selectedAccountKey === account.key ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', borderBottom: selectedAccountKey === account.key ? '2px solid var(--color-primary)' : 'none', fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', flexShrink: 0 }} title={`${accountLabel(account.brokerName, account.accountName)} (${account.count})`}>
-                    {accountLabel(account.brokerName, account.accountName)} ({account.count})
-                  </button>
-                ))}
-              </div>
-            </td>
-          </tr>
-          <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--label">
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>보유 종목</td>
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>현재 실제 매수금</td>
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>평가손익 합계</td>
-          </tr>
-          <tr className="xls-row portfolio-summary-row portfolio-summary-row--value">
-            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{summaryRows.length}</td>
-            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{formatKrwCompact(totalInvested)}</td>
-            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>
-              <span className={adjustedUnrealized < 0 ? 'negative' : 'positive'}>{formatKrwCompact(adjustedUnrealized, { showPositiveSign: true })}</span>
-            </td>
-          </tr>
-          <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--note">
-            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
-              {selectedAccountLabel}
-              {serverTotal != null && allRows.length < serverTotal ? ` · 전체 집계 중 (${allRows.length}/${serverTotal})` : ''}
-            </td>
-            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>보유 수량×평균 매수가</td>
-            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
-              {includeCost
-                ? `비용 ${formatKrwCompact(Math.round(totalTradeCost))} 차감`
-                : '보유 포지션 기준'}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
+      <PortfolioHeader
+        subtitle={portfolioHeaderSubtitle} onNavigateToCalendar={() => navigate('/market')}
+        loading={loading} refreshing={refreshing} allRows={allRows} holdingAll={holdingAll}
+        onRefresh={() => load({ force: true })} onOpenShare={() => setShareModalOpen(true)}
+        onOpenMaintenance={openMaintenanceModal}
+        selectedAccountKey={selectedAccountKey} onSelectAccount={(key) => { setSelectedAccountKey(key); setPage(1) }}
+        accountFolders={accountFolders} virtualCount={virtualHoldingRows.length}
+        summaryCount={summaryRows.length} totalInvested={totalInvested} adjustedUnrealized={adjustedUnrealized}
+        selectedAccountLabel={selectedAccountLabel} serverTotal={serverTotal}
+        includeCost={includeCost} totalTradeCost={totalTradeCost}
+      />
 
       {/* 필터 */}
-      <div className="card mb-4 portfolio-filter-card">
-        <button
-          type="button"
-          className="portfolio-filter-head"
-          onClick={() => setFilterAccordionOpen((prev) => !prev)}
-          aria-expanded={filterAccordionOpen}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: '0 0 var(--space-2) 0',
-            marginBottom: filterAccordionOpen ? 'var(--space-2)' : '0',
-            borderBottom: filterAccordionOpen ? '1px solid var(--color-border)' : 'none',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <span className="title-md" style={{ margin: 0 }}>필터 & 옵션</span>
-            {(selectedSector || holdingStateFilter !== 'all' || gradeFilter !== 'all' || search || includeCost) && (
-              <span className="caption" style={{ 
-                backgroundColor: 'var(--color-warning-bg)', 
-                color: 'var(--color-warning-text)',
-                padding: '2px 8px',
-                borderRadius: '12px',
-                fontSize: 'var(--font-size-xs)',
-              }}>
-                {[
-                  selectedSector ? 1 : 0,
-                  holdingStateFilter !== 'all' ? 1 : 0,
-                  gradeFilter !== 'all' ? 1 : 0,
-                  search ? 1 : 0,
-                  includeCost ? 1 : 0,
-                ].reduce((a, b) => a + b, 0)}개 필터 활성
-              </span>
-            )}
-          </div>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }} aria-hidden>
-            {filterAccordionOpen ? <>접기 <ChevronUp size={14} aria-hidden /></> : <>펼치기 <ChevronDown size={14} aria-hidden /></>}
-          </span>
-        </button>
-
-        {filterAccordionOpen && (
-          <div className="portfolio-filter-stack">
-
-          <div>
-            <div className="caption portfolio-filter-label">섹터</div>
-            <div className="tag-list">
-              <button
-                className={`tag${!selectedSector ? ' active' : ''}`}
-                onClick={() => onSectorChange(null)}
-              >전체</button>
-              {visibleSectors.map((s: any) => (
-                <button
-                  key={s.id}
-                  className={`tag${selectedSector === s.id ? ' active' : ''}`}
-                  onClick={() => onSectorChange(s.id)}
-                >{s.name}</button>
-              ))}
-              {sectors.length > 8 && (
-                <button className="tag" onClick={() => setShowAllSectors(v => !v)}>
-                  {showAllSectors ? '접기' : `+ ${sectors.length - 8}개 더보기`}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="caption portfolio-filter-label">매매비용</div>
-            <label className="portfolio-cost-toggle" title={`매수수수료 ${buyFeeRatePct}% + 매도수수료·거래세 ${sellFeeRatePct}%`}>
-              <input
-                type="checkbox"
-                checked={includeCost}
-                onChange={e => setIncludeCost(e.target.checked)}
-              />
-              <span>손익 계산에 포함</span>
-            </label>
-            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              현재 기준: 매수수수료 {buyFeeRatePct}% + 매도수수료·거래세 {sellFeeRatePct}%
-            </div>
-          </div>
-
-          <div>
-            <div className="caption portfolio-filter-label">보유 상태</div>
-            <div className="tag-list portfolio-segment-list">
-              <button
-                className={`tag${holdingStateFilter === 'all' ? ' active' : ''}`}
-                onClick={() => { setHoldingStateFilter('all'); setPage(1) }}
-              >
-                전체
-              </button>
-              <button
-                className={`tag${holdingStateFilter === 'hold' ? ' active' : ''}`}
-                onClick={() => { setHoldingStateFilter('hold'); setPage(1) }}
-              >
-                보통 보유(홀드)
-              </button>
-              <button
-                className={`tag${holdingStateFilter === 'add' ? ' active' : ''}`}
-                onClick={() => { setHoldingStateFilter('add'); setPage(1) }}
-              >
-                추가매수(IN진입)
-              </button>
-              <button
-                className={`tag${holdingStateFilter === 'partial' ? ' active' : ''}`}
-                onClick={() => { setHoldingStateFilter('partial'); setPage(1) }}
-              >
-                부분청산 후보
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <div className="caption portfolio-filter-label">성과 등급</div>
-            <div className="tag-list portfolio-segment-list">
-              <button
-                className={`tag${gradeFilter === 'all' ? ' active' : ''}`}
-                onClick={() => { setGradeFilter('all'); setPage(1) }}
-              >
-                전체
-              </button>
-              <button
-                className={`tag${gradeFilter === 'A' ? ' active' : ''}`}
-                onClick={() => { setGradeFilter('A'); setPage(1) }}
-              >
-                A (점수 {safeGradeAThreshold} 이상)
-              </button>
-              <button
-                className={`tag${gradeFilter === 'B' ? ' active' : ''}`}
-                onClick={() => { setGradeFilter('B'); setPage(1) }}
-              >
-                B (점수 {safeGradeBThreshold}~{safeGradeAThreshold - 1})
-              </button>
-              <button
-                className={`tag${gradeFilter === 'C' ? ' active' : ''}`}
-                onClick={() => { setGradeFilter('C'); setPage(1) }}
-              >
-                C (점수 {safeGradeBThreshold - 1} 이하)
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <div className="caption portfolio-filter-label">기준값 조정</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--space-2)' }}>
-              <Input
-                label="A 등급 점수"
-                type="number"
-                value={String(gradeAThreshold)}
-                onChange={(e: any) => setGradeAThreshold(Number(e?.target?.value || 80))}
-              />
-              <Input
-                label="B 등급 점수"
-                type="number"
-                value={String(gradeBThreshold)}
-                onChange={(e: any) => setGradeBThreshold(Number(e?.target?.value || 65))}
-              />
-              <Input
-                label="추가매수 최소 점수"
-                type="number"
-                value={String(addEntryMinScore)}
-                onChange={(e: any) => setAddEntryMinScore(Number(e?.target?.value || 70))}
-              />
-              <Input
-                label="부분청산 후보 수익률(%)"
-                type="number"
-                value={String(partialTakeProfitPct)}
-                onChange={(e: any) => setPartialTakeProfitPct(Number(e?.target?.value || 8))}
-              />
-              <Input
-                label="부분청산 최소 warn_score"
-                type="number"
-                value={String(partialWarnScoreMin)}
-                onChange={(e: any) => setPartialWarnScoreMin(Number(e?.target?.value || 3))}
-              />
-            </div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              등급은 종목 점수(total_score), 상태는 점수/수익률/신호/진입·추세·경고 등급과 warn_score 기준을 함께 반영해 자동 분류됩니다.
-            </div>
-
-            {includeCost && (
-              <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-2)', borderTop: '1px solid var(--color-border)' }}>
-                <div className="caption" style={{ marginBottom: 'var(--space-2)', fontWeight: 'var(--font-weight-medium)' }}>매매비용 요율 설정</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--space-2)' }}>
-                  <Input
-                    label="매수수수료 (%)"
-                    type="number"
-                    value={String(buyFeeRatePct)}
-                    onChange={(e: any) => setBuyFeeRatePct(Math.max(0, Number(e?.target?.value ?? 0.015)))}
-                  />
-                  <Input
-                    label="매도수수료+거래세 (%)"
-                    type="number"
-                    value={String(sellFeeRatePct)}
-                    onChange={(e: any) => setSellFeeRatePct(Math.max(0, Number(e?.target?.value ?? 0.215)))}
-                  />
-                </div>
-                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                  기본값 매수 0.015% · 매도 0.215% (수수료 0.015% + 거래세 0.20%, 2026년~). ETF·ETN은 거래세가 없어 매도 시 수수료만 반영합니다. 설정은 이 브라우저에 저장됩니다.
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="portfolio-search-row">
-            <input
-              className="input portfolio-search-input"
-              placeholder="코드 또는 종목명 검색"
-              value={searchInput}
-              onChange={e => onSearchChange(e.target.value)}
-            />
-            <Button className="portfolio-search-btn" variant="secondary" onClick={() => { setSearch(searchInput); setPage(1) }} disabled={loading}>
-              검색
-            </Button>
-          </div>
-          </div>
-        )}
-      </div>
+      <FilterCard
+        filterAccordionOpen={filterAccordionOpen} setFilterAccordionOpen={setFilterAccordionOpen}
+        selectedSector={selectedSector} holdingStateFilter={holdingStateFilter} gradeFilter={gradeFilter}
+        search={search} searchInput={searchInput}
+        includeCost={includeCost} setIncludeCost={setIncludeCost}
+        sectors={sectors} showAllSectors={showAllSectors} setShowAllSectors={setShowAllSectors} onSectorChange={onSectorChange}
+        buyFeeRatePct={buyFeeRatePct} setBuyFeeRatePct={setBuyFeeRatePct}
+        sellFeeRatePct={sellFeeRatePct} setSellFeeRatePct={setSellFeeRatePct}
+        setHoldingStateFilter={setHoldingStateFilter} setGradeFilter={setGradeFilter} setPage={setPage}
+        safeGradeAThreshold={safeGradeAThreshold} safeGradeBThreshold={safeGradeBThreshold}
+        gradeAThreshold={gradeAThreshold} setGradeAThreshold={setGradeAThreshold}
+        gradeBThreshold={gradeBThreshold} setGradeBThreshold={setGradeBThreshold}
+        addEntryMinScore={addEntryMinScore} setAddEntryMinScore={setAddEntryMinScore}
+        partialTakeProfitPct={partialTakeProfitPct} setPartialTakeProfitPct={setPartialTakeProfitPct}
+        partialWarnScoreMin={partialWarnScoreMin} setPartialWarnScoreMin={setPartialWarnScoreMin}
+        onSearchChange={onSearchChange} setSearch={setSearch} loading={loading}
+      />
 
       {error && (
         <div className="portfolio-error-wrap">
@@ -1057,308 +777,20 @@ export default function Portfolio() {
         </div>
       )}
 
-      <div className="card mb-4 portfolio-asset-overview-card">
-        <div className="portfolio-asset-overview-head">
-          <div>
-            <div className="title-md">가상 자산 구성 및 리밸런싱 기준</div>
-            <div className="caption muted">
-              {selectedAccountKey === 'all' 
-                ? '전체 가상 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
-                : selectedAccountKey === 'virtual'
-                  ? '가상매매 보유분의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
-                  : `${accountLabel(
-                      accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
-                      accountFolders.find(f => f.key === selectedAccountKey)?.accountName
-                    )} 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.`
-              }
-            </div>
-          </div>
-        </div>
+      <AssetOverviewCard
+        selectedAccountKey={selectedAccountKey} accountFolders={accountFolders}
+        initialCapital={initialCapital} totalEvaluationValue={totalEvaluationValue}
+        dbVirtualCash={dbVirtualCash} estimatedCash={estimatedCash} totalAssetValue={totalAssetValue}
+        allocationChartStyle={allocationChartStyle} allocationRows={allocationRows} dbSeedCapital={dbSeedCapital}
+      />
 
-        <div className="portfolio-asset-overview-body">
-
-            <div className="portfolio-asset-metrics">
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">시드 자본금</div>
-                <div className="portfolio-capture-value">{formatKrwCompact(initialCapital)}</div>
-              </div>
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">보유 평가금</div>
-                <div className="portfolio-capture-value">{formatKrwCompact(totalEvaluationValue)}</div>
-              </div>
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">
-                  {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
-                </div>
-                <div className={`portfolio-capture-value ${(dbVirtualCash ?? estimatedCash) < 0 ? 'negative' : ''}`}>
-                  {formatKrwCompact(dbVirtualCash ?? estimatedCash)}
-                </div>
-              </div>
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
-                <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrwCompact(totalAssetValue)}</div>
-              </div>
-            </div>
-
-            <div className="portfolio-allocation-wrap">
-              <div className="portfolio-allocation-chart-wrap">
-                <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
-                <div className="portfolio-allocation-chart-center">
-                  <div className="portfolio-allocation-center-label">총 자산</div>
-                  <div className="portfolio-allocation-center-value">{formatKrwCompact(totalAssetValue)}</div>
-                </div>
-              </div>
-
-              <div className="portfolio-allocation-list">
-                {allocationRows.length === 0 ? (
-                  <div className="caption muted">비중을 계산할 데이터가 없습니다.</div>
-                ) : (
-                  allocationRows.map((row, idx) => (
-                    <div key={`${row.code}-${idx}`} className="portfolio-allocation-item">
-                      <div className="portfolio-allocation-item-name">
-                        <span className="portfolio-allocation-dot" style={{ background: ALLOCATION_COLORS[idx % ALLOCATION_COLORS.length] }} />
-                        <span>{row.name}</span>
-                      </div>
-                      <div className="portfolio-allocation-item-values">
-                        <span>{formatNumber(row.ratio, 1)}%</span>
-                        <span className="muted">{formatKrwCompact(row.value)}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-              {dbSeedCapital != null
-                ? '시드 자본금은 설정 화면에서 변경할 수 있습니다. 자동매매 예산과 잔여 현금도 설정에서 관리하세요.'
-                : '시드 자본금을 설정 화면에서 입력하면 자동매매 예산이 정확하게 계산됩니다.'}
-            </div>
-          </div>
-      </div>
-
-      <div className="cards-list portfolio-cards-list">
-        {loading && rows.length === 0 && <div className="card portfolio-loading-card"><Skeleton lines={5} height={18} /></div>}
-
-        {!loading && !error && rows.length === 0 && (
-          <>
-            <EmptyState
-              title="보유 포지션 없음"
-              description="상단 유지보수 > 계좌/보유 추가에서 계좌와 종목을 바로 등록할 수 있습니다."
-            />
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--space-3)' }}>
-              <Button variant="secondary" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-                계좌/보유 추가 열기
-              </Button>
-            </div>
-          </>
-        )}
-
-        {!error && rows.map((r: any) => {
-          const pnl = r.unrealized_pnl
-          const stateEvaluation = evaluateHoldingState(r)
-          const holdingState = stateEvaluation.state
-          const grade = getPerformanceGrade(r)
-          const score = getScoreValue(r)
-          const scoreSignal = String(r?.score_signal || '').trim().toUpperCase()
-          const entryGrade = String(r?.entry_grade || '').trim().toUpperCase()
-          const trendGrade = String(r?.trend_grade || '').trim().toUpperCase()
-          const warnGrade = String(r?.warn_grade || '').trim().toUpperCase()
-          const warnScore = Number.isFinite(Number(r?.warn_score)) ? Number(r?.warn_score) : null
-          const rowAccountKey = holdingAccountKey(r)
-          const action = resolveHoldingAction({
-            code: String(r.code ?? ''),
-            name: r.stock_name ?? null,
-            pnlPct: r.unrealized_pct != null ? Number(r.unrealized_pct) : null,
-            accountWeightPct: accountSummary.weightPct(rowAccountKey, holdingValue(r)),
-            coveredCallShareOfIncomePct: accountSummary.coveredCallShareOfIncomePct(rowAccountKey),
-            incomePeers: accountSummary.incomePeers(rowAccountKey),
-            etf: r?.etf_key ?? null,
-            weightCaution: r?.weight_caution ?? null,
-            isBotAccount: rowAccountKey === '|||',
-          })
-
-          // 판정근거 배지 계산
-          const reasonBadges: { label: string; type: 'partial' | 'add' | 'warn' | 'ok' | 'neutral'; title?: string }[] = []
-          const entryGuide = r?.entry_price_guide as { verdict: 'ok' | 'caution' | 'stale'; gapPct: number; message: string } | null | undefined
-          if (entryGuide) {
-            const guideLabel = entryGuide.verdict === 'ok'
-              ? '지금 매수 무방'
-              : entryGuide.verdict === 'caution'
-                ? `추격주의 ${entryGuide.gapPct >= 0 ? '+' : ''}${entryGuide.gapPct.toFixed(1)}%`
-                : `재검토 필요 ${entryGuide.gapPct >= 0 ? '+' : ''}${entryGuide.gapPct.toFixed(1)}%`
-            reasonBadges.push({
-              label: guideLabel,
-              type: entryGuide.verdict === 'ok' ? 'ok' : 'warn',
-              title: entryGuide.message,
-            })
-          }
-          const weightCaution = r?.weight_caution as { level: 'caution' | 'strong'; message: string | null } | null | undefined
-          if (weightCaution) {
-            reasonBadges.push({
-              label: weightCaution.level === 'strong' ? '비중 점검(강)' : '비중 점검',
-              type: 'warn',
-              title: `${weightCaution.message ?? ''}
-${WEIGHT_CAUTION_SOURCE_NOTE}`,
-            })
-          }
-          if (holdingState === 'partial') {
-            reasonBadges.push({ label: '익절구간', type: 'partial' })
-            if (['SELL', 'HOLD'].includes(scoreSignal)) reasonBadges.push({ label: scoreSignal === 'SELL' ? '매도신호' : '보유신호', type: 'warn' })
-            if (['WARN', 'SELL'].includes(warnGrade)) reasonBadges.push({ label: '경고강함', type: 'warn' })
-            if (warnScore != null) reasonBadges.push({ label: `경고점수 ${formatNumber(warnScore, 0)}`, type: 'warn' })
-          } else if (holdingState === 'add') {
-            reasonBadges.push({ label: '추가진입', type: 'add' })
-            if (score != null) reasonBadges.push({ label: `점수충족 ${formatNumber(score, 0)}`, type: 'ok' })
-            if (['A', 'B'].includes(entryGrade)) reasonBadges.push({ label: `진입${entryGrade}`, type: 'ok' })
-            if (['A', 'B'].includes(trendGrade)) reasonBadges.push({ label: `추세${trendGrade}`, type: 'ok' })
-          } else {
-            if (score != null && score < safeAddEntryMinScore) reasonBadges.push({ label: '점수부족', type: 'neutral' })
-            if (['WARN', 'SELL'].includes(warnGrade)) reasonBadges.push({ label: '경고있음', type: 'warn' })
-            if (['SELL'].includes(scoreSignal)) reasonBadges.push({ label: '매도신호', type: 'warn' })
-            if (reasonBadges.length === 0) reasonBadges.push({ label: '관망', type: 'neutral' })
-          }
-
-          return (
-            <div key={r.id} className="card card-lg portfolio-position-card">
-
-              {/* ── 헤더: 종목명 + 손익 ── */}
-              <div className="portfolio-card-header">
-                <div className="portfolio-card-title-group">
-                  <span className="title-lg">{r.stock_name ?? r.ticker ?? r.symbol}</span>
-                  <span className="caption muted portfolio-stock-code">{r.code}</span>
-                </div>
-                <div className="text-right portfolio-position-pnl">
-                  {(() => {
-                    const rawPnl = pnl != null ? Number(pnl) : null
-                    let displayPnl = rawPnl
-                    let displayPct = r.unrealized_pct != null ? Number(r.unrealized_pct) : null
-                    if (includeCost && rawPnl != null) {
-                      const inv = Number(r.quantity || 0) * Number(r.avg_price || 0)
-                      displayPnl = rawPnl - rowTradeCost(r, tradeCostOpts)
-                      displayPct = inv > 0 ? (displayPnl / inv) * 100 : null
-                    }
-                    return (
-                      <>
-                        <div
-                          className={`portfolio-pnl-amount${displayPnl != null ? (displayPnl < 0 ? ' negative' : ' positive') : ''}`}
-                        >
-                          {displayPnl != null ? formatKrw(displayPnl) : '—'}
-                        </div>
-                        <div className="caption muted">
-                          {displayPct != null ? `${formatNumber(displayPct, 2)}%` : '—'}
-                          {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
-                        </div>
-                      </>
-                    )
-                  })()}
-                </div>
-              </div>
-
-              {/* ── 보유 정보: 수량 · 평균매수가 · 매수일 · 계좌 ── */}
-              <div className="caption muted portfolio-position-meta">
-                {r.quantity}주 · 평균가 {formatKrw(r.avg_price)}{r.buy_date ? ` · ${r.buy_date}` : ''}
-                {rowAccountKey !== '|||' && (
-                  <span className="portfolio-meta-account">
-                    <Building2 size={11} />
-                    {accountLabel(r?.broker_name, r?.account_name)}
-                  </span>
-                )}
-              </div>
-
-              {/* ── 이 종목 대응: 결론·할 일만 먼저, 상태·조건은 접어 둔다 (주의·조치 단계면 펼친 채로) ── */}
-              <div className={`portfolio-action portfolio-action--${action.tone}`} role="note" aria-label="이 종목 대응">
-                <div className="portfolio-action-head">
-                  <span className="portfolio-action-verdict">{action.verdict}</span>
-                  <span className="caption muted">{action.role}</span>
-                </div>
-                <div className="portfolio-action-todo">{action.todo}</div>
-                <details className="portfolio-action-more" open={action.tone !== 'keep'}>
-                  <summary>{action.facts.length ? '이 종목 숫자 · 언제 움직이나' : '언제 움직이나'}</summary>
-                  {action.facts.length > 0 && (
-                    <ul className="portfolio-action-facts">
-                      {action.facts.map((f) => <li key={f}>{f}</li>)}
-                    </ul>
-                  )}
-                  <dl className="portfolio-action-lines">
-                    <div><dt>지금 상태</dt><dd>{action.now}</dd></div>
-                    <div><dt>언제 움직이나</dt><dd>{action.when}</dd></div>
-                  </dl>
-                  {action.source && <div className="caption muted portfolio-action-source">{action.source}</div>}
-                </details>
-              </div>
-
-              <Detail>
-              {/* ── 봇 판정값 (검증용): 한 줄 요약만 보이고 칩·배지·근거는 펼쳐서 본다 ── */}
-              <details className="portfolio-bot-detail">
-                <summary>
-                  <span>봇 판정(검증용)</span>
-                  <span className={`portfolio-state-chip portfolio-state-chip--${holdingState}`}>
-                    {holdingState === 'partial' ? '부분청산 후보' : holdingState === 'add' ? '추가매수' : '보통 보유'}
-                  </span>
-                  {reasonBadges.filter((b) => b.type === 'warn').map((b, i) => (
-                    <span key={i} className="portfolio-reason-badge portfolio-reason-badge--warn" title={b.title || BADGE_TOOLTIPS[b.label] || b.label}>
-                      {b.label}
-                    </span>
-                  ))}
-                </summary>
-                <div className="portfolio-card-chips">
-                  <span className="portfolio-grade-chip">
-                    등급 {grade} · 점수 {score != null ? formatNumber(score, 1) : '—'}
-                    {scoreSignal ? ` · ${toSignalLabel(scoreSignal)}` : ''}
-                  </span>
-                  {(entryGrade || trendGrade || warnGrade) && (
-                    <span className="portfolio-grade-chip">
-                      진입 {entryGrade || '-'} / 추세 {trendGrade || '-'} / 경고 {toWarnLabel(warnGrade)}
-                    </span>
-                  )}
-                  {reasonBadges.filter((b) => b.type !== 'warn').map((b, i) => (
-                    <span
-                      key={i}
-                      className={`portfolio-reason-badge portfolio-reason-badge--${b.type}`}
-                      title={b.title || BADGE_TOOLTIPS[b.label] || b.label}
-                    >
-                      {b.label}
-                    </span>
-                  ))}
-                </div>
-                {stateEvaluation.reasons.length > 0 && (
-                  <div className="portfolio-reason-panel" role="note" aria-label="판정 근거 상세">
-                    {stateEvaluation.reasons.map((reason, idx) => (
-                      <div key={idx} className="portfolio-reason-line">• {reason}</div>
-                    ))}
-                  </div>
-                )}
-              </details>
-
-              {/* ── 로트 이력 ── */}
-              {r.lots?.length > 0 && (
-                <div className="caption portfolio-lots">
-                  로트: {r.lots.map((l: any) => `${l.acquired_quantity}주 @${formatKrw(l.acquired_price)}`).join(' · ')}
-                </div>
-              )}
-
-              </Detail>
-              {/* ── 액션 버튼: 자주 쓰는 기록(사기·팔기)은 버튼, 고치기·지우기는 작은 글자 버튼 ── */}
-              <div className="portfolio-actions-row">
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>
-                  <PlusCircle size={14} />추가매수
-                </Button>
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'sell')}>
-                  매도 · 수익기록
-                </Button>
-                <div className="portfolio-actions-minor">
-                  <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingedit', r)}>
-                    보유 수정
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingdelete', r)} style={{ color: 'var(--color-error)' }}>
-                    삭제
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <HoldingList
+        loading={loading} error={error} rows={rows}
+        evaluateHoldingState={evaluateHoldingState} getPerformanceGrade={getPerformanceGrade}
+        accountSummary={accountSummary} addEntryMinScore={safeAddEntryMinScore}
+        includeCost={includeCost} tradeCostOpts={tradeCostOpts}
+        openTradeModal={openTradeModal} openMaintenanceModal={openMaintenanceModal}
+      />
 
       {totalPages > 1 && (
         <div className="pagination-wrap">
@@ -1385,177 +817,18 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
         <div className="caption muted">거시 지표 · 계좌별 위험정책 · 성과 — 매일 볼 필요는 없어 접어 두었습니다.</div>
       </div>
 
-      <Collapsible
-        className="mb-4 portfolio-macro-card"
-        title="거시 반영 어드바이저 (금리·유가·CPI)"
-        hint={macroLoading ? '거시지표 로딩 중...' : `${macroRiskLevel.diagnosis} · 정책 ${macroRiskLevel.label}`}
-      >
-        <div className="caption muted" style={{ marginBottom: 'var(--space-2)' }}>
-          {macroLoading
-            ? '거시지표 로딩 중...'
-            : `${macroRiskLevel.diagnosis} · 정책 ${macroRiskLevel.label} · 추가매수 기준 +${macroRiskLevel.addScorePenalty}점 · 부분익절 기준 -${macroRiskLevel.partialTakeProfitBonus}%p`}
-        </div>
-        <div className="portfolio-macro-grid">
-          <div className="portfolio-macro-metric"><span>미국10년물</span><strong>{macroRiskLevel.us10y != null ? `${formatNumber(macroRiskLevel.us10y, 2)}%` : '—'}</strong></div>
-          <div className="portfolio-macro-metric"><span>WTI유가</span><strong>{macroRiskLevel.wtiOil != null ? `$${formatNumber(macroRiskLevel.wtiOil, 1)}` : '—'}</strong></div>
-          <div className="portfolio-macro-metric"><span>CPI YoY</span><strong>{macroRiskLevel.cpiYoy != null ? `${formatNumber(macroRiskLevel.cpiYoy, 2)}%` : '미설정'}</strong></div>
-        </div>
-      </Collapsible>
+      <MacroCard macroLoading={macroLoading} macroRiskLevel={macroRiskLevel} />
 
-      <div className="card mb-4 portfolio-policy-card">
-        <button
-          type="button"
-          className="portfolio-policy-head"
-          onClick={() => setPolicyAccordionOpen(true)}
-          aria-haspopup="dialog"
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            cursor: 'pointer',
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 0,
-          }}
-        >
-          <div>
-            <div className="title-md">계좌별 위험정책</div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              {selectedAccountKey === 'all' 
-                ? '계좌 폴더를 선택하면 정책 설정'
-                : selectedAccountKey === 'virtual'
-                  ? '가상매매는 개별 정책 미적용'
-                  : `${accountLabel(policyDraft?.broker_name, policyDraft?.account_name)} ${policyLoading ? '조회 중...' : ''}`
-              }
-            </div>
-          </div>
-          <ChevronRight size={20} style={{ flexShrink: 0 }} />
-        </button>
+      <PolicyCard
+        selectedAccountKey={selectedAccountKey} policyDraft={policyDraft} setPolicyDraft={setPolicyDraft}
+        policyLoading={policyLoading} policySaving={policySaving} savePolicyDraft={savePolicyDraft}
+        policyAccordionOpen={policyAccordionOpen} setPolicyAccordionOpen={setPolicyAccordionOpen}
+      />
 
-        <Modal isOpen={policyAccordionOpen} title="계좌별 위험정책" onClose={() => setPolicyAccordionOpen(false)} size="sm">
-          <div className="portfolio-policy-body">
-            {selectedAccountKey === 'all' ? (
-              <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
-            ) : selectedAccountKey === 'virtual' ? (
-              <div className="caption muted">가상매매 탭은 개별 계좌 정책 대상이 아닙니다. 특정 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
-            ) : policyDraft ? (
-              <>
-                <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
-                  대상: {accountLabel(policyDraft.broker_name, policyDraft.account_name)}
-                  {policyLoading ? ' · 정책 조회 중...' : ''}
-                </div>
-                <div className="portfolio-policy-grid">
-                  <label className="ui-label">
-                    <span>리스크 프로필</span>
-                    <select
-                      className="input"
-                      value={String(policyDraft.risk_profile)}
-                      onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, risk_profile: (String(e?.target?.value || 'balanced') as any) } : prev)}
-                    >
-                      <option value="safe">safe</option>
-                      <option value="balanced">balanced</option>
-                      <option value="active">active</option>
-                      <option value="value-swing">value-swing (가치투자 스윙)</option>
-                    </select>
-                  </label>
-                  <Input
-                    label="최대 보유 종목 수"
-                    type="number"
-                    value={policyDraft.max_positions == null ? '' : String(policyDraft.max_positions)}
-                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, max_positions: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
-                  />
-                  <Input
-                    label="일손실 한도(%)"
-                    type="number"
-                    value={policyDraft.daily_loss_limit_pct == null ? '' : String(policyDraft.daily_loss_limit_pct)}
-                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, daily_loss_limit_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
-                  />
-                  <Input
-                    label="최소 현금 비중(%)"
-                    type="number"
-                    value={policyDraft.min_cash_reserve_pct == null ? '' : String(policyDraft.min_cash_reserve_pct)}
-                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, min_cash_reserve_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
-                  />
-                  <Input
-                    label="추가매수 점수 가감"
-                    type="number"
-                    value={String(policyDraft.add_entry_score_adjust || 0)}
-                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, add_entry_score_adjust: Number(e?.target?.value || 0) } : prev)}
-                  />
-                  <Input
-                    label="부분익절 기준 가감(%p)"
-                    type="number"
-                    value={String(policyDraft.partial_take_profit_adjust_pct || 0)}
-                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, partial_take_profit_adjust_pct: Number(e?.target?.value || 0) } : prev)}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                  <Button variant="secondary" onClick={() => { void savePolicyDraft() }} disabled={policySaving}>
-                    {policySaving ? '저장 중...' : '정책 저장'}
-                  </Button>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </Modal>
-      </div>
-
-      <div className="card mb-4 portfolio-performance-card">
-        <button
-          type="button"
-          className="portfolio-performance-head"
-          onClick={() => setPerformanceAccordionOpen((prev) => !prev)}
-          aria-expanded={performanceAccordionOpen}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            cursor: 'pointer',
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: performanceAccordionOpen ? 'var(--space-3)' : 0,
-          }}
-        >
-          <div>
-            <div className="title-md">어드바이저 성과(최근 90일)</div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              {advisorPerfLoading
-                ? '성과 데이터 조회 중...'
-                : advisorPerf?.summary
-                  ? `실현승률 ${advisorPerf.summary.trustScore != null ? `${advisorPerf.summary.trustScore}%` : '표본 부족'} · 의사결정 ${advisorPerf.summary.totalDecisions ?? 0}건`
-                  : '데이터 없음'
-              }
-            </div>
-          </div>
-          <ChevronDown size={20} style={{ transform: performanceAccordionOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
-        </button>
-
-        {performanceAccordionOpen && (
-          <div className="portfolio-performance-body" style={{ paddingTop: 'var(--space-3)' }}>
-            {advisorPerfLoading ? (
-              <div className="caption muted">성과 데이터 조회 중...</div>
-            ) : advisorPerf?.summary ? (
-              <>
-                <div className="portfolio-performance-grid">
-                  <div className="portfolio-performance-metric"><span title="실현 매도 10건 이상부터 계산">실현 승률</span><strong>{advisorPerf.summary.trustScore != null ? `${advisorPerf.summary.trustScore}%` : '표본 부족'}</strong></div>
-                  <div className="portfolio-performance-metric"><span>의사결정 수</span><strong>{advisorPerf.summary.totalDecisions ?? 0}</strong></div>
-                  <div className="portfolio-performance-metric"><span>매도 승률</span><strong>{advisorPerf.summary.linkedSellWinRatePct != null ? `${formatNumber(advisorPerf.summary.linkedSellWinRatePct, 1)}%` : '—'}</strong></div>
-                  <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrwCompact(Number(advisorPerf.summary.linkedRealizedPnl || 0), { showPositiveSign: true })}</strong></div>
-                </div>
-                <div className="caption muted" style={{ marginTop: 'var(--space-3)' }}>
-                  최근 액션 샘플: {(advisorPerf.recent ?? []).slice(0, 3).map((row) => `${row.code || '-'} ${row.action || '-'} (${row.confidence != null ? `${formatNumber(Number(row.confidence), 0)}%` : '신뢰도 없음'})`).join(' · ') || '없음'}
-                </div>
-              </>
-            ) : (
-              <div className="caption muted">성과 데이터가 아직 없습니다. 거래/의사결정 로그가 쌓이면 자동 집계됩니다.</div>
-            )}
-          </div>
-        )}
-      </div>
+      <PerformanceCard
+        performanceAccordionOpen={performanceAccordionOpen} setPerformanceAccordionOpen={setPerformanceAccordionOpen}
+        advisorPerfLoading={advisorPerfLoading} advisorPerf={advisorPerf}
+      />
       </Detail>
 
       <TradeModal

@@ -1,0 +1,111 @@
+import { formatKrwCompact, formatNumber } from '../../../lib/format'
+import type { AccountFolder } from '../types'
+import { accountLabel } from '../lib/accountKey'
+import { ALLOCATION_COLORS, type AllocationRow } from '../lib/allocation'
+
+type AssetOverviewCardProps = {
+  selectedAccountKey: string
+  accountFolders: AccountFolder[]
+  initialCapital: number
+  totalEvaluationValue: number
+  dbVirtualCash: number | null
+  estimatedCash: number
+  totalAssetValue: number
+  allocationChartStyle: string
+  allocationRows: AllocationRow[]
+  dbSeedCapital: number | null
+}
+
+export default function AssetOverviewCard({
+  selectedAccountKey,
+  accountFolders,
+  initialCapital,
+  totalEvaluationValue,
+  dbVirtualCash,
+  estimatedCash,
+  totalAssetValue,
+  allocationChartStyle,
+  allocationRows,
+  dbSeedCapital,
+}: AssetOverviewCardProps) {
+  return (
+    <div className="card mb-4 portfolio-asset-overview-card">
+      <div className="portfolio-asset-overview-head">
+        <div>
+          <div className="title-md">가상 자산 구성 및 리밸런싱 기준</div>
+          <div className="caption muted">
+            {selectedAccountKey === 'all' 
+              ? '전체 가상 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
+              : selectedAccountKey === 'virtual'
+                ? '가상매매 보유분의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
+                : `${accountLabel(
+                    accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
+                    accountFolders.find(f => f.key === selectedAccountKey)?.accountName
+                  )} 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.`
+            }
+          </div>
+        </div>
+      </div>
+
+      <div className="portfolio-asset-overview-body">
+
+          <div className="portfolio-asset-metrics">
+            <div className="portfolio-asset-metric">
+              <div className="portfolio-capture-label">시드 자본금</div>
+              <div className="portfolio-capture-value">{formatKrwCompact(initialCapital)}</div>
+            </div>
+            <div className="portfolio-asset-metric">
+              <div className="portfolio-capture-label">보유 평가금</div>
+              <div className="portfolio-capture-value">{formatKrwCompact(totalEvaluationValue)}</div>
+            </div>
+            <div className="portfolio-asset-metric">
+              <div className="portfolio-capture-label">
+                {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
+              </div>
+              <div className={`portfolio-capture-value ${(dbVirtualCash ?? estimatedCash) < 0 ? 'negative' : ''}`}>
+                {formatKrwCompact(dbVirtualCash ?? estimatedCash)}
+              </div>
+            </div>
+            <div className="portfolio-asset-metric">
+              <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
+              <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrwCompact(totalAssetValue)}</div>
+            </div>
+          </div>
+
+          <div className="portfolio-allocation-wrap">
+            <div className="portfolio-allocation-chart-wrap">
+              <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
+              <div className="portfolio-allocation-chart-center">
+                <div className="portfolio-allocation-center-label">총 자산</div>
+                <div className="portfolio-allocation-center-value">{formatKrwCompact(totalAssetValue)}</div>
+              </div>
+            </div>
+
+            <div className="portfolio-allocation-list">
+              {allocationRows.length === 0 ? (
+                <div className="caption muted">비중을 계산할 데이터가 없습니다.</div>
+              ) : (
+                allocationRows.map((row, idx) => (
+                  <div key={`${row.code}-${idx}`} className="portfolio-allocation-item">
+                    <div className="portfolio-allocation-item-name">
+                      <span className="portfolio-allocation-dot" style={{ background: ALLOCATION_COLORS[idx % ALLOCATION_COLORS.length] }} />
+                      <span>{row.name}</span>
+                    </div>
+                    <div className="portfolio-allocation-item-values">
+                      <span>{formatNumber(row.ratio, 1)}%</span>
+                      <span className="muted">{formatKrwCompact(row.value)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+            {dbSeedCapital != null
+              ? '시드 자본금은 설정 화면에서 변경할 수 있습니다. 자동매매 예산과 잔여 현금도 설정에서 관리하세요.'
+              : '시드 자본금을 설정 화면에서 입력하면 자동매매 예산이 정확하게 계산됩니다.'}
+          </div>
+        </div>
+    </div>
+  )
+}
