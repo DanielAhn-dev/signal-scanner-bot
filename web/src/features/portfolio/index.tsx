@@ -20,9 +20,12 @@ import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import type { AccountFolder, AccountPolicy, AdvisorPerformanceData, PortfolioShareHistoryItem } from './types'
 import { buildAccountKey, accountLabel, isVirtualPositionRow, holdingAccountKey, holdingValue } from './lib/accountKey'
-import { toSignalLabel, toWarnLabel, WARN_REASON_LABELS, WEIGHT_CAUTION_SOURCE_NOTE, BADGE_TOOLTIPS } from './lib/labels'
+import { toSignalLabel, toWarnLabel, WEIGHT_CAUTION_SOURCE_NOTE, BADGE_TOOLTIPS } from './lib/labels'
 import { pickLatestActiveShare } from './lib/share'
 import { getTodayLocalYmd, toKstYmd, shiftYmd } from './lib/dates'
+import { computeMacroRisk } from './lib/macroRisk'
+import { clampRuleSettings, applyMacroToRules, resolveAdvisoryThresholds } from './lib/thresholds'
+import { evaluateHoldingState as evaluateHoldingStateFor, getPerformanceGrade as getPerformanceGradeFor, getScoreValue, type HoldingStateContext, type HoldingStateKind } from './lib/holdingState'
 
 const DEFAULT_INITIAL_CAPITAL = 10_000_000
 
@@ -108,11 +111,11 @@ export default function Portfolio() {
   const [macroSnapshot, setMacroSnapshot] = useState<any | null>(null)
   const toast = useToast()
 
-  const safeGradeAThreshold = Math.max(1, Math.min(100, Number(gradeAThreshold || 80)))
-  const safeGradeBThreshold = Math.max(0, Math.min(safeGradeAThreshold - 1, Number(gradeBThreshold || 65)))
-  const safeAddEntryMinScore = Math.max(0, Math.min(100, Number(addEntryMinScore || 70)))
-  const safePartialTakeProfitPct = Math.max(0, Math.min(50, Number(partialTakeProfitPct || 8)))
-  const safePartialWarnScoreMin = Math.max(0, Math.min(10, Number(partialWarnScoreMin || 3)))
+  const rules = clampRuleSettings({ gradeAThreshold, gradeBThreshold, addEntryMinScore, partialTakeProfitPct, partialWarnScoreMin })
+  const safeGradeAThreshold = rules.gradeAThreshold
+  const safeGradeBThreshold = rules.gradeBThreshold
+  const safeAddEntryMinScore = rules.addEntryMinScore
+  const safePartialWarnScoreMin = rules.partialWarnScoreMin
 
   const policyByKey = useMemo(() => {
     const map = new Map<string, AccountPolicy>()
@@ -122,133 +125,20 @@ export default function Portfolio() {
     return map
   }, [accountPolicies])
 
-  const macroRiskLevel = useMemo(() => {
-    const us10y = Number(macroSnapshot?.indices?.us10y?.price)
-    const wtiOil = Number(macroSnapshot?.indices?.wtiOil?.price)
-    const cpiYoy = Number(macroSnapshot?.cpi?.yoy)
-    const riskScore = Number(macroSnapshot?.diagnosis?.riskScore)
-    const score = Number.isFinite(riskScore) ? riskScore : 50
+  const macroRiskLevel = useMemo(() => computeMacroRisk(macroSnapshot), [macroSnapshot])
 
-    let addScorePenalty = 0
-    let partialTakeProfitBonus = 0
-    let label = '중립'
+  const { addEntryMinScore: safeAddEntryMinScoreWithMacro, partialTakeProfitPct: safePartialTakeProfitPctWithMacro } = applyMacroToRules(rules, macroRiskLevel)
 
-    if (score >= 75 || us10y >= 5 || wtiOil >= 95 || cpiYoy >= 3.5) {
-      addScorePenalty = 8
-      partialTakeProfitBonus = 2
-      label = '방어'
-    } else if (score >= 60 || us10y >= 4.6 || wtiOil >= 85 || cpiYoy >= 3.0) {
-      addScorePenalty = 4
-      partialTakeProfitBonus = 1
-      label = '주의'
-    }
-
-    return {
-      label,
-      addScorePenalty,
-      partialTakeProfitBonus,
-      us10y: Number.isFinite(us10y) ? us10y : null,
-      wtiOil: Number.isFinite(wtiOil) ? wtiOil : null,
-      cpiYoy: Number.isFinite(cpiYoy) ? cpiYoy : null,
-      diagnosis: String(macroSnapshot?.regimeLabel || '시장 진단 없음'),
-    }
-  }, [macroSnapshot])
-
-  const safeAddEntryMinScoreWithMacro = Math.max(0, Math.min(100, safeAddEntryMinScore + macroRiskLevel.addScorePenalty))
-  const safePartialTakeProfitPctWithMacro = Math.max(0, Math.min(50, safePartialTakeProfitPct - macroRiskLevel.partialTakeProfitBonus))
-
-  const resolvePolicyForRow = useCallback((row: any): AccountPolicy | null => {
-    const key = buildAccountKey(row?.broker_name, row?.account_name)
-    return policyByKey.get(key) ?? null
-  }, [policyByKey])
-
-  const resolveAdvisoryThresholds = useCallback((row: any) => {
-    const policy = resolvePolicyForRow(row)
-    const addEntry = Math.max(0, Math.min(100, safeAddEntryMinScoreWithMacro + Number(policy?.add_entry_score_adjust || 0)))
-    const partialTp = Math.max(0, Math.min(50, safePartialTakeProfitPctWithMacro + Number(policy?.partial_take_profit_adjust_pct || 0)))
-    return {
-      addEntry,
-      partialTp,
-      policy,
-    }
-  }, [resolvePolicyForRow, safeAddEntryMinScoreWithMacro, safePartialTakeProfitPctWithMacro])
-
-  const getScoreValue = (row: any): number | null => {
-    const score = Number(row?.total_score)
-    return Number.isFinite(score) ? score : null
+  const holdingStateCtx: HoldingStateContext = {
+    rules,
+    thresholdsFor: (row) => resolveAdvisoryThresholds(
+      { addEntryMinScore: safeAddEntryMinScoreWithMacro, partialTakeProfitPct: safePartialTakeProfitPctWithMacro },
+      policyByKey.get(buildAccountKey(row?.broker_name, row?.account_name)) ?? null,
+    ),
   }
-
-  const getWarnReasonDetails = (row: any): string[] => {
-    const details: string[] = []
-    for (const item of WARN_REASON_LABELS) {
-      if (row?.[item.key] === true) details.push(item.label)
-    }
-    return details
-  }
-
-  const evaluateHoldingState = (row: any): { state: 'hold' | 'add' | 'partial'; reasons: string[] } => {
-    const reasons: string[] = []
-    const thresholds = resolveAdvisoryThresholds(row)
-    const pct = Number(row?.unrealized_pct)
-    const warnScoreNum = Number(row?.warn_score)
-    const warnScore = Number.isFinite(warnScoreNum) ? warnScoreNum : null
-    const scoreSignal = String(row?.score_signal || '').trim().toUpperCase()
-    const entryGrade = String(row?.entry_grade || '').trim().toUpperCase()
-    const trendGrade = String(row?.trend_grade || '').trim().toUpperCase()
-    const warnGrade = String(row?.warn_grade || '').trim().toUpperCase()
-    const warnDetails = getWarnReasonDetails(row)
-
-    const partialSignalHit = ['SELL', 'HOLD'].includes(scoreSignal) || ['WARN', 'SELL'].includes(warnGrade)
-    const partialWarnScoreHit = warnScore != null && warnScore >= safePartialWarnScoreMin
-    if (Number.isFinite(pct) && pct >= thresholds.partialTp && partialSignalHit && partialWarnScoreHit) {
-      reasons.push(`수익률 ${formatNumber(pct, 2)}% >= ${formatNumber(thresholds.partialTp, 2)}%`)
-      reasons.push(`신호/경고 조건 충족 (신호 ${toSignalLabel(scoreSignal)} / 경고 ${toWarnLabel(warnGrade)})`)
-      reasons.push(`경고점수 ${formatNumber(warnScore, 1)} >= 기준 ${formatNumber(safePartialWarnScoreMin, 1)}`)
-      if (thresholds.policy) reasons.push(`계좌정책 반영(${accountLabel(thresholds.policy.broker_name, thresholds.policy.account_name)})`)
-      if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
-      return { state: 'partial', reasons }
-    }
-
-    const score = getScoreValue(row)
-    // 비중 조절 경고(과열·고점 변동성 급등)가 켜진 종목은 추가매수를 권하지 않는다
-    const weightCaution = row?.weight_caution as { message?: string } | null | undefined
-    // 급등 추격·긴 윗꼬리·한 달 급락도 봇이 추가매수를 막는 기준 — 화면도 같이 막는다
-    const entryGuard = row?.entry_guard as { label?: string; message?: string } | null | undefined
-    const hasAddSignal = Number(row?.recommended_buy_qty || 0) > 0 && !weightCaution && !entryGuard
-    const hasPullbackHint = Boolean(entryGrade || trendGrade || warnGrade)
-    const entryTrendOk = !hasPullbackHint || (['A', 'B'].includes(entryGrade) && ['A', 'B'].includes(trendGrade))
-    const riskOk = !warnGrade || ['SAFE', 'WATCH'].includes(warnGrade)
-    const signalOk = !scoreSignal || scoreSignal !== 'SELL'
-    const scoreOk = score == null || score >= thresholds.addEntry
-    if (hasAddSignal && scoreOk && entryTrendOk && riskOk && signalOk) {
-      reasons.push(`추가매수 제안 수량 ${Number(row?.recommended_buy_qty || 0)}주`) 
-      reasons.push(`점수 조건 ${score == null ? '점수 없음' : formatNumber(score, 1)} / 기준 ${formatNumber(thresholds.addEntry, 1)}`)
-      reasons.push(`진입/추세/경고 ${entryGrade || '-'} / ${trendGrade || '-'} / ${toWarnLabel(warnGrade)}`)
-      if (thresholds.policy) reasons.push(`계좌정책 반영(${accountLabel(thresholds.policy.broker_name, thresholds.policy.account_name)})`)
-      if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
-      return { state: 'add', reasons }
-    }
-
-    if (weightCaution?.message) reasons.push(`비중 점검: ${weightCaution.message}`)
-    if (entryGuard?.message) reasons.push(`매수 보류(${entryGuard.label ?? '진입 점검'}): ${entryGuard.message}`)
-    reasons.push('추가매수/부분청산 조건 미충족')
-    if (Number.isFinite(pct)) reasons.push(`현재 수익률 ${formatNumber(pct, 2)}%`)
-    if (warnScore != null) reasons.push(`경고점수 ${formatNumber(warnScore, 1)}`)
-    if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
-    return { state: 'hold', reasons }
-  }
-
-  const getHoldingState = (row: any): 'hold' | 'add' | 'partial' => {
-    return evaluateHoldingState(row).state
-  }
-
-  const getPerformanceGrade = (row: any): 'A' | 'B' | 'C' => {
-    const score = getScoreValue(row)
-    if (score == null) return 'C'
-    if (score >= safeGradeAThreshold) return 'A'
-    if (score >= safeGradeBThreshold) return 'B'
-    return 'C'
-  }
+  const evaluateHoldingState = (row: any) => evaluateHoldingStateFor(row, holdingStateCtx)
+  const getHoldingState = (row: any): HoldingStateKind => evaluateHoldingState(row).state
+  const getPerformanceGrade = (row: any) => getPerformanceGradeFor(row, rules)
 
   const [serverTotal, setServerTotal] = useState<number | null>(null)
   const [loadMoreLoading, setLoadMoreLoading] = useState(false)
