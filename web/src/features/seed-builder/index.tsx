@@ -526,8 +526,8 @@ export default function SeedBuilderPage() {
           <div className="seed-plan-field"><label>남겨둘 돈 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.reserve || ''} placeholder="0" aria-describedby="hint-reserve" onChange={(event) => updateAmount('reserve', event.target.value)} /> 원</label><AmountHint id="hint-reserve" value={draft.reserve} /><QuickAdd label="여유금" onAdd={(step) => updateAmount('reserve', String(draft.reserve + step))} /></div>
           <div className="seed-plan-field"><label>이번 달 목표 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.plan || ''} placeholder="0" aria-describedby="hint-plan" onChange={(event) => updateAmount('plan', event.target.value)} /> 원</label><AmountHint id="hint-plan" value={draft.plan} /><QuickAdd label="계획금" onAdd={(step) => updateAmount('plan', String(draft.plan + step))} /></div>
         </div>
-        <div className="seed-goal-tools" aria-label="목표 정하기 도움">
-          <strong>목표 정하기 도움 <Detail><small>제안값일 뿐이며 누르기 전에는 바뀌지 않습니다. 최종 금액은 직접 정합니다.</small></Detail></strong>
+        <details className="seed-goal-tools" aria-label="목표 정하기 도움">
+          <summary><strong>목표 정하기 도움 <Detail><small>제안값일 뿐이며 누르기 전에는 바뀌지 않습니다. 최종 금액은 직접 정합니다.</small></Detail></strong></summary>
           <div>
             {ratioGoal > 0 && <button type="button" className="seed-secondary" onClick={() => updateAmount('plan', String(ratioGoal))}>여력의 30% 채우기 ({krw(ratioGoal)})</button>}
             {previous && previous.plan > 0 && <button type="button" className="seed-secondary" onClick={() => updateAmount('plan', String(previous.plan))}>지난달 목표 그대로 ({krw(previous.plan)})</button>}
@@ -535,7 +535,7 @@ export default function SeedBuilderPage() {
             {annualPerMonth !== null && <button type="button" className="seed-secondary" onClick={() => updateAmount('plan', String(annualPerMonth))}>연 목표 역산으로 채우기 ({krw(annualPerMonth)})</button>}
           </div>
           <Detail><p className="seed-payday-help">연 목표 역산은 올해 이미 확보한 돈을 뺀 나머지를 이번 달 포함 남은 {remainingMonths}개월로 나눈 값입니다. 못 모은 달의 부족분을 자동으로 다음 달에 더하지는 않습니다.</p></Detail>
-        </div>
+        </details>
         <Detail>{reserveMonths !== null && <p className="seed-payday-help" id="seed-buffer">안전 완충 {reserveMonths.toFixed(1)}개월치 (남겨둘 돈 ÷ 이번 달 지출). 정해진 기준은 없으며 참고용입니다. 미달이어도 확보를 막지 않습니다.</p>}</Detail>
         <Detail>{conservativeAvailable !== null && <p className="seed-payday-help">최근 3개월 중 가장 낮은 달 기준 보수적 여력 {signedKrw(conservativeAvailable)} (일시 수입 제외). 소득이 들쭉날쭉하면 목표의 참고로 쓰세요.</p>}</Detail>
         <Detail>{availableChange !== null && <p className="seed-compare seed-available-change">지난달 대비 투자 여력 <strong className={availableChange >= 0 ? 'seed-positive' : 'seed-negative'}>{availableChange >= 0 ? '+' : '-'}{krw(Math.abs(availableChange))}</strong> · 이번 달 입력값 기준이며 지출·수입이 바뀌면 다시 계산됩니다.</p>}</Detail>
@@ -549,6 +549,8 @@ export default function SeedBuilderPage() {
         {isFuture && <p className="seed-empty">다음 달은 계획만 입력할 수 있습니다. 확보와 입금 기록은 그 달이 된 뒤에 남길 수 있습니다.</p>}
         <div className="seed-actions">{canSkip && <button type="button" className="seed-link-button" onClick={() => void skipMonth()} disabled={saving}>이 달은 건너뛰기</button>}{dirty && <span className="seed-dirty-badge">저장 안 됨</span>}<p role="status">{!clientId ? '로그인 정보가 확인되면 저장할 수 있습니다.' : loading ? '기록을 불러오는 중입니다.' : loadError ? `불러오기 실패: ${loadError}` : notice}</p><button type="button" className="seed-primary" onClick={() => void save()} disabled={!clientId || loading || saving || !!loadError}><Save size={16} /> {saving ? '저장 중' : '이번 달 저장'}</button></div>
       </section>
+      <details className="ui-more seed-fold">
+      <summary>확보 내역 기록하기</summary>
       <section className="seed-entries" aria-label="확보 내역">
         <div className="seed-section-title"><div><h2>확보 내역</h2><p>실제로 따로 모아 둔 돈을 날짜별로 기록합니다. 내역은 바로 저장되고, 취소해도 기록은 남습니다.</p></div><Detail><span>입금 기록 = 증권계좌에 넣었다는 내 기록 (잔고 확인 아님)</span></Detail></div>
         {isFuture ? <p className="seed-empty">다음 달에는 확보 내역을 기록할 수 없습니다.</p> : <>
@@ -571,10 +573,11 @@ export default function SeedBuilderPage() {
             <span className="seed-plan-field"><AmountHint id="hint-entry" value={Number(entryForm.amount) || 0} /><QuickAdd label="기록액" onAdd={(step) => setEntryForm((current) => ({ ...current, amount: String((Number(current.amount) || 0) + step) }))} /></span>
             <label>메모 <input type="text" maxLength={100} value={entryForm.memo} placeholder="선택" onChange={(event) => setEntryForm((current) => ({ ...current, memo: event.target.value }))} /></label>
             <button type="button" className="seed-secondary" disabled={entryBusy || !clientId || loading || !!loadError} onClick={() => void addEntry()}>+ 확보 기록</button>
-            {savedNow > 0 && <button type="button" className="seed-link-button" onClick={() => document.getElementById('seed-next-step')?.scrollIntoView?.({ behavior: 'smooth' })}>다음 행동 보기 <ArrowRight size={14} /></button>}
+            {savedNow > 0 && <button type="button" className="seed-link-button" onClick={() => { const el = document.getElementById('seed-next-step'); if (el instanceof HTMLDetailsElement) el.open = true; el?.scrollIntoView?.({ behavior: 'smooth' }) }}>다음 행동 보기 <ArrowRight size={14} /></button>}
           </div>
         </>}
       </section>
+      </details>
       <Detail><section className="seed-insights">
         <div className="seed-section-title"><div><h2>지출 변화 보기</h2><p>저장된 큰 항목을 비교합니다. 필요한 지출을 줄이라고 판단하지 않습니다.</p></div></div>
         {currentSaved && <p className="seed-insight-tip">이번 달 지출 {krw(Object.values(currentSaved.expenses).reduce((sum, value) => sum + value, 0))} · 월간 계산상 여력 {signedKrw(savedAvailable)} · 실제 시드 확보 {krw(savedNow)}. {savedAvailable > savedNow ? `차이 ${krw(savedAvailable - savedNow)}은 계획을 돌아볼 참고값이며 모두 써버린 돈이라는 뜻은 아닙니다.` : '필요한 생활비와 추가 입금 여부를 함께 확인하세요.'}</p>}
@@ -587,7 +590,9 @@ export default function SeedBuilderPage() {
         </> : <p className="seed-empty">이번 달과 지난달 기록을 저장하면 항목별 변화가 보입니다.</p>}
       </section></Detail>
       <Detail><p className="seed-next-note">지난달 기록은 변화 비교에만 사용합니다. 새 달 수입·급여일은 우리 집 수입으로 미리 채우고, 카드대금·고정비·비정기 항목은 그달 금액을 직접 입력하거나 점검 값으로 채운 뒤 투자 여력을 확인합니다.</p></Detail>
-      <section className="seed-next-step" id="seed-next-step">
+      <details className="ui-more seed-fold" id="seed-next-step">
+      <summary>시드에 맞는 다음 행동</summary>
+      <section className="seed-next-step">
         <div className="seed-section-title"><div><h2>시드에 맞는 다음 행동</h2><p>저렴한 종목을 억지로 고르지 않아도 됩니다. 매수하지 않고 모으는 것도 선택입니다.</p></div></div>
         <div className="seed-next-inputs">
           <label>증권계좌에서 직접 확인한 가용 현금 <input type="number" inputMode="numeric" min="0" step="1000" value={confirmedCash} placeholder="0" onChange={(event) => setConfirmedCash(event.target.value)} /> 원</label>
@@ -604,6 +609,7 @@ export default function SeedBuilderPage() {
         </div>}
         <Detail><p className="seed-next-note">이 금액은 이번 화면 이동에만 전달됩니다. 가상 시드·기존 저장 계획·자동매매는 바뀌지 않습니다.</p></Detail>
       </section>
+      </details>
       </>}
       <Detail><section className="seed-manage" aria-label="내 기록 관리">
         <strong>내 기록 관리</strong>
