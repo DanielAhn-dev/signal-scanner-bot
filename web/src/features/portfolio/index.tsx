@@ -1,15 +1,14 @@
 ﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown, ChevronRight, ChevronUp, ArrowLeft } from 'lucide-react'
+import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown, ChevronRight, ChevronUp } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
-import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
+import { formatKrw, formatKrwCompact, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
 import Detail from '../../components/ui/Detail'
 import Collapsible from '../../components/ui/Collapsible'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Modal from '../../components/Modal'
-import StockSearchInput from '../../components/StockSearchInput'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import { loadTradeCostSettings } from '../../lib/tradeCost'
@@ -22,10 +21,15 @@ import type { AccountFolder, AccountPolicy, AdvisorPerformanceData, PortfolioSha
 import { buildAccountKey, accountLabel, isVirtualPositionRow, holdingAccountKey, holdingValue } from './lib/accountKey'
 import { toSignalLabel, toWarnLabel, WEIGHT_CAUTION_SOURCE_NOTE, BADGE_TOOLTIPS } from './lib/labels'
 import { pickLatestActiveShare } from './lib/share'
-import { getTodayLocalYmd, toKstYmd, shiftYmd } from './lib/dates'
+import { getTodayLocalYmd } from './lib/dates'
 import { selectAccountRows, extractSectors, filterHoldings } from './lib/filtering'
 import { summarizeHoldings, rowTradeCost } from './lib/summary'
 import { ALLOCATION_COLORS, buildAllocationRows, buildDonutGradient } from './lib/allocation'
+import TradeModal from './components/modals/TradeModal'
+import ShareModal from './components/modals/ShareModal'
+import MaintenanceModal from './components/modals/MaintenanceModal'
+import DeleteConfirmModal from './components/modals/DeleteConfirmModal'
+import { formatSignedKrw } from './lib/format'
 import { computeMacroRisk } from './lib/macroRisk'
 import { clampRuleSettings, applyMacroToRules, resolveAdvisoryThresholds } from './lib/thresholds'
 import { evaluateHoldingState as evaluateHoldingStateFor, getPerformanceGrade as getPerformanceGradeFor, getScoreValue, type HoldingStateContext, type HoldingStateKind } from './lib/holdingState'
@@ -579,12 +583,6 @@ export default function Portfolio() {
   const onSectorChange = (sectorId: string | null) => {
     setSelectedSector(sectorId)
     setPage(1)
-  }
-
-  const formatSignedKrw = (value: number) => {
-    const num = Number(value || 0)
-    if (num === 0) return formatKrw(0)
-    return `${num > 0 ? '+' : '-'}${formatKrw(Math.abs(num))}`
   }
 
   const createPublicShareUrl = useCallback(async () => {
@@ -1560,574 +1558,43 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
       </div>
       </Detail>
 
-      <Modal
-        isOpen={modalOpen}
-        title={modalSide === 'buy' ? '추가매수' : '매도 · 수익기록'}
-        onClose={() => setModalOpen(false)}
-        size="sm"
-      >
-        {modalRow && (
-          <>
-            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-              <strong style={{ color: 'var(--color-text-primary)' }}>
-                {modalRow.stock_name ?? modalRow.code}
-              </strong>
-              <span className="caption"> ({modalRow.code})</span>
-            </div>
+      <TradeModal
+        modalOpen={modalOpen} modalSide={modalSide} modalRow={modalRow} setModalOpen={setModalOpen}
+        tradeQty={tradeQty} setTradeQty={setTradeQty} tradePrice={tradePrice} setTradePrice={setTradePrice}
+        tradeDate={tradeDate} setTradeDate={setTradeDate} canBackdateTrade={canBackdateTrade}
+        tradeError={tradeError} tradeLoading={tradeLoading} submitTrade={submitTrade}
+      />
 
-            {modalSide === 'buy' && modalRow?.lots?.length > 0 && (
-              <div className="portfolio-modal-lots">
-                <div className="portfolio-modal-lots-title">기존 매수 내역</div>
-                {modalRow.lots.map((l: any, i: number) => (
-                  <div key={i} className="portfolio-modal-lots-row">
-                    {l.acquired_quantity}주 @ {formatKrw(l.acquired_price)}
-                    {toKstYmd(l.acquired_at) ? <span className="muted"> · {toKstYmd(l.acquired_at)}</span> : null}
-                  </div>
-                ))}
-              </div>
-            )}
+      <ShareModal
+        shareModalOpen={shareModalOpen} setShareModalOpen={setShareModalOpen}
+        captureGeneratedAt={captureGeneratedAt} holdingAll={holdingAll}
+        shareTtlHours={shareTtlHours} setShareTtlHours={setShareTtlHours}
+        shareCreating={shareCreating} sharedSummaryUrl={sharedSummaryUrl} shareExpiresAt={shareExpiresAt}
+        createPublicShareUrl={createPublicShareUrl} copyPortfolioShareUrl={copyPortfolioShareUrl}
+        loadShareHistory={loadShareHistory} shareHistoryLoading={shareHistoryLoading} shareHistory={shareHistory}
+        revokeShare={revokeShare} deleteShare={deleteShare}
+        revokingShareId={revokingShareId} deletingShareId={deletingShareId}
+        totalInvested={totalInvested} totalUnrealized={totalUnrealized} totalReturnPct={totalReturnPct}
+      />
 
-            {modalSide === 'buy' && (!modalRow?.lots || modalRow.lots.length === 0) && (
-              <div className="portfolio-modal-lots">
-                <div className="caption muted">현재 매수 내역: {modalRow.quantity}주 · 평균 {formatKrw(modalRow.avg_price)}</div>
-              </div>
-            )}
+      <MaintenanceModal
+        maintModalOpen={maintModalOpen} setMaintModalOpen={setMaintModalOpen}
+        maintMode={maintMode} maintStep={maintStep} setMaintStep={setMaintStep} maintRow={maintRow}
+        maintCode={maintCode} setMaintCode={setMaintCode} maintQty={maintQty} setMaintQty={setMaintQty}
+        maintBuyDate={maintBuyDate} setMaintBuyDate={setMaintBuyDate}
+        maintBuyPrice={maintBuyPrice} setMaintBuyPrice={setMaintBuyPrice}
+        maintBrokerName={maintBrokerName} setMaintBrokerName={setMaintBrokerName}
+        maintAccountName={maintAccountName} setMaintAccountName={setMaintAccountName}
+        maintAccountMode={maintAccountMode} setMaintAccountMode={setMaintAccountMode}
+        accountFolders={accountFolders} maintError={maintError} setMaintError={setMaintError}
+        maintLoading={maintLoading} runMaintenance={runMaintenance}
+      />
 
-            <div className="grid-two" style={{ marginBottom: 'var(--space-4)' }}>
-              <Input
-                label="수량"
-                type="number"
-                value={String(tradeQty)}
-                onChange={(e: any) => setTradeQty(Number(e.target.value))}
-              />
-              <Input
-                label="가격 (미입력 시 현재가)"
-                type="number"
-                value={tradePrice === '' ? '' : String(tradePrice)}
-                onChange={(e: any) => setTradePrice(e.target.value === '' ? '' : Number(e.target.value))}
-              />
-            </div>
-
-            {/* 기록 뒤 보유를 미리 보여 증권사 앱과 맞춰 보게 한다 — 2026-10-08 1주씩 나눠 체결된 걸 옮기다 1주가 빠져
-                보유를 직접 고쳐야 했다. 저장 전에 수량이 다르면 바로 알 수 있게. */}
-            {modalSide === 'buy' && Number(tradeQty) > 0 && (() => {
-              const curQty = Number(modalRow.quantity || 0)
-              const curAvg = Number(modalRow.avg_price || 0)
-              const addQty = Number(tradeQty)
-              const addPrice = tradePrice !== '' ? Number(tradePrice) : Number(modalRow.stock?.close ?? modalRow.avg_price ?? 0)
-              const nextQty = curQty + addQty
-              const nextAvg = nextQty > 0 ? (curQty * curAvg + addQty * addPrice) / nextQty : 0
-              const isRealAccount = !!(String(modalRow?.broker_name || '').trim() || String(modalRow?.account_name || '').trim())
-              return (
-                <div className="portfolio-modal-lots" style={{ marginBottom: 'var(--space-4)' }}>
-                  <div>
-                    기록하면 <strong>{formatNumber(nextQty, 0)}주</strong> · 평균 {formatKrw(Math.round(nextAvg))}
-                  </div>
-                  {isRealAccount && (
-                    <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                      증권사 앱의 보유 수량과 같은지 확인하세요. 여러 번 나눠 체결됐으면 합친 수량과 평균 체결가로 한 번에 적어도 돼요.
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
-            {canBackdateTrade && (
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <Input
-                  label="체결일 (늦게 기록할 때만 변경)"
-                  type="date"
-                  value={tradeDate}
-                  min={shiftYmd(getTodayLocalYmd(), -7)}
-                  max={getTodayLocalYmd()}
-                  onChange={(e: any) => setTradeDate(String(e.target.value || getTodayLocalYmd()))}
-                />
-                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                  실계좌 매수만 최근 7일까지 지난 날짜로 기록할 수 있어요.
-                </div>
-              </div>
-            )}
-
-            {tradeError && (
-              <div className="state-error" style={{ marginBottom: 'var(--space-3)' }}>
-                <div className="state-error-title">{tradeError}</div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <Button variant="primary" onClick={submitTrade} disabled={tradeLoading}>
-                {tradeLoading ? '처리 중…' : '실행'}
-              </Button>
-              <Button variant="ghost" onClick={() => setModalOpen(false)}>취소</Button>
-            </div>
-          </>
-        )}
-      </Modal>
-
-      <Modal
-        isOpen={shareModalOpen}
-        title="포트폴리오 공유 요약"
-        onClose={() => setShareModalOpen(false)}
-        size="lg"
-      >
-        <div className="portfolio-capture-card">
-          <div className="portfolio-capture-top">
-            <div>
-              <div className="portfolio-capture-title">포트폴리오 요약</div>
-              <div className="portfolio-capture-time">기준시각 {captureGeneratedAt}</div>
-            </div>
-              <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>
-          </div>
-
-          <div className="portfolio-share-control-grid">
-            <div className="portfolio-share-ttl-field">
-              <div className="caption muted" style={{ marginBottom: 'var(--space-1)' }}>링크 만료</div>
-              <select
-                className="input"
-                value={String(shareTtlHours)}
-                onChange={(e) => setShareTtlHours(Number(e.target.value) || 48)}
-                disabled={shareCreating}
-              >
-                <option value="24">24시간</option>
-                <option value="48">48시간</option>
-                <option value="168">7일</option>
-              </select>
-            </div>
-
-            <div className="portfolio-share-url-block">
-              <div className="caption muted portfolio-share-url-label">공유 URL (인증 없이 접근 가능)</div>
-              <div className="portfolio-share-url-row">
-                <input
-                  className="ui-text portfolio-share-url-input"
-                  readOnly
-                  value={sharedSummaryUrl || (shareCreating ? '공유 URL 생성 중...' : '')}
-                />
-                <Button variant="secondary" onClick={createPublicShareUrl} disabled={shareCreating}>
-                  {shareCreating ? '생성 중...' : 'URL 재생성'}
-                </Button>
-                <Button variant="secondary" onClick={copyPortfolioShareUrl} disabled={!sharedSummaryUrl}>URL 복사</Button>
-              </div>
-            </div>
-          </div>
-          {shareExpiresAt && (
-            <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
-              링크 만료: {formatKstDateTime(shareExpiresAt)}
-            </div>
-          )}
-
-          <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
-            이 URL은 누구나 열람 가능한 공유 전용 단독 페이지입니다.
-          </div>
-
-          <div className="card" style={{ margin: 0, marginBottom: 'var(--space-3)', padding: 'var(--space-3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
-              <div className="title-md">최근 공유 링크</div>
-              <Button variant="secondary" onClick={() => { void loadShareHistory() }} disabled={shareHistoryLoading}>
-                {shareHistoryLoading ? '조회 중...' : '새로고침'}
-              </Button>
-            </div>
-
-            {shareHistory.length === 0 ? (
-              <div className="caption muted">공유 이력이 없습니다.</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 'var(--space-2)' }}>
-                {shareHistory.map((item) => {
-                  const isRevoked = Boolean(item.revokedAt)
-                  const isExpired = new Date(item.expiresAt).getTime() <= Date.now()
-                  return (
-                    <div key={item.shareId} className="portfolio-share-history-item">
-                      <div className="portfolio-share-history-head">
-                        <div className="caption">
-                          생성 {formatKstDateTime(item.createdAt)}
-                          {' · '}만료 {formatKstDateTime(item.expiresAt)}
-                          {' · '}조회 {Number(item.accessCount || 0)}회
-                        </div>
-                        <div className={`portfolio-share-history-status ${isRevoked ? 'is-revoked' : isExpired ? 'is-expired' : 'is-active'}`}>
-                          {isRevoked ? '철회됨' : isExpired ? '만료됨' : '활성'}
-                        </div>
-                      </div>
-                      <div className="portfolio-share-history-url">{item.url}</div>
-                      <div className="portfolio-share-history-actions">
-                        <Button
-                          variant="secondary"
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(String(item.url || ''))
-                              toast.show('공유 URL을 복사했습니다')
-                            } catch {
-                              toast.show('공유 URL 복사에 실패했습니다')
-                            }
-                          }}
-                        >
-                          URL 복사
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => revokeShare(item.shareId)}
-                          disabled={isRevoked || isExpired || revokingShareId === item.shareId || deletingShareId === item.shareId}
-                        >
-                          {isRevoked ? '철회됨' : isExpired ? '만료됨' : revokingShareId === item.shareId ? '철회 중...' : '철회'}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => deleteShare(item.shareId)}
-                          disabled={revokingShareId === item.shareId || deletingShareId === item.shareId}
-                        >
-                          {deletingShareId === item.shareId ? '삭제 중...' : '삭제'}
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="portfolio-capture-metrics">
-            <div className="portfolio-capture-metric">
-              <div className="portfolio-capture-label">총 매수원금</div>
-              <div className="portfolio-capture-value">{formatKrwCompact(totalInvested)}</div>
-            </div>
-            <div className="portfolio-capture-metric">
-              <div className="portfolio-capture-label">평가손익</div>
-              <div className={`portfolio-capture-value ${totalUnrealized < 0 ? 'negative' : 'positive'}`}>
-                {formatSignedKrw(totalUnrealized)}
-              </div>
-            </div>
-            <div className="portfolio-capture-metric">
-              <div className="portfolio-capture-label">현재 수익률</div>
-              <div className={`portfolio-capture-value ${totalReturnPct < 0 ? 'negative' : 'positive'}`}>
-                {`${totalReturnPct > 0 ? '+' : ''}${formatNumber(totalReturnPct, 2)}%`}
-              </div>
-            </div>
-          </div>
-
-          <div className="portfolio-capture-table-wrap">
-            <table className="portfolio-capture-table">
-              <thead>
-                <tr>
-                  <th>종목명</th>
-                  <th>종목코드</th>
-                  <th>보유수량</th>
-                  <th>매수가</th>
-                  <th>매수일</th>
-                  <th>손익</th>
-                  <th>수익률</th>
-                </tr>
-              </thead>
-              <tbody>
-                {holdingAll.map((r: any) => {
-                  const pnl = Number(r.unrealized_pnl || 0)
-                  const pct = Number(r.unrealized_pct || 0)
-                  return (
-                    <tr key={`capture-${r.id}`}>
-                      <td>{r.stock_name ?? r.ticker ?? r.symbol ?? '-'}</td>
-                      <td>{r.code || '-'}</td>
-                      <td>{`${formatNumber(Number(r.quantity || 0), 0)}주`}</td>
-                      <td>{formatKrw(Number(r.avg_price || 0))}</td>
-                      <td>{r.buy_date || '-'}</td>
-                      <td className={pnl < 0 ? 'negative' : pnl > 0 ? 'positive' : ''}>{formatSignedKrw(pnl)}</td>
-                      <td className={pct < 0 ? 'negative' : pct > 0 ? 'positive' : ''}>{`${pct > 0 ? '+' : ''}${formatNumber(pct, 2)}%`}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={maintModalOpen}
-        title={
-          maintMode === 'liquidateall' ? '전체매도' :
-          maintMode === 'holdingrestore' ? (maintStep === 1 ? '1단계 · 계좌 설정' : '2단계 · 종목 추가') :
-          '보유 종목 수정'
-        }
-        onClose={() => setMaintModalOpen(false)}
-        size="sm"
-      >
-        {maintMode === 'liquidateall' && (
-          <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-            현재 보유 종목을 기준가로 일괄 매도 처리합니다. 실행 후 보유수량이 0으로 전환됩니다.
-          </div>
-        )}
-
-        {maintMode === 'holdingedit' && (
-          <>
-            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-              <strong>{maintRow?.stock_name || maintCode || '종목'}</strong>의 매수가/수량/계좌를 수정합니다.
-            </div>
-            <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
-              <label className="ui-label">종목코드</label>
-              <StockSearchInput
-                value={maintCode}
-                onChange={(v) => setMaintCode(v.toUpperCase())}
-                onSelect={(s) => setMaintCode(s.code)}
-                placeholder="예) 005930 또는 종목명"
-              />
-            </div>
-            <div style={{ marginBottom: 'var(--space-3)' }}>
-              <Input 
-                label="보유 수량" 
-                type="number" 
-                value={String(maintQty)} 
-                onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div style={{ marginBottom: 'var(--space-3)' }}>
-              <Input
-                label="최초 매수일"
-                type="date"
-                value={maintBuyDate}
-                onChange={(e: any) => setMaintBuyDate(String(e?.target?.value || getTodayLocalYmd()))}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div style={{ marginBottom: 'var(--space-3)' }}>
-              <Input
-                label="평균 매수가 (원)"
-                type="number"
-                value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
-                onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
-              <Input 
-                label="증권사" 
-                placeholder="예) NH, 토스, 삼성" 
-                value={maintBrokerName} 
-                onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-              <Input 
-                label="계좌명" 
-                placeholder="예) ISA, 연금, 일반" 
-                value={maintAccountName} 
-                onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-            </div>
-          </>
-        )}
-
-        {maintMode === 'holdingrestore' && maintStep === 1 && (
-          <>
-            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-              매매 계좌 정보를 입력합니다. 증권사와 계좌명이 계좌 폴더의 기준이 됩니다.
-            </div>
-
-            {accountFolders.length > 0 && maintAccountMode === 'select' && (
-              <>
-                <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
-                  <label className="ui-label">기존 계좌 선택</label>
-                  <select
-                    className="input"
-                    value={maintBrokerName || maintAccountName ? `${maintBrokerName}||${maintAccountName}` : ''}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      if (val === '__new__') {
-                        setMaintBrokerName('')
-                        setMaintAccountName('')
-                        setMaintAccountMode('manual')
-                      } else {
-                        const [broker, account] = val.split('||')
-                        setMaintBrokerName(broker ?? '')
-                        setMaintAccountName(account ?? '')
-                      }
-                    }}
-                  >
-                    <option value="">계좌를 선택하세요</option>
-                    {accountFolders.map((f) => {
-                      // 빈 칸도 자리를 지켜야 계좌명만 있는 계좌가 증권사 칸으로 밀려 들어가지 않는다
-                      const val = `${f.brokerName || ''}||${f.accountName || ''}`
-                      return (
-                        <option key={f.key} value={val}>
-                          {accountLabel(f.brokerName, f.accountName)} ({f.count}종목)
-                        </option>
-                      )
-                    })}
-                    <option value="__new__">➕ 새로 입력하기</option>
-                  </select>
-                </div>
-              </>
-            )}
-
-            {(accountFolders.length === 0 || maintAccountMode === 'manual') && (
-              <>
-                {accountFolders.length > 0 && (
-                  <button
-                    type="button"
-                    className="caption"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', marginBottom: 'var(--space-2)', padding: 0 }}
-                    onClick={() => {
-                      setMaintBrokerName('')
-                      setMaintAccountName('')
-                      setMaintAccountMode('select')
-                    }}
-                  >
-                    <ArrowLeft size={14} aria-hidden /> 기존 계좌에서 선택
-                  </button>
-                )}
-                <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
-                  <Input
-                    label="증권사"
-                    placeholder="예) 토스, NH, 삼성"
-                    value={maintBrokerName}
-                    onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  />
-                  <Input
-                    label="계좌명"
-                    placeholder="예) ISA, 연금, 일반"
-                    value={maintAccountName}
-                    onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  />
-                </div>
-                <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
-                  예) 증권사: 토스증권 / 계좌명: ISA → 화면에 <strong>토스증권 / ISA</strong> 폴더로 표시됩니다.
-                </div>
-              </>
-            )}
-
-            {maintError && (
-              <div className="state-error" style={{ marginBottom: 'var(--space-3)' }}>
-                <div className="state-error-title">{maintError}</div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  if (!String(maintBrokerName || '').trim() && !String(maintAccountName || '').trim()) {
-                    setMaintError('증권사 또는 계좌명을 입력해 주세요')
-                    return
-                  }
-                  setMaintError(null)
-                  setMaintStep(2)
-                }}
-              >
-                다음 → 종목 추가
-              </Button>
-              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
-            </div>
-          </>
-        )}
-
-        {maintMode === 'holdingrestore' && maintStep === 2 && (
-          <>
-            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-              계좌: <strong>{[maintBrokerName, maintAccountName].filter(Boolean).join(' / ') || '미지정'}</strong>
-              <br />추가할 종목의 매수 정보를 입력합니다.
-            </div>
-            <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
-              <label className="ui-label">종목코드</label>
-              <StockSearchInput
-                value={maintCode}
-                onChange={(v) => setMaintCode(v.toUpperCase())}
-                onSelect={(s) => setMaintCode(s.code)}
-                placeholder="예) 005930 또는 종목명"
-              />
-            </div>
-            <div style={{ marginBottom: 'var(--space-3)' }}>
-              <Input
-                label="보유 수량"
-                type="number"
-                value={String(maintQty)}
-                onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
-              />
-            </div>
-            <Input
-              label="평균 매수가 (원)"
-              type="number"
-              placeholder="예) 75000"
-              value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
-              onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
-            />
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <Input
-                label="최초 매수일"
-                type="date"
-                value={maintBuyDate}
-                onChange={(e: any) => setMaintBuyDate(String(e?.target?.value || getTodayLocalYmd()))}
-              />
-            </div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
-              저장 후 가상매도 시 수익/손실이 자동 기록됩니다.
-            </div>
-            {maintError && (
-              <div className="state-error" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-                <div className="state-error-title">{maintError}</div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-              <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
-                {maintLoading ? '저장 중…' : '종목 저장'}
-              </Button>
-              <Button variant="secondary" onClick={() => { setMaintError(null); setMaintStep(1) }}><ArrowLeft size={14} aria-hidden /> 계좌 수정</Button>
-              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
-            </div>
-          </>
-        )}
-
-        {maintMode === 'liquidateall' && (
-          <>
-            {maintError && (
-              <div className="state-error" style={{ marginTop: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-                <div className="state-error-title">{maintError}</div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-              <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
-                {maintLoading ? '처리 중…' : '전체매도 실행'}
-              </Button>
-              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
-            </div>
-          </>
-        )}
-
-        {maintMode === 'holdingedit' && (
-          <>
-            {maintError && (
-              <div className="state-error" style={{ marginTop: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-                <div className="state-error-title">{maintError}</div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-              <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
-                {maintLoading ? '저장 중…' : '수정 저장'}
-              </Button>
-              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
-            </div>
-          </>
-        )}
-      </Modal>
-
-      <Modal
-        isOpen={deleteConfirmOpen}
-        title="종목 완전 삭제"
-        onClose={() => setDeleteConfirmOpen(false)}
-        size="sm"
-      >
-        <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-          <strong style={{ color: 'var(--color-error)' }}>{deleteConfirmCode || '종목'}</strong>을(를) 포트폴리오에서 완전히 삭제합니다.
-        </div>
-        <div className="muted" style={{ marginBottom: 'var(--space-4)', fontSize: 'var(--font-size-sm)', opacity: 0.8 }}>
-          • 보유 수량 및 평가손익이 제거됩니다<br />
-          • 모든 거래 기록이 삭제됩니다 (복구 불가)<br />
-          • 스냅샷도 함께 제거됩니다
-        </div>
-
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-          <Button variant="primary" onClick={() => { setMaintMode('holdingdelete'); setMaintCode(deleteConfirmCode); runMaintenance() }} disabled={maintLoading} style={{ background: 'var(--color-error)' }}>
-            {maintLoading ? '삭제 중…' : '삭제 확인'}
-          </Button>
-          <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)}>취소</Button>
-        </div>
-      </Modal>
+      <DeleteConfirmModal
+        deleteConfirmOpen={deleteConfirmOpen} setDeleteConfirmOpen={setDeleteConfirmOpen}
+        deleteConfirmCode={deleteConfirmCode} setMaintMode={setMaintMode} setMaintCode={setMaintCode}
+        runMaintenance={runMaintenance} maintLoading={maintLoading}
+      />
     </section>
   )
 }
