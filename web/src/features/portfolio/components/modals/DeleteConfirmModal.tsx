@@ -1,25 +1,17 @@
 import Button from '../../../../components/ui/Button'
 import Modal from '../../../../components/Modal'
+import type { MaintenanceState } from '../../hooks/useMaintenance'
 
-type DeleteConfirmModalProps = {
-  deleteConfirmOpen: boolean
-  setDeleteConfirmOpen: (open: boolean) => void
-  deleteConfirmCode: string
-  setMaintMode: (v: 'holdingdelete') => void
-  setMaintCode: (v: string) => void
-  runMaintenance: () => void
-  maintLoading: boolean
-}
-
-export default function DeleteConfirmModal({
-  deleteConfirmOpen,
-  setDeleteConfirmOpen,
-  deleteConfirmCode,
-  setMaintMode,
-  setMaintCode,
-  runMaintenance,
-  maintLoading,
-}: DeleteConfirmModalProps) {
+export default function DeleteConfirmModal({ maint }: { maint: MaintenanceState }) {
+  const {
+    deleteConfirmOpen,
+    setDeleteConfirmOpen,
+    deleteConfirmCode,
+    setMaintMode,
+    setMaintCode,
+    runMaintenance,
+    maintLoading,
+  } = maint
   return (
     <Modal
       isOpen={deleteConfirmOpen}

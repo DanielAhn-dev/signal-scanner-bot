@@ -3,40 +3,25 @@ import Button from '../../../../components/ui/Button'
 import Input from '../../../../components/ui/Input'
 import Modal from '../../../../components/Modal'
 import { getTodayLocalYmd, shiftYmd, toKstYmd } from '../../lib/dates'
+import type { TradeModalState } from '../../hooks/useTradeModal'
 
-type TradeModalProps = {
-  modalOpen: boolean
-  modalSide: 'buy' | 'sell'
-  modalRow: any | null
-  setModalOpen: (open: boolean) => void
-  tradeQty: number
-  setTradeQty: (v: number) => void
-  tradePrice: number | ''
-  setTradePrice: (v: number | '') => void
-  tradeDate: string
-  setTradeDate: (v: string) => void
-  canBackdateTrade: boolean
-  tradeError: string | null
-  tradeLoading: boolean
-  submitTrade: () => void
-}
-
-export default function TradeModal({
-  modalOpen,
-  modalSide,
-  modalRow,
-  setModalOpen,
-  tradeQty,
-  setTradeQty,
-  tradePrice,
-  setTradePrice,
-  tradeDate,
-  setTradeDate,
-  canBackdateTrade,
-  tradeError,
-  tradeLoading,
-  submitTrade,
-}: TradeModalProps) {
+export default function TradeModal({ trade }: { trade: TradeModalState }) {
+  const {
+    modalOpen,
+    modalSide,
+    modalRow,
+    setModalOpen,
+    tradeQty,
+    setTradeQty,
+    tradePrice,
+    setTradePrice,
+    tradeDate,
+    setTradeDate,
+    canBackdateTrade,
+    tradeError,
+    tradeLoading,
+    submitTrade,
+  } = trade
   return (
     <Modal
       isOpen={modalOpen}

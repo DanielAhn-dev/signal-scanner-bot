@@ -4,54 +4,28 @@ import Modal from '../../../../components/Modal'
 import { useToast } from '../../../../components/ToastProvider'
 import type { PortfolioShareHistoryItem } from '../../types'
 import { formatSignedKrw } from '../../lib/format'
+import type { ShareState } from '../../hooks/useShare'
 
-type ShareModalProps = {
-  shareModalOpen: boolean
-  setShareModalOpen: (open: boolean) => void
-  captureGeneratedAt: string
-  holdingAll: any[]
-  shareTtlHours: number
-  setShareTtlHours: (v: number) => void
-  shareCreating: boolean
-  sharedSummaryUrl: string
-  shareExpiresAt: string
-  createPublicShareUrl: () => void
-  copyPortfolioShareUrl: () => void
-  loadShareHistory: () => void
-  shareHistoryLoading: boolean
-  shareHistory: PortfolioShareHistoryItem[]
-  revokeShare: (shareId: string) => void
-  deleteShare: (shareId: string) => void
-  revokingShareId: string
-  deletingShareId: string
-  totalInvested: number
-  totalUnrealized: number
-  totalReturnPct: number
-}
-
-export default function ShareModal({
-  shareModalOpen,
-  setShareModalOpen,
-  captureGeneratedAt,
-  holdingAll,
-  shareTtlHours,
-  setShareTtlHours,
-  shareCreating,
-  sharedSummaryUrl,
-  shareExpiresAt,
-  createPublicShareUrl,
-  copyPortfolioShareUrl,
-  loadShareHistory,
-  shareHistoryLoading,
-  shareHistory,
-  revokeShare,
-  deleteShare,
-  revokingShareId,
-  deletingShareId,
-  totalInvested,
-  totalUnrealized,
-  totalReturnPct,
-}: ShareModalProps) {
+export default function ShareModal({ share, holdingAll, totalInvested, totalUnrealized, totalReturnPct }: { share: ShareState; holdingAll: any[]; totalInvested: number; totalUnrealized: number; totalReturnPct: number }) {
+  const {
+    shareModalOpen,
+    setShareModalOpen,
+    captureGeneratedAt,
+    shareTtlHours,
+    setShareTtlHours,
+    shareCreating,
+    sharedSummaryUrl,
+    shareExpiresAt,
+    createPublicShareUrl,
+    copyPortfolioShareUrl,
+    loadShareHistory,
+    shareHistoryLoading,
+    shareHistory,
+    revokeShare,
+    deleteShare,
+    revokingShareId,
+    deletingShareId,
+  } = share
   const toast = useToast()
   return (
     <Modal

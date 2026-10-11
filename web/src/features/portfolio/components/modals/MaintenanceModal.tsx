@@ -6,62 +6,35 @@ import StockSearchInput from '../../../../components/StockSearchInput'
 import type { AccountFolder } from '../../types'
 import { accountLabel } from '../../lib/accountKey'
 import { getTodayLocalYmd } from '../../lib/dates'
+import type { MaintenanceState } from '../../hooks/useMaintenance'
 
-type MaintenanceModalProps = {
-  maintModalOpen: boolean
-  setMaintModalOpen: (open: boolean) => void
-  maintMode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete'
-  maintStep: 1 | 2
-  setMaintStep: (v: 1 | 2) => void
-  maintRow: any | null
-  maintCode: string
-  setMaintCode: (v: string) => void
-  maintQty: number
-  setMaintQty: (v: number) => void
-  maintBuyDate: string
-  setMaintBuyDate: (v: string) => void
-  maintBuyPrice: number | ''
-  setMaintBuyPrice: (v: number | '') => void
-  maintBrokerName: string
-  setMaintBrokerName: (v: string) => void
-  maintAccountName: string
-  setMaintAccountName: (v: string) => void
-  maintAccountMode: 'select' | 'manual'
-  setMaintAccountMode: (v: 'select' | 'manual') => void
-  accountFolders: AccountFolder[]
-  maintError: string | null
-  setMaintError: (v: string | null) => void
-  maintLoading: boolean
-  runMaintenance: () => void
-}
-
-export default function MaintenanceModal({
-  maintModalOpen,
-  setMaintModalOpen,
-  maintMode,
-  maintStep,
-  setMaintStep,
-  maintRow,
-  maintCode,
-  setMaintCode,
-  maintQty,
-  setMaintQty,
-  maintBuyDate,
-  setMaintBuyDate,
-  maintBuyPrice,
-  setMaintBuyPrice,
-  maintBrokerName,
-  setMaintBrokerName,
-  maintAccountName,
-  setMaintAccountName,
-  maintAccountMode,
-  setMaintAccountMode,
-  accountFolders,
-  maintError,
-  setMaintError,
-  maintLoading,
-  runMaintenance,
-}: MaintenanceModalProps) {
+export default function MaintenanceModal({ maint, accountFolders }: { maint: MaintenanceState; accountFolders: AccountFolder[] }) {
+  const {
+    maintModalOpen,
+    setMaintModalOpen,
+    maintMode,
+    maintStep,
+    setMaintStep,
+    maintRow,
+    maintCode,
+    setMaintCode,
+    maintQty,
+    setMaintQty,
+    maintBuyDate,
+    setMaintBuyDate,
+    maintBuyPrice,
+    setMaintBuyPrice,
+    maintBrokerName,
+    setMaintBrokerName,
+    maintAccountName,
+    setMaintAccountName,
+    maintAccountMode,
+    setMaintAccountMode,
+    maintError,
+    setMaintError,
+    maintLoading,
+    runMaintenance,
+  } = maint
   return (
     <Modal
       isOpen={maintModalOpen}
