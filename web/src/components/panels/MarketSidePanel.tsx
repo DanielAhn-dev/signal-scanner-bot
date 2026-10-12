@@ -57,6 +57,15 @@ type Row = {
   down: boolean
 }
 
+/** CNN 등급 영문(extreme fear 등)을 한글로 — 모르는 값은 원문 그대로 */
+function fearGreedLabel(rating: string): string {
+  const key = rating.trim().toLowerCase()
+  const map: Record<string, string> = {
+    'extreme fear': '극단적 공포', fear: '공포', neutral: '중립', greed: '탐욕', 'extreme greed': '극단적 탐욕',
+  }
+  return map[key] ?? rating
+}
+
 function buildRows(data: MarketData | null): Row[] {
   if (!data?.indices) return []
   const { kospi, kosdaq, sp500, nasdaq, dow, vix, usdkrw, gold, wtiOil, bitcoin, us10y, fearGreed } = data.indices
@@ -91,7 +100,7 @@ function buildRows(data: MarketData | null): Row[] {
     fearGreed ? {
       label: '공포/탐욕',
       price: String(fearGreed.score),
-      daily: fearGreed.rating,
+      daily: fearGreedLabel(fearGreed.rating),
       source: 'CNN',
       up: fearGreed.score >= 60,
       down: fearGreed.score <= 35,
@@ -207,10 +216,11 @@ export default function MarketSidePanel() {
       <div ref={viewportRef} className="xls-side-panel-viewport" style={{ flex: 1, overflow: 'auto' }}>
         <table ref={tableRef} className="xls-table" style={{ width: '100%', tableLayout: 'fixed', background: 'transparent', minHeight: '100%' }}>
           <colgroup>
+            {/* 합이 패널 폭(약 250px)을 넘으면 '등락률'이 잘리고 가로 스크롤이 생긴다 — 지표명 열이 남는 폭을 쓴다 */}
             <col style={{ width: 28 }}/>
-            <col style={{ width: 132 }}/>
-            <col style={{ width: 92 }}/>
-            <col style={{ width: 78 }}/>
+            <col/>
+            <col style={{ width: 76 }}/>
+            <col style={{ width: 62 }}/>
           </colgroup>
           <thead>
             <tr className="xls-letter-row">
@@ -245,12 +255,8 @@ export default function MarketSidePanel() {
                     >
                       <td className="xls-row-num">{i + 1}</td>
                       <td className="xls-cell" style={{ fontSize: 10 }}>
-                        {row.source && (
-                          <span style={{ color: 'var(--color-text-tertiary)', fontSize: 9, marginRight: 3 }}>
-                            {row.source}
-                          </span>
-                        )}
-                        <span title={row.label}>{row.label}</span>
+                        {/* 출처는 좁은 패널에서 이름 폭을 먹어 '등락률' 열이 잘렸다 — 마우스를 올리면 보이게 */}
+                        <span title={row.source ? `${row.label} · 출처: ${row.source}` : row.label}>{row.label}</span>
                       </td>
                       <td className="xls-cell xls-cell--num" style={{ fontSize: 10 }}>
                         {row.price}
