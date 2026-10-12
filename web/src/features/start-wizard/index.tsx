@@ -17,6 +17,7 @@ import {
   emergencyMonthlyFactor,
   profileComplete,
   personalSetup,
+  toleranceOf,
   type InvestorProfile,
 } from '../../lib/startPlan'
 import { userScopedKey, writeUserState } from '../../lib/userState'
@@ -46,7 +47,7 @@ type Form = {
   income: string; card: string; otherFixed: string; loanPayment: string; loanRate: string
   years: string; targetMonthly: string; initialSeed: string; monthly: string
 } & InvestorProfile
-const empty: Form = { household: 'solo', partnerIncome: '', income: '', card: '', otherFixed: '', loanPayment: '', loanRate: '', years: '10', targetMonthly: '', initialSeed: '', monthly: '', reaction: '', horizon: '', emergency: '', checking: '', experience: '' }
+const empty: Form = { household: 'solo', partnerIncome: '', income: '', card: '', otherFixed: '', loanPayment: '', loanRate: '', years: '10', targetMonthly: '', initialSeed: '', monthly: '', tolerance: '', horizon: '', emergency: '' }
 
 function readForm(): Form {
   try {
@@ -71,7 +72,7 @@ export default function StartWizardPage() {
   const navigate = useNavigate()
   const clientId = useCurrentClientId()
   const [step, setStep] = useState(0)
-  // 성향 질문은 한 화면에 하나씩 — 마지막 질문에서 다음을 눌러야 목표 단계로 넘어간다
+  // 질문(버틸 하락폭·언제 쓸 돈·비상금)은 한 화면에 하나씩 — 마지막 질문에서 다음을 눌러야 목표 단계로 넘어간다
   const [q, setQ] = useState(0)
   const [form, setForm] = useState<Form>(readForm)
   const [hasAccount, setHasAccount] = useState(false)
@@ -186,6 +187,7 @@ export default function StartWizardPage() {
         plan: {
           monthly: monthly >= 10_000 ? Math.round(monthly) : 0,
           ...(exists ? {} : { depositDay: 1, satellitePct: setup.strategyMode === 'index_hold' ? 0 : 10 }),
+          ...(toleranceOf(form) != null ? { tolerancePct: toleranceOf(form) } : {}),
         },
       })
       if (targetMonthly > 0) await post('/api/ui/goal-tracker', { targetMonthlyProfit: Math.round(targetMonthly) })
@@ -209,7 +211,7 @@ export default function StartWizardPage() {
           extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, ...cur?.extraIncome }, reserve: Number(cur?.reserve ?? 0), plan: Math.round(monthly),
         }, 'PUT')
       }
-      writeUserState('investorProfile', { reaction: form.reaction, horizon: form.horizon, emergency: form.emergency, checking: form.checking, experience: form.experience } satisfies InvestorProfile)
+      writeUserState('investorProfile', { tolerance: form.tolerance, horizon: form.horizon, emergency: form.emergency } satisfies InvestorProfile)
       // 성향 답으로 자동매매 방식과 기본값을 맞춘다 — 사용자가 설정 화면을 찾아가지 않아도 되게.
       // 이미 쓰던 계좌는 직접 고친 자동매매 설정·켜짐 여부를 덮지 않는다 (화면 안내도 '월 적립과 목표만 갱신')
       if (!exists) {
@@ -249,8 +251,8 @@ export default function StartWizardPage() {
     <main className="start-wizard">
       <header>
         <span className="start-eyebrow">시작하기 · {Math.min(step + 1, 4)}/4</span>
-        <h1>{['내 돈의 흐름', `내 성향 (${q + 1}/${PROFILE_QUESTIONS.length})`, '금액과 목표 (목표는 선택)', '결과 확인'][step]}</h1>
-        <p>{['가계부처럼 적을 필요 없이 한 달 총액만 어렴풋이 적어도 됩니다. 목돈만 가상으로 굴려 보고 싶다면 건너뛰어도 됩니다. 적으면 시드 만들기의 이번 달 기록으로 저장되고, 나중에 거기서 고칠 수 있습니다.', '정답은 없습니다. 답에 따라 적립 기본값과 주의 안내가 달라집니다.', '넣을 돈만 정하면 됩니다. 목표는 비워 둬도 되고, 적으면 얼마나 현실적인지 숫자로 알려 드립니다. 목돈만 굴려 보려면 매달 적립을 0으로 두세요.', '이 조건으로 시작해도 되는지 확인하세요.'][step]}</p>
+        <h1>{['내 돈의 흐름', `얼마나 버틸 수 있나 (${q + 1}/${PROFILE_QUESTIONS.length})`, '금액과 목표 (목표는 선택)', '결과 확인'][step]}</h1>
+        <p>{['가계부처럼 적을 필요 없이 한 달 총액만 어렴풋이 적어도 됩니다. 목돈만 가상으로 굴려 보고 싶다면 건너뛰어도 됩니다. 적으면 시드 만들기의 이번 달 기록으로 저장되고, 나중에 거기서 고칠 수 있습니다.', '정답은 없습니다. 답에 따라 주식 비중·적립 기본값·주의 안내가 달라집니다.', '넣을 돈만 정하면 됩니다. 목표는 비워 둬도 되고, 적으면 얼마나 현실적인지 숫자로 알려 드립니다. 목돈만 굴려 보려면 매달 적립을 0으로 두세요.', '이 조건으로 시작해도 되는지 확인하세요.'][step]}</p>
       </header>
 
       {step === 0 && <section className="start-card start-check-offer">
@@ -284,7 +286,7 @@ export default function StartWizardPage() {
             <button key={o.value} type="button" role="radio" aria-checked={form[question.key] === o.value} className={form[question.key] === o.value ? 'is-active' : ''} onClick={() => set({ [question.key]: o.value })}>{o.label}</button>
           ))}
         </div>
-        {form[question.key] && <p className="start-note">{question.note(form[question.key])}</p>}
+        {form[question.key] && <p className="start-note">{question.note(form[question.key] ?? '')}</p>}
       </section>}
 
       {step === 2 && <section className="start-card">

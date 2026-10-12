@@ -3,6 +3,7 @@
  * 순수 함수만 둔다(화면·서버 호출 없음). 목표 필요 시드는 목표 트래커와 같은 인출률 식을 쓴다.
  */
 import { requiredSeed, DEFAULT_WITHDRAWAL_PCT } from '../../../src/services/goalTracker'
+import { stockCapFor } from './planGuide'
 
 /** 지수 장기 평균(참고) — 이보다 높은 수익률을 요구하면 비현실적이라고 안내한다 */
 export const REALISTIC_ANNUAL_PCT = 8
@@ -106,30 +107,38 @@ export function loanAdvice(loanRatePct: number | null): string | null {
   return `대출 금리 연 ${loanRatePct}%는 투자 기대수익(연 ${REALISTIC_ANNUAL_PCT}% 안팎)보다 높습니다. 상환이 확실한 수익이라, 이 대출을 먼저 줄이는 쪽을 권합니다.`
 }
 
-export type LossReaction = 'sell' | 'hold' | 'buy'
-
-export function lossReactionNote(reaction: LossReaction): string {
-  if (reaction === 'sell') return '하락이 불안하면 종목 매매보다 지수(KODEX 200) 보유 방식이 맞고, 처음엔 적은 금액으로 가상 계좌에서 하락을 겪어 보는 걸 권합니다.'
-  if (reaction === 'buy') return '하락을 기회로 보는 성향이라도 정해진 적립액을 넘겨 더 넣지는 마세요. 규칙대로만 넣는 게 행동 편향을 막습니다.'
-  return '하락에도 버티는 성향이면 정기 적립과 잘 맞습니다. 그대로 규칙을 따르면 됩니다.'
+/**
+ * 시작할 때 묻는 답. 2026-10-12부터 세 가지만 묻는다: 버틸 하락폭(주식 비중의 근거, 내 계획에 저장), 언제 쓸 돈인지, 비상금.
+ * 예전 다섯 질문(하락 반응·확인 빈도·경험)은 안내 문구에만 쓰였고 버틸 하락폭과 겹쳐서 뺐다 — 예전 답은 그대로 읽는다.
+ */
+export type InvestorProfile = {
+  tolerance?: string
+  horizon: string
+  emergency: string
+  reaction?: string
+  checking?: string
+  experience?: string
 }
 
-export type InvestorProfile = { reaction: string; horizon: string; emergency: string; checking: string; experience: string }
-
 export type ProfileQuestion = {
-  key: keyof InvestorProfile
+  key: 'tolerance' | 'horizon' | 'emergency'
   question: string
   options: Array<{ value: string; label: string }>
   note: (value: string) => string
 }
 
-/** 성향 질문 — 답은 저장되고, 시작 시 적립액 기본값·주의 안내·알림 강도에 쓴다. 화면 한 장에 하나씩 보여준다 */
+const TOLERANCE_CHOICES = [10, 20, 30, 40, 50] as const
+
+/** 성향 질문 — 답은 저장되고, 시작 시 주식 비중·적립액 기본값·주의 안내에 쓴다. 화면 한 장에 하나씩 보여준다 */
 export const PROFILE_QUESTIONS: ProfileQuestion[] = [
   {
-    key: 'reaction',
-    question: '투자한 돈이 한 달 만에 20% 떨어졌다면?',
-    options: [{ value: 'sell', label: '불안해서 팔 것 같다' }, { value: 'hold', label: '불안하지만 버틴다' }, { value: 'buy', label: '싸졌으니 더 사고 싶다' }],
-    note: (v) => lossReactionNote(v as LossReaction),
+    key: 'tolerance',
+    question: '1억을 넣었는데 한 해 동안 이만큼 줄었다면, 팔지 않고 버틸 수 있나요?',
+    options: TOLERANCE_CHOICES.map((t) => ({ value: String(t), label: `−${t}% (1억 → ${((100 - t) / 10).toLocaleString('ko-KR')}천만원)까지` })),
+    note: (v) => {
+      const cap = stockCapFor(Number(v))
+      return `이 정도면 주식 비중 상한 ${cap.cap}%, 처음엔 ${cap.recommended}%부터를 권합니다(나머지는 현금성·채권). 실제 하락을 겪기 전에는 감내를 높게 잡기 쉬워서 한 칸 낮게 제안합니다. 내 계획에 저장되고 언제든 바꿀 수 있습니다.`
+    },
   },
   {
     key: 'horizon',
@@ -143,24 +152,18 @@ export const PROFILE_QUESTIONS: ProfileQuestion[] = [
     options: [{ value: 'none', label: '없다' }, { value: 'some', label: '1~2개월치 정도' }, { value: 'enough', label: '3개월치 이상 있다' }],
     note: (v) => v === 'none' ? '비상금이 없으면 급할 때 하락장에서 팔게 됩니다. 매달 적립 기본값을 절반으로 낮추고, 비상금을 먼저 만드는 걸 권합니다.' : v === 'some' ? '조금 더 쌓아 두면 하락장에서 버티기 쉬워집니다.' : '비상금이 있어 하락을 버틸 여건이 됩니다.',
   },
-  {
-    key: 'checking',
-    question: '계좌가 -10%일 때 얼마나 자주 들여다볼 것 같나요?',
-    options: [{ value: 'often', label: '하루에도 여러 번' }, { value: 'weekly', label: '일주일에 한두 번' }, { value: 'rarely', label: '한 달에 한 번 정도' }],
-    note: (v) => v === 'often' ? '자주 볼수록 흔들려서 규칙을 어기기 쉽습니다. 알림은 중요한 것만 받고, 확인은 주 1회로 정해 두세요.' : v === 'weekly' ? '주 1~2회 확인이면 적당합니다.' : '가끔만 보는 건 정기 적립에 가장 잘 맞는 습관입니다.',
-  },
-  {
-    key: 'experience',
-    question: '주식·펀드 투자 경험이 있나요?',
-    options: [{ value: 'none', label: '처음이다' }, { value: 'some', label: '1~3년' }, { value: 'lots', label: '3년 이상' }],
-    note: (v) => v === 'none' ? '처음이면 가상 계좌에서 몇 달 지켜본 뒤 실제 계좌로 넘어가세요. 화면 설명을 자세히 보여드립니다.' : v === 'some' ? '기본은 아시니 규칙을 지키는 연습에 집중하면 됩니다.' : '경험이 있어도 정해진 규칙대로만 넣는 것이 핵심입니다.',
-  },
 ]
 
 export const emergencyMonthlyFactor = (emergency: string): number => (emergency === 'none' ? 0.5 : 1)
 
 export function profileComplete(p: InvestorProfile): boolean {
   return PROFILE_QUESTIONS.every((q) => q.options.some((o) => o.value === p[q.key]))
+}
+
+/** 답한 버틸 하락폭(%) — 예전 답(하락폭 질문 이전)이면 null */
+export function toleranceOf(p: InvestorProfile): number | null {
+  const n = Number(p.tolerance)
+  return TOLERANCE_CHOICES.includes(n as (typeof TOLERANCE_CHOICES)[number]) ? n : null
 }
 
 export type AutoTradePreset = {
@@ -183,19 +186,24 @@ const BALANCED_PRESET: AutoTradePreset = { monday_buy_slots: 2, max_positions: 8
 
 /** 성향 답 → 실제 설정. 초보가 설정 화면을 찾아다니지 않도록 시작할 때 한 번에 적용한다 */
 export function personalSetup(p: InvestorProfile, monthly: number, usedSuggestion = true): PersonalSetup {
-  const score = (['sell', 'hold', 'buy'].indexOf(p.reaction))
+  const tolerance = toleranceOf(p)
+  // 1년 안에 쓸 돈·비상금 없음·작은 하락폭이면 보수적으로 — 균형형도 지수 보유 모드에서는 차이가 없고, 종목 봇으로 바꿀 때만 쓰인다.
+  // 예전 다섯 질문으로 답한 사람은 예전 점수 기준을 그대로 쓴다
+  const legacyScore = (['sell', 'hold', 'buy'].indexOf(p.reaction ?? ''))
     + (['short', 'mid', 'long'].indexOf(p.horizon))
     + (['none', 'some', 'enough'].indexOf(p.emergency))
-    + (['often', 'weekly', 'rarely'].indexOf(p.checking))
-    + (['none', 'some', 'lots'].indexOf(p.experience))
-  // 1년 안에 쓸 돈이거나 점수가 낮으면 보수적으로 — 균형형도 지수 보유 모드에서는 차이가 없고, 종목 봇으로 바꿀 때만 쓰인다
-  const level: PersonalSetup['level'] = p.horizon === 'short' || score <= 4 ? 'safe' : 'balanced'
+    + (['often', 'weekly', 'rarely'].indexOf(p.checking ?? ''))
+    + (['none', 'some', 'lots'].indexOf(p.experience ?? ''))
+  const level: PersonalSetup['level'] = tolerance != null
+    ? (p.horizon === 'short' || p.emergency === 'none' || tolerance <= 10 ? 'safe' : 'balanced')
+    : (p.horizon === 'short' || legacyScore <= 4 ? 'safe' : 'balanced')
   const summary = [
     '자동매매 방식: 종목을 고르지 않고 코스피200 ETF를 매달 적립해 보유 (검증에서 종목 매매가 지수를 이기지 못했습니다)',
     `매달 가상 적립: ${Math.round(monthly).toLocaleString('ko-KR')}원${p.emergency === 'none' && usedSuggestion ? ' (비상금이 없어 기본 제안을 절반으로 낮췄습니다)' : ''}`,
-    `종목 봇으로 바꿀 때의 기본값: ${level === 'safe' ? '안전형 (손절 4%, 최대 6종목)' : '균형형 (손절 4%, 최대 8종목)'}`,
   ]
-  if (p.checking === 'often') summary.push('자주 확인하는 편이라 하락 때 팔지 않도록 규칙 안내를 크게 보여드립니다')
-  if (p.experience === 'none') summary.push('처음이라 화면 설명을 자세히 보여드립니다')
+  if (tolerance != null) {
+    summary.push(`버틸 하락 −${tolerance}% → 주식 비중 ${stockCapFor(tolerance).recommended}%부터 (내 계획에 저장, 대시보드에서 바꿀 수 있습니다)`)
+  }
+  summary.push(`종목 봇으로 바꿀 때의 기본값: ${level === 'safe' ? '안전형 (손절 4%, 최대 6종목)' : '균형형 (손절 4%, 최대 8종목)'}`)
   return { strategyMode: 'index_hold', level, preset: level === 'safe' ? SAFE_PRESET : BALANCED_PRESET, summary }
 }
