@@ -477,7 +477,7 @@ export default function Settings(){
                     {deposit.monthly_deposit > 0
                       ? <>매월 {deposit.deposit_day}일 {deposit.monthly_deposit.toLocaleString('ko-KR')}원 · 다음 입금 {deposit.next_deposit_date ?? '-'}</>
                       : '월 적립 안 함'}
-                    {strategyMode && <> · {strategyMode === 'index_hold' ? '지수만' : '개별주 시드 10%까지'}</>}
+                    {strategyMode && <> · {strategyMode === 'index_hold' ? '지수만' : '종목 봇 운용(몫은 내 계획 카드)'}</>}
                   </div>
                   {deposit.deposit_log.length > 0 && (
                     <div className="mt-1 muted">

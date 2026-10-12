@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { stockCapFor } from '../../lib/planGuide'
 import { recordSwitch } from '../../lib/switchHistory'
-import { useCurrentChatId } from '../../stores/profileStore'
+import { useCurrentChatId, useProfileStore } from '../../stores/profileStore'
 import './my-plan.css'
 
 /**
@@ -12,7 +12,8 @@ import './my-plan.css'
  * 실험(가상) 계좌는 이 계획을 그대로 따른다. 실제 계좌에는 입금·자동매매를 걸지 않는다.
  * 저장은 /api/ui/investment-prefs의 plan 하나로만 한다 (src/services/userPlan.ts).
  */
-type Plan = { monthly: number; payday: number | null; depositDay: number; tolerancePct: number | null; satellitePct: 0 | 10 }
+type Satellite = 0 | 10 | 100
+type Plan = { monthly: number; payday: number | null; depositDay: number; tolerancePct: number | null; satellitePct: Satellite }
 type DepositInfo = { next_deposit_date: string | null; total_deposited: number | null; deposit_log: Array<{ date: string; amount: number }> }
 
 const TOLERANCES = [10, 15, 20, 25, 30, 40, 50] as const
@@ -23,7 +24,7 @@ const dayAfter = (payday: number) => (payday + 1 > 28 ? 1 : payday + 1)
 function summary(plan: Plan): string {
   const parts = [plan.monthly > 0 ? `매달 ${plan.depositDay}일 ${man(plan.monthly)}` : '매달 적립 안 함']
   if (plan.tolerancePct != null) parts.push(`버틸 하락 −${plan.tolerancePct}% (주식 ${stockCapFor(plan.tolerancePct).recommended}%부터)`)
-  parts.push(plan.satellitePct === 0 ? '지수만' : `개별주 ${plan.satellitePct}%까지`)
+  parts.push(plan.satellitePct === 0 ? '지수만' : plan.satellitePct === 100 ? '실험: 종목 봇 전체' : `개별주 ${plan.satellitePct}%까지`)
   return parts.join(' · ')
 }
 
@@ -33,6 +34,7 @@ export type PlanGoal = { progressPct: number; gapPct: number }
 export default function MyPlanCard({ goal }: { goal?: PlanGoal | null }) {
   const navigate = useNavigate()
   const chatId = useCurrentChatId()
+  const isAdmin = useProfileStore((st) => st.isAdmin)
   const [plan, setPlan] = useState<Plan | null>(null)
   const [deposit, setDeposit] = useState<DepositInfo | null>(null)
   const [loadError, setLoadError] = useState(false)
@@ -73,7 +75,7 @@ export default function MyPlanCard({ goal }: { goal?: PlanGoal | null }) {
 
   const monthlyWon = Math.round(Number(draft.monthlyMan.replace(/,/g, '')) * 10_000)
   const paydayNum = draft.payday === '' ? null : Number(draft.payday)
-  const satelliteNum = Number(draft.satellite) as 0 | 10
+  const satelliteNum = Number(draft.satellite) as Satellite
   const toSellStocks = plan != null && plan.satellitePct > 0 && satelliteNum === 0
 
   const save = async () => {
@@ -85,7 +87,7 @@ export default function MyPlanCard({ goal }: { goal?: PlanGoal | null }) {
     setStatus(null)
     try {
       // 개별주 몫을 바꾸면 자동매매 방식이 바뀐다 — 바꾸기 직전 보유를 남겨 "안 바꿨다면"과 비교한다 (내 선택 돌아보기)
-      if (satelliteNum !== plan.satellitePct) await recordSwitch(plan.satellitePct === 0 ? 'index_hold' : 'stock', satelliteNum === 0 ? 'index_hold' : 'stock')
+      if ((satelliteNum === 0) !== (plan.satellitePct === 0)) await recordSwitch(plan.satellitePct === 0 ? 'index_hold' : 'stock', satelliteNum === 0 ? 'index_hold' : 'stock')
       const res = await apiFetch('/api/ui/investment-prefs', {
         method: 'POST',
         cacheMs: 0,
@@ -159,7 +161,13 @@ export default function MyPlanCard({ goal }: { goal?: PlanGoal | null }) {
             <legend>개별주 몫</legend>
             <label className="my-plan__radio"><input type="radio" name="my-plan-satellite" value="0" checked={draft.satellite === '0'} onChange={() => setDraft({ ...draft, satellite: '0' })} /> 안 함 — 지수만 (권장)</label>
             <label className="my-plan__radio"><input type="radio" name="my-plan-satellite" value="10" checked={draft.satellite === '10'} onChange={() => setDraft({ ...draft, satellite: '10' })} /> 시드의 10%까지 — 봇이 개별주를 고름</label>
+            {(isAdmin || plan.satellitePct === 100) && (
+              <label className="my-plan__radio"><input type="radio" name="my-plan-satellite" value="100" checked={draft.satellite === '100'} onChange={() => setDraft({ ...draft, satellite: '100' })} /> 실험: 종목 봇 전체 — 관리자 전용, 검증 데이터 수집용</label>
+            )}
             <small>종목 고르기로 지수를 이긴 근거는 찾지 못했습니다(검증 C1·C23). 10%는 재미 몫이고, 지수는 개별주 자금으로 팔지 않습니다.</small>
+            {draft.satellite === '100' && (
+              <small>실험: 시드 전체를 종목 봇이 운용하고 지수에 넣지 않습니다(남은 지수는 다음 실행 때 현금으로). 따라 하기용이 아니라 규칙을 검증할 매매 표본을 모으는 용도입니다.</small>
+            )}
           </fieldset>
           {toSellStocks && (
             <p className="my-plan__warn" role="status">저장하면 다음 자동매매 때 실험 계좌의 개별주를 모두 팔고 KODEX 200으로 옮깁니다.</p>
