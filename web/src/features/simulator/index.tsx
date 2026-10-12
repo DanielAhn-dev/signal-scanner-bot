@@ -1,17 +1,12 @@
-import Detail from '../../components/ui/Detail'
 import { useSeedCapital } from '../../lib/useSeedCapital'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { LucideIcon } from '../../components/LucideIcon'
-import AnchoredDropdown from '../../components/AnchoredDropdown'
 import { useCurrentChatId } from '../../stores/profileStore'
-import { EmptyState } from '../../components/StateViews'
-import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
+import { formatKrw, formatKstDateTime } from '../../lib/format'
 import { apiFetch } from '../../lib/api'
 import { useToast } from '../../components/ToastProvider'
 import { searchStocks } from '../../lib/stockCache'
 import StockDetailModal from '../../components/StockDetailModal'
-import { empiricalWinProb, lookupTpSlBaseRate, TP_SL_HORIZON_DAYS } from '../../lib/tpSlBaseRates'
 import type { CompareResult, PlanHistoryEntry, RecommendSource } from './types'
 import { mergeAlgoCandidates } from './lib/algoCandidates'
 import {
@@ -21,11 +16,12 @@ import {
 } from './lib/recommend'
 import { calcItemMeta, calcScenarioRows, calcSummary } from './lib/summary'
 import { buildWatchlistCandidates } from './lib/watchlistCandidates'
-import GradeChip from './components/GradeChip'
-import PositionStatusBadge from './components/PositionStatusBadge'
-import RRBar from './components/RRBar'
-import NumInput from './components/NumInput'
-import ComparePanel from './components/ComparePanel'
+import SummaryCard from './components/SummaryCard'
+import RecommendSection from './components/RecommendSection'
+import SettingsPanel from './components/SettingsPanel'
+import ItemsSection from './components/ItemsSection'
+import GoalPathSection from './components/GoalPathSection'
+import ScenarioSection from './components/ScenarioSection'
 import {
   defaultPlanItem,
   readSimulationPlan,
@@ -34,13 +30,8 @@ import {
 } from './planStore'
 import {
   buildTelegramMessage,
-  calcExpectedValue,
   calcPositionStatus,
-  calcRR,
   calcWeeklyCyclePlan,
-  clampPercent,
-  calcRequiredAnnualReturn,
-  calcAllocationWeight,
   type RecommendationStyle,
   type TelegramFormat,
 } from './telegramFormat'
@@ -470,780 +461,111 @@ export default function SimulatorPage() {
       </div>
 
       {/* ── 요약 카드 ── */}
-      <div className="sim-summary-card">
-        <div className="sim-summary-grid">
-          <div className="sim-summary-item">
-            <label className="sim-summary-label" htmlFor="sim-total-capital">총 투자금 (원)</label>
-            <input
-              id="sim-total-capital"
-              className="sim-input"
-              type="number"
-              min={0}
-              inputMode="numeric"
-              value={totalCapital}
-              onChange={(e) => setTotalCapital(Math.max(0, Number(e.target.value || 0)))}
-            />
-          </div>
-          <div className="sim-summary-item">
-            <span className="sim-summary-label">배분 합계</span>
-            <span className={`sim-summary-value${summary.remaining < 0 ? ' sim-neg' : ''}`}>{formatKrw(summary.allocated)}</span>
-          </div>
-          <div className="sim-summary-item">
-            <span className="sim-summary-label">잔여 자금</span>
-            <span className={`sim-summary-value${summary.remaining < 0 ? ' sim-neg' : ' sim-pos'}`}>
-              {summary.remaining >= 0 ? '+' : ''}{formatKrw(summary.remaining)}
-            </span>
-          </div>
-          <div className="sim-summary-item">
-            <span className="sim-summary-label">최악일 때 손실</span>
-            <span className="sim-summary-value sim-neg">{formatKrw(summary.maxLoss)}</span>
-          </div>
-        </div>
-        <details className="sim-summary-more">
-          <summary className="muted">자세히 (기대손익 · 체결 반영 투자금)</summary>
-          <div className="sim-summary-grid" style={{ marginTop: 8 }}>
-            <div className="sim-summary-item">
-              <span className="sim-summary-label">기대손익 (월 목표 기준)</span>
-              <span className={`sim-summary-value${summary.evAfterCost >= 0 ? ' sim-pos' : ' sim-neg'}`}>
-                {summary.evAfterCost >= 0 ? '+' : ''}{formatKrw(summary.evAfterCost)}
-              </span>
-            </div>
-            <div className="sim-summary-item">
-              <span className="sim-summary-label">체결 반영 투자금</span>
-              <span className="sim-summary-value">{formatKrw(summary.splitInvested)}</span>
-            </div>
-          </div>
-        </details>
-        {summary.remaining < 0 && (
-          <div className="sim-warning-bar">
-            배분 합계가 총 투자금을 {formatKrw(-summary.remaining)} 초과합니다.
-          </div>
-        )}
-      </div>
+      <SummaryCard
+        totalCapital={totalCapital}
+        setTotalCapital={setTotalCapital}
+        summary={summary}
+      />
 
       {/* ── 월 수익 목표 & 추천 ── */}
-      <details className="sim-section sim-monthly-target-section collapsible">
-        <summary className="collapsible__summary">
-          <span className="sim-section-label">종목 추천받기</span>
-          <span className="muted collapsible__hint">고르기 어려울 때만 — 월 목표 수익으로 후보와 배분을 제안합니다</span>
-        </summary>
-        {/* 추천 소스 선택 */}
-        <div className="sim-rec-source-group">
-          <button
-            className={`sim-rec-source-btn${recommendSource === 'algo' ? ' sim-rec-source-btn--active' : ''}`}
-            onClick={() => setRecommendSource('algo')}
-          >
-            <span className="sim-rec-source-label">알고리즘 추천</span>
-            <span className="sim-rec-source-count">
-              {loadingAlgo ? '...' : `${algoCandidates.length}개`}
-            </span>
-          </button>
-          {chatId && (
-            <button
-              className={`sim-rec-source-btn${recommendSource === 'watchlist' ? ' sim-rec-source-btn--active' : ''}`}
-              onClick={() => setRecommendSource('watchlist')}
-            >
-              <span className="sim-rec-source-label">관심종목</span>
-              <span className="sim-rec-source-count">
-                {loadingWatchlist ? '...' : `${watchlistCandidates.length}개`}
-              </span>
-            </button>
-          )}
-          <button
-            className={`sim-rec-source-btn${recommendSource === 'items' ? ' sim-rec-source-btn--active' : ''}`}
-            onClick={() => setRecommendSource('items')}
-          >
-            <span className="sim-rec-source-label">현재 종목</span>
-            <span className="sim-rec-source-count">{items.filter(i => i.code !== 'CASH').length}개</span>
-          </button>
-          <button
-            className="sim-btn sim-btn--ghost sim-btn--sm sim-rec-refresh-btn"
-            onClick={() => { void loadAlgoCandidates(); if (chatId) void loadWatchlistCandidates() }}
-            disabled={loadingCandidates}
-            title="후보 새로고침"
-          >
-            <LucideIcon name="RefreshCw" size={14} />
-          </button>
-        </div>
-
-        <div className="sim-rec-profile-group" role="group" aria-label="추천 성향">
-          <button
-            className={`sim-rec-profile-btn${recommendStyle === 'stable' ? ' sim-rec-profile-btn--active' : ''}`}
-            onClick={() => setRecommendStyle('stable')}
-            disabled={!showRecommendation}
-          >
-            안정
-          </button>
-          <button
-            className={`sim-rec-profile-btn${recommendStyle === 'balanced' ? ' sim-rec-profile-btn--active' : ''}`}
-            onClick={() => setRecommendStyle('balanced')}
-            disabled={!showRecommendation}
-          >
-            균형
-          </button>
-          <button
-            className={`sim-rec-profile-btn${recommendStyle === 'aggressive' ? ' sim-rec-profile-btn--active' : ''}`}
-            onClick={() => setRecommendStyle('aggressive')}
-            disabled={!showRecommendation}
-          >
-            공격
-          </button>
-        </div>
-
-        <div className="sim-cash-reserve-info">
-          <span>💰 현금 보유 추천:</span>
-          <span className="sim-cash-reserve-value">{formatKrw(totalCapital * 0.2)} (20%)</span>
-        </div>
-
-        <div className="sim-monthly-target-wrap">
-          <div className="sim-input-group">
-            <label className="sim-input-label">원하는 월 수익</label>
-            <div className="sim-input-row">
-              <input 
-                className="sim-input" 
-                type="number" 
-                min={0} 
-                value={monthlyProfitTarget}
-                onChange={(e) => setMonthlyProfitTarget(Math.max(0, Number(e.target.value || 0)))} 
-              />
-              <span className="sim-input-suffix">원</span>
-            </div>
-          </div>
-          <div className="sim-monthly-calc">
-            <div className="sim-monthly-item">
-              <span className="sim-monthly-label">필요 연간 수익률</span>
-              <span className="sim-monthly-value">
-                {formatNumber(calcRequiredAnnualReturn(monthlyProfitTarget, totalCapital), 2)}%
-              </span>
-            </div>
-            <div className="sim-monthly-item">
-              <span className="sim-monthly-label">연간 목표 수익</span>
-              <span className="sim-monthly-value">
-                {formatKrw(monthlyProfitTarget * 12)}
-              </span>
-            </div>
-          </div>
-          {/* 계산은 맞지만 60% 같은 숫자를 그대로 보여 주면 달성 가능한 목표처럼 읽힌다 */}
-          {calcRequiredAnnualReturn(monthlyProfitTarget, totalCapital) > 15 && (
-            <p style={{ margin: '6px 0', fontSize: 12, color: 'var(--color-error)' }}>
-              이 목표는 투자금에 비해 큽니다 — 검증된 규칙의 과거 수익은 연 10~13%입니다. 이 투자금이면 월{' '}
-              {formatKrw(Math.round((totalCapital * 0.08) / 12))} 안팎이 현실적입니다(연 8% 가정). 필요한 시드는 홈의 목표 트래커에서 확인하세요.
-            </p>
-          )}
-          <button
-            className="sim-btn sim-btn--primary" 
-            onClick={generateRecommendation}
-            disabled={monthlyProfitTarget <= 0 || 
-              (items.length === 0 && 
-               ((chatId && watchlistCandidates.length === 0) ||
-                (!chatId && algoCandidates.length === 0)))}
-            title="Half-Kelly 방식으로 종목별 배분 비율을 계산합니다. 입력한 승률·손익비 가정에 따라 달라지는 참고값입니다."
-          >
-            추천 포트폴리오 만들기
-          </button>
-          {chatId && algoCandidates.length > 0 && watchlistCandidates.length > 0 && (
-            <button
-              className="sim-btn sim-btn--ghost"
-              onClick={generateCompare}
-              disabled={monthlyProfitTarget <= 0 || loadingCandidates}
-              title="알고리즘 추천 vs 관심종목 추천 비교"
-            >
-              포트폴리오 비교
-            </button>
-          )}
-        </div>
-
-        {/* 비교 패널 */}
-        {showCompare && compareResult && (
-          <ComparePanel
-            algoPortfolio={compareResult.algo}
-            watchlistPortfolio={compareResult.watchlist}
-            totalCapital={totalCapital}
-            monthlyTarget={monthlyProfitTarget}
-            feePct={feePct}
-            taxPct={taxPct}
-            onClose={() => setShowCompare(false)}
-            onApplyAlgo={() => {
-              setItems(compareResult.algo)
-              setShowCompare(false)
-              toast.show('알고리즘 추천 포트폴리오를 적용했습니다.')
-            }}
-            onApplyWatchlist={() => {
-              setItems(compareResult.watchlist)
-              setShowCompare(false)
-              toast.show('관심종목 추천 포트폴리오를 적용했습니다.')
-            }}
-          />
-        )}
-
-        {/* 추천 결과 표시 */}
-        {showRecommendation && recommendedPortfolio.length > 0 && (
-          <div className="sim-recommendation-panel">
-            <div className="sim-rec-header">
-              <h3 className="sim-rec-title">🎯 추천 포트폴리오</h3>
-              <button className="sim-btn sim-btn--ghost" onClick={() => setShowRecommendation(false)}>닫기</button>
-            </div>
-<Detail>            <p className="sim-rec-desc">
-              월 {formatKrw(monthlyProfitTarget)} 목표 달성을 위해 Kelly Criterion 기반으로 선정된 포트폴리오입니다.
-              각 종목의 기대값과 위험도를 고려해 배분되었습니다.
-            </p></Detail>
-            <div className="sim-rec-list">
-              {recommendedPortfolio.map((rec, idx) => {
-                const weights = recommendedPortfolio.reduce((acc, r) => acc + calcAllocationWeight(r, recommendStyle), 0)
-                const allocPct = weights > 0 ? (calcAllocationWeight(rec, recommendStyle) / weights) * 100 : 0
-                const rr = calcRR(rec)
-                const ev = calcExpectedValue(rec)
-                return (
-                  <div key={`${rec.code}-${idx}`} className="sim-rec-item">
-                    <div className="sim-rec-item-name">
-                      <span className="sim-rec-code">{rec.code}</span>
-                      <span className="sim-rec-name">{rec.name}</span>
-                      <button
-                        className="sim-btn sim-btn--xs sim-btn--ghost"
-                        onClick={() => {
-                          setSelectedStockCode(rec.code)
-                          setSelectedStockName(rec.name)
-                          setShowStockDetail(true)
-                        }}
-                      >
-                        시세
-                      </button>
-                    </div>
-                    <div className="sim-rec-metrics">
-                      <div className="sim-rec-metric">
-                        <span className="sim-rec-label">배분액</span>
-                        <span className="sim-rec-value">{formatKrw(rec.amount)}</span>
-                      </div>
-                      <div className="sim-rec-metric">
-                        <span className="sim-rec-label">비중</span>
-                        <span className="sim-rec-value">{formatNumber(allocPct, 1)}%</span>
-                      </div>
-                      <Detail>
-                      <div className="sim-rec-metric">
-                        <span className="sim-rec-label">R:R</span>
-                        <span className="sim-rec-value">{formatNumber(rr, 1)}:1</span>
-                      </div>
-                      <div className="sim-rec-metric">
-                        <span className={`sim-rec-value${ev >= 0 ? ' sim-pos' : ' sim-neg'}`}>
-                          {ev >= 0 ? '+' : ''}{formatKrw(ev)}
-                        </span>
-                      </div>
-                      </Detail>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="sim-rec-footer">
-              <button className="sim-btn sim-btn--ghost" onClick={() => setShowRecommendation(false)}>취소</button>
-              <button className="sim-btn sim-btn--primary" onClick={applyRecommendation}>이 포트폴리오 적용</button>
-            </div>
-          </div>
-        )}
-      </details>
+      <RecommendSection
+        totalCapital={totalCapital}
+        items={items}
+        setItems={setItems}
+        monthlyProfitTarget={monthlyProfitTarget}
+        setMonthlyProfitTarget={setMonthlyProfitTarget}
+        feePct={feePct}
+        taxPct={taxPct}
+        recommendedPortfolio={recommendedPortfolio}
+        showRecommendation={showRecommendation}
+        setShowRecommendation={setShowRecommendation}
+        watchlistCandidates={watchlistCandidates}
+        algoCandidates={algoCandidates}
+        loadingAlgo={loadingAlgo}
+        loadingWatchlist={loadingWatchlist}
+        loadingCandidates={loadingCandidates}
+        recommendSource={recommendSource}
+        setRecommendSource={setRecommendSource}
+        recommendStyle={recommendStyle}
+        setRecommendStyle={setRecommendStyle}
+        compareResult={compareResult}
+        showCompare={showCompare}
+        setShowCompare={setShowCompare}
+        setShowStockDetail={setShowStockDetail}
+        setSelectedStockCode={setSelectedStockCode}
+        setSelectedStockName={setSelectedStockName}
+        toast={toast}
+        chatId={chatId}
+        generateRecommendation={generateRecommendation}
+        applyRecommendation={applyRecommendation}
+        generateCompare={generateCompare}
+        loadWatchlistCandidates={loadWatchlistCandidates}
+        loadAlgoCandidates={loadAlgoCandidates}
+      />
 
       {/* ── 설정 패널 (접기/펼치기) ── */}
       {settingsOpen && (
-        <div className="sim-settings-panel">
-          <div className="sim-settings-grid">
-            <div className="sim-input-group">
-              <label className="sim-input-label">총 투자금 (원)</label>
-              <div className="sim-input-row">
-                <input className="sim-input" type="number" min={0} value={totalCapital}
-                  onChange={(e) => setTotalCapital(Math.max(0, Number(e.target.value || 0)))} />
-              </div>
-            </div>
-            <NumInput label="체결률 (%)" value={fillRatePct} suffix="%"
-              onChange={(v) => setFillRatePct(clampPercent(v, 0, 100))} min={0} max={100} />
-            <NumInput label="수수료율 (%)" value={feePct} suffix="%" step={0.01}
-              onChange={(v) => setFeePct(Math.max(0, v))} min={0} />
-            <NumInput label="세금/기타 (%)" value={taxPct} suffix="%" step={0.01}
-              onChange={(v) => setTaxPct(Math.max(0, v))} min={0} />
-          </div>
-
-          <div className="sim-input-group sim-input-group--full">
-            <label className="sim-input-label">메모</label>
-            <input className="sim-input" value={memo} onChange={(e) => setMemo(e.target.value)}
-              placeholder="예: 장 초반 변동성 높음, 2차까지만 체결 예상" />
-          </div>
-
-          {lastServerSavedAt && (
-            <p className="sim-saved-at">서버 저장: {formatKstDateTime(lastServerSavedAt)}</p>
-          )}
-
-          <div className="sim-settings-actions">
-            <button className="sim-btn sim-btn--ghost" onClick={saveLocal} disabled={syncing}>로컬 저장</button>
-            <button className="sim-btn sim-btn--ghost" onClick={loadServer} disabled={syncing}>서버 불러오기</button>
-            <button className="sim-btn sim-btn--ghost" onClick={loadHistory} disabled={syncing || historyLoading}>
-              히스토리
-            </button>
-            <button className="sim-btn sim-btn--primary" onClick={saveServer} disabled={syncing}>서버 저장</button>
-            <div className="sim-telegram-wrap">
-              <select className="sim-select" value={telegramFormat}
-                onChange={(e) => setTelegramFormat(e.target.value as TelegramFormat)}>
-                <option value="simple">간단</option>
-                <option value="detailed">상세</option>
-              </select>
-              <button className="sim-btn sim-btn--ghost" onClick={sendTelegram} disabled={syncing}>텔레그램 전송</button>
-            </div>
-          </div>
-
-          {/* 히스토리 */}
-          {historyOpen && (
-            <div className="sim-history">
-              <div className="sim-history-head">
-                <span className="sim-section-label">저장 히스토리</span>
-                <button className="sim-btn sim-btn--ghost" onClick={() => setHistoryOpen(false)}>닫기</button>
-              </div>
-              {history.length === 0
-                ? <p className="sim-empty-text">저장된 히스토리가 없습니다.</p>
-                : history.map((entry, i) => {
-                  const p = entry.plan
-                  const cap = p?.totalCapital ? formatKrw(Number(p.totalCapital)) : '-'
-                  const cnt = Array.isArray(p?.items) ? p.items.length : 0
-                  return (
-                    <button key={i} className="sim-history-row" onClick={() => loadFromHistory(entry)}>
-                      <div>
-                        <div className="sim-history-date">{formatKstDateTime(entry.updatedAt)}</div>
-                        <div className="sim-history-meta">{cap} · {cnt}개 종목{p?.notes ? ` · ${String(p.notes).slice(0, 30)}` : ''}</div>
-                      </div>
-                      <span className="sim-history-load">불러오기 →</span>
-                    </button>
-                  )
-                })
-              }
-            </div>
-          )}
-        </div>
+        <SettingsPanel
+          totalCapital={totalCapital}
+          setTotalCapital={setTotalCapital}
+          fillRatePct={fillRatePct}
+          setFillRatePct={setFillRatePct}
+          feePct={feePct}
+          setFeePct={setFeePct}
+          taxPct={taxPct}
+          setTaxPct={setTaxPct}
+          memo={memo}
+          setMemo={setMemo}
+          syncing={syncing}
+          lastServerSavedAt={lastServerSavedAt}
+          telegramFormat={telegramFormat}
+          setTelegramFormat={setTelegramFormat}
+          history={history}
+          historyOpen={historyOpen}
+          setHistoryOpen={setHistoryOpen}
+          historyLoading={historyLoading}
+          saveLocal={saveLocal}
+          saveServer={saveServer}
+          loadServer={loadServer}
+          sendTelegram={sendTelegram}
+          loadHistory={loadHistory}
+          loadFromHistory={loadFromHistory}
+        />
       )}
 
       {/* ── 종목 목록 ── */}
-      <div className="sim-section">
-        <div className="sim-section-head">
-          <div>
-            <span className="sim-section-label">종목별 집행안</span>
-            <span className="sim-section-count">{items.length}개</span>
-          </div>
-        </div>
-
-        {/* 종목 검색 추가 */}
-        <div className="sim-add-wrap" ref={addWrapRef}>
-          <div className="sim-add-input-row">
-            <svg className="sim-add-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
-              <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            <input
-              className="sim-add-input"
-              placeholder="종목명 또는 코드로 검색 후 추가"
-              value={addSearch}
-              onChange={(e) => setAddSearch(e.target.value)}
-              onFocus={() => setAddFocused(true)}
-              onBlur={() => setTimeout(() => setAddFocused(false), 150)}
-            />
-            {addSearch && (
-              <button className="sim-add-clear" onClick={() => { setAddSearch(''); setAddResults([]) }}>×</button>
-            )}
-            <button className="sim-btn sim-btn--ghost sim-btn--sm" onClick={() => addRow()}>빈 행 추가</button>
-          </div>
-          {showAddDropdown && (
-            <AnchoredDropdown anchorRef={addWrapRef} className="sim-add-dropdown">
-              {addResults.length === 0
-                ? <div className="sim-add-empty">검색 결과 없음</div>
-                : addResults.slice(0, 6).map((s: any) => (
-                  <button key={s.code} className="sim-add-result" onClick={() => addRow({ code: String(s.code), name: String(s.name ?? s.code) })}>
-                    <span className="sim-add-result-name">{s.name ?? s.code}</span>
-                    <span className="sim-add-result-code">{s.code}</span>
-                    <span className="sim-add-result-action">+ 추가</span>
-                  </button>
-                ))
-              }
-            </AnchoredDropdown>
-          )}
-        </div>
-
-        {/* ── 이번 주 집행 요약 ── */}
-        {items.filter(i => i.code !== 'CASH').length > 0 && (() => {
-          const signals = statusMeta.filter((s, i) => items[i]?.code !== 'CASH')
-          const takeProfitItems = signals.filter(s => s.status === 'take_profit')
-          const nearProfitItems = signals.filter(s => s.status === 'near_profit')
-          const stopLossItems = signals.filter(s => s.status === 'stop_loss')
-          const nearStopItems = signals.filter(s => s.status === 'near_stop')
-          const holdItems = signals.filter(s => s.status === 'hold')
-          const hasAnySignal = takeProfitItems.length > 0 || stopLossItems.length > 0
-          const realizedOnSignal = items
-            .filter((_, i) => items[i]?.code !== 'CASH' && (statusMeta[i]?.status === 'take_profit' || statusMeta[i]?.status === 'stop_loss'))
-            .reduce((acc, _, i) => acc + (statusMeta[i]?.unrealizedKrw ?? 0), 0)
-          const hasPositions = items.some(i => i.code !== 'CASH' && (i.buyPrice ?? 0) > 0 && (i.shares ?? 0) > 0)
-          if (!hasPositions) return null
-          return (
-            <div className="sim-weekly-summary">
-              <div className="sim-weekly-summary-head">
-                <span className="sim-weekly-summary-title">이번 주 집행 신호</span>
-                {hasAnySignal && (
-                  <span className={`sim-weekly-realized ${realizedOnSignal >= 0 ? 'sim-pos' : 'sim-neg'}`}>
-                    신호대로 실행 시 {realizedOnSignal >= 0 ? '+' : ''}{formatKrw(realizedOnSignal)}
-                  </span>
-                )}
-              </div>
-              <div className="sim-weekly-signals">
-                {takeProfitItems.length > 0 && (
-                  <span className="sim-signal-tag sim-signal-tag--profit">익절 신호 {takeProfitItems.length}종목</span>
-                )}
-                {nearProfitItems.length > 0 && (
-                  <span className="sim-signal-tag sim-signal-tag--near-profit">목표가 근접 {nearProfitItems.length}종목</span>
-                )}
-                {nearStopItems.length > 0 && (
-                  <span className="sim-signal-tag sim-signal-tag--near-stop">손절가 근접 {nearStopItems.length}종목</span>
-                )}
-                {stopLossItems.length > 0 && (
-                  <span className="sim-signal-tag sim-signal-tag--stop">손절 신호 {stopLossItems.length}종목</span>
-                )}
-                {holdItems.length > 0 && (
-                  <span className="sim-signal-tag sim-signal-tag--hold">보유 유지 {holdItems.length}종목</span>
-                )}
-              </div>
-            </div>
-          )
-        })()}
-
-        {items.length === 0
-          ? <EmptyState title="집행안이 비어 있습니다" description="위 검색창으로 종목을 추가하세요." />
-          : (
-            <div className="sim-stock-list">
-              {items.map((row, idx) => {
-                const meta = itemMeta[idx]
-                const isOpen = expandedIdx === idx
-                const splitTotal = row.split1 + row.split2 + row.split3
-                const splitOver = splitTotal > 100
-
-                return (
-                  <div key={`${row.code || 'row'}-${idx}`} className={`sim-stock-card${isOpen ? ' sim-stock-card--open' : ''}`}>
-                    {/* 아코디언 헤더 */}
-                    <button
-                      className="sim-stock-header"
-                      onClick={() => setExpandedIdx(isOpen ? null : idx)}
-                      aria-expanded={isOpen}
-                    >
-                      <GradeChip grade={meta.grade} />
-                      <div className="sim-stock-info">
-                        <span className="sim-stock-name">{row.name || '(미입력)'}</span>
-                        <span className="sim-stock-code">{row.code || '—'}</span>
-                      </div>
-                      {statusMeta[idx].status !== 'no_price' && (
-                        <PositionStatusBadge
-                          status={statusMeta[idx].status}
-                          changePct={statusMeta[idx].changePct}
-                        />
-                      )}
-                      <div className="sim-stock-metrics">
-                        <div className="sim-metric">
-                          <span className="sim-metric-label">배분</span>
-                          <span className="sim-metric-value">{formatKrw(row.amount)}</span>
-                        </div>
-                        <div className="sim-metric sim-metric--hide-sm">
-                          <span className="sim-metric-label">R:R</span>
-                          <span className="sim-metric-value">{formatNumber(meta.rr, 1)}:1</span>
-                        </div>
-                        <div className="sim-metric sim-metric--hide-sm">
-                          <span className="sim-metric-label">기대손익</span>
-                          <span className={`sim-metric-value${meta.ev >= 0 ? ' sim-pos' : ' sim-neg'}`}>
-                            {meta.ev >= 0 ? '+' : ''}{formatKrw(meta.ev)}
-                          </span>
-                        </div>
-                      </div>
-                      <svg className={`sim-chevron${isOpen ? ' sim-chevron--open' : ''}`} width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-                        <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </button>
-
-                    {/* 아코디언 바디 */}
-                    {isOpen && (
-                      <div className="sim-stock-body">
-                        {/* 종목 정보 */}
-                        <div className="sim-stock-id-row">
-                          <div className="sim-input-group">
-                            <label className="sim-input-label">코드</label>
-                            <input className="sim-input sim-input--mono" value={row.code}
-                              onChange={(e) => updateItem(idx, { code: e.target.value })} placeholder="005930" />
-                          </div>
-                          <div className="sim-input-group sim-input-group--grow">
-                            <label className="sim-input-label">종목명</label>
-                            <input className="sim-input" value={row.name}
-                              onChange={(e) => updateItem(idx, { name: e.target.value })} placeholder="삼성전자" />
-                          </div>
-                        </div>
-
-                        {/* 핵심 파라미터 */}
-                        <div className="sim-params-grid">
-                          <div className="sim-input-group">
-                            <label className="sim-input-label">투입 금액</label>
-                            <div className="sim-input-row">
-                              <input className="sim-input" type="number" min={0} value={row.amount}
-                                onChange={(e) => updateItem(idx, { amount: Math.max(0, Number(e.target.value || 0)) })} />
-                              <span className="sim-input-suffix">원</span>
-                            </div>
-                          </div>
-                          <div className="sim-input-group">
-                            <label className="sim-input-label">목표 상승</label>
-                            <div className="sim-input-row">
-                              <input className="sim-input" type="number" value={row.targetPct}
-                                onChange={(e) => updateItem(idx, { targetPct: Number(e.target.value || 0) })} />
-                              <span className="sim-input-suffix">%</span>
-                            </div>
-                          </div>
-                          <div className="sim-input-group">
-                            <label className="sim-input-label">손절</label>
-                            <div className="sim-input-row">
-                              <input className="sim-input" type="number" min={0} value={row.stopPct}
-                                onChange={(e) => updateItem(idx, { stopPct: Math.max(0, Number(e.target.value || 0)) })} />
-                              <span className="sim-input-suffix">%</span>
-                            </div>
-                          </div>
-                          <div className="sim-input-group">
-                            <label className="sim-input-label">승률 가정</label>
-                            <div className="sim-input-row">
-                              <input className="sim-input" type="number" min={0} max={100} value={row.winProb}
-                                onChange={(e) => updateItem(idx, { winProb: clampPercent(Number(e.target.value || 0), 0, 100) })} />
-                              <span className="sim-input-suffix">%</span>
-                            </div>
-                            {(() => {
-                              const rate = lookupTpSlBaseRate(row.targetPct, row.stopPct)
-                              const fair = empiricalWinProb(row.targetPct, row.stopPct)
-                              return (
-                                <div className="caption" style={{ marginTop: 4, lineHeight: 1.5 }}>
-                                  과거 실측(목표+{rate.target}%/손절-{rate.stop}%, {TP_SL_HORIZON_DAYS}거래일): 목표 {rate.win}% · 손절 {rate.loss}% · 미결 {rate.none}% → 환산 승률 {fair}%
-                                  {row.winProb > fair + 5 && (
-                                    <button
-                                      type="button"
-                                      style={{ marginLeft: 6, background: 'none', border: 'none', padding: 0, color: 'var(--color-brand)', cursor: 'pointer', textDecoration: 'underline' }}
-                                      onClick={() => updateItem(idx, { winProb: fair })}
-                                    >
-                                      실측값으로
-                                    </button>
-                                  )}
-                                </div>
-                              )
-                            })()}
-                          </div>
-                        </div>
-
-                        {/* 분할 진입 */}
-                        <div className="sim-split-section">
-                          <span className="sim-split-label">분할 비율</span>
-                          <div className="sim-split-grid">
-                            <NumInput label="1차" value={row.split1} suffix="%" min={0} max={100}
-                              onChange={(v) => updateItem(idx, { split1: clampPercent(v, 0, 100) })} />
-                            <NumInput label="2차" value={row.split2} suffix="%" min={0} max={100}
-                              onChange={(v) => updateItem(idx, { split2: clampPercent(v, 0, 100) })} />
-                            <NumInput label="3차" value={row.split3} suffix="%" min={0} max={100}
-                              onChange={(v) => updateItem(idx, { split3: clampPercent(v, 0, 100) })} />
-                            <div className="sim-split-total">
-                              <span className="sim-input-label">합계</span>
-                              <span className={`sim-split-sum${splitOver ? ' sim-neg' : splitTotal === 100 ? ' sim-pos' : ''}`}>
-                                {formatNumber(splitTotal, 0)}%
-                              </span>
-                              {splitOver && <span className="sim-split-warn">100% 초과</span>}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 파생 지표 */}
-                        <div className="sim-derived-row">
-                          <div className="sim-derived-item">
-                            <span className="sim-derived-label">R:R 비율</span>
-                            <RRBar rr={meta.rr} />
-                          </div>
-                          <div className="sim-derived-item">
-                            <span className="sim-derived-label">켈리 추천 비율</span>
-                            <span className="sim-derived-value">{formatNumber(meta.kelly, 1)}%</span>
-                            <span className="sim-derived-hint">
-                              ({formatKrw(totalCapital * meta.kelly / 100)})
-                            </span>
-                          </div>
-                          <div className="sim-derived-item">
-                            <span className="sim-derived-label">기대손익</span>
-                            <span className={`sim-derived-value${meta.ev >= 0 ? ' sim-pos' : ' sim-neg'}`}>
-                              {meta.ev >= 0 ? '+' : ''}{formatKrw(meta.ev)}
-                            </span>
-                          </div>
-                          <div className="sim-derived-item">
-                            <span className="sim-derived-label">체결 반영 투자금</span>
-                            <span className="sim-derived-value">{formatKrw(meta.splitInvested)}</span>
-                          </div>
-                        </div>
-
-                        {/* 등급 안내 */}
-                        {meta.grade === 'D' && (
-                          <div className="sim-grade-warn">
-                            이 거래는 기대값이 음수이거나 R:R이 불리합니다.
-                            목표 상승률을 높이거나 손절을 좁히거나 승률을 재검토하세요.
-                          </div>
-                        )}
-                        {meta.grade === 'C' && meta.rr < 2 && (
-                          <div className="sim-grade-caution">
-                            R:R이 2:1 미만입니다. 목표 대비 손절 비율 개선을 권장합니다.
-                          </div>
-                        )}
-
-                        <div className="sim-stock-footer">
-                          <button className="sim-btn sim-btn--danger" onClick={() => removeRow(idx)}>종목 제거</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )
-        }
-      </div>
+      <ItemsSection
+        totalCapital={totalCapital}
+        items={items}
+        expandedIdx={expandedIdx}
+        setExpandedIdx={setExpandedIdx}
+        addSearch={addSearch}
+        setAddSearch={setAddSearch}
+        addResults={addResults}
+        setAddResults={setAddResults}
+        setAddFocused={setAddFocused}
+        addWrapRef={addWrapRef}
+        itemMeta={itemMeta}
+        statusMeta={statusMeta}
+        updateItem={updateItem}
+        addRow={addRow}
+        removeRow={removeRow}
+        showAddDropdown={showAddDropdown}
+      />
 
       {/* ── 목표 달성 경로 ── */}
-      <Detail>
-      {items.filter(i => i.code !== 'CASH').length > 0 && monthlyProfitTarget > 0 && (
-        <details className="sim-section collapsible">
-          <summary className="collapsible__summary">
-            <span className="sim-section-label">목표 달성 경로</span>
-            <span className="muted collapsible__hint">고급 — 가정 기반 참고용</span>
-          </summary>
-          <p className="sim-section-desc">
-            승률 가정 기반 · 주 1사이클(월~금) 기준 — 과거 10년 실측에서 주 단위 목표/손절 매매의 비용 차감 기대값은 목표·손절 조합과 무관하게 0% 안팎이었습니다.
-          </p>
-          <div className="sim-goal-plan">
-            <div className="sim-goal-row">
-              <span className="sim-goal-label">1사이클 기대수익</span>
-              <span className={`sim-goal-value ${weeklyPlan.cycleEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
-                {weeklyPlan.cycleEV >= 0 ? '+' : ''}{formatKrw(weeklyPlan.cycleEV)}
-              </span>
-            </div>
-            <div className="sim-goal-row">
-              <span className="sim-goal-label">1사이클 전량 목표 달성 시</span>
-              <span className="sim-goal-value sim-pos">+{formatKrw(weeklyPlan.cycleMaxProfit)}</span>
-            </div>
-            <div className="sim-goal-row sim-goal-row--highlight">
-              <span className="sim-goal-label">월 4사이클 기준 기대수익</span>
-              <span className={`sim-goal-value ${weeklyPlan.monthlyEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
-                {weeklyPlan.monthlyEV >= 0 ? '+' : ''}{formatKrw(weeklyPlan.monthlyEV)}
-              </span>
-            </div>
-            <div className="sim-goal-row">
-              <span className="sim-goal-label">월 목표</span>
-              <span className="sim-goal-value">{formatKrw(monthlyProfitTarget)}</span>
-            </div>
-            {/* 달성률 프로그레스 바 */}
-            <div className="sim-goal-progress-wrap">
-              <div className="sim-goal-progress-track">
-                <div
-                  className={`sim-goal-progress-fill ${weeklyPlan.progressPct >= 100 ? 'sim-goal-progress-fill--done' : weeklyPlan.progressPct >= 50 ? 'sim-goal-progress-fill--half' : 'sim-goal-progress-fill--low'}`}
-                  style={{ width: `${Math.min(100, weeklyPlan.progressPct)}%` }}
-                />
-              </div>
-              <span className="sim-goal-progress-label">{formatNumber(weeklyPlan.progressPct, 1)}%</span>
-            </div>
-            {weeklyPlan.cycleEV > 0 ? (
-              <>
-                <div className="sim-goal-row">
-                  <span className="sim-goal-label">달성 예상</span>
-                  <span className="sim-goal-value">
-                    {weeklyPlan.cyclesNeeded < 1000
-                      ? `${weeklyPlan.weeksNeeded}주 ≈ ${formatNumber(weeklyPlan.weeksNeeded / 4, 1)}개월`
-                      : '현재 조건으로 달성 불가'}
-                  </span>
-                </div>
-                {weeklyPlan.gapToTarget > 0 && (
-                  <div className="sim-goal-hint">
-                    💡 목표까지 월 {formatKrw(weeklyPlan.gapToTarget)} 부족 —
-                    투자금을 {formatNumber((monthlyProfitTarget / weeklyPlan.monthlyEV), 1)}배 늘리거나
-                    종목 수익률/승률 개선 필요
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="sim-goal-hint sim-goal-hint--warn">
-                ⚠️ 현재 포트폴리오의 기대수익이 0 이하입니다. 종목 파라미터를 점검하세요.
-              </div>
-            )}
-            {/* 종목별 목표 기여 */}
-            <div className="sim-goal-perstock">
-              <span className="sim-goal-perstock-title">종목별 1사이클 기여 (목표 달성 시)</span>
-              {weeklyPlan.perStock.map(s => (
-                <div key={s.code} className="sim-goal-perstock-row">
-                  <span className="sim-goal-perstock-name">{s.name}<span className="sim-goal-perstock-code"> {s.code}</span></span>
-                  <span className="sim-goal-perstock-meta">목표 +{formatNumber(s.targetPct, 1)}% / 손절 -{formatNumber(s.stopPct, 1)}%</span>
-                  <span className="sim-goal-perstock-ev sim-pos">목표 달성 +{formatKrw(s.targetGainNet)}</span>
-                  <span className="sim-goal-perstock-ev sim-neg">손절 시 {formatKrw(s.stopLossNet)}</span>
-                  <span className={`sim-goal-perstock-ev ${s.ev >= 0 ? 'sim-pos' : 'sim-neg'}`}>기대 {s.ev >= 0 ? '+' : ''}{formatKrw(s.ev)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </details>
-      )}
-      </Detail>
+      <GoalPathSection
+        items={items}
+        monthlyProfitTarget={monthlyProfitTarget}
+        weeklyPlan={weeklyPlan}
+      />
 
       {/* ── 시나리오 분석 ── */}
       {items.length > 0 && (
-        <div className="sim-section">
-          <span className="sim-section-label">시나리오 분석</span>
-          <Detail><p className="sim-section-desc">체결 반영 투자금 기준 · 수수료·세금 차감 순수익</p></Detail>
-
-          <div className="sim-scenario-table-wrap">
-            <table className="sim-scenario-table">
-              <thead>
-                <tr>
-                  <th className="sim-scenario-th">시나리오</th>
-                  <th className="sim-scenario-th">순수익</th>
-                  <th className="sim-scenario-th sim-scenario-th--hide-sm">수익률(투자금 대비)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* 최대 손실 */}
-                <tr className="sim-scenario-row sim-scenario-row--special">
-                  <td className="sim-scenario-td">
-                    <span className="sim-scenario-badge sim-scenario-badge--down">전량 손절</span>
-                  </td>
-                  <td className="sim-scenario-td sim-neg sim-scenario-amount">{formatKrw(summary.maxLoss)}</td>
-                  <td className="sim-scenario-td sim-neg sim-scenario-th--hide-sm">
-                    {summary.allocated > 0 ? formatNumber((summary.maxLoss / summary.allocated) * 100, 2) : '—'}%
-                  </td>
-                </tr>
-                {scenarioRows.map((row) => {
-                  const isPos = row.net >= 0
-                  return (
-                    <tr key={row.pct} className={`sim-scenario-row${row.pct === 0 ? ' sim-scenario-row--zero' : ''}`}>
-                      <td className="sim-scenario-td">
-                        <span className={`sim-scenario-badge${isPos ? ' sim-scenario-badge--up' : ' sim-scenario-badge--down'}`}>
-                          {row.pct > 0 ? '+' : ''}{row.pct}%
-                        </span>
-                      </td>
-                      <td className={`sim-scenario-td sim-scenario-amount${isPos ? ' sim-pos' : ' sim-neg'}`}>
-                        {isPos ? '+' : ''}{formatKrw(row.net)}
-                      </td>
-                      <td className={`sim-scenario-td sim-scenario-th--hide-sm${isPos ? ' sim-pos' : ' sim-neg'}`}>
-                        {summary.allocated > 0 ? `${isPos ? '+' : ''}${formatNumber((row.net / summary.allocated) * 100, 2)}%` : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-                <Detail>
-                {/* 기대값 행 */}
-                <tr className="sim-scenario-row sim-scenario-row--special sim-scenario-row--ev">
-                  <td className="sim-scenario-td">
-                    <span className="sim-scenario-badge sim-scenario-badge--ev">기대값</span>
-                  </td>
-                  <td className={`sim-scenario-td sim-scenario-amount${summary.evAfterCost >= 0 ? ' sim-pos' : ' sim-neg'}`}>
-                    {summary.evAfterCost >= 0 ? '+' : ''}{formatKrw(summary.evAfterCost)}
-                  </td>
-                  <td className={`sim-scenario-td sim-scenario-th--hide-sm${summary.evAfterCost >= 0 ? ' sim-pos' : ' sim-neg'}`}>
-                    {summary.allocated > 0 ? `${summary.evAfterCost >= 0 ? '+' : ''}${formatNumber((summary.evAfterCost / summary.allocated) * 100, 2)}%` : '—'}
-                  </td>
-                </tr>
-                </Detail>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ScenarioSection
+          summary={summary}
+          scenarioRows={scenarioRows}
+        />
       )}
 
       {/* 시세 상세 모달 */}
