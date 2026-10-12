@@ -30,6 +30,16 @@ import {
   type Horizon,
 } from './constants'
 import { pct, signedPct, toEokFromWon } from './lib/format'
+import { bucketAutoPicks, estimateExpectedReturnPct, evaluateAutoPick } from './lib/autoPick'
+import {
+  computeInvestSim,
+  computeVisibleHorizons,
+  filterFeatureStats,
+  hasExtendedHorizon as hasExtendedHorizonData,
+  sortRisers,
+} from './lib/backtestView'
+import { buildPatternMatch } from './lib/patternMatch'
+import { filterSamplesByRule, isRuleKeyMatched, matchesRuleFilter } from './lib/ruleMatch'
 import { isBuySignal, signalCls } from './lib/signal'
 import { autoTierLabel, confidenceMeta, matchMeta, pbrMeta } from './lib/meta'
 
@@ -39,88 +49,6 @@ function navigateTo(route: string) {
     window.dispatchEvent(new PopStateEvent('popstate'))
   } catch { /* ignore */ }
 }
-
-function matchesRuleFilter(indicator: StockIndicators, filter?: RuleFilter): boolean {
-  if (!filter) return true
-  const score = Number(indicator.total_score ?? 0)
-  const signal = String(indicator.signal ?? '')
-  const rsi = indicator.rsi14
-
-  if (filter.scoreMin != null && score < filter.scoreMin) return false
-  if (filter.buyOnly && !isBuySignal(signal)) return false
-  if (filter.rsiMin != null && (rsi == null || rsi < filter.rsiMin)) return false
-  if (filter.rsiMax != null && (rsi == null || rsi > filter.rsiMax)) return false
-  return true
-}
-
-function evaluateAutoPick(indicator: StockIndicators): { tier: AutoPickTier; coreMatchCount: number; edgeScore: number } | null {
-  const score = Number(indicator.total_score ?? 0)
-  const rsi = indicator.rsi14
-  const signal = String(indicator.signal || '').toUpperCase()
-  
-  // 기본 필터: 강한 SELL만 제외
-  if (signal.includes('STRONG_SELL')) return null
-  
-  // 핵심: RSI 범위를 현실적으로 완화 (하락장에서는 저RSI 회복이 일반적)
-  const rsiIdeal = rsi != null && rsi >= 40 && rsi <= 70  // 45-65 대신 40-70
-  const rsiGood = rsi != null && rsi >= 30 && rsi <= 75   // 40-70 대신 30-75
-  const rsiBroad = rsi != null && rsi >= 20 && rsi <= 85  // 30-80 대신 20-85
-  
-  // 신호 품질
-  const buyMatch = isBuySignal(indicator.signal)
-  const notSellMatch = !signal.includes('SELL')
-  
-  // 점수 (선택적)
-  const scoreMatch = score >= 50
-  const scoreGood = score >= 35
-  
-  // 매칭 카운트: RSI는 거의 필수, 신호/점수는 추가 보너스
-  let coreMatchCount = 0
-  if (rsiIdeal) coreMatchCount += 2  // RSI 이상적이면 가중치 높음
-  if (rsiGood && !rsiIdeal) coreMatchCount += 1
-  if (buyMatch) coreMatchCount += 1
-  if (scoreMatch) coreMatchCount += 1
-
-  const warn = String(indicator.warn_grade || '').toUpperCase()
-
-  let tier: AutoPickTier | null = null
-  // 즉시 매수: RSI 이상적 + (BUY 또는 점수 50+)
-  if (rsiIdeal && (buyMatch || scoreMatch)) {
-    tier = 'now'
-  // 반등 준비: RSI 좋음 + (점수 35+)
-  } else if (rsiGood && scoreGood) {
-    tier = 'prepare'
-  // 관찰: RSI 넓은 범위 + SELL 신호 아님
-  } else if (rsiBroad && notSellMatch) {
-    tier = 'watch'
-  }
-  if (!tier) return null
-
-  const scoreComponent = Math.max(0, Math.min(45, score - 40))
-  const rsiCenterBonus = rsi == null ? 0 : Math.max(0, 14 - Math.abs(rsi - 55))
-  const buyBonus = buyMatch ? 14 : 0
-  const warnPenalty = warn === 'WARN' ? 18 : warn === 'WATCH' ? 8 : 0
-  const edgeScore = scoreComponent + rsiCenterBonus + buyBonus + coreMatchCount * 7 - warnPenalty
-
-  return { tier, coreMatchCount, edgeScore: Number(edgeScore.toFixed(1)) }
-}
-
-
-function estimateExpectedReturnPct(input: {
-  baseReturnPct: number
-  coreMatchCount: number
-  ruleMatched: boolean
-  score: number
-  shortMomentumPct: number
-  tier: AutoPickTier
-  profile: ReturnProfileKey
-}): number {
-  // 예전엔 "급등 종목들의 평균 수익(최소 5%)"에 등급·점수·모멘텀 가산 계수를 곱해 1.5~40%로 만들었다.
-  // 급등한 종목만 모은 평균은 결과를 알고 고른 값이라 기대수익이 될 수 없다. 이제 규칙에 맞은 모든 과거 사례의
-  // 평균(규칙 미충족이면 전체 사례 평균)을 그대로 쓴다. 가산 계수는 근거가 없어 쓰지 않는다.
-  return Number(input.baseReturnPct.toFixed(1))
-}
-
 
 function BacktestSkeleton() {
   const [elapsed, setElapsed] = useState(0)
@@ -588,56 +516,15 @@ export default function BacktestPage() {
 
   const patternMatch = useMemo(() => {
     if (!data || !selectedStock || !indicators) return null
-    const score = indicators.total_score ?? 0
-    const signal = indicators.signal ?? ''
-    const rsi = indicators.rsi14 ?? 0
-    const scoreMatch = score >= 70
-    const buyMatch = isBuySignal(signal)
-    const rsiMatch = rsi >= 45 && rsi <= 65
-    return {
-      score,
-      signal,
-      rsi,
-      scoreMatch,
-      buyMatch,
-      rsiMatch,
-      matchCount: [scoreMatch, buyMatch, rsiMatch].filter(Boolean).length,
-      entryGrade: indicators.entry_grade,
-      warnGrade: indicators.warn_grade,
-      distPct: indicators.dist_pct,
-      dataDate: indicators.score_date ?? indicators.indicator_date,
-    }
+    return buildPatternMatch(indicators)
   }, [data, selectedStock, indicators])
 
   const matchedRuleCandidates = useMemo(() => {
     if (!data || !indicators) return [] as Array<{ key: string; label: string; matched: boolean }>
-
-    const score = indicators.total_score ?? 0
-    const signal = indicators.signal ?? ''
-    const rsi = indicators.rsi14
-    const buy = isBuySignal(signal)
-
-    const isMatched = (key: string): boolean => {
-      if (key === 'rule_score70_buy') return score >= 70 && buy
-      if (key === 'rule_score65_buy') return score >= 65 && buy
-      if (key === 'rule_score60_buy') return score >= 60 && buy
-      if (key === 'rule_score55_buy') return score >= 55 && buy
-      if (key === 'rule_rsi30_80') return rsi != null && rsi >= 30 && rsi <= 80
-      if (key === 'rule_rsi40_70') return rsi != null && rsi >= 40 && rsi <= 70
-      if (key === 'rule_rsi45_65') return rsi != null && rsi >= 45 && rsi <= 65
-      if (key === 'rule_score60_rsi40_70') return score >= 60 && rsi != null && rsi >= 40 && rsi <= 70
-      if (key === 'rule_score55_rsi40_70') return score >= 55 && rsi != null && rsi >= 40 && rsi <= 70
-      if (key === 'rule_buy_rsi45_65') return buy && rsi != null && rsi >= 45 && rsi <= 65
-      if (key === 'rule_buy_rsi40_70') return buy && rsi != null && rsi >= 40 && rsi <= 70
-      if (key === 'rule_score65_buy_rsi40_70') return score >= 65 && buy && rsi != null && rsi >= 40 && rsi <= 70
-      if (key === 'rule_score70_buy_rsi45_65') return score >= 70 && buy && rsi != null && rsi >= 45 && rsi <= 65
-      return false
-    }
-
     return (data.ruleCandidates ?? []).map((rule) => ({
       key: rule.key,
       label: rule.label,
-      matched: isMatched(rule.key),
+      matched: isRuleKeyMatched(rule.key, indicators),
     }))
   }, [data, indicators])
 
@@ -647,25 +534,15 @@ export default function BacktestPage() {
   )
 
   const investSim = useMemo(() => {
-    if (!data || investAmount <= 0) return null
-    // 급등 종목 평균이 아니라 모든 과거 사례 평균 — 무작위로 샀을 때의 기준선
-    const avgReturn = Number(data.baseline.avgForwardReturnPct ?? 0)
-    const patternReturn = selectedStockAutoPick?.expectedReturnPct ?? null
-    const avgGain = investAmount * (avgReturn / 100)
-    const patternGain = patternReturn != null ? investAmount * (patternReturn / 100) : null
-    return { avgGain, avgReturn, patternReturn, patternGain }
+    if (!data) return null
+    return computeInvestSim({
+      baselineAvgReturnPct: data.baseline.avgForwardReturnPct,
+      investAmount,
+      patternReturnPct: selectedStockAutoPick?.expectedReturnPct ?? null,
+    })
   }, [data, investAmount, selectedStockAutoPick])
 
-  const sorted = useMemo(() => {
-    const mult = sortDir === 'desc' ? -1 : 1
-    return (data?.risers ?? []).slice().sort((a, b) => {
-      if (sortKey === 'forwardReturnPct') return (a.forwardReturnPct - b.forwardReturnPct) * mult
-      if (sortKey === 'totalScore') return (a.totalScore - b.totalScore) * mult
-      if (sortKey === 'rsi14') return ((a.rsi14 ?? 0) - (b.rsi14 ?? 0)) * mult
-      if (sortKey === 'asof') return a.asof.localeCompare(b.asof) * mult
-      return 0
-    })
-  }, [data, sortKey, sortDir])
+  const sorted = useMemo(() => sortRisers(data?.risers ?? [], sortKey, sortDir), [data, sortKey, sortDir])
 
   const toggleSort = (key: typeof sortKey) => {
     if (sortKey === key) {
@@ -686,57 +563,35 @@ export default function BacktestPage() {
     if (!selectedRuleKey || !data) return []
     const rule = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
     if (!rule || !rule.filter) return []
-
-    const { scoreMin, buyOnly, rsiMin, rsiMax } = rule.filter
-    return sorted.filter((row) => {
-      if (scoreMin != null && row.totalScore < scoreMin) return false
-      if (buyOnly && !isBuySignal(row.signal)) return false
-      if (rsiMin != null && (row.rsi14 == null || row.rsi14 < rsiMin)) return false
-      if (rsiMax != null && (row.rsi14 == null || row.rsi14 > rsiMax)) return false
-      return true
-    })
+    return filterSamplesByRule(sorted, rule.filter)
   }, [selectedRuleKey, data, sorted])
 
-  const visibleFeatureStats = useMemo(() => {
-    const rows = data?.featureStats ?? []
-    if (showAllFeatureRows) return rows
-
-    return rows.filter((row) => Math.min(row.baselineMatches, row.riserMatches) >= 5)
-  }, [data?.featureStats, showAllFeatureRows])
+  const visibleFeatureStats = useMemo(
+    () => filterFeatureStats(data?.featureStats ?? [], showAllFeatureRows),
+    [data?.featureStats, showAllFeatureRows],
+  )
 
   const hiddenFeatureCount = Math.max(0, (data?.featureStats ?? []).length - visibleFeatureStats.length)
 
   const showCheckDropdown =
     checkFocused && checkSearch.trim().length >= 2 && checkResults.length > 0
 
-  const visibleHorizons = useMemo(() => {
-    const base = new Set<number>(DEFAULT_VISIBLE_HORIZONS)
-    const available = new Set<number>((data?.availableHorizons ?? []).map((h) => Number(h)))
-    for (const h of EXTENDED_HORIZONS) {
-      if (available.has(h)) base.add(h)
-    }
-    base.add(horizon)
-    return HORIZONS.filter((h) => base.has(h))
-  }, [data?.availableHorizons, horizon])
+  const visibleHorizons = useMemo(
+    () => computeVisibleHorizons(data?.availableHorizons, horizon),
+    [data?.availableHorizons, horizon],
+  )
 
-  const hasExtendedHorizon = useMemo(() => {
-    const available = new Set<number>((data?.availableHorizons ?? []).map((h) => Number(h)))
-    return EXTENDED_HORIZONS.some((h) => available.has(h))
-  }, [data?.availableHorizons])
+  const hasExtendedHorizon = useMemo(
+    () => hasExtendedHorizonData(data?.availableHorizons),
+    [data?.availableHorizons],
+  )
 
   const hasFundamental =
     indicators &&
     (indicators.pbr != null || indicators.per != null ||
      indicators.roe != null || indicators.debt_ratio != null)
 
-  const autoPickBuckets = useMemo(
-    () => ({
-      now: autoPicks.filter((row) => row.tier === 'now'),
-      prepare: autoPicks.filter((row) => row.tier === 'prepare'),
-      watch: autoPicks.filter((row) => row.tier === 'watch'),
-    }),
-    [autoPicks],
-  )
+  const autoPickBuckets = useMemo(() => bucketAutoPicks(autoPicks), [autoPicks])
 
   return (
     <div className="bt-page">
