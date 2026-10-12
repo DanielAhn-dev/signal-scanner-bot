@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
 import { apiFetch } from '../../lib/api'
+import { useFillerRows } from '../../hooks/useFillerRows'
 
 /*
  * 알림 테스트 페이지 — 26열 그리드 정렬
@@ -52,11 +53,12 @@ export default function AlertsPage() {
     }
   }
 
-  /* 배경 격자를 채울 빈 행 수 */
-  const EMPTY_ROWS = 36
+  /* 배경 격자를 채울 빈 행 수 — 고정 36줄은 화면보다 길어 빈 스크롤이 생겼다. 남는 높이만큼만 */
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const fillerRows = useFillerRows(sheetRef)
 
   return (
-    <div className="xls-page-inset">
+    <div ref={sheetRef} className="xls-page-inset">
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
 
         {/* 26열 colgroup — 배경 격자 26열과 1:1 정렬 */}
@@ -182,9 +184,9 @@ export default function AlertsPage() {
           </tr>
 
           {/* ── 빈 행으로 격자 채우기 ── */}
-          {Array.from({ length: EMPTY_ROWS }, (_, i) => (
-            <tr key={`e-${i}`} className={`xls-row${i % 2 === 0 ? '' : ' xls-row--even'}`}>
-              <td className="xls-cell xls-cell--empty" colSpan={TOTAL_COLS} />
+          {Array.from({ length: fillerRows }, (_, i) => (
+            <tr key={`e-${i}`} data-filler className={`xls-row${i % 2 === 0 ? '' : ' xls-row--even'}`}>
+              {Array.from({ length: TOTAL_COLS }, (_, c) => <td key={c} className="xls-cell xls-cell--empty" />)}
             </tr>
           ))}
 

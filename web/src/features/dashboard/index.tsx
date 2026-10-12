@@ -21,6 +21,7 @@ import { readUserState } from '../../lib/userState'
 import { personalSetup, type InvestorProfile } from '../../lib/startPlan'
 import type { DropDayView } from '../../lib/dropDay'
 import { renderDropDayRows } from './dropDayRows'
+import { useFillerRows } from '../../hooks/useFillerRows'
 import { pickIndustrySectors, sectorChange } from '../../lib/sectorDisplay'
 
 type SectorItem = {
@@ -186,7 +187,6 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [sectors, setSectors]     = useState<SectorItem[]>([])
   const [topSector, setTopSector] = useState<string>('')
   const [lastScan, setLastScan] = useState<{ tradeDate: string | null; updatedAt: string | null } | null>(null)
-  const [fillerRows, setFillerRows] = useState(0)
   const [marketShift, setMarketShift] = useState<MarketShiftView | null>(null)
   const [dropDay, setDropDay] = useState<DropDayView | null>(null)
   const [dropDayOpen, setDropDayOpen] = useState(false)
@@ -244,30 +244,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     }).catch(() => {})
   }, [showMarketDetail])
 
-  // 빈 여백 줄은 실제 내용 높이를 재서 화면에 남는 만큼만 채운다(내용이 화면보다 길면 0줄).
-  // 예전엔 내용을 21줄로 가정해 창 높이만으로 셌기 때문에, 카드가 늘어난 뒤로 빈 줄만큼 스크롤이 생겼다.
+  // 표 아래 빈 셀 줄 — 화면에 남는 높이만큼만(useFillerRows 참고)
   const sheetRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const sheet = sheetRef.current
-    if (!sheet) return
-    const update = () => {
-      const fillers = sheet.querySelectorAll<HTMLTableRowElement>('tr[data-filler]')
-      let fillerHeight = 0
-      fillers.forEach((row) => { fillerHeight += row.offsetHeight })
-      const rowHeight = fillers[0]?.offsetHeight || (window.innerWidth < 1024 ? 26 : 22)
-      const contentHeight = sheet.scrollHeight - fillerHeight
-      const spare = sheet.clientHeight - contentHeight - 1
-      const next = Math.max(0, Math.min(60, Math.floor(spare / rowHeight)))
-      setFillerRows((prev) => (prev === next ? prev : next))
-    }
-    update()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(update)
-    observer.observe(sheet)
-    const table = sheet.querySelector('table')
-    if (table) observer.observe(table)
-    return () => observer.disconnect()
-  }, [])
+  const fillerRows = useFillerRows(sheetRef)
 
   const nav = (r: string) => onNavigate?.(r)
 
@@ -603,7 +582,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           {Array.from({ length: fillerRows }, (_, i) => (
             <tr key={`empty${i}`} data-filler className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
-              <td className="xls-cell xls-cell--empty" colSpan={6}/>
+              {/* 사이드 패널처럼 열마다 빈 셀 — 한 칸으로 합치면 세로 격자선이 사라진다 */}
+              {Array.from({ length: 6 }, (_, c) => <td key={c} className="xls-cell xls-cell--empty"/>)}
             </tr>
           ))}
 
