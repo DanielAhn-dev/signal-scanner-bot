@@ -4,7 +4,7 @@
 .my-plan__title { font-weight: 700; }
 .my-plan__summary { flex: 1 1 auto; min-width: 0; }
 .my-plan__edit, .my-plan__more, .my-plan__cancel { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--color-border-default); border-radius: 4px; background: transparent; color: var(--color-brand); font: inherit; font-size: 12px; cursor: pointer; }
-.my-plan__more { margin-top: 6px; border: 0; padding: 0; }
+.my-plan__more { border: 0; padding: 0; }
 .my-plan__note { margin: 6px 0 0; color: var(--color-text-secondary); line-height: 1.5; }
 .my-plan__form { display: grid; gap: 10px; margin-top: 10px; }
 .my-plan__form label, .my-plan__form fieldset { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; }
@@ -18,3 +18,6 @@
 .my-plan__save { padding: 4px 14px; border: 0; border-radius: 4px; background: var(--color-brand); color: var(--color-text-inverse); font: inherit; font-weight: 600; cursor: pointer; }
 .my-plan__save:disabled, .my-plan__cancel:disabled { opacity: 0.6; cursor: default; }
 .my-plan__status { color: var(--color-error); }
+.my-plan__goal { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; width: 100%; margin-top: 6px; padding: 0; border: 0; background: transparent; color: var(--color-text-primary); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.my-plan__bar { display: inline-block; width: 80px; height: 6px; border-radius: 3px; background: var(--color-bg-tertiary); overflow: hidden; }
+.my-plan__bar > span { display: block; height: 100%; background: var(--color-brand); }

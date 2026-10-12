@@ -10,7 +10,6 @@ import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { FLOW_STEPS } from '../../navigation'
 import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
-import GoalSummaryStrip from '../goal-tracker/GoalSummaryStrip'
 import MyPlanCard from '../my-plan/MyPlanCard'
 import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { useJourney } from '../../lib/journey'
@@ -76,21 +75,18 @@ type PortfolioSummary = {
 // 종목 선별 흐름(FLOW_STEPS 1~7)은 '종목 연구' 탭과 각 화면 위 n/7 안내에 남기고 여기서는 링크 하나로 줄였다.
 const ADMIN_TODO_STEPS: Array<{ key: string; label: string; desc: string; route?: string }> = [
   { key: 'control-audit', route: 'control?tab=audit', label: '관제 검산', desc: '어젯밤 배치·기록에 이상이 없는지 먼저 확인' },
-  { key: 'portfolio', label: '비중 경고', desc: '아래 보유 종목 대응(한도 초과분 KODEX 200으로)을 처리했는지 확인' },
+  { key: 'portfolio', label: '비중 경고', desc: '아래 내 계좌(실제) 줄의 대응 필요(한도 초과분 KODEX 200으로)를 처리했는지 확인' },
   { key: 'goal-tracker', label: '적립 진행', desc: '이번 달 입금이 들어갔고 계획선을 따라가는지 확인' },
   { key: 'market', label: `종목 연구 (${FLOW_STEPS.length}단계)`, desc: '매일 볼 필요 없음 — 봇 판단 근거를 따질 때만 1 시장부터' },
 ]
 
 type MarketTileKey = 'kospi' | 'kosdaq' | 'sp500' | 'nasdaq' | 'usdkrw' | 'gold'
+/** 대시보드에는 한 줄 요약만 — 나머지 지수·뉴스는 시장 화면에서 */
 const MARKET_TILES: Array<{ key: MarketTileKey; label: string }> = [
   { key: 'kospi', label: '코스피' },
   { key: 'kosdaq', label: '코스닥' },
-  { key: 'sp500', label: 'S&P 500' },
-  { key: 'nasdaq', label: '나스닥' },
   { key: 'usdkrw', label: '원/달러' },
-  { key: 'gold', label: '금' },
 ]
-const NEWS_LIMIT = 5
 
 // 셀 스타일 헬퍼
 const S = {
@@ -121,6 +117,17 @@ const S = {
     color: 'var(--color-brand)',
     cursor: 'pointer',
     fontSize: 10,
+  } as React.CSSProperties,
+  summary: {
+    fontSize: 11,
+    whiteSpace: 'normal',
+    lineHeight: 1.5,
+    wordBreak: 'keep-all',
+    padding: '5px 8px',
+  } as React.CSSProperties,
+  quiet: {
+    fontSize: 10,
+    color: 'var(--color-text-tertiary)',
   } as React.CSSProperties,
 }
 
@@ -183,7 +190,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [dropDayOpen, setDropDayOpen] = useState(false)
   const [indices, setIndices] =useState<Partial<Record<MarketTileKey, { price?: number; changeRate?: number }>> | null>(null)
   const [realHoldings, setRealHoldings] = useState<Holding[] | null>(null)
-  const [news, setNews] = useState<Array<{ title: string; link?: string; source?: string }>>([])
+  const [allTodosOpen, setAllTodosOpen] = useState(false)
 
   // chatId가 준비되면 포트폴리오 로드 (스토어 hydration 완료 후 실행)
   useEffect(() => {
@@ -221,26 +228,18 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
         if (res?.data?.dropDay) setDropDay(res.data.dropDay)
       })
       .catch(() => {})
-    apiFetch('/api/ui/news?page=1&pageSize=8', { cacheMs: 60_000, timeoutMs: 12_000 })
-      .then(res => {
-        const rows: unknown[] = Array.isArray(res?.data) ? res.data : []
-        setNews(rows.map((r: any) => ({
-          title: String(r?.title ?? '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim(),
-          link: String(r?.link ?? r?.url ?? '').trim() || undefined,
-          source: String(r?.source ?? '').trim() || undefined,
-        })).filter(n => n.title).slice(0, NEWS_LIMIT))
-      })
-      .catch(() => {})
   }, [])
 
+  // 스캔·섹터는 관리자의 자세히 보기에서만 보여 준다 — 안 보일 때는 부르지 않는다
   useEffect(() => {
+    if (!showMarketDetail) return
     apiFetch('/api/ui?route=sectors&top=8', { cacheMs: 300_000 }).then(res => {
       const list: SectorItem[] = res?.data ?? res?.sectors ?? []
       setSectors(list)
       if (list.length > 0) setTopSector(list[0]?.name ?? '')
       if (res?.lastScan) setLastScan(res.lastScan)
     }).catch(() => {})
-  }, [])
+  }, [showMarketDetail])
 
   useEffect(() => {
     const BASE_ROWS = 21
@@ -269,6 +268,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   })()
 
   const satellite = realHoldings ? satelliteStatus(realHoldings) : null
+  // 대응 필요 = 그대로 보유가 아닌 것(줄이기·옮기기). 비중이 큰 것부터
+  const actionNeeded = (advice ?? []).filter((a) => a.action !== 'keep').sort((x, y) => y.weightPct - x.weightPct)
+  const visibleTodos = isAdmin || allTodosOpen ? todoSteps : todoSteps.filter((s) => s.key === nextTodoKey)
 
   const posCount = portfolio?.positions?.length ?? 0
   // 포트폴리오 화면의 매매비용 설정(차감 여부·요율)을 그대로 따른다
@@ -293,8 +295,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
   return (
     <div className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
-      <MyPlanCard />
-      <GoalSummaryStrip />
+      <MyPlanCard goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>{colWidths.map((width, index) => (
           <col key={index} style={width == null ? undefined : { width }} />
@@ -332,39 +333,47 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           {/* ── 큰 하락일 안내: 코스피 하루 −1.5% 이하일 때만, 평소엔 한 줄(예측 아님) ── */}
           {renderDropDayRows({ view: dropDay, sp500ChangePct: indices?.sp500?.changeRate, rowNum, open: dropDayOpen, onToggle: () => setDropDayOpen((v) => !v), onOpenPlan: () => nav('plan') })}
 
-          {/* ── 오늘의 플로우 헤더 ── */}
+          {/* ── 다음 할 일: 관리자는 오늘 점검 전체, 일반 사용자는 다음 1개만(펼치면 전체) ── */}
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-              {isAdmin ? '오늘 점검' : detailed ? '오늘 할 일' : '다음 할 일'}
-              {isAdmin && (
+              {isAdmin ? '오늘 점검' : '다음 할 일'}
+              {isAdmin ? (
                 <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('reports')}>
                   복기 보기 →
                 </span>
+              ) : todoSteps.length > 1 && (
+                <button type="button" style={{ float: 'right', ...S.link, background: 'none', border: 0, padding: 0, fontWeight: 400 }} aria-expanded={allTodosOpen} onClick={() => setAllTodosOpen((v) => !v)}>
+                  {allTodosOpen ? '접기' : `전체 ${todoSteps.length}단계 보기`}
+                </button>
               )}
             </td>
           </tr>
 
-          {/* 관리자: 오늘 점검(ADMIN_TODO_STEPS) · 사용자: 시드 모으기 가이드 */}
-          {todoSteps.map((s, i) => (
+          {/* 길잡이를 불러오기 전에는 '할 일 없음'을 띄우지 않는다 */}
+          {visibleTodos.length === 0 && (isAdmin || journey) && (
+            <tr className="xls-row xls-row--even">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={6} style={S.quiet}>할 일 없음 — 계획대로 두면 됩니다</td>
+            </tr>
+          )}
+          {visibleTodos.map((s, i) => (
             <tr key={s.key} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>
-                <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginRight: 4, fontSize: 10 }}>{i + 1}</span>
                 <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{s.label.replace(/^\d+\s+/, '')}</span>
               </td>
               <td className="xls-cell" colSpan={2} style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5 }}>
                 {s.desc}
               </td>
-              {/* 마지막 열(F)은 폭이 남는 만큼만이라 링크가 잘렸다 — E·F 두 칸을 묶어 "지금 하기 →"가 온전히 보이게 한다 */}
               <td className="xls-cell" colSpan={2} style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                 <span style={{ ...S.link, ...(s.key === nextTodoKey ? { fontWeight: 700 } : {}) }} onClick={() => nav(s.route ?? s.key)}>{s.key === nextTodoKey ? '지금 하기 →' : '열기 →'}</span>
               </td>
             </tr>
           ))}
 
-          {/* ── 시장 분위기 변화: 자기 과거 대비 위치·변화 현황(예측 아님). 관리자 또는 자세히 보기에서만 ── */}
-          {(isAdmin || detailed) && marketShift && (<>
+          {/* ── 시장 분위기 변화: 자기 과거 대비 위치·변화 현황(예측 아님). 관리자의 자세히 보기에서만 ── */}
+          {showMarketDetail && marketShift && (<>
             <tr className="xls-row">
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>시장 분위기 변화</td>
@@ -396,187 +405,68 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             </tr>
           </>)}
 
-          {/* ── 구분선 ── */}
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.divider} />
           </tr>
 
-          {/* ── 보유 종목 | 미실현 손익 ── */}
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={3} style={{ ...S.header, ...S.midBorder }}>보유 종목</td>
-            <td className="xls-cell" colSpan={3} style={S.header}>미실현 손익</td>
-          </tr>
-
+          {/* ── 요약 세 줄: 실제 계좌 · 실험 계좌 · 오늘 시장. 자세한 건 각 페이지에서 ── */}
           <tr className="xls-row xls-row--even">
             <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={3} style={{ ...S.midBorder, fontSize: 20, fontWeight: 700, lineHeight: 1.2, padding: '4px 6px' }}>
-              {/* 불러온 뒤 보유가 0이면 0 — '—'는 아직 못 불러온 상태만 */}
-              {portfolio ? posCount : '—'}
-              <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-secondary)', marginLeft: 4 }}>종목</span>
-            </td>
-            <td className="xls-cell" colSpan={3} style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2, padding: '4px 6px', color: pnlColor }}>
-              {fmtPnl(pnl)}
-            </td>
-          </tr>
-
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={3} style={S.midBorder}>
-              <span style={S.link} onClick={() => nav('portfolio')}>가상 포트폴리오 →</span>
-            </td>
-            <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-              평가손익 합계 ({loadTradeCostSettings().includeCost ? '수수료·세금 반영' : '보유 포지션 기준'})
-            </td>
-          </tr>
-
-          {/* ── 구분선 ── */}
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={6} style={S.divider} />
-          </tr>
-
-          {/* ── 내 대응: 실계좌 개별 종목이 있으면 종목별 할 일, 없으면 지수를 따라 했을 때의 예상 ── */}
-          {advice && (
-            <>
-              <tr className="xls-row">
-                <td className="xls-row-num">{rowNum()}</td>
-                <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-                  {advice.length > 0 ? '내 보유 종목, 이렇게 대응하세요' : '이대로 따라 하면'}
-                  <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav(advice.length > 0 ? 'portfolio' : 'goal-tracker')}>
-                    {advice.length > 0 ? '보유 입력·수정 →' : '목표 자세히 →'}
-                  </span>
-                </td>
-              </tr>
-              {advice.length === 0 && (
-                <tr className="xls-row xls-row--even">
-                  <td className="xls-row-num">{rowNum()}</td>
-                  <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.6, fontSize: 11, padding: '6px 8px' }}>
-                    {goalView ? (
-                      <>
-                        지금 목표 달성률 <strong>{goalView.target.progressPct.toFixed(0)}%</strong>
-                        {goalView.target.etaMonth
-                          ? <> · 매달 적립하며 과거 평균(연 {goalView.settings.planAnnualPct}%) 수익이 이어지면 <strong>{goalView.target.etaMonth}</strong> 무렵 도달 예상</>
-                          : <> · 지금 속도로는 도달 시점을 잡기 어렵습니다. 월 적립이나 목표를 조정해 보세요</>}
-                        <span style={{ display: 'block', color: 'var(--color-text-tertiary)', fontSize: 10 }}>과거 평균일 뿐 보장이 아닙니다. 개별 종목을 직접 사셨다면 포트폴리오에 입력하면 종목별 대응을 알려드려요.</span>
-                      </>
-                    ) : '시작하기를 마치면 예상 달성 시점을 보여드립니다.'}
-                  </td>
-                </tr>
-              )}
-              {/* 개별주 묶음 전체: 상한 10%·손실 한도 -15% (종목 하나씩은 아래 행) */}
-              {satellite && (satellite.overWeight || satellite.overLoss) && (
-                <tr className="xls-row">
-                  <td className="xls-row-num">{rowNum()}</td>
-                  <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.5, fontSize: 11, padding: '6px 8px', background: 'var(--color-warning-bg)' }}>
-                    <span style={{ fontWeight: 700 }}>개별주 묶음 {satellite.stockCount}종목</span>
-                    <span style={{ marginLeft: 6, fontSize: 10, color: changeColor(satellite.pnlPct) }}>{fmtChange(satellite.pnlPct)}</span>
-                    <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-text-tertiary)' }}>비중 {satellite.weightPct.toFixed(0)}%</span>
-                    {satellite.overWeight && (
-                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 700 }}>
-                        → 개별주가 전체의 {SATELLITE_MAX_WEIGHT_PCT}%를 넘었어요. 새로 사지 말고, 약 {formatKrw(satellite.trimAmount)}만큼 줄이면 {SATELLITE_MAX_WEIGHT_PCT}%로 돌아와요
-                      </span>
-                    )}
-                    {satellite.overLoss && (
-                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 700 }}>
-                        → 개별주 묶음이 {SATELLITE_LOSS_LIMIT_PCT}% 손실 한도에 닿았어요. 이번 분기엔 개별주를 새로 사지 않는 걸 권해요
-                      </span>
-                    )}
-                    <span style={{ display: 'block', color: 'var(--color-text-secondary)', fontSize: 10 }}>
-                      종목 고르기로 지수를 이긴 근거를 못 찾았기 때문에(검증 C1·C15~C27) 개별주는 작게, 잃는 한도를 정해 두는 게 원칙이에요. 비중은 이 앱에 입력한 실계좌 보유 기준이고, 이미 팔아 확정한 손실은 빠져 있어요.
+            <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>내 계좌(실제)</td>
+            <td className="xls-cell" colSpan={3} style={S.summary}>
+              {realHoldings == null ? '불러오는 중…' : realHoldings.length === 0 ? (
+                <span style={{ color: 'var(--color-text-secondary)' }}>직접 매매하는 계좌를 입력하면 종목별 대응을 알려드려요</span>
+              ) : (
+                <>
+                  보유 {realHoldings.length}종목 · {actionNeeded.length > 0 ? <strong>대응 필요 {actionNeeded.length}종목</strong> : '대응할 것 없음'}
+                  {actionNeeded[0] && (
+                    <span style={{ display: 'block', color: 'var(--color-brand)' }}>가장 급한 것: {actionNeeded[0].name} — {actionNeeded[0].headline}</span>
+                  )}
+                  {satellite && (satellite.overWeight || satellite.overLoss) && (
+                    <span style={{ display: 'block', color: 'var(--color-brand)' }}>
+                      {satellite.overWeight
+                        ? `개별주가 전체의 ${SATELLITE_MAX_WEIGHT_PCT}%를 넘었어요 (약 ${formatKrw(satellite.trimAmount)} 줄이면 돌아와요)`
+                        : `개별주 묶음이 ${SATELLITE_LOSS_LIMIT_PCT}% 손실 한도에 닿았어요 — 이번 분기엔 새로 사지 않기`}
                     </span>
-                  </td>
-                </tr>
+                  )}
+                </>
               )}
-              {advice.map((a, i) => (
-                <tr key={`adv${a.code}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
-                  <td className="xls-row-num">{rowNum()}</td>
-                  <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.5, fontSize: 11, padding: '6px 8px' }}>
-                    <span style={{ fontWeight: 700 }}>{a.name}</span>
-                    <span style={{ marginLeft: 6, fontSize: 10, color: changeColor(a.pnlPct) }}>{fmtChange(a.pnlPct)}</span>
-                    <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-text-tertiary)' }}>비중 {a.weightPct.toFixed(0)}%</span>
-                    <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 700 }}>→ {a.headline}</span>
-                    <span style={{ display: 'block', color: 'var(--color-text-secondary)', fontSize: 10 }}>{a.detail}</span>
-                  </td>
-                </tr>
-              ))}
-              <tr className="xls-row">
-                <td className="xls-row-num">{rowNum()}</td>
-                <td className="xls-cell" colSpan={6} style={S.divider} />
-              </tr>
-            </>
-          )}
-
-          {/* ── 오늘의 시장: 지수·환율 (사실 정보만, 봇 판단 근거는 제외) ── */}
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-              오늘의 시장
-              <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('market')}>
-                더 보기 →
-              </span>
+            </td>
+            <td className="xls-cell" style={{ textAlign: 'right' }}>
+              <span style={S.link} onClick={() => nav('portfolio')}>{realHoldings && realHoldings.length === 0 ? '입력하기 →' : '자세히 →'}</span>
             </td>
           </tr>
-          {Array.from({ length: Math.ceil(MARKET_TILES.length / 2) }, (_, i) => (
-            <tr key={`mk${i}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
-              <td className="xls-row-num">{rowNum()}</td>
-              {[MARKET_TILES[i * 2], MARKET_TILES[i * 2 + 1]].map((tile, j) => {
-                const idx = tile ? indices?.[tile.key] : undefined
-                const rate = idx?.changeRate
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>실험 계좌</td>
+            <td className="xls-cell" colSpan={3} style={S.summary}>
+              {portfolio ? (
+                <>평가손익 <strong style={{ color: pnlColor }}>{fmtPnl(pnl)}</strong> · {posCount}종목</>
+              ) : '불러오는 중…'}
+            </td>
+            <td className="xls-cell" style={{ textAlign: 'right' }}>
+              <span style={S.link} onClick={() => nav('portfolio')}>자세히 →</span>
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>오늘 시장</td>
+            <td className="xls-cell" colSpan={3} style={S.summary}>
+              {indices ? MARKET_TILES.map((tile) => {
+                const idx = indices[tile.key]
                 return (
-                  <td key={j} className="xls-cell" colSpan={3} style={{ padding: '4px 6px', ...(j === 0 ? S.midBorder : {}) }}>
-                    {tile && (
-                      <>
-                        <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>{tile.label}</span>
-                        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
-                          {idx?.price != null ? idx.price.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) : '—'}
-                          {rate != null && (
-                            <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 6, color: changeColor(rate) }}>{fmtChange(rate)}</span>
-                          )}
-                        </span>
-                      </>
-                    )}
-                  </td>
+                  <span key={tile.key} style={{ marginRight: 10, whiteSpace: 'nowrap' }}>
+                    {tile.label} {idx?.price != null ? idx.price.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) : '—'}
+                    {idx?.changeRate != null && <span style={{ marginLeft: 3, color: changeColor(idx.changeRate) }}>{fmtChange(idx.changeRate)}</span>}
+                  </span>
                 )
-              })}
-            </tr>
-          ))}
-
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={6} style={S.divider} />
-          </tr>
-
-          {/* ── 주요 뉴스 ── */}
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-              주요 뉴스
-              <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('news')}>
-                전체 보기 →
-              </span>
+              }) : '불러오는 중…'}
+            </td>
+            <td className="xls-cell" style={{ textAlign: 'right' }}>
+              <span style={S.link} onClick={() => nav('market')}>시장 →</span>
             </td>
           </tr>
-          {news.length === 0 && (
-            <tr className="xls-row xls-row--even">
-              <td className="xls-row-num">{rowNum()}</td>
-              <td className="xls-cell" colSpan={6} style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-                뉴스를 불러오는 중이거나 아직 없습니다
-              </td>
-            </tr>
-          )}
-          {news.map((n, i) => (
-            <tr key={`nw${i}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
-              <td className="xls-row-num">{rowNum()}</td>
-              <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.5, fontSize: 11 }}>
-                {n.link ? (
-                  <a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>{n.title}</a>
-                ) : n.title}
-                {n.source && <span style={{ marginLeft: 6, fontSize: 9, color: 'var(--color-text-tertiary)' }}>{n.source}</span>}
-              </td>
-            </tr>
-          ))}
 
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>

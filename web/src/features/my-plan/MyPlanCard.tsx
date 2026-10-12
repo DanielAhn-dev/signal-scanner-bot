@@ -27,7 +27,10 @@ function summary(plan: Plan): string {
   return parts.join(' · ')
 }
 
-export default function MyPlanCard() {
+/** 목표 진행 — 대시보드가 이미 불러온 목표 트래커 값을 넘긴다 (같은 요청을 두 번 하지 않게) */
+export type PlanGoal = { progressPct: number; gapPct: number }
+
+export default function MyPlanCard({ goal }: { goal?: PlanGoal | null }) {
   const navigate = useNavigate()
   const chatId = useCurrentChatId()
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -168,8 +171,14 @@ export default function MyPlanCard() {
           </div>
         </div>
       )}
-      {!editing && (
-        <button type="button" className="my-plan__more" onClick={() => navigate('/plan')}>버틸 하락폭 표 보기 <ChevronRight size={12} aria-hidden /></button>
+      {!editing && goal && (
+        <button type="button" className="my-plan__goal" onClick={() => navigate('/goal-tracker')} aria-label="목표 트래커 열기">
+          <span>목표</span>
+          <span className="my-plan__bar" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.max(0, goal.progressPct))}%` }} /></span>
+          <span>{goal.progressPct.toFixed(0)}%</span>
+          <span style={{ color: goal.gapPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>계획 대비 {goal.gapPct >= 0 ? '+' : ''}{goal.gapPct.toFixed(1)}%</span>
+          <span className="my-plan__more">목표 자세히 <ChevronRight size={12} aria-hidden /></span>
+        </button>
       )}
     </section>
   )
