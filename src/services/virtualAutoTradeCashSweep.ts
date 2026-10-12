@@ -1,9 +1,10 @@
 /**
  * 유휴현금 스윕(cash sweep).
  *
- * 자동매매가 실거래 후보를 못 찾아 현금이 그대로 방치되는 구간(방어장·성과게이트 보수모드 등)에서,
- * 시드 대비 항상 남겨두는 최소 현금(FLAT_RESERVE_PCT)을 넘는 유휴현금을 ETF로 옮겨 둔다.
- * 실거래 매수에 현금이 필요해지면 스윕 포지션에서 자금을 돌려준다.
+ * 봇 계좌를 코어(지수 ETF)와 개별주 몫(시드의 SATELLITE_CAP_PCT)으로 나누고, 몫을 넘는 현금을 지수 ETF로 옮겨 둔다.
+ * 지수 보유분은 개별주 매수 자금으로 팔지 않는다(2026-10-12). 예전엔 개별주 매수에 현금이 모자라거나 현금이
+ * 30만원 밑으로 떨어지면 지수를 팔아 채웠다 — 지수를 싸게 팔아 개별주를 사고, 개별주에서 손절하는 경로가 됐다.
+ * 이제 개별주는 몫 안의 현금으로만 사고, 잃은 몫은 지수로 메우지 않는다.
  *
  * 어디에 둘지 = 항상 지수 ETF(KODEX 200). 금리 ETF는 지수 ETF 가격이 없을 때만 대신 쓴다.
  *   2026-09-29 검증(100만+월 50만 적립 10년·2천만 거치 5/10년, 모든 월말 시작점, 다음 날 체결·배당·CD 세후):
@@ -14,7 +15,7 @@
  *   예전엔 항상 CD금리 ETF였다 — 봇 자금 대부분(2026-09 기준 약 95%)이 연 2~3%에 묶여 있었다.
  *
  * 시장 레짐별 현금 하한(minCashReservePct)과는 별개의 고정 비율을 쓴다 — 레짐 로직에 얽히면
- * 방어모드 진입/해제 시마다 스윕 매수·매도가 반복돼 수수료만 나가는 휘핑쏘가 생기기 때문.
+ * 방어모드 진입/해제 시마다 스윕 매수가 반복되기 때문.
  */
 
 /** 스윕 매매에 쓰는 전략 ID. AUTO_TRADE_STRATEGY_ID와 달라서 성과게이트·승률 통계에서 자동 제외된다. */
@@ -40,72 +41,37 @@ export function isIndexSweepCode(code: string | null | undefined): boolean {
   return INDEX_SWEEP_CODES.includes(String(code ?? "").trim());
 }
 
-/** 시드 대비 항상 순수 현금으로 남겨두는 비율 (레짐과 무관하게 고정) */
-const FLAT_RESERVE_PCT = 10;
 /**
- * 이 금액 미만의 유휴현금은 스윕하지 않는다.
- * 청산 임계값(CASH_SWEEP_LIQUIDATE_THRESHOLD, 30만원)과의 간격(히스테리시스)을 넓게 둬서
- * 현금이 30만~50만원대를 오갈 때마다 스윕 매수/청산이 반복되며 수수료·세금만 나가는
- * 왕복 손실(휘핑쏘)을 줄인다. 예전엔 50만원이라 간격이 20만원뿐이었다.
+ * 개별주 몫(위성) 상한: 봇 계좌의 개별주 평가액 + 개별주용 현금을 합쳐 시드의 이 비율까지만 둔다.
+ * 나머지는 전부 지수 ETF(코어)에 둔다. 예전엔 "시드 10%는 현금"만 정하고 개별주 보유분은 따로 셌다.
+ */
+export const SATELLITE_CAP_PCT = 10;
+/**
+ * 이 금액 미만의 유휴현금은 스윕하지 않는다 (몇만 원씩 자주 사서 수수료만 나가는 것 방지).
+ * 월 입금이 들어온 회차는 이 하한 없이 입금액만큼 산다 (resolveCashSweepIdleAmount의 depositAmount).
  */
 const CASH_SWEEP_MIN_BUY_AMOUNT = 1_000_000;
-/** 실거래용 가용현금이 이 밑으로 떨어지면 스윕 포지션을 전량 현금화한다 */
-export const CASH_SWEEP_LIQUIDATE_THRESHOLD = 300_000;
 
+/**
+ * 지수 ETF로 옮길 유휴현금.
+ * - 개별주용 현금 = 시드 × SATELLITE_CAP_PCT − 개별주 평가액 (개별주가 이미 몫을 채웠거나 넘었으면 0)
+ * - 그 위의 현금은 지수로 간다. 개별주에서 번 돈도 몫을 넘으면 지수로 옮겨진다.
+ * - 개별주에서 잃은 몫은 지수를 팔아 채우지 않는다 (2026-10-12: 지수를 팔아 개별주를 사는 경로를 없앰).
+ * - 이번 회차에 월 입금이 들어왔으면 입금액(현금 한도 안)은 최소 금액과 무관하게 지수로 산다 — 새 돈은 지수로.
+ */
 export function resolveCashSweepIdleAmount(input: {
   availableCash: number;
   seedCapital: number;
+  /** 봇 계좌 개별주(지수 ETF 제외) 평가액 */
+  satelliteValue?: number;
+  depositAmount?: number;
 }): number {
   const availableCash = Math.max(0, input.availableCash);
   const seedCapital = Math.max(0, input.seedCapital);
   if (seedCapital <= 0) return 0;
-  const reserve = seedCapital * (FLAT_RESERVE_PCT / 100);
-  const idle = Math.max(0, availableCash - reserve);
-  return idle >= CASH_SWEEP_MIN_BUY_AMOUNT ? Math.floor(idle) : 0;
-}
-
-export function shouldLiquidateCashSweep(input: {
-  availableCash: number;
-  sweepPositionValue: number;
-}): boolean {
-  if (input.sweepPositionValue <= 0) return false;
-  return input.availableCash < CASH_SWEEP_LIQUIDATE_THRESHOLD;
-}
-
-/**
- * 다른 필터를 모두 통과한 실제 매수 후보가 현금 부족으로만 막혔을 때, 스윕 포지션 전량이 아니라
- * 부족분만큼만 매도하기 위한 수량을 계산한다. 전량 청산(runCashSweepLiquidateStep)과 달리
- * 이 경로는 실제 매수가 성사될 후보가 있을 때만 호출되므로, 매매 빈도는 실제 매수 빈도에 비례하고
- * 나머지 스윕 잔량은 계속 이자를 태운다.
- */
-export function resolveCashSweepTopUpQty(input: {
-  cashNeeded: number;
-  availableCash: number;
-  sweepQty: number;
-  sweepPrice: number;
-}): number {
-  if (input.sweepQty <= 0 || input.sweepPrice <= 0) return 0;
-  if (input.cashNeeded <= input.availableCash) return 0;
-  // 매수 뒤에도 청산 임계값만큼은 현금이 남게 판다. 부족분만 팔면 매수 직후 현금이 0 근처가 되어
-  // 같은 회차 끝의 청산 점검에 걸려 스윕을 또 팔았다(2026-10-06: 보충 11주 → 청산 45주 → 한 시간 뒤 28주 재매수).
-  const shortfall = input.cashNeeded + CASH_SWEEP_LIQUIDATE_THRESHOLD - input.availableCash;
-  return Math.min(input.sweepQty, Math.ceil(shortfall / input.sweepPrice));
-}
-
-/**
- * 현금이 청산 임계값 밑으로 떨어졌을 때 팔 스윕 수량: 고정 예비 현금(시드의 FLAT_RESERVE_PCT)을 채울 만큼만.
- * 예전엔 전량 현금화해서, 다음 회차에 예비 현금을 넘는 금액이 유휴현금으로 잡혀 다시 사들이는 왕복이 생겼다
- * (2026-10-01·10-06, 수백만 원 규모 매도 후 같은 날 재매수).
- */
-export function resolveCashSweepRestoreQty(input: {
-  availableCash: number;
-  seedCapital: number;
-  sweepQty: number;
-  sweepPrice: number;
-}): number {
-  if (input.sweepQty <= 0 || input.sweepPrice <= 0 || input.seedCapital <= 0) return 0;
-  const reserve = input.seedCapital * (FLAT_RESERVE_PCT / 100);
-  const need = reserve - Math.max(0, input.availableCash);
-  if (need <= 0) return 0;
-  return Math.min(input.sweepQty, Math.ceil(need / input.sweepPrice));
+  const satelliteCash = Math.max(0, seedCapital * (SATELLITE_CAP_PCT / 100) - Math.max(0, input.satelliteValue ?? 0));
+  const idle = Math.max(0, availableCash - satelliteCash);
+  const deposit = Math.min(availableCash, Math.max(0, input.depositAmount ?? 0));
+  if (idle >= CASH_SWEEP_MIN_BUY_AMOUNT) return Math.floor(Math.max(idle, deposit));
+  return Math.floor(deposit);
 }

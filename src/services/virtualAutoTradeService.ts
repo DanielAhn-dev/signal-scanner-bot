@@ -2151,7 +2151,6 @@ const {
   commitEtfTrade,
   sellSweepPosition,
   runCashSweepLiquidateStep,
-  ensureCashForBuy,
   fetchCashSweepPositionValue,
   runCashSweepStep,
 } = createCashSweepSteps({
@@ -3705,8 +3704,8 @@ async function runMondayBuyForUser(payload: {
   });
   const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
-  // 스윕(CD금리 ETF)은 언제든 현금화 가능한 유동자금이다. 예전엔 순수 현금만으로 현금하한을 따져서,
-  // 스윕이 현금을 시드 10%까지 파킹한 직후엔 하한(20~35%)에 항상 걸려 신규매수가 원천 차단됐다.
+  // 현금하한(20~35%)은 스윕(지수) 평가액까지 '개별주가 아닌 돈'으로 보고 따진다. 순수 현금만 보면 지수 파킹 직후
+  // 하한에 항상 걸려 신규매수가 원천 차단된다. 실제 매수는 순수 현금 안에서만 한다(지수는 팔지 않음).
   const cashSweepLiquidValue = await fetchCashSweepPositionValue(payload.supabase, chatId);
   let deployableCash = resolveDeployableCash({
     availableCash: availableCash + cashSweepLiquidValue,
@@ -4157,23 +4156,10 @@ async function runMondayBuyForUser(payload: {
       const filterReason = buildAutoTradeFilterReason(candidate);
       let sizing = entryPlan.size(deployableCash);
 
-      // 현금하한은 스윕 평가액을 포함해 계산하므로, 매수액이 순수 현금보다 크면 스윕에서 부족분만
-      // 부분 매도해 보충한다. 보충 후에도 모자라면 순수 현금 기준으로 다시 사이징한다.
-      if (sizing.quantity > 0) {
-        const topUp = await ensureCashForBuy({
-          supabase: payload.supabase,
-          chatId,
-          dryRun: payload.dryRun,
-          requiredCash: sizing.investedAmount,
-          availableCash,
-        });
-        if (topUp.releasedCash > 0) {
-          availableCash += topUp.releasedCash;
-          summary.notes.push(...topUp.notes);
-        }
-        if (Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
-          sizing = entryPlan.size(Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)));
-        }
+      // 현금하한은 스윕(지수) 평가액을 포함해 계산하지만, 지수는 개별주 자금으로 팔지 않는다(2026-10-12).
+      // 매수액이 순수 현금보다 크면 순수 현금 기준으로 다시 사이징한다.
+      if (sizing.quantity > 0 && Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
+        sizing = entryPlan.size(Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)));
       }
 
       if (!sizingNoteAdded) {
@@ -4614,14 +4600,7 @@ export async function runGateCoreForUser(payload: {
       summary.notes.push(`[테스트][교체 매수] ${names.get(code) ?? code}(${code}) ${qty}주 · ${fmtKrw(qty * price)}`);
       continue;
     }
-    const topUp = await ensureCashForBuy({
-      supabase: payload.supabase,
-      chatId,
-      dryRun: false,
-      requiredCash: qty * price,
-      availableCash,
-    });
-    summary.notes.push(...topUp.notes);
+    // 지수 보유분은 개별주 자금으로 팔지 않는다 — 순수 현금 안에서만 산다
     availableCash = Math.max(0, toNumber((await getUserInvestmentPrefs(chatId)).virtual_cash, availableCash));
     qty = Math.min(qty, Math.floor(availableCash / (price * 1.005)));
     if (qty <= 0) {
@@ -5008,8 +4987,8 @@ async function runDailyReviewForUser(payload: {
   });
   const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
-  // 스윕(CD금리 ETF)은 언제든 현금화 가능한 유동자금이다. 예전엔 순수 현금만으로 현금하한을 따져서,
-  // 스윕이 현금을 시드 10%까지 파킹한 직후엔 하한(20~35%)에 항상 걸려 신규매수가 원천 차단됐다.
+  // 현금하한(20~35%)은 스윕(지수) 평가액까지 '개별주가 아닌 돈'으로 보고 따진다. 순수 현금만 보면 지수 파킹 직후
+  // 하한에 항상 걸려 신규매수가 원천 차단된다. 실제 매수는 순수 현금 안에서만 한다(지수는 팔지 않음).
   const cashSweepLiquidValue = await fetchCashSweepPositionValue(payload.supabase, chatId);
   let deployableCash = resolveDeployableCash({
     availableCash: availableCash + cashSweepLiquidValue,
@@ -5832,18 +5811,7 @@ async function runDailyReviewForUser(payload: {
         }
         const { signalGate, holdingProfile, currentQty, currentInvested } = plan;
 
-        // deployableCash는 스윕 평가액을 포함하므로 순수 현금이 모자라면 스윕에서 부족분만 보충한다.
-        const topUp = await ensureCashForBuy({
-          supabase: payload.supabase,
-          chatId,
-          dryRun: payload.dryRun,
-          requiredCash: plan.quantity * executionPrice,
-          availableCash,
-        });
-        if (topUp.releasedCash > 0) {
-          availableCash += topUp.releasedCash;
-          summary.notes.push(...topUp.notes);
-        }
+        // deployableCash는 스윕(지수) 평가액을 포함하지만 지수는 팔지 않으므로 순수 현금 안에서만 산다.
         const addOnQty = capQuantityToCash({
           quantity: plan.quantity,
           availableCash,
@@ -6163,23 +6131,10 @@ async function runDailyReviewForUser(payload: {
         const profileLabel = getStrategyLabel(adjustedEntryProfile.profile) || adjustedEntryProfile.profile;
         let sizing = entryPlan.size(deployableCash);
 
-        // 현금하한은 스윕 평가액을 포함해 계산하므로, 매수액이 순수 현금보다 크면 스윕에서 부족분만
-        // 부분 매도해 보충한다. 보충 후에도 모자라면 순수 현금 기준으로 다시 사이징한다.
-        if (sizing.quantity > 0) {
-          const topUp = await ensureCashForBuy({
-            supabase: payload.supabase,
-            chatId,
-            dryRun: payload.dryRun,
-            requiredCash: sizing.investedAmount,
-            availableCash,
-          });
-          if (topUp.releasedCash > 0) {
-            availableCash += topUp.releasedCash;
-            summary.notes.push(...topUp.notes);
-          }
-          if (Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
-            sizing = entryPlan.size(Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)));
-          }
+        // 현금하한은 스윕(지수) 평가액을 포함해 계산하지만, 지수는 개별주 자금으로 팔지 않는다(2026-10-12).
+        // 매수액이 순수 현금보다 크면 순수 현금 기준으로 다시 사이징한다.
+        if (sizing.quantity > 0 && Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
+          sizing = entryPlan.size(Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)));
         }
 
         if (!sizingNoteAdded) {
@@ -6390,7 +6345,10 @@ async function applySeedRebaseIfDue(chatId: number, prefs: InvestmentPrefs): Pro
  * 월 자동 입금 (monthlyDeposit.ts) — 사용자가 정한 금액을 입금일이 지난 첫 실행 때 가상 현금·시드에 더한다.
  * 시드 재계산 뒤에 호출한다 (재계산이 "시드 + 확정손익"으로 덮어쓰기 전에 입금이 들어가면 입금분이 두 번 셈되지 않게 순서 고정).
  */
-async function applyMonthlyDepositIfDue(supabase: SupabaseClientAny, chatId: number): Promise<string | null> {
+async function applyMonthlyDepositIfDue(
+  supabase: SupabaseClientAny,
+  chatId: number
+): Promise<{ note: string; amount: number } | null> {
   try {
     const { data } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
     const raw = ((data?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
@@ -6400,7 +6358,10 @@ async function applyMonthlyDepositIfDue(supabase: SupabaseClientAny, chatId: num
     const patch = applyDeposit({ prefs: raw, amount: settings.monthlyDeposit, todayKey });
     const saved = await setUserInvestmentPrefs(chatId, patch as InvestmentPrefs);
     if (!saved.ok) return null;
-    return `[월 입금] ${fmtKrw(settings.monthlyDeposit)} 입금 · 가상 현금 ${fmtKrw(Number(patch.virtual_cash))} · 넣은 원금 누적 ${fmtKrw(Number(patch.virtual_total_deposited))}`;
+    return {
+      amount: settings.monthlyDeposit,
+      note: `[월 입금] ${fmtKrw(settings.monthlyDeposit)} 입금 · 가상 현금 ${fmtKrw(Number(patch.virtual_cash))} · 넣은 원금 누적 ${fmtKrw(Number(patch.virtual_total_deposited))}`,
+    };
   } catch (e) {
     console.error("[autoTrade] monthly deposit failed", e);
     return null;
@@ -6652,9 +6613,12 @@ async function runVirtualAutoTradingForChatUnlocked(input: {
   if (holidayNote) dryRun = true;
 
   const seedRebaseNote = dryRun ? null : await applySeedRebaseIfDue(input.chatId, prefs);
-  const depositNote = dryRun ? null : await applyMonthlyDepositIfDue(supabase, input.chatId);
+  // 월 입금: 지수 보유 모드는 매매 전에 넣어 그 회차에 지수로 산다. 종목 봇은 매매가 끝난 뒤 넣어
+  // 개별주 매수에 쓰이지 않고 마지막 스윕에서 전액 지수로 간다 (새 돈은 지수로, 2026-10-12).
+  const depositFirst = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
+  const earlyDeposit = dryRun || !depositFirst ? null : await applyMonthlyDepositIfDue(supabase, input.chatId);
   const distributionNotes = dryRun ? [] : await applyDistributionsIfDue(supabase, input.chatId);
-  if (depositNote || distributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(input.chatId));
+  if (earlyDeposit || distributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(input.chatId));
 
   const defaultSetting = buildDefaultSettingForChat(input.chatId, prefs.risk_profile);
 
@@ -6701,14 +6665,13 @@ async function runVirtualAutoTradingForChatUnlocked(input: {
     ? { notes: [] as string[] }
     : await releaseIndexModeHoldings({ supabase, chatId: input.chatId, dryRun });
 
-  // 매수 판단 전에 스윕 포지션을 먼저 현금화해, 이번 회차 매수에도 그 자금을 쓸 수 있게 한다.
-  const preBuyLiquidate = indexMode
+  // 수동 학습 실행만 지수(스윕) 보유분을 현금화해 이번 회차 매수 판단에 쓴다. 자동 실행은 지수를 팔지 않는다.
+  const preBuyLiquidate = indexMode || !manualLearning
     ? { notes: [] as string[], liquidated: false, releasedCash: 0 }
     : await runCashSweepLiquidateStep({
         supabase,
         chatId: input.chatId,
         dryRun,
-        forceLiquidate: manualLearning,
       }).catch(
         () => ({ notes: [], liquidated: false, releasedCash: 0 })
       );
@@ -6743,20 +6706,23 @@ async function runVirtualAutoTradingForChatUnlocked(input: {
   if (distributionNotes.length) {
     action.notes.unshift(...distributionNotes);
   }
-  if (depositNote) {
-    action.notes.unshift(depositNote);
+  if (earlyDeposit) {
+    action.notes.unshift(earlyDeposit.note);
   }
   if (seedRebaseNote) {
     action.notes.unshift(seedRebaseNote);
   }
 
+  const lateDeposit = dryRun || indexMode || depositFirst ? null : await applyMonthlyDepositIfDue(supabase, input.chatId);
+  if (lateDeposit) action.notes.push(lateDeposit.note);
   const cashSweep = indexMode
     ? { notes: [] as string[] }
     : await runCashSweepStep({
         supabase,
         chatId: input.chatId,
         dryRun,
-        disableParking: manualLearning,
+        disableParking: manualLearning && !lateDeposit,
+        depositAmount: lateDeposit?.amount,
       }).catch(
         () => ({ notes: [] })
       );
@@ -7046,24 +7012,17 @@ export async function runVirtualAutoTradingCycle(input?: {
       const prefs = await getUserInvestmentPrefs(setting.chat_id);
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const cycleSeedRebaseNote = userDryRun ? null : await applySeedRebaseIfDue(setting.chat_id, prefs);
-      const cycleDepositNote = userDryRun ? null : await applyMonthlyDepositIfDue(supabase, setting.chat_id);
+      // 월 입금 순서는 수동 실행과 같다: 지수 보유 모드는 매매 전, 종목 봇은 매매 뒤 (새 돈은 지수로)
+      const depositFirst = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
+      const cycleEarlyDeposit = userDryRun || !depositFirst ? null : await applyMonthlyDepositIfDue(supabase, setting.chat_id);
       const cycleDistributionNotes = userDryRun ? [] : await applyDistributionsIfDue(supabase, setting.chat_id);
-      if (cycleDepositNote || cycleDistributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(setting.chat_id));
+      if (cycleEarlyDeposit || cycleDistributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(setting.chat_id));
 
       // 지수 보유 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexHoldStrategy.ts)
       const indexMode = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
       const indexRelease = indexMode
         ? { notes: [] as string[] }
         : await releaseIndexModeHoldings({ supabase, chatId: setting.chat_id, dryRun: userDryRun });
-
-      // 매수 판단 전에 스윕 포지션을 먼저 현금화해, 이번 회차 매수에도 그 자금을 쓸 수 있게 한다.
-      const preBuyLiquidate = indexMode
-        ? { notes: [] as string[], liquidated: false }
-        : await runCashSweepLiquidateStep({
-            supabase,
-            chatId: setting.chat_id,
-            dryRun: userDryRun,
-          }).catch(() => ({ notes: [], liquidated: false }));
 
       const promotedStrategy = indexMode ? null : await resolveActivePromotedStrategy(supabase, setting.chat_id);
       const actionSummary = indexMode
@@ -7086,18 +7045,21 @@ export async function runVirtualAutoTradingCycle(input?: {
             apiBudget,
           });
 
-      actionSummary.notes.unshift(...preBuyLiquidate.notes);
       actionSummary.notes.unshift(...indexRelease.notes);
       if (cycleDistributionNotes.length) actionSummary.notes.unshift(...cycleDistributionNotes);
-      if (cycleDepositNote) actionSummary.notes.unshift(cycleDepositNote);
+      if (cycleEarlyDeposit) actionSummary.notes.unshift(cycleEarlyDeposit.note);
       if (cycleSeedRebaseNote) actionSummary.notes.unshift(cycleSeedRebaseNote);
 
+      const cycleLateDeposit =
+        userDryRun || indexMode || depositFirst ? null : await applyMonthlyDepositIfDue(supabase, setting.chat_id);
+      if (cycleLateDeposit) actionSummary.notes.push(cycleLateDeposit.note);
       const cashSweep = indexMode
         ? { notes: [] as string[] }
         : await runCashSweepStep({
             supabase,
             chatId: setting.chat_id,
             dryRun: userDryRun,
+            depositAmount: cycleLateDeposit?.amount,
           }).catch(() => ({ notes: [] }));
       actionSummary.notes.push(...cashSweep.notes);
 

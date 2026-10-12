@@ -15,9 +15,6 @@ import {
   INDEX_SWEEP_CODES,
   isIndexSweepCode,
   resolveCashSweepIdleAmount,
-  resolveCashSweepTopUpQty,
-  resolveCashSweepRestoreQty,
-  shouldLiquidateCashSweep,
 } from "./virtualAutoTradeCashSweep";
 
 type SupabaseClientAny = any;
@@ -107,6 +104,36 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     return ((rows ?? []) as Record<string, unknown>[]).filter(
       (row) => parseStrategyMemo(row.memo as string | null).strategyId === CASH_SWEEP_STRATEGY_ID
     );
+  }
+
+  /**
+   * 봇 계좌의 개별주 몫 평가액 — 스윕(지수) 보유분을 뺀 나머지 보유 행을 종가로 평가한다 (종가가 없으면 매수원금).
+   * 실패하면 null — 개별주 몫을 모른 채 현금을 지수로 옮기지 않게 호출측이 그 회차를 쉰다.
+   */
+  async function loadSatelliteValue(supabase: SupabaseClientAny, chatId: number): Promise<number | null> {
+    const { data: rows, error } = await supabase
+      .from(PORTFOLIO_TABLES.positions)
+      .select("code, quantity, invested_amount, memo")
+      .eq("chat_id", chatId)
+      .eq("status", "holding")
+      .is("broker_name", null)
+      .is("account_name", null);
+    if (error) return null;
+    const stockRows = ((rows ?? []) as Record<string, unknown>[]).filter(
+      (row) => parseStrategyMemo(row.memo as string | null).strategyId !== CASH_SWEEP_STRATEGY_ID
+    );
+    if (!stockRows.length) return 0;
+    const codes = [...new Set(stockRows.map((row) => String(row.code ?? "")))];
+    const { data: priceRows, error: priceError } = await supabase.from("stocks").select("code, close").in("code", codes);
+    if (priceError) return null;
+    const closes = new Map(
+      ((priceRows ?? []) as Record<string, unknown>[]).map((row) => [String(row.code ?? ""), toNumber(row.close, 0)] as [string, number])
+    );
+    return stockRows.reduce((sum, row) => {
+      const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+      const close = closes.get(String(row.code ?? "")) ?? 0;
+      return sum + (close > 0 ? qty * close : Math.max(0, toNumber(row.invested_amount, 0)));
+    }, 0);
   }
 
   /**
@@ -283,27 +310,18 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
   }
 
   /**
-   * 유휴현금 스윕 중 "현금화(liquidate)"만 담당하는 단계.
-   * 매수 판단 로직보다 먼저 호출해, 스윕 포지션에 묶여있던 자금을 이번 회차 매수에도 쓸 수 있게 한다.
-   * (예전엔 매수 판단 뒤에만 호출돼, 현금부족으로 스킵된 회차의 스윕 자금이 다음 회차에야 풀렸음)
-   * 현금화가 일어나지 않으면(스윕 포지션 없음/임계값 이상) 아무 것도 하지 않고 조용히 반환한다.
+   * 수동 학습 실행 전용: 지수(스윕) 보유분을 전량 현금화해 이번 회차 개별주 매수 판단에 쓸 수 있게 한다.
+   * 사용자가 직접 고른 실행에서만 부른다. 자동 실행은 지수를 개별주 자금으로 팔지 않는다(2026-10-12) —
+   * 예전엔 현금이 30만원 밑이거나 매수 자금이 모자라면 자동으로 지수를 팔아 채웠다.
    */
   async function runCashSweepLiquidateStep(payload: {
     supabase: SupabaseClientAny;
     chatId: number;
     dryRun: boolean;
-    forceLiquidate?: boolean;
   }): Promise<{ notes: string[]; liquidated: boolean; releasedCash: number }> {
     const notes: string[] = [];
     try {
       const prefs = await deps.getPrefs(payload.chatId);
-      const seedCapital = Math.max(
-        0,
-        toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
-      );
-      const availableCash = Math.max(0, toNumber(prefs.virtual_cash, 0));
-      if (seedCapital <= 0) return { notes, liquidated: false, releasedCash: 0 };
-
       const holding = loadSweepHolding(
         await loadSweepPositionRows(payload.supabase, payload.chatId),
         await loadSweepPrices(payload.supabase)
@@ -311,119 +329,27 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
       if (!holding) return { notes, liquidated: false, releasedCash: 0 };
       const sweepCurrentValue = holding.quantity * holding.price;
 
-      if (!payload.forceLiquidate && !shouldLiquidateCashSweep({ availableCash, sweepPositionValue: sweepCurrentValue })) {
-        return { notes, liquidated: false, releasedCash: 0 };
-      }
-
-      // 평소엔 예비 현금(시드의 10%)을 채울 만큼만 판다. 수동 학습(forceLiquidate)만 전량.
-      const sellQty = payload.forceLiquidate
-        ? holding.quantity
-        : resolveCashSweepRestoreQty({ availableCash, seedCapital, sweepQty: holding.quantity, sweepPrice: holding.price });
-      if (sellQty <= 0) return { notes, liquidated: false, releasedCash: 0 };
-      const isFull = sellQty >= holding.quantity;
-      const sellLabel = isFull ? "전량 현금화" : `${sellQty}주 현금화(예비 현금 복구)`;
-
       if (payload.dryRun) {
         notes.push(
-          `[유휴현금 스윕][테스트] ${holding.name} ${sellLabel} 예정 (평가액 ${fmtKrw(Math.round(holding.price * sellQty))} / 보유 ${fmtKrw(sweepCurrentValue)})${payload.forceLiquidate ? " · 수동 학습 판단용" : ""}`
+          `[유휴현금 스윕][테스트] ${holding.name} 전량 현금화 예정 (평가액 ${fmtKrw(sweepCurrentValue)}) · 수동 학습 판단용`
         );
-        return { notes, liquidated: false, releasedCash: estimateSweepSell(prefs, holding, sellQty).net };
+        return { notes, liquidated: false, releasedCash: estimateSweepSell(prefs, holding, holding.quantity).net };
       }
 
       const { net, pnl } = await sellSweepPosition({
         supabase: payload.supabase,
         chatId: payload.chatId,
         holding,
-        sellQty,
+        sellQty: holding.quantity,
         event: "sweep-liquidate",
-        note: isFull ? "cash-sweep-liquidate" : "cash-sweep-restore-reserve",
+        note: "cash-sweep-liquidate",
       });
-      notes.push(
-        `[유휴현금 스윕] ${holding.name} ${sellLabel} · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)})${payload.forceLiquidate ? " · 수동 학습 판단용" : " · 참고: 유휴현금 파킹용이며 개별 종목 매수 신호가 아닙니다"}`
-      );
+      notes.push(`[유휴현금 스윕] ${holding.name} 전량 현금화 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)}) · 수동 학습 판단용`);
       return { notes, liquidated: true, releasedCash: net };
     } catch (e) {
       console.error("[autoTrade] cash sweep liquidate step failed", e);
       return { notes: [], liquidated: false, releasedCash: 0 };
     }
-  }
-
-  /**
-   * 다른 필터를 모두 통과한 실제 매수 후보가 현금 부족으로만 막혔을 때 호출한다.
-   * 전량 현금화(runCashSweepLiquidateStep)와 달리 부족분만큼만 스윕 포지션을 매도해,
-   * 나머지 잔량은 계속 굴리고 매매(수수료 발생) 빈도는 실제 매수 성사 빈도에만 비례하게 한다.
-   */
-  async function topUpCashSweepForBuy(payload: {
-    supabase: SupabaseClientAny;
-    chatId: number;
-    dryRun: boolean;
-    cashNeeded: number;
-    availableCash: number;
-  }): Promise<{ notes: string[]; releasedCash: number }> {
-    const notes: string[] = [];
-    try {
-      const holding = loadSweepHolding(
-        await loadSweepPositionRows(payload.supabase, payload.chatId),
-        await loadSweepPrices(payload.supabase)
-      );
-      if (!holding) return { notes, releasedCash: 0 };
-
-      const sellQty = resolveCashSweepTopUpQty({
-        cashNeeded: payload.cashNeeded,
-        availableCash: payload.availableCash,
-        sweepQty: holding.quantity,
-        sweepPrice: holding.price,
-      });
-      if (sellQty <= 0) return { notes, releasedCash: 0 };
-
-      if (payload.dryRun) {
-        const prefs = await deps.getPrefs(payload.chatId);
-        notes.push(
-          `[유휴현금 스윕][테스트] ${holding.name} ${sellQty}주 부분 현금화 예정 (신규매수 자금 보충, 평가액 ${fmtKrw(Math.round(holding.price * sellQty))})`
-        );
-        return { notes, releasedCash: estimateSweepSell(prefs, holding, sellQty).net };
-      }
-
-      const { net, pnl } = await sellSweepPosition({
-        supabase: payload.supabase,
-        chatId: payload.chatId,
-        holding,
-        sellQty,
-        event: "sweep-topup",
-        note: "cash-sweep-partial-topup-for-buy",
-      });
-      notes.push(
-        `[유휴현금 스윕] ${holding.name} ${sellQty}주 부분 현금화 · 신규매수 자금 보충 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)})`
-      );
-      return { notes, releasedCash: net };
-    } catch (e) {
-      console.error("[autoTrade] cash sweep top-up step failed", e);
-      return { notes: [], releasedCash: 0 };
-    }
-  }
-
-  /**
-   * 현금하한(deployableCash)은 스윕 포지션 평가액까지 유동자금으로 보고 계산하므로, 사이징된 매수액이
-   * 순수 현금(virtual_cash)보다 클 수 있다. 그 경우 스윕에서 부족분만 부분 매도해 현금을 맞춘다.
-   * 보충 후에도 모자라면 호출측이 순수 현금 기준으로 매수 규모를 줄인다.
-   * topUpCashSweepForBuy가 내부에서 예외를 삼키고 빈 결과를 돌려주므로 여기서 따로 catch하지 않는다.
-   */
-  async function ensureCashForBuy(payload: {
-    supabase: SupabaseClientAny;
-    chatId: number;
-    dryRun: boolean;
-    requiredCash: number;
-    availableCash: number;
-  }): Promise<{ notes: string[]; releasedCash: number }> {
-    const requiredCash = Math.ceil(Math.max(0, payload.requiredCash) * BUY_CASH_BUFFER);
-    if (requiredCash <= payload.availableCash) return { notes: [], releasedCash: 0 };
-    return topUpCashSweepForBuy({
-      supabase: payload.supabase,
-      chatId: payload.chatId,
-      dryRun: payload.dryRun,
-      cashNeeded: requiredCash,
-      availableCash: payload.availableCash,
-    });
   }
 
   /** 현재 보유 중인 유휴현금 스윕 포지션 평가액 (없으면 0) */
@@ -456,12 +382,9 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
 
   /**
    * 유휴현금 스윕 실행 단계. 매수/매도 판단이 모두 끝난 뒤 마지막에 한 번 호출한다.
-   * - 실거래용 현금이 부족하면(CASH_SWEEP_LIQUIDATE_THRESHOLD 미만) 스윕 포지션을 전량 현금화해
-   *   다음 회차 매수 자금으로 돌려준다. (매수 판단 전에도 runCashSweepLiquidateStep으로 선(先)현금화하지만,
-   *   매수/매도 이후 현금이 다시 임계값 밑으로 떨어지는 경우를 대비해 여기서도 동일 점검을 유지한다.)
    * - 스윕은 항상 지수 ETF(KODEX 200)에 둔다. 예전 금리 ETF 보유분은 지수 ETF로 갈아탄다.
-   *   보유 중인 스윕이 반대쪽이면 전량 팔아 갈아탄다.
-   * - 유휴현금이 충분히 쌓였으면 그쪽 ETF를 매수(또는 추가매수 평단 갱신)한다.
+   * - 개별주 몫(시드의 SATELLITE_CAP_PCT − 개별주 평가액)을 넘는 현금, 그리고 이번 회차 월 입금액을 지수 ETF로 산다.
+   * - 지수를 팔아 현금을 만드는 일은 하지 않는다 (갈아타기 제외).
    * 매매 실패는 자동매매 본 로직에 영향을 주지 않도록 통째로 삼킨다(best-effort).
    */
   async function runCashSweepStep(payload: {
@@ -469,16 +392,11 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     chatId: number;
     dryRun: boolean;
     disableParking?: boolean;
+    /** 이번 회차에 들어온 월 입금액 — 최소 매수 금액과 무관하게 지수로 산다 */
+    depositAmount?: number;
   }): Promise<{ notes: string[] }> {
     const notes: string[] = [];
     try {
-      const liquidateResult = await runCashSweepLiquidateStep(payload);
-      if (liquidateResult.notes.length > 0) {
-        notes.push(...liquidateResult.notes);
-      }
-      if (liquidateResult.liquidated) {
-        return { notes };
-      }
       if (payload.disableParking) {
         return { notes };
       }
@@ -536,7 +454,17 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
       const sweepInvested = existingSweep?.invested_amount ?? 0;
 
       // 2) 유휴현금 충분 → 스윕 매수(신규 진입 또는 추가매수 평단 갱신)
-      const idleAmount = resolveCashSweepIdleAmount({ availableCash, seedCapital });
+      const satelliteValue = await loadSatelliteValue(payload.supabase, payload.chatId);
+      if (satelliteValue == null) {
+        notes.push("[유휴현금 스윕] 개별주 보유 조회 실패로 이번 회차는 쉽니다 (다음 회차에 다시)");
+        return { notes };
+      }
+      const idleAmount = resolveCashSweepIdleAmount({
+        availableCash,
+        seedCapital,
+        satelliteValue,
+        depositAmount: payload.depositAmount,
+      });
       if (idleAmount <= 0) return { notes };
       const buyQty = Math.floor(idleAmount / sweepPrice);
       if (buyQty <= 0) return { notes };
@@ -615,7 +543,6 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     commitEtfTrade,
     sellSweepPosition,
     runCashSweepLiquidateStep,
-    ensureCashForBuy,
     fetchCashSweepPositionValue,
     runCashSweepStep,
   };

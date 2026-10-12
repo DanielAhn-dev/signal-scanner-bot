@@ -131,3 +131,44 @@ test("fetchCashSweepPositionValue: 스윕 전략 메모가 붙은 보유분만 �
   });
   assert.equal(await h.steps.fetchCashSweepPositionValue(h.supabase, CHAT_ID), 400_000);
 });
+
+test("runCashSweepStep: 개별주 보유분이 개별주 몫을 채우면 남은 현금은 지수로 간다", async () => {
+  const h = createHarness({
+    prefs: { virtual_cash: 3_000_000, virtual_seed_capital: 20_000_000 },
+    stocks: [
+      { code: "069500", name: "KODEX 200", close: 40_000 },
+      { code: "005930", name: "삼성전자", close: 50_000 },
+    ],
+    // 가짜 DB는 필터를 무시하므로 스윕 행과 개별주 행을 함께 돌려준다 — 스윕 메모가 없는 행만 개별주 몫으로 센다
+    positions: [{ id: 9, code: "005930", quantity: 40, invested_amount: 2_100_000, memo: null }],
+  });
+  await h.steps.runCashSweepStep({ supabase: h.supabase, chatId: CHAT_ID, dryRun: false });
+
+  // 개별주 200만(40주×5만)이 시드 10%를 채웠으므로 현금 300만 → 75주
+  assert.equal((h.writes[0].values as Record<string, unknown>).quantity, 75);
+  assert.equal(h.prefs.virtual_cash, 0);
+});
+
+test("runCashSweepStep: 월 입금 회차는 100만원 미만이어도 입금액만큼 지수를 산다", async () => {
+  const h = createHarness({
+    prefs: { virtual_cash: 2_500_000, virtual_seed_capital: 20_000_000 },
+    stocks: [{ code: "069500", name: "KODEX 200", close: 40_000 }],
+  });
+  await h.steps.runCashSweepStep({ supabase: h.supabase, chatId: CHAT_ID, dryRun: false, depositAmount: 500_000 });
+
+  assert.equal((h.writes[0].values as Record<string, unknown>).quantity, 12);
+  assert.equal(h.prefs.virtual_cash, 2_020_000);
+});
+
+test("runCashSweepStep: 현금이 바닥나도 지수 보유분을 팔지 않는다", async () => {
+  const h = createHarness({
+    prefs: { virtual_cash: 0, virtual_seed_capital: 20_000_000 },
+    stocks: [{ code: "069500", name: "KODEX 200", close: 40_000 }],
+    positions: [{ id: 3, code: "069500", quantity: 400, invested_amount: 16_000_000, memo: SWEEP_MEMO }],
+  });
+  await h.steps.runCashSweepStep({ supabase: h.supabase, chatId: CHAT_ID, dryRun: false });
+
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.tradeLogs.length, 0);
+  assert.equal(h.prefs.virtual_cash, 0);
+});
