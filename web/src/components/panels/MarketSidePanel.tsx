@@ -90,10 +90,8 @@ function buildRows(data: MarketData | null): Row[] {
     mkRow('나스닥',   nasdaq,  'Yahoo'),
     mkRow('다우',     dow,     'Yahoo'),
     mkRow('VIX',      vix,     'Yahoo'),
-    null, // divider
     mkRow('원/달러',  usdkrw,  'Yahoo'),
     mkRow('미 10년물',us10y,   'Yahoo'),
-    null, // divider
     mkRow('금',       gold,    'Yahoo'),
     mkRow('WTI',      wtiOil,  'Yahoo'),
     mkRow('BTC',      bitcoin, 'Binance'),
@@ -244,9 +242,6 @@ export default function MarketSidePanel() {
             ) : (
               <>
                 {rows.map((row, i) => (
-                  row.label === '__div__' ? (
-                    <tr key={i}><td colSpan={4} style={{ height: 4, background: 'var(--color-excel-cell-header)' }}/></tr>
-                  ) : (
                     <tr
                       key={i}
                       className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}${selected === i ? ' xls-row--selected' : ''}`}
@@ -276,7 +271,6 @@ export default function MarketSidePanel() {
                         {row.daily}
                       </td>
                     </tr>
-                  )
                 ))}
               </>
             )}
