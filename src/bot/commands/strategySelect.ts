@@ -9,7 +9,7 @@ export async function handleStrategySelect(
 ): Promise<void> {
   const strategies = [
     { id: "HOLD_SAFE", label: "안전 포지셀", description: "보수 운용, 총 2종목까지 제한 진입" },
-    { id: "REDUCE_TIGHT", label: "타이트 손절", description: "손절 2%, 익절 4%" },
+    { id: "REDUCE_TIGHT", label: "타이트 손절", description: "방어 성향 · 종목별 손절선은 변동성에 따라 넓어짐(기본폭의 최대 2.5배)" },
     { id: "WAIT_AND_DIP_BUY", label: "매수 기회 대기", description: "현금 보유, 저가 진입 대기" },
   ];
 
@@ -98,7 +98,7 @@ export async function handleStrategyCallback(
 
     const strategyDesc: Record<string, string> = {
       HOLD_SAFE: "보수 운용, 총 2종목까지 제한 진입하며 포지션은 보수적으로 관리됨",
-      REDUCE_TIGHT: "손절 2%, 익절 4%로 강화됨",
+      REDUCE_TIGHT: "방어 성향으로 운용(종목별 손절선은 변동성에 따라 넓어질 수 있음)",
       WAIT_AND_DIP_BUY: "신규 매수 중단, 저가 기회 대기",
     };
 

@@ -234,7 +234,7 @@ function formatStrategyOptions(riskLevel: "LOW" | "MEDIUM" | "HIGH"): string {
 
   let options = `\n권장 전략\n`;
   options += `1️⃣ ${strategies.HOLD_SAFE} — 보수 운용, 총 2종목까지 제한 진입\n`;
-  options += `2️⃣ ${strategies.REDUCE_TIGHT} — 손절 2%, 익절 4%\n`;
+  options += `2️⃣ ${strategies.REDUCE_TIGHT} — 방어 성향, 손절선은 종목 변동성에 따라 넓어짐\n`;
   options += `3️⃣ ${strategies.WAIT_AND_DIP_BUY} — 현금 보유, 저가 진입 대기\n`;
   options += `\n/전략선택 으로 선택하세요.`;
 

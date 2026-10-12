@@ -105,7 +105,7 @@ const STRATEGY_OPTIONS = [
   {
     id: 'REDUCE_TIGHT',
     label: '타이트 손절',
-    desc: '손절 2% / 익절 4% · 적극적 리스크 컷',
+    desc: '방어 성향 · 종목별 손절선은 변동성에 따라 넓어짐(기본폭의 최대 2.5배)',
     color: 'var(--color-warning)',
   },
   {
@@ -1055,7 +1055,8 @@ export default function StrategyPage() {
                       <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6 }}>
                         <strong>기본 전략:</strong> 신속한 리스크 관리<br/>
                         <strong>권장 설정:</strong> 기본(base) 1~2종목 | 강세장 ×2.0 | 약세장 ×0.3<br/>
-                        <strong>동작:</strong> 좋은 신호에서만 과감하게. 강세장 확인 시 2~4종목까지 진입, 약세장은 진입 제한
+                        <strong>동작:</strong> 좋은 신호에서만 과감하게. 강세장 확인 시 2~4종목까지 진입, 약세장은 진입 제한<br/>
+                        <strong>손절:</strong> 2%·4%로 고정되지 않습니다. 종목마다 변동성(ATR)에 따라 넓어져(기본폭의 최대 2.5배, 예: 4% → 10%) 실제 손절이 −7% 안팎까지 갈 수 있고, 휴장·주말처럼 점검 사이에 생긴 갭은 막지 못합니다
                       </div>
                     )}
                     {option.id === 'WAIT_AND_DIP_BUY' && (
