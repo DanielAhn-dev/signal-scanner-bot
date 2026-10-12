@@ -12,6 +12,13 @@ import { useToast } from '../../components/ToastProvider'
 import { searchStocks } from '../../lib/stockCache'
 import StockDetailModal from '../../components/StockDetailModal'
 import { empiricalWinProb, lookupTpSlBaseRate, TP_SL_HORIZON_DAYS } from '../../lib/tpSlBaseRates'
+import { SCENARIOS } from './constants'
+import type { CompareResult, PlanHistoryEntry, RecommendSource } from './types'
+import GradeChip from './components/GradeChip'
+import PositionStatusBadge from './components/PositionStatusBadge'
+import RRBar from './components/RRBar'
+import NumInput from './components/NumInput'
+import ComparePanel from './components/ComparePanel'
 import {
   defaultPlanItem,
   readSimulationPlan,
@@ -30,242 +37,12 @@ import {
   calcWeeklyCyclePlan,
   clampPercent,
   getTradeGrade,
-  POSITION_STATUS_LABEL,
   recommendPortfolio,
   calcRequiredAnnualReturn,
   calcAllocationWeight,
   type RecommendationStyle,
-  type PositionStatus,
   type TelegramFormat,
-  type TradeGrade,
 } from './telegramFormat'
-
-const SCENARIOS = [-8, -5, -3, 3, 5, 8]
-
-function GradeChip({ grade }: { grade: TradeGrade }) {
-  const cls =
-    grade === 'A' ? 'sim-grade-a'
-    : grade === 'B' ? 'sim-grade-b'
-    : grade === 'C' ? 'sim-grade-c'
-    : 'sim-grade-d'
-  return <span className={`sim-grade-chip ${cls}`}>{grade}</span>
-}
-
-function PositionStatusBadge({ status, changePct }: { status: PositionStatus; changePct: number | null }) {
-  const cls =
-    status === 'take_profit' ? 'sim-status-badge--profit'
-    : status === 'near_profit' ? 'sim-status-badge--near-profit'
-    : status === 'stop_loss' ? 'sim-status-badge--stop'
-    : status === 'near_stop' ? 'sim-status-badge--near-stop'
-    : 'sim-status-badge--hold'
-  const label = POSITION_STATUS_LABEL[status]
-  return (
-    <span className={`sim-status-badge ${cls}`} title={changePct != null ? `${changePct >= 0 ? '+' : ''}${formatNumber(changePct, 2)}%` : ''}>
-      {label}
-      {changePct != null && (
-        <span className="sim-status-badge-pct">{changePct >= 0 ? '+' : ''}{formatNumber(changePct, 1)}%</span>
-      )}
-    </span>
-  )
-}
-
-function RRBar({ rr }: { rr: number }) {
-  const pct = Math.min(100, (rr / 4) * 100)
-  const color = rr >= 2.5 ? 'var(--color-success)' : rr >= 2.0 ? 'var(--color-brand)' : rr >= 1.5 ? 'var(--color-warning)' : 'var(--color-error)'
-  return (
-    <div className="sim-rr-bar-wrap" title={`R:R = ${formatNumber(rr, 2)}`}>
-      <div className="sim-rr-bar-track">
-        <div className="sim-rr-bar-fill" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span className="sim-rr-label" style={{ color }}>{formatNumber(rr, 1)}:1</span>
-    </div>
-  )
-}
-
-function NumInput({
-  label, value, onChange, min, max, step, suffix,
-}: {
-  label: string
-  value: number | string
-  onChange: (v: number) => void
-  min?: number
-  max?: number
-  step?: number
-  suffix?: string
-}) {
-  return (
-    <div className="sim-input-group">
-      <label className="sim-input-label">{label}</label>
-      <div className="sim-input-row">
-        <input
-          className="sim-input"
-          type="number"
-          min={min}
-          max={max}
-          step={step ?? 1}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value || 0))}
-        />
-        {suffix && <span className="sim-input-suffix">{suffix}</span>}
-      </div>
-    </div>
-  )
-}
-
-function ComparePanel({
-  algoPortfolio,
-  watchlistPortfolio,
-  totalCapital,
-  monthlyTarget,
-  feePct,
-  taxPct,
-  onClose,
-  onApplyAlgo,
-  onApplyWatchlist,
-}: {
-  algoPortfolio: HighlightPlanItem[]
-  watchlistPortfolio: HighlightPlanItem[]
-  totalCapital: number
-  monthlyTarget: number
-  feePct: number
-  taxPct: number
-  onClose: () => void
-  onApplyAlgo: () => void
-  onApplyWatchlist: () => void
-}) {
-  const CYCLES = 4
-
-  function colSummary(portfolio: HighlightPlanItem[]) {
-    const tradeable = portfolio.filter(i => i.code !== 'CASH')
-    const totalEV = tradeable.reduce((acc, i) => acc + calcExpectedValue(i), 0)
-    const plan = calcWeeklyCyclePlan(tradeable, monthlyTarget, feePct, taxPct)
-    const maxProfit = plan.cycleMaxProfit
-    const cycleEV = plan.cycleEV
-    const monthlyEV = cycleEV * CYCLES
-    const weeksNeeded = cycleEV > 0 ? Math.ceil(monthlyTarget / cycleEV) : Infinity
-    return { totalEV, maxProfit, cycleEV, monthlyEV, weeksNeeded }
-  }
-
-  const algoSummary = colSummary(algoPortfolio)
-  const watchSummary = colSummary(watchlistPortfolio)
-
-  // 어느 쪽이 더 유리한지 표시용
-  const algoWins = algoSummary.monthlyEV >= watchSummary.monthlyEV
-
-  function PortfolioCol({
-    label,
-    portfolio,
-    summary,
-    onApply,
-    highlight,
-  }: {
-    label: string
-    portfolio: HighlightPlanItem[]
-    summary: ReturnType<typeof colSummary>
-    onApply: () => void
-    highlight: boolean
-  }) {
-    const tradeable = portfolio.filter(i => i.code !== 'CASH')
-    return (
-      <div className={`sim-compare-col${highlight ? ' sim-compare-col--winner' : ''}`}>
-        <div className="sim-compare-col-head">
-          <span className="sim-compare-col-title">{label}</span>
-          {highlight && <span className="sim-compare-winner-badge">더 유리</span>}
-          <span className="sim-compare-col-count">{tradeable.length}개 종목</span>
-        </div>
-
-        {tradeable.length === 0 ? (
-          <div className="sim-compare-empty">추천 종목 없음 (품질 기준 미충족)</div>
-        ) : (
-          <div className="sim-compare-stock-list">
-            {tradeable.map((item, idx) => {
-              const ev = calcExpectedValue(item)
-              const rr = calcRR(item)
-              return (
-                <div key={`${item.code}-${idx}`} className="sim-compare-stock-row">
-                  <div className="sim-compare-stock-info">
-                    <span className="sim-compare-stock-name">{item.name}</span>
-                    <span className="sim-compare-stock-code">{item.code}</span>
-                  </div>
-                  <div className="sim-compare-stock-metrics">
-                    <span className="sim-compare-metric">{formatKrw(item.amount)}</span>
-                    <span className="sim-compare-metric sim-compare-metric--rr">R:R {formatNumber(rr, 1)}:1</span>
-                    <span className={`sim-compare-metric ${ev >= 0 ? 'sim-pos' : 'sim-neg'}`}>
-                      {ev >= 0 ? '+' : ''}{formatKrw(ev)}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        <div className="sim-compare-summary">
-          <div className="sim-compare-summary-row">
-            <span className="sim-compare-summary-label">1사이클 기대수익</span>
-            <span className={`sim-compare-summary-value ${summary.cycleEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
-              {summary.cycleEV >= 0 ? '+' : ''}{formatKrw(summary.cycleEV)}
-            </span>
-          </div>
-          <div className="sim-compare-summary-row">
-            <span className="sim-compare-summary-label">전량 목표 달성 시</span>
-            <span className="sim-compare-summary-value sim-pos">+{formatKrw(summary.maxProfit)}</span>
-          </div>
-          <div className="sim-compare-summary-row sim-compare-summary-row--highlight">
-            <span className="sim-compare-summary-label">월 기대수익 (×4)</span>
-            <span className={`sim-compare-summary-value ${summary.monthlyEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
-              {summary.monthlyEV >= 0 ? '+' : ''}{formatKrw(summary.monthlyEV)}
-            </span>
-          </div>
-          <div className="sim-compare-summary-row">
-            <span className="sim-compare-summary-label">목표 달성 예상</span>
-            <span className="sim-compare-summary-value">
-              {summary.weeksNeeded < 1000
-                ? `${summary.weeksNeeded}주 ≈ ${formatNumber(summary.weeksNeeded / 4, 1)}개월`
-                : '달성 어려움'}
-            </span>
-          </div>
-        </div>
-
-        <button
-          className={`sim-btn ${highlight ? 'sim-btn--primary' : 'sim-btn--ghost'} sim-compare-apply-btn`}
-          onClick={onApply}
-          disabled={tradeable.length === 0}
-        >
-          {label}으로 적용
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="sim-compare-panel">
-      <div className="sim-compare-header">
-        <h3 className="sim-compare-title">📊 포트폴리오 비교</h3>
-        <button className="sim-btn sim-btn--ghost" onClick={onClose}>닫기</button>
-      </div>
-      <p className="sim-compare-desc">
-        동일 투자금 {formatKrw(totalCapital)} 기준 · 월 목표 {formatKrw(monthlyTarget)} · 주 1사이클 기준
-      </p>
-      <div className="sim-compare-grid">
-        <PortfolioCol
-          label="알고리즘 추천"
-          portfolio={algoPortfolio}
-          summary={algoSummary}
-          onApply={onApplyAlgo}
-          highlight={algoWins}
-        />
-        <PortfolioCol
-          label="관심종목 추천"
-          portfolio={watchlistPortfolio}
-          summary={watchSummary}
-          onApply={onApplyWatchlist}
-          highlight={!algoWins}
-        />
-      </div>
-    </div>
-  )
-}
 
 export default function SimulatorPage() {
   const chatId = useCurrentChatId()
@@ -292,7 +69,7 @@ export default function SimulatorPage() {
   const [syncing, setSyncing] = useState(false)
   const [lastServerSavedAt, setLastServerSavedAt] = useState<string>('')
   const [telegramFormat, setTelegramFormat] = useState<TelegramFormat>('detailed')
-  const [history, setHistory] = useState<Array<{ updatedAt: string; plan: any }>>([])
+  const [history, setHistory] = useState<PlanHistoryEntry[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [expandedIdx, setExpandedIdx] = useState<number | null>(0)
@@ -308,9 +85,9 @@ export default function SimulatorPage() {
   const [loadingWatchlist, setLoadingWatchlist] = useState(false)
   const loadingCandidates = loadingAlgo || loadingWatchlist
   // 'algo' = 알고리즘 추천 | 'watchlist' = 관심종목 | 'items' = 현재 종목
-  const [recommendSource, setRecommendSource] = useState<'algo' | 'watchlist' | 'items'>('algo')
+  const [recommendSource, setRecommendSource] = useState<RecommendSource>('algo')
   const [recommendStyle, setRecommendStyle] = useState<RecommendationStyle>('stable')
-  const [compareResult, setCompareResult] = useState<{ algo: HighlightPlanItem[]; watchlist: HighlightPlanItem[] } | null>(null)
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(null)
   const [showCompare, setShowCompare] = useState(false)
   const [showStockDetail, setShowStockDetail] = useState(false)
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
@@ -395,7 +172,7 @@ export default function SimulatorPage() {
 
   const countTradeable = (rows: HighlightPlanItem[]) => rows.filter(r => r.code !== 'CASH').length
 
-  const getCandidatesBySource = (source: 'algo' | 'watchlist' | 'items'): HighlightPlanItem[] => {
+  const getCandidatesBySource = (source: RecommendSource): HighlightPlanItem[] => {
     if (source === 'algo') return algoCandidates
     if (source === 'watchlist') return watchlistCandidates
     return items.filter(i => i.code !== 'CASH')
@@ -849,7 +626,7 @@ export default function SimulatorPage() {
     }
   }
 
-  const loadFromHistory = (entry: { updatedAt: string; plan: any }) => {
+  const loadFromHistory = (entry: PlanHistoryEntry) => {
     applyPlan(entry.plan)
     saveSimulationPlan(entry.plan)
     setLastServerSavedAt(entry.updatedAt)
