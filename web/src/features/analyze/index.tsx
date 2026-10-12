@@ -23,6 +23,10 @@ import { buildNarrativeLine, flowNarrativeSignal, pegNarrativeSignal, shortNarra
 import { advisorStatusStyle, regimeLabel, toneStyle, twoStageActionStyle } from './lib/styles'
 import { formatFlowValue, getFlowMetricLabel } from './lib/flow'
 import { buildAnalyzeShareUrl } from './lib/shareUrl'
+import { calcChartHud, normalizeCandles } from './lib/candles'
+import { calcPriceBarPct, formatDate, formatDateTime } from './lib/dates'
+import { buildShareSummaryLines, buildSignalText } from './lib/shareSummary'
+import { calcAnalysisCoverage, decideEntry, validateEntryGap } from './lib/validation'
 import { useLocalStorageBool } from './hooks/useLocalStorageBool'
 import { useRecentSearches } from './hooks/useRecentSearches'
 
@@ -89,67 +93,12 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   })
 
   // 데이터 신뢰성 검증
-  const dataValidation = useMemo(() => {
-    if (!result || !advisor) return { isReliable: true, warnings: [] as string[] }
-    
-    const warnings: string[] = []
-    const currentPrice = result.close ?? 0
-    const entryMid = advisor.entryLow != null && advisor.entryHigh != null
-      ? (advisor.entryLow + advisor.entryHigh) / 2
-      : null
-    
-    // 진입가와 현재가의 갭 검증 (스케일링 이슈)
-    if (entryMid && currentPrice > 0) {
-      const ratio = Math.max(currentPrice, entryMid) / Math.min(currentPrice, entryMid)
-      if (ratio > 3) {
-        warnings.push(`진입가와 현재가의 갭이 큼 (비율: ${ratio.toFixed(1)}배). DB 데이터 동기화 확인 필요`)
-      } else if (ratio > 2) {
-        warnings.push(`진입가와 현재가의 차이가 예상보다 큼 (비율: ${ratio.toFixed(1)}배)`)
-      }
-    }
-    
-    return {
-      isReliable: warnings.length === 0,
-      warnings,
-    }
-  }, [result, advisor])
-
-  const analysisCoverage = useMemo(() => {
-    if (!result) return { available: 0, total: 5, missing: [] as string[], creditIsProxy: false }
-    const checks = [
-      { label: '가격', ok: result.close != null && result.date != null },
-      { label: '재무', ok: result?.fundamental_gate?.status === 'pass' || result?.fundamental_gate?.status === 'fail' },
-      { label: '기술지표', ok: [result.sma20, result.sma50, result.rsi14].filter((value) => value != null).length >= 2 },
-      { label: '수급', ok: flow?.date != null && (flow?.foreign != null || flow?.institution != null) },
-      { label: '공매도/신용', ok: creditShort?.source === 'db' || creditShort?.source === 'live' },
-    ]
-    return {
-      available: checks.filter((item) => item.ok).length,
-      total: checks.length,
-      missing: checks.filter((item) => !item.ok).map((item) => item.label),
-      creditIsProxy: creditShort?.source === 'proxy',
-    }
-  }, [creditShort, flow, result])
-
-  const entryDecision = useMemo(() => {
-    if (!advisor || !result?.close) {
-      return { label: '판단 보류', reason: '현재가 또는 판정 데이터가 없습니다.', tone: 'neutral' as SignalTone }
-    }
-    if (!dataValidation.isReliable) {
-      return { label: '판단 보류', reason: '가격 기준의 동기화 검증이 필요합니다.', tone: 'warning' as SignalTone }
-    }
-    if (analysisCoverage.available <= 2) {
-      return { label: '데이터 부족', reason: '핵심 데이터가 부족해 진입 판단의 신뢰도가 낮습니다.', tone: 'warning' as SignalTone }
-    }
-    const action = String(advisor?.twoStage?.action || '').toLowerCase()
-    if (action === 'aggressive_buy' || action === 'pilot_buy') {
-      return { label: advisor.twoStage.actionLabel || '진입 검토', reason: advisor.twoStage.reason || advisor.signalReason || '규칙상 진입 검토 구간입니다.', tone: 'positive' as SignalTone }
-    }
-    if (action === 'reduce') {
-      return { label: advisor.twoStage.actionLabel || '비중 축소', reason: advisor.twoStage.reason || advisor.signalReason || '신규 진입보다 리스크 관리가 우선입니다.', tone: 'negative' as SignalTone }
-    }
-    return { label: advisor?.twoStage?.actionLabel || advisor.statusLabel || '관망', reason: advisor?.twoStage?.reason || advisor.signalReason || '현재는 진입 조건 확인이 더 필요합니다.', tone: 'warning' as SignalTone }
-  }, [advisor, analysisCoverage.available, dataValidation.isReliable, result?.close])
+  const dataValidation = useMemo(() => validateEntryGap(result, advisor), [result, advisor])
+  const analysisCoverage = useMemo(() => calcAnalysisCoverage(result, flow, creditShort), [creditShort, flow, result])
+  const entryDecision = useMemo(
+    () => decideEntry(advisor, result, dataValidation, analysisCoverage.available),
+    [advisor, analysisCoverage.available, dataValidation.isReliable, result?.close], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   // 서버에서 내려온 값을 직접 사용한다. 클라이언트 재계산은 서버와 불일치를 유발한다.
   const computedSma20 = result?.sma20 ?? null
@@ -192,24 +141,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
         }
         // OHLCV 캔들 데이터: 서버 series를 OhlcvCandle 형태로 정규화
         const rawData: any[] = res?.data ?? []
-        setCandles(
-          rawData
-            .map((r: any) => ({
-              date: String(r.date || r.Date || ''),
-              open: Number(r.open),
-              high: Number(r.high),
-              low: Number(r.low),
-              close: Number(r.close),
-              volume: Number(r.volume ?? 0),
-            }))
-            .filter((c) => {
-              if (!c.date) return false
-              if (![c.open, c.high, c.low, c.close].every(Number.isFinite)) return false
-              if (c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0) return false
-              return c.high >= Math.max(c.open, c.close, c.low) && c.low <= Math.min(c.open, c.close, c.high)
-            })
-            .sort((a, b) => a.date.localeCompare(b.date))
-        )
+        setCandles(normalizeCandles(rawData))
         setFlow(res?.flow ?? null)
         setCreditShort(res?.creditShort ?? null)
         setAdvisor(res?.advisor ?? null)
@@ -259,105 +191,13 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const formatDate = (value: unknown) => {
-    if (!value) return '—'
-    const d = new Date(String(value))
-    if (Number.isNaN(d.getTime())) return String(value)
-    return d.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      timeZone: 'Asia/Seoul',
-    })
-  }
+  const priceBarPct = calcPriceBarPct(result)
 
-  const formatDateTime = (value: unknown) => {
-    if (!value) return '—'
-    const d = new Date(String(value))
-    if (Number.isNaN(d.getTime())) return String(value)
-    return d.toLocaleString('ko-KR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Seoul',
-    })
-  }
+  const shareSummaryLines = useMemo(() => buildShareSummaryLines(result, advisor), [advisor, result])
 
-  const priceBarPct =
-    result?.high != null && result?.low != null && result?.high !== result?.low
-      ? ((result.close - result.low) / (result.high - result.low)) * 100
-      : null
+  const chartHud = useMemo(() => calcChartHud(candles), [candles])
 
-  const shareSummaryLines = useMemo(() => {
-    if (!result) return [] as string[]
-    const lines: string[] = []
-
-    if (result.high != null && result.low != null) {
-      lines.push(`일중 범위 ${formatKrw(result.low)} ~ ${formatKrw(result.high)}`)
-    }
-
-    const fundamentalBits = [
-      result.per != null ? `PER ${formatNumber(result.per, 2)}` : null,
-      result.pbr != null ? `PBR ${formatNumber(result.pbr, 2)}` : null,
-      result.roe != null ? `ROE ${formatNumber(result.roe, 2)}%` : null,
-    ].filter(Boolean) as string[]
-    if (fundamentalBits.length > 0) {
-      lines.push(fundamentalBits.join(' / '))
-    }
-
-    if (advisor?.statusLabel || advisor?.finalScore != null) {
-      const advisorParts = [
-        advisor?.statusLabel ? `규칙 판정 ${advisor.statusLabel}` : null,
-        advisor?.finalScore != null ? `${formatNumber(advisor.finalScore, 1)}점` : null,
-        advisor?.twoStage?.actionLabel ? `실행 ${advisor.twoStage.actionLabel}` : null,
-      ].filter(Boolean) as string[]
-      if (advisorParts.length > 0) {
-        lines.push(advisorParts.join(' · '))
-      }
-    }
-
-    if (advisor?.entryLow != null && advisor?.entryHigh != null) {
-      lines.push(`진입구간 ${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}`)
-    }
-
-    if (advisor?.target1 != null && advisor?.stopPrice != null) {
-      lines.push(`1차 목표 ${formatKrw(advisor.target1)} / 손절 ${formatKrw(advisor.stopPrice)}`)
-    }
-
-    return lines.slice(0, 4)
-  }, [advisor, result])
-
-  const chartHud = useMemo(() => {
-    if (!candles.length) {
-      return {
-        support: null as number | null,
-        resistance: null as number | null,
-      }
-    }
-
-    const recent = [...candles].sort((a, b) => a.date.localeCompare(b.date)).slice(-20)
-    const lows = recent.map((c) => Number(c.low)).filter((v) => Number.isFinite(v))
-    const highs = recent.map((c) => Number(c.high)).filter((v) => Number.isFinite(v))
-
-    return {
-      support: lows.length ? Math.min(...lows) : null,
-      resistance: highs.length ? Math.max(...highs) : null,
-    }
-  }, [candles])
-
-  const signalText = useMemo(() => {
-    if (advisor?.twoStage?.actionLabel) return `${advisor.twoStage.actionLabel} (${advisor?.statusLabel || '대기'})`
-    const status = String(advisor?.status || '').toLowerCase()
-    if (status === 'strong_buy' || status === 'buy-now') return '매수+'
-    if (status === 'buy' || status === 'buy-on-pullback') return '매수'
-    if (status === 'add_buy' || status === 'add-buy' || status === 'additional_buy' || status === 'additional-buy' || status === 'scale_in' || status === 'scale-in') return '추가매수'
-    if (status === 'partial_sell') return '익절'
-    if (status === 'sell') return '손절/매도'
-    if (status === 'watch') return '관망'
-    return advisor?.statusLabel || '대기'
-  }, [advisor])
+  const signalText = useMemo(() => buildSignalText(advisor), [advisor])
 
   const analyzeCaptureId = result?.code ? `analyze-result-capture-${result.code}` : 'analyze-result-capture'
 
