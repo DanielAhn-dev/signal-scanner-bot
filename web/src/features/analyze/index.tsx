@@ -1,5 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
-import { userScopedKey } from '../../lib/userState'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import { getStocks, type StockItem } from '../../lib/stockCache'
@@ -18,181 +17,18 @@ import { useCurrentChatId } from '../../stores/profileStore'
 import { defaultPlanItem, readSimulationPlan, saveSimulationPlan } from '../simulator/planStore'
 import ChaseWarningNote from '../../components/ChaseWarningNote'
 import DisclosureCheckCard from '../../components/DisclosureCheckCard'
-
-type SignalTone = 'positive' | 'warning' | 'negative' | 'neutral'
-type NarrativeSignal = { label: string; detail: string; tone: SignalTone }
-
-function pegNarrativeSignal(peg: number | null): NarrativeSignal | null {
-  if (peg == null) return null
-  if (peg < 0.5) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '극저평가 — 고점에서도 추가 상승 근거', tone: 'positive' }
-  if (peg < 1.0) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '저평가 — 성장 대비 주가 매력적', tone: 'positive' }
-  if (peg < 1.5) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '적정가 — 성장률에 맞는 밸류에이션', tone: 'neutral' }
-  if (peg < 3.0) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '다소 고평가 — 성장률 대비 주가 부담', tone: 'warning' }
-  return { label: `PEG ${formatNumber(peg, 2)}`, detail: '고평가 — 수익 성장 대비 과열', tone: 'negative' }
-}
-
-function flowNarrativeSignal(institution: number | null, foreign: number | null): NarrativeSignal | null {
-  if (institution == null && foreign == null) return null
-  const instPos = institution != null && institution > 0
-  const instNeg = institution != null && institution < 0
-  const forPos = foreign != null && foreign > 0
-  const forNeg = foreign != null && foreign < 0
-  if (instPos && forPos) return { label: '기관·외인 동반 매수', detail: '수급 강세 — 추가 상승 여지', tone: 'positive' }
-  if (instNeg && forNeg) return { label: '기관·외인 동반 매도', detail: '수급 이탈 — 단기 조정 주의', tone: 'negative' }
-  if (instPos && (institution! / Math.max(1, Math.abs(foreign ?? 0))) > 1.5) return { label: '기관 주도 매수', detail: '외인 혼조이나 기관 우세', tone: 'positive' }
-  if (forPos && (foreign! / Math.max(1, Math.abs(institution ?? 0))) > 1.5) return { label: '외인 주도 매수', detail: '기관 혼조이나 외인 우세', tone: 'positive' }
-  if (instPos || forPos) return { label: instPos ? '기관 순매수' : '외인 순매수', detail: '단일 주체 매수 진행', tone: 'neutral' }
-  if (instNeg || forNeg) return { label: instNeg ? '기관 순매도' : '외인 순매도', detail: '이탈 주의, 방향 확인 필요', tone: 'warning' }
-  return null
-}
-
-function shortNarrativeSignal(shortRatio: number | null): NarrativeSignal | null {
-  if (shortRatio == null) return null
-  if (shortRatio > 2) return { label: `공매도 ${formatNumber(shortRatio, 1)}%`, detail: '높음 — 하방 압력 상존', tone: 'negative' }
-  if (shortRatio > 0.5) return { label: `공매도 ${formatNumber(shortRatio, 1)}%`, detail: '보통 — 단기 주의', tone: 'warning' }
-  return { label: `공매도 ${formatNumber(shortRatio, 1)}%`, detail: '낮음 — 세력 압박 제한적', tone: 'positive' }
-}
-
-function buildNarrativeLine(
-  peg: NarrativeSignal | null,
-  flowSig: NarrativeSignal | null,
-  shortSig: NarrativeSignal | null,
-): string | null {
-  const parts: string[] = []
-  if (peg) parts.push(peg.detail.split('—')[1]?.trim() ?? peg.detail)
-  if (flowSig) parts.push(flowSig.detail.split('—')[1]?.trim() ?? flowSig.detail)
-  if (shortSig && shortSig.tone !== 'positive') parts.push(`공매도 ${shortSig.detail.split('—')[0]?.trim()}`)
-  return parts.length > 0 ? parts.join('. ') + '.' : null
-}
-
-function toneStyle(tone: SignalTone): { bg: string; color: string; border: string } {
-  if (tone === 'positive') return { bg: 'var(--color-success-bg)', color: 'var(--color-success)', border: 'rgba(0,180,147,0.2)' }
-  if (tone === 'negative') return { bg: 'var(--color-error-bg)', color: 'var(--color-error)', border: 'rgba(240,68,82,0.2)' }
-  if (tone === 'warning') return { bg: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: 'rgba(200,140,0,0.2)' }
-  return { bg: 'var(--color-bg-sunken)', color: 'var(--color-text-secondary)', border: 'var(--color-border-default)' }
-}
-
-function scoreColor(score: number | null): string {
-  if (score == null) return 'var(--color-text-tertiary)'
-  if (score >= 70) return 'var(--color-success)'
-  if (score >= 50) return 'var(--color-warning)'
-  return 'var(--color-error)'
-}
-
-function advisorStatusStyle(status?: string): { background: string; color: string } {
-  if (!status) return { background: 'var(--color-bg-sunken)', color: 'var(--color-text-secondary)' }
-  const s = status.toLowerCase()
-  if (s === 'strong_buy' || s === 'buy') {
-    return { background: 'var(--color-success-bg)', color: 'var(--color-success)' }
-  }
-  if (s.includes('partial') || s === 'watch') {
-    return { background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }
-  }
-  return { background: 'var(--color-error-bg)', color: 'var(--color-error)' }
-}
-
-function regimeLabel(regime?: string): string {
-  const r = String(regime || '').toLowerCase()
-  if (r === 'risk_on') return '리스크온'
-  if (r === 'risk_off') return '리스크오프'
-  if (r === 'hold') return '중립/HOLD'
-  return '—'
-}
-
-function twoStageActionStyle(action?: string): { background: string; color: string } {
-  const a = String(action || '').toLowerCase()
-  if (a === 'aggressive_buy' || a === 'pilot_buy') {
-    return { background: 'var(--color-success-bg)', color: 'var(--color-success)' }
-  }
-  if (a === 'reduce' || a === 'hold') {
-    return { background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }
-  }
-  return { background: 'var(--color-error-bg)', color: 'var(--color-error)' }
-}
-
-function getFlowMetricLabel(metric?: string | null): string | null {
-  if (metric === 'volume') return '거래량'
-  if (metric === 'amount') return '거래대금'
-  return null
-}
-
-function formatCompactKrw(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return '—'
-  const abs = Math.abs(value)
-  const sign = value < 0 ? '-' : ''
-  if (abs >= 100_000_000) {
-    const eok = Math.round(abs / 10_000_000) / 10
-    return `${sign}${formatNumber(eok, eok % 1 === 0 ? 0 : 1)}억원`
-  }
-  if (abs >= 10_000) return `${sign}${formatNumber(Math.round(abs / 10_000))}만원`
-  return `${sign}${formatNumber(Math.round(abs))}원`
-}
-
-function formatFlowValue(value: number | null, metric?: string | null): string {
-  if (value == null) return '—'
-  if (metric === 'volume') return `${formatNumber(value, 0)}주`
-  return metric === 'amount' ? formatCompactKrw(value) : formatKrw(value)
-}
-
-function buildAnalyzeShareUrl(code: string): string {
-  if (typeof window === 'undefined') return ''
-  const url = new URL(window.location.href)
-  url.searchParams.set('code', code)
-  return url.toString()
-}
+import type { NarrativeSignal, SignalTone } from './types'
+import { ANALYZE_PENDING_CODE_KEY, EXECUTION_GUIDE_PENDING_KEY } from './constants'
+import { buildNarrativeLine, flowNarrativeSignal, pegNarrativeSignal, shortNarrativeSignal } from './lib/narrative'
+import { advisorStatusStyle, regimeLabel, toneStyle, twoStageActionStyle } from './lib/styles'
+import { formatFlowValue, getFlowMetricLabel } from './lib/flow'
+import { buildAnalyzeShareUrl } from './lib/shareUrl'
+import { useLocalStorageBool } from './hooks/useLocalStorageBool'
+import { useRecentSearches } from './hooks/useRecentSearches'
 
 const DIVIDER = (
   <div style={{ borderTop: '1px solid var(--color-border-default)', margin: 'var(--space-4) 0' }} />
 )
-
-/** 차트 토글 상태를 localStorage에 영속 저장하는 훅 */
-function useLocalStorageBool(
-  key: string,
-  defaultValue: boolean,
-): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
-  const [value, setValue] = useState<boolean>(() => {
-    try {
-      const stored = localStorage.getItem(key)
-      return stored !== null ? stored === 'true' : defaultValue
-    } catch {
-      return defaultValue
-    }
-  })
-  const set = useCallback((next: React.SetStateAction<boolean>) => {
-    setValue((prev) => {
-      const resolved = typeof next === 'function' ? (next as (v: boolean) => boolean)(prev) : next
-      try { localStorage.setItem(key, String(resolved)) } catch { /* ignore */ }
-      return resolved
-    })
-  }, [key])
-  return [value, set]
-}
-
-/** 최근 검색 종목을 localStorage에 저장/관리 (최대 5개) */
-function useRecentSearches(): [
-  Array<{ code: string; name: string }>,
-  (stock: { code: string; name: string }) => void,
-] {
-  // 사용자별 키 — 로그인 전(키 없음)에는 저장하지 않는다
-  const KEY = userScopedKey('analyze.recentSearches')
-  const [list, setList] = useState<Array<{ code: string; name: string }>>(() => {
-    try {
-      const raw = KEY ? localStorage.getItem(KEY) : null
-      return raw ? (JSON.parse(raw) as Array<{ code: string; name: string }>) : []
-    } catch {
-      return []
-    }
-  })
-  const push = useCallback((stock: { code: string; name: string }) => {
-    setList(prev => {
-      const filtered = prev.filter(s => s.code !== stock.code)
-      const next = [stock, ...filtered].slice(0, 5)
-      try { if (KEY) localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* ignore */ }
-      return next
-    })
-  }, [])
-  return [list, push]
-}
 
 export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const chatId = useCurrentChatId()
@@ -240,7 +76,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const sendResultToExecutionGuide = () => {
     if (!result?.code) return
     try {
-      sessionStorage.setItem('execution_guide_pending_v1', JSON.stringify({ codes: [String(result.code)], source: 'analyze' }))
+      sessionStorage.setItem(EXECUTION_GUIDE_PENDING_KEY, JSON.stringify({ codes: [String(result.code)], source: 'analyze' }))
     } catch {
       // ignore
     }
@@ -409,10 +245,10 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
     try {
       const params = new URLSearchParams(window.location.search)
       const sharedCode = params.get('code')?.trim()
-      const pending = sessionStorage.getItem('analyze_pending_code')
+      const pending = sessionStorage.getItem(ANALYZE_PENDING_CODE_KEY)
       const initialCode = sharedCode || pending
       if (pending) {
-        sessionStorage.removeItem('analyze_pending_code')
+        sessionStorage.removeItem(ANALYZE_PENDING_CODE_KEY)
       }
       if (initialCode) {
         setQuery(initialCode)
