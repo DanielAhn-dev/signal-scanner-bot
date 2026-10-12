@@ -288,7 +288,7 @@ export default function Settings(){
           ].join(String.fromCharCode(10))
         : [
             '종목 매매 봇으로 되돌립니다.',
-            '다음 실행 때 KODEX 200은 유휴현금으로 넘겨 종목 봇이 이어서 씁니다.',
+            '다음 실행 때 KODEX 200은 지수 몫으로 그대로 두고, 종목 봇은 시드의 10% 안에서만 개별주를 삽니다. 지수는 개별주 자금으로 팔지 않습니다.',
             '계속할까요?',
           ].join(String.fromCharCode(10))
     )
