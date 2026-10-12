@@ -4,6 +4,7 @@ import { formatKoDateTime, formatKoDateTimeLong, formatKoreanMoney, toNum } from
 import { clampNum, confidenceLabel, detectCurrentPhase, mapMacroPhaseToRotation } from './phase'
 import { buildMetricsSummary, buildSectorReason } from './sectorText'
 import type { Sector } from '../types'
+import { flow5d, isNextCandidate, latestSectorUpdate, rankSectors } from './tabs'
 
 const sector = (name: string, score: number | null, o: Partial<Sector> = {}): Sector => ({ id: name, name, score, change_rate: 0, ...o })
 
@@ -110,5 +111,47 @@ describe('phase', () => {
     const noWeight = detectCurrentPhase(all, { economicPhase: { phase: 'normal' } })
     expect(noWeight.confidence).toBe(65) // 가중치 기본 12
     expect(noWeight.reason).toContain('거시 국면 참고 불일치')
+  })
+})
+
+describe('tabs', () => {
+  const all = [
+    sector('A', 80, { change_rate: 1, metrics: { flow_inst_5d: 100, flow_foreign_5d: 50 } }),
+    sector('B', 60, { change_rate: -1, metrics: { flow_inst_5d: -500 } }),
+    sector('C', 45, { change_rate: 2, metrics: {} }),
+    sector('D', 30, { change_rate: 3, metrics: { flow_foreign_5d: 20 } }),
+    sector('E', 41, { change_rate: 0.5, updated_at: '2026-10-09T01:00:00Z' }),
+    sector('F', null, { change_rate: 5 }),
+  ]
+  it('수급 합과 다음 섹터 후보 조건', () => {
+    expect(flow5d(all[0])).toBe(150)
+    expect(flow5d(all[2])).toBe(0)
+    expect(isNextCandidate(all[3])).toBe(true) // 점수 30이지만 수급 플러스
+    expect(isNextCandidate(all[2])).toBe(true) // 오르고 점수 45
+    expect(isNextCandidate(all[1])).toBe(false)
+    expect(isNextCandidate(all[5])).toBe(false) // 점수 없음
+  })
+  it('상위 탭은 점수 55 이상 점수순, 없으면 전체', () => {
+    const r = rankSectors(all, 'promising')
+    expect(r.promising.map((s) => s.name)).toEqual(['A', 'B'])
+    expect(r.displayed.map((s) => s.name)).toEqual(['A', 'B'])
+    const none = rankSectors([sector('X', 10), sector('Y', 20)], 'promising')
+    expect(none.promising).toEqual([])
+    expect(none.displayed.map((s) => s.name)).toEqual(['Y', 'X'])
+  })
+  it('다음 탭은 수급 합 내림차순, 같으면 등락률 내림차순', () => {
+    const r = rankSectors(all, 'next')
+    expect(r.displayed.map((s) => s.name)).toEqual(['A', 'D', 'C', 'E'])
+    expect(rankSectors(all, 'all').displayed.map((s) => s.name)).toEqual(['A', 'D', 'C', 'E'])
+  })
+  it('원본 배열은 건드리지 않는다', () => {
+    const copy = all.map((s) => s.name)
+    rankSectors(all, 'next')
+    expect(all.map((s) => s.name)).toEqual(copy)
+  })
+  it('가장 최근 갱신 시각', () => {
+    expect(latestSectorUpdate([])).toBeNull()
+    expect(latestSectorUpdate(all)).toBe('2026-10-09T01:00:00.000Z')
+    expect(latestSectorUpdate([sector('Z', 1, { updated_at: 'bad' })])).toBeNull()
   })
 })

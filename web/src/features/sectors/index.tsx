@@ -33,8 +33,9 @@ import { ANALYZE_PENDING_CODE_KEY, DEFAULT_LEADERS_CRITERIA, LS_KEY, NATURE_BG, 
 import type { PhaseDetectionResult, Sector, SectorLeader, SectorMarketOverviewSnapshot, Tab } from "./types"
 import { readLS, writeLS } from "./lib/cache"
 import { detectCurrentPhase } from "./lib/phase"
-import { formatKoDateTimeLong, formatKoreanMoney, toNum } from "./lib/format"
+import { formatKoDateTimeLong, formatKoreanMoney } from "./lib/format"
 import { buildMetricsSummary, buildSectorReason } from "./lib/sectorText"
+import { isNextCandidate, latestSectorUpdate, rankSectors, sortByScore } from "./lib/tabs"
 
 // ── 공통 컴포넌트 ─────────────────────────────────────────────────────────
 
@@ -184,12 +185,9 @@ function SectorSummaryTable({
   onRefresh?: () => void
   refreshing?: boolean
 }) {
-  const sorted = [...all].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+  const sorted = sortByScore(all)
   const promisingCount = sorted.filter((sector) => (sector.score ?? 0) >= 55).length
-  const nextCount = all.filter((sector) => {
-    const flow5d = (toNum(sector.metrics?.flow_foreign_5d) ?? 0) + (toNum(sector.metrics?.flow_inst_5d) ?? 0)
-    return flow5d > 0 || ((sector.change_rate ?? 0) > 0 && (sector.score ?? 0) >= 40)
-  }).length
+  const nextCount = all.filter(isNextCandidate).length
   const topNames = sorted.slice(0, 3).map((sector) => sector.name).join(" · ") || "—"
   const phaseLabel = detected.phase ? PHASE_LABELS[detected.phase] : "판단중"
   const phaseMeta = detected.phase ? ROTATION_CYCLE.find((phase) => phase.phase === detected.phase) : null
@@ -680,15 +678,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   const [marketOverview, setMarketOverview] = useState<SectorMarketOverviewSnapshot | null>(null)
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(initAll.length > 0 ? new Date().toISOString() : null)
   const detected = useMemo(() => detectCurrentPhase(all, marketOverview), [all, marketOverview])
-  const latestUpdatedAt = useMemo(() => {
-    const values = all
-      .map((sector) => sector.updated_at)
-      .filter((value): value is string => Boolean(value))
-      .map((value) => new Date(value).getTime())
-      .filter((value) => Number.isFinite(value))
-    if (values.length === 0) return null
-    return new Date(Math.max(...values)).toISOString()
-  }, [all])
+  const latestUpdatedAt = useMemo(() => latestSectorUpdate(all), [all])
   const displayUpdatedAt = latestUpdatedAt ?? lastLoadedAt
 
   const loadData = useCallback(async (force = false) => {
@@ -764,22 +754,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   }, [loadSectorLeaders, sectorLeaders])
 
   // 탭별 정렬/필터
-  const sorted = [...all].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-  const promising = sorted.filter((s) => (s.score ?? 0) >= 55)
-  const next = [...all]
-    .filter((s) => {
-      const flow5d = (toNum(s.metrics?.flow_foreign_5d) ?? 0) + (toNum(s.metrics?.flow_inst_5d) ?? 0)
-      return flow5d > 0 || ((s.change_rate ?? 0) > 0 && (s.score ?? 0) >= 40)
-    })
-    .sort((a, b) => {
-      const flowA = (toNum(a.metrics?.flow_foreign_5d) ?? 0) + (toNum(a.metrics?.flow_inst_5d) ?? 0)
-      const flowB = (toNum(b.metrics?.flow_foreign_5d) ?? 0) + (toNum(b.metrics?.flow_inst_5d) ?? 0)
-      const flowDiff = flowB - flowA
-      if (flowDiff !== 0) return flowDiff
-      return (b.change_rate ?? 0) - (a.change_rate ?? 0)
-    })
-
-  const displayed = tab === "promising" ? (promising.length > 0 ? promising : sorted) : next
+  const { displayed } = rankSectors(all, tab)
 
   useEffect(() => {
     if (tab === "promising" || tab === "next") {
