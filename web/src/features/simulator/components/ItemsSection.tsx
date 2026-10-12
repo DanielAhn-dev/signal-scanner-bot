@@ -91,7 +91,7 @@ export default function ItemsSection({
 
       {/* ── 이번 주 집행 요약 ── */}
       {items.filter(i => i.code !== 'CASH').length > 0 && (() => {
-        const signals = statusMeta.filter((s, i) => items[i]?.code !== 'CASH')
+        const signals = statusMeta.filter((_s, i) => items[i]?.code !== 'CASH')
         const takeProfitItems = signals.filter(s => s.status === 'take_profit')
         const nearProfitItems = signals.filter(s => s.status === 'near_profit')
         const stopLossItems = signals.filter(s => s.status === 'stop_loss')
