@@ -85,6 +85,36 @@ def further(i, h=60):
     return K[i + 1:i + h + 1].min() / K[i] - 1
 
 
+def event_stats(days_k):
+    """K 인덱스 목록(오래된 순) → 20거래일 간격 독립 사건의 3개월 안 추가 하락 비율·1년 뒤 수익"""
+    ev, last = [], -999
+    for i in days_k:
+        if i - last > 20:
+            ev.append(i)
+        last = i
+    f = np.array([further(e) for e in ev if e + 60 < len(K)])
+    v = np.array([K[e + 250] / K[e] - 1 for e in ev if e + 250 < len(K)])
+    return {
+        "events": len(ev),
+        "further60": {"down5Pct": int(round((f <= -0.05).mean() * 100)), "down10Pct": int(round((f <= -0.10).mean() * 100))},
+        "h250": {"n": int(len(v)), "medianPct": round(float(np.median(v) * 100), 1), "upPct": int(round((v > 0).mean() * 100))},
+    }
+
+
+def build_rally_facts(years):
+    """급등일(+3% 이상)·52주 신고가 날. 오를 때 몰아서 사고 싶은 순간에 보여 줄 수치"""
+    up = [i + 1 for i, (d, r) in enumerate(zip(kr_dates, kr)) if d >= "19970101" and r >= 0.03]
+    hi = [j for j in range(250, len(K)) if kd[j] >= "19970101" and K[j] >= K[j - 250:j].max()]
+    base_days = [j for j in range(len(K)) if kd[j] >= "19970101"]
+    v = np.array([K[j + 250] / K[j] - 1 for j in base_days if j + 250 < len(K)])
+    return {
+        "surge": {"threshold": 3, "perYear": round(len(up) / years, 1), **event_stats(up)},
+        "newHigh": {"perYear": round(len(hi) / years, 1), **event_stats(hi)},
+        # 평소 아무 날 1년 뒤(겹치는 창 전체, 사건 단위 아님)
+        "baseH250": {"medianPct": round(float(np.median(v) * 100), 1), "upPct": int(round((v > 0).mean() * 100))},
+    }
+
+
 def build_web_facts():
     sel = np.array([d >= "19970101" for d in kr_dates])
     years = sel.sum() / 250
@@ -113,16 +143,17 @@ def build_web_facts():
         "period": f"{kr_dates[0][:4]}-{kr_dates[0][4:6]}~{END[:4]}-{END[4:6]}",
         "buckets": buckets,
         "baseFurther60": base_further,
+        "rally": build_rally_facts(years),
         "us": {"period": f"2016-01~{END[:4]}-{END[4:6]}", "beta": round(float(b), 2), "r2Pct": int(round(r2 * 100))},
     }
     from datetime import date
     meta = {
-        "title": "코스피 하락일 빈도·이후 흐름",
+        "title": "코스피 큰 하락·급등일 빈도·이후 흐름",
         "asOf": f"{END[:4]}-{END[4:6]}",
         "generated": date.today().isoformat(),
         "script": "scripts/research/build_drop_day_facts.py",
-        "sample": f"코스피 종가 {facts['period']}(배당 제외), 큰 하락 뒤 수익은 20거래일 안에 다시 난 하락을 한 번으로 센 독립 사건",
-        "caveat": "과거 평균일 뿐 이번에도 같다는 뜻이 아님. 약 3번 중 1번은 1년 뒤에도 마이너스. 미국 몫은 간밤 S&P500 하나로만 본 근사(장중 선물·아시아 시장은 반영 안 됨). 추가 하락 비율은 평소 아무 날과 큰 차이가 없고(−3% 이하만 다소 높음), 2016년 이후로는 그 차이도 없음",
+        "sample": f"코스피 종가 {facts['period']}(배당 제외), 큰 하락·급등·신고가 뒤 수익은 20거래일 안에 다시 난 같은 날을 한 번으로 센 독립 사건",
+        "caveat": "과거 평균일 뿐 이번에도 같다는 뜻이 아님. 약 3번 중 1번은 1년 뒤에도 마이너스. 미국 몫은 간밤 S&P500 하나로만 본 근사(장중 선물·아시아 시장은 반영 안 됨). 추가 하락 비율은 평소 아무 날과 큰 차이가 없고(−3% 이하만 다소 높음), 2016년 이후로는 그 차이도 없음. +3% 급등일은 뒤에 흔들림이 평소보다 컸고(급등은 변동성이 큰 시기의 신호), 52주 신고가 날은 평소보다 나빴던 적이 없음 — 오를 때 몰아 사는 근거도, 고점이라 피하는 근거도 없음. 1997~98 외환위기 반등을 빼면 급등일 1년 뒤 수치는 더 좋아짐(표본 민감)",
     }
     out = "web/src/data/dropDayFacts.ts"
     with open(out, "w", encoding="utf-8", newline="\n") as f:
