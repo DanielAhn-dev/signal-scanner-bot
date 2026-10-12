@@ -21,6 +21,7 @@ import { CONTROL_NAV_ITEM, ALL_NAV_ITEMS, SHEET_NAV_KEYS, filterNavItems, menuSe
 import ExcelContentArea from './ExcelContentArea'
 import BotUsageBanner from './BotUsageBanner'
 import { useVisualViewportVars } from '../hooks/useVisualViewportVars'
+import { marketSessionLabel } from '../lib/marketSessionLabel'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -1008,7 +1009,7 @@ export default function ExcelShell({
             {detailed ? '자세히 보기' : '간단히 보기'}
           </button>
           <span className="excel-statusbar__item excel-statusbar__item--datetime">{currentTime}</span>
-          <span className="excel-statusbar__item excel-statusbar__item--market">국장 본장 / 미장 데이터핫</span>
+          <span className="excel-statusbar__item excel-statusbar__item--market">{marketSessionLabel()}</span>
           <div className="excel-statusbar__zoom">
             <button
               type="button"
