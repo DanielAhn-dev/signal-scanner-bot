@@ -10,6 +10,8 @@ import AssetOverviewCard from './components/AssetOverviewCard'
 import HoldingList from './components/HoldingList'
 import MacroCard from './components/MacroCard'
 import PolicyCard from './components/PolicyCard'
+import AccountDirectionCard from './components/AccountDirectionCard'
+import { useProfileStore } from '../../stores/profileStore'
 import PerformanceCard from './components/PerformanceCard'
 import TradeModal from './components/modals/TradeModal'
 import ShareModal from './components/modals/ShareModal'
@@ -30,6 +32,7 @@ import { useShare } from './hooks/useShare'
 
 export default function Portfolio() {
   const navigate = useNavigate()
+  const isAdmin = useProfileStore((st) => st.isAdmin)
   const [performanceAccordionOpen, setPerformanceAccordionOpen] = useState(false)
 
   // 데이터·설정
@@ -124,6 +127,15 @@ export default function Portfolio() {
         </div>
       )}
 
+      {/* 실제 계좌: 방향은 내 계획을 물려받고 계좌마다 고르는 건 사용 시점뿐 */}
+      {selectedAccountKey !== 'virtual' && realCount > 0 && (
+        <AccountDirectionCard
+          accountName={selectedAccountKey === 'real'
+            ? accountFolders.map((f) => f.accountName).join(' ')
+            : accountFolders.find((f) => f.key === selectedAccountKey)?.accountName ?? null}
+        />
+      )}
+
       <AssetOverviewCard
         selectedAccountKey={selectedAccountKey} accountFolders={accountFolders}
         initialCapital={initialCapital} totalEvaluationValue={totalEvaluationValue}
@@ -166,11 +178,14 @@ export default function Portfolio() {
 
       <MacroCard macroLoading={macroLoading} macroRiskLevel={macroRiskLevel} />
 
-      <PolicyCard
-        selectedAccountKey={selectedAccountKey} policyDraft={policyDraft} setPolicyDraft={setPolicyDraft}
-        policyLoading={policyLoading} policySaving={policySaving} savePolicyDraft={savePolicyDraft}
-        policyAccordionOpen={policyAccordionOpen} setPolicyAccordionOpen={setPolicyAccordionOpen}
-      />
+      {/* 계좌별 위험정책(성향·손절·종목 수)은 관리자만 — 일반 사용자는 계좌마다 따로 정하지 않고 내 계획을 따른다 */}
+      {isAdmin && (
+        <PolicyCard
+          selectedAccountKey={selectedAccountKey} policyDraft={policyDraft} setPolicyDraft={setPolicyDraft}
+          policyLoading={policyLoading} policySaving={policySaving} savePolicyDraft={savePolicyDraft}
+          policyAccordionOpen={policyAccordionOpen} setPolicyAccordionOpen={setPolicyAccordionOpen}
+        />
+      )}
 
       <PerformanceCard
         performanceAccordionOpen={performanceAccordionOpen} setPerformanceAccordionOpen={setPerformanceAccordionOpen}

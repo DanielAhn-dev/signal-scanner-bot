@@ -8393,3 +8393,7 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 /* 실험 계좌 보유 카드: 직접 개입 버튼은 접어 둔다 */
 .portfolio-intervene { margin-top: var(--space-2); }
 .portfolio-intervene > summary { cursor: pointer; padding: 4px 0; word-break: keep-all; }
+
+/* 실제 계좌 탭: 방향 안내 */
+.portfolio-direction-list { margin: var(--space-2) 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--font-size-sm); line-height: 1.6; word-break: keep-all; }
+.portfolio-direction-link { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; color: var(--color-brand); font: inherit; cursor: pointer; }

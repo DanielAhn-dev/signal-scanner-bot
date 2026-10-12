@@ -41,8 +41,18 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'tax', label: '절세 계좌' },
 ]
 
+/** 다른 화면이 ?tab=goal처럼 바로 열 탭을 정할 수 있다 */
+function initialTab(): Tab {
+  try {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    return TABS.some((x) => x.key === t) ? (t as Tab) : 'first'
+  } catch {
+    return 'first'
+  }
+}
+
 export default function PlanCheckPage() {
-  const [tab, setTab] = useState<Tab>('first')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const isAdmin = useProfileStore((st) => st.isAdmin)
   return (
     <div className="acc plan">
