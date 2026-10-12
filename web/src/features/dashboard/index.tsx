@@ -21,6 +21,7 @@ import { readUserState } from '../../lib/userState'
 import { personalSetup, type InvestorProfile } from '../../lib/startPlan'
 import type { DropDayView } from '../../lib/dropDay'
 import { renderDropDayRows } from './dropDayRows'
+import { pickIndustrySectors, sectorChange } from '../../lib/sectorDisplay'
 
 type SectorItem = {
   name?: string
@@ -29,6 +30,7 @@ type SectorItem = {
   changeRate?: number
   /** 섹터 API가 실제로 주는 필드 — changeRate/change만 읽어서 등락률이 한 번도 안 보였다 */
   change_rate?: number
+  metrics?: { change_sample?: number } | null
 }
 
 type MarketShiftView = {
@@ -233,8 +235,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   // 스캔·섹터는 관리자의 자세히 보기에서만 보여 준다 — 안 보일 때는 부르지 않는다
   useEffect(() => {
     if (!showMarketDetail) return
-    apiFetch('/api/ui?route=sectors&top=8', { cacheMs: 300_000 }).then(res => {
-      const list: SectorItem[] = res?.data ?? res?.sectors ?? []
+    // 지수 묶음(코스피 200 TOP 10 등)을 빼고도 8개가 남도록 넉넉히 받는다
+    apiFetch('/api/ui?route=sectors&top=16', { cacheMs: 300_000 }).then(res => {
+      const list = pickIndustrySectors<SectorItem>(res?.data ?? res?.sectors ?? [], 8)
       setSectors(list)
       if (list.length > 0) setTopSector(list[0]?.name ?? '')
       if (res?.lastScan) setLastScan(res.lastScan)
@@ -541,8 +544,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           {Array.from({ length: 4 }, (_, i) => {
             const s1 = sectors[i * 2]
             const s2 = sectors[i * 2 + 1]
-            const c1 = s1?.change_rate ?? s1?.changeRate ?? s1?.change
-            const c2 = s2?.change_rate ?? s2?.changeRate ?? s2?.change
+            const c1 = sectorChange(s1)
+            const c2 = sectorChange(s2)
             return (
               <tr key={i} className={`xls-row${i % 2 === 0 ? '' : ' xls-row--even'}`}>
                 <td className="xls-row-num">{rowNum()}</td>
@@ -558,14 +561,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 </td>
 
                 {/* 섹터 1 점수 */}
-                <td className="xls-cell xls-cell--wrap" style={{ fontSize: 10, ...S.midBorder }}>
+                <td className="xls-cell" style={{ fontSize: 10, ...S.midBorder }}>
                   {s1 ? (
-                    <>
-                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 600 }}>{s1.score}점</span>
-                      {c1 != null && (
-                        <span style={{ display: 'block', color: changeColor(c1), fontSize: 9, whiteSpace: 'nowrap' }}>{fmtChange(c1)}</span>
-                      )}
-                    </>
+                    <span style={{ whiteSpace: 'nowrap' }}>
+                      <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s1.score}점</span>
+                      <span style={{ marginLeft: 6, color: c1 == null ? 'var(--color-text-tertiary)' : changeColor(c1), fontSize: 9 }} title={c1 == null ? '구성 종목 등락 자료 없음' : undefined}>
+                        {c1 == null ? '—' : fmtChange(c1)}
+                      </span>
+                    </span>
                   ) : null}
                 </td>
 
@@ -580,14 +583,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 </td>
 
                 {/* 섹터 2 점수 */}
-                <td className="xls-cell xls-cell--wrap" style={{ fontSize: 10 }}>
+                <td className="xls-cell" style={{ fontSize: 10 }}>
                   {s2 ? (
-                    <>
-                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 600 }}>{s2.score}점</span>
-                      {c2 != null && (
-                        <span style={{ display: 'block', color: changeColor(c2), fontSize: 9, whiteSpace: 'nowrap' }}>{fmtChange(c2)}</span>
-                      )}
-                    </>
+                    <span style={{ whiteSpace: 'nowrap' }}>
+                      <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s2.score}점</span>
+                      <span style={{ marginLeft: 6, color: c2 == null ? 'var(--color-text-tertiary)' : changeColor(c2), fontSize: 9 }} title={c2 == null ? '구성 종목 등락 자료 없음' : undefined}>
+                        {c2 == null ? '—' : fmtChange(c2)}
+                      </span>
+                    </span>
                   ) : null}
                 </td>
               </tr>

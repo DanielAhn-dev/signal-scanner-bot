@@ -4,6 +4,7 @@ import { NATURE_COLORS, NATURE_BG, PHASE_COLORS, PHASE_BG } from "../constants"
 import type { Sector, SectorLeader } from "../types"
 import { formatKoreanMoney } from "../lib/format"
 import { ScoreBadge, ChangeRate, NatureBadge } from "./badges"
+import { sectorChange } from '../../../lib/sectorDisplay'
 
 export default function AllSectorsView({
   all,
@@ -82,7 +83,7 @@ export default function AllSectorsView({
                     <div className="caption muted" style={{ marginBottom: "var(--space-2)" }}>{meta.description}</div>
                     <div className="sector-all-card__footer">
                       <ScoreBadge score={sector.score} />
-                      <ChangeRate val={sector.change_rate} />
+                      <ChangeRate val={sectorChange(sector)} />
                     </div>
                   </button>
                   {expanded && (

@@ -7,6 +7,7 @@ import { formatKoreanMoney } from "../lib/format"
 import { buildMetricsSummary, buildSectorReason } from "../lib/sectorText"
 import type { Sector, SectorLeader, Tab } from "../types"
 import { ScoreBadge, ChangeRate, NatureBadge } from "./badges"
+import { sectorChange } from '../../../lib/sectorDisplay'
 
 export default function RankedSectorsTable({
   loading,
@@ -83,7 +84,7 @@ export default function RankedSectorsTable({
                 <td className="xls-cell">{meta ? <NatureBadge nature={meta.nature} /> : "-"}</td>
                 <td className="xls-cell">{meta?.wicsCategory ?? "-"}</td>
                 <td className="xls-cell sector-sheet__cell-score"><ScoreBadge score={s.score} /></td>
-                <td className="xls-cell sector-sheet__cell-change"><ChangeRate val={s.change_rate} /></td>
+                <td className="xls-cell sector-sheet__cell-change"><ChangeRate val={sectorChange(s)} /></td>
                 <td className="xls-cell sector-sheet__cell-summary" title={metricsSummary ?? reason}>{metricsSummary ?? reason}</td>
                 <td className="xls-cell sector-sheet__cell-action">
                   <Button variant="secondary" onClick={() => onSectorCardClick(s.id)}>
