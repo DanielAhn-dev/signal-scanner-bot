@@ -434,7 +434,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               )}
             </td>
             <td className="xls-cell" style={{ textAlign: 'right' }}>
-              <span style={S.link} onClick={() => nav('portfolio')}>{realHoldings && realHoldings.length === 0 ? '입력하기 →' : '자세히 →'}</span>
+              <span style={S.link} onClick={() => nav('portfolio?account=real')}>{realHoldings && realHoldings.length === 0 ? '입력하기 →' : '자세히 →'}</span>
             </td>
           </tr>
           <tr className="xls-row">
@@ -446,7 +446,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               ) : '불러오는 중…'}
             </td>
             <td className="xls-cell" style={{ textAlign: 'right' }}>
-              <span style={S.link} onClick={() => nav('portfolio')}>자세히 →</span>
+              <span style={S.link} onClick={() => nav('portfolio?account=virtual')}>자세히 →</span>
             </td>
           </tr>
           <tr className="xls-row xls-row--even">

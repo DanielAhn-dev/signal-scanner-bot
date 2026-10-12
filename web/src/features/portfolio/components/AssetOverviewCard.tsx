@@ -28,20 +28,22 @@ export default function AssetOverviewCard({
   allocationRows,
   dbSeedCapital,
 }: AssetOverviewCardProps) {
+  // 시드·현금은 실험(가상) 계좌에만 있다 — 실제 계좌 탭에는 보유 평가금과 비중만
+  const isVirtual = selectedAccountKey === 'virtual'
   return (
     <div className="card mb-4 portfolio-asset-overview-card">
       <div className="portfolio-asset-overview-head">
         <div>
-          <div className="title-md">가상 자산 구성 및 리밸런싱 기준</div>
+          <div className="title-md">{isVirtual ? '실험 계좌 자산 구성' : '내 계좌 종목 비중'}</div>
           <div className="caption muted">
-            {selectedAccountKey === 'all' 
-              ? '전체 가상 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
-              : selectedAccountKey === 'virtual'
-                ? '가상매매 보유분의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
+            {selectedAccountKey === 'real'
+              ? '직접 매매하는 계좌 전부의 보유 평가금과 종목별 비중입니다. 예수금은 이 앱에 입력하지 않아 빠져 있습니다.'
+              : isVirtual
+                ? '실험 계좌의 시드, 평가금, 현금, 종목별 비중을 확인합니다.'
                 : `${accountLabel(
                     accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
                     accountFolders.find(f => f.key === selectedAccountKey)?.accountName
-                  )} 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.`
+                  )} 계좌의 보유 평가금과 종목별 비중입니다.`
             }
           </div>
         </div>
@@ -50,14 +52,17 @@ export default function AssetOverviewCard({
       <div className="portfolio-asset-overview-body">
 
           <div className="portfolio-asset-metrics">
+            {isVirtual && (
             <div className="portfolio-asset-metric">
               <div className="portfolio-capture-label">시드 자본금</div>
               <div className="portfolio-capture-value">{formatKrwCompact(initialCapital)}</div>
             </div>
+            )}
             <div className="portfolio-asset-metric">
               <div className="portfolio-capture-label">보유 평가금</div>
               <div className="portfolio-capture-value">{formatKrwCompact(totalEvaluationValue)}</div>
             </div>
+            {isVirtual && (<>
             <div className="portfolio-asset-metric">
               <div className="portfolio-capture-label">
                 {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
@@ -70,13 +75,14 @@ export default function AssetOverviewCard({
               <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
               <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrwCompact(totalAssetValue)}</div>
             </div>
+            </>)}
           </div>
 
           <div className="portfolio-allocation-wrap">
             <div className="portfolio-allocation-chart-wrap">
               <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
               <div className="portfolio-allocation-chart-center">
-                <div className="portfolio-allocation-center-label">총 자산</div>
+                <div className="portfolio-allocation-center-label">{isVirtual ? '총 자산' : '보유 평가금'}</div>
                 <div className="portfolio-allocation-center-value">{formatKrwCompact(totalAssetValue)}</div>
               </div>
             </div>
@@ -100,11 +106,11 @@ export default function AssetOverviewCard({
               )}
             </div>
           </div>
-          <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+          {isVirtual && <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
             {dbSeedCapital != null
               ? '시드 자본금은 설정 화면에서 변경할 수 있습니다. 자동매매 예산과 잔여 현금도 설정에서 관리하세요.'
               : '시드 자본금을 설정 화면에서 입력하면 자동매매 예산이 정확하게 계산됩니다.'}
-          </div>
+          </div>}
         </div>
     </div>
   )

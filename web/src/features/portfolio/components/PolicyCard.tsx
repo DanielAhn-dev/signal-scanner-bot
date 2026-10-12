@@ -48,10 +48,10 @@ export default function PolicyCard({
         <div>
           <div className="title-md">계좌별 위험정책</div>
           <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-            {selectedAccountKey === 'all' 
+            {selectedAccountKey === 'real'
               ? '계좌 폴더를 선택하면 정책 설정'
               : selectedAccountKey === 'virtual'
-                ? '가상매매는 개별 정책 미적용'
+                ? '실험 계좌는 개별 정책 미적용'
                 : `${accountLabel(policyDraft?.broker_name, policyDraft?.account_name)} ${policyLoading ? '조회 중...' : ''}`
             }
           </div>
@@ -61,10 +61,10 @@ export default function PolicyCard({
 
       <Modal isOpen={policyAccordionOpen} title="계좌별 위험정책" onClose={() => setPolicyAccordionOpen(false)} size="sm">
         <div className="portfolio-policy-body">
-          {selectedAccountKey === 'all' ? (
+          {selectedAccountKey === 'real' ? (
             <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
           ) : selectedAccountKey === 'virtual' ? (
-            <div className="caption muted">가상매매 탭은 개별 계좌 정책 대상이 아닙니다. 특정 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
+            <div className="caption muted">실험 계좌는 개별 계좌 정책 대상이 아닙니다. 실제 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
           ) : policyDraft ? (
             <>
               <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>

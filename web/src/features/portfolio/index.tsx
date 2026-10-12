@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Detail from '../../components/ui/Detail'
 import Button from '../../components/ui/Button'
@@ -16,7 +16,7 @@ import ShareModal from './components/modals/ShareModal'
 import MaintenanceModal from './components/modals/MaintenanceModal'
 import DeleteConfirmModal from './components/modals/DeleteConfirmModal'
 import { usePositions } from './hooks/usePositions'
-import { usePortfolioFilters } from './hooks/usePortfolioFilters'
+import { hasAccountParam, usePortfolioFilters } from './hooks/usePortfolioFilters'
 import { useHoldingRules } from './hooks/useHoldingRules'
 import { useTradeCost } from './hooks/useTradeCost'
 import { useInvestmentPrefs } from './hooks/useInvestmentPrefs'
@@ -64,6 +64,14 @@ export default function Portfolio() {
     rules, macroRiskLevel, policyByKey, includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital,
   })
 
+  // 실제 계좌가 하나도 없으면(주소로 탭을 고르지 않았을 때) 실험 계좌를 먼저 보여 준다
+  const realCount = holdingAll.length - virtualHoldingRows.length
+  useEffect(() => {
+    if (!loading && selectedAccountKey === 'real' && realCount === 0 && virtualHoldingRows.length > 0 && !hasAccountParam()) {
+      setSelectedAccountKey('virtual')
+    }
+  }, [loading, realCount, virtualHoldingRows.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // 모달
   const trade = useTradeModal({ load })
   const maint = useMaintenance({ load, accountFolders })
@@ -85,7 +93,7 @@ export default function Portfolio() {
         onRefresh={() => load({ force: true })} onOpenShare={() => share.setShareModalOpen(true)}
         onOpenMaintenance={openMaintenanceModal}
         selectedAccountKey={selectedAccountKey} onSelectAccount={(key) => { setSelectedAccountKey(key); setPage(1) }}
-        accountFolders={accountFolders} virtualCount={virtualHoldingRows.length}
+        accountFolders={accountFolders} virtualCount={virtualHoldingRows.length} realCount={realCount}
         summaryCount={summaryRows.length} totalInvested={totalInvested} adjustedUnrealized={adjustedUnrealized}
         selectedAccountLabel={selectedAccountLabel} serverTotal={serverTotal}
         includeCost={includeCost} totalTradeCost={totalTradeCost}

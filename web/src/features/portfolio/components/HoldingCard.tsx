@@ -53,6 +53,24 @@ export default function HoldingCard({
     isBotAccount: rowAccountKey === '|||',
   })
   const reasonBadges = buildReasonBadges(r, holdingState, score, addEntryMinScore)
+  const actionButtons = (
+    <div className="portfolio-actions-row">
+      <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>
+        <PlusCircle size={14} />추가매수
+      </Button>
+      <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'sell')}>
+        매도 · 수익기록
+      </Button>
+      <div className="portfolio-actions-minor">
+        <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingedit', r)}>
+          보유 수정
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingdelete', r)} style={{ color: 'var(--color-error)' }}>
+          삭제
+        </Button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="card card-lg portfolio-position-card">
@@ -174,23 +192,14 @@ export default function HoldingCard({
       )}
 
       </Detail>
-      {/* ── 액션 버튼: 자주 쓰는 기록(사기·팔기)은 버튼, 고치기·지우기는 작은 글자 버튼 ── */}
-      <div className="portfolio-actions-row">
-        <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>
-          <PlusCircle size={14} />추가매수
-        </Button>
-        <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'sell')}>
-          매도 · 수익기록
-        </Button>
-        <div className="portfolio-actions-minor">
-          <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingedit', r)}>
-            보유 수정
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingdelete', r)} style={{ color: 'var(--color-error)' }}>
-            삭제
-          </Button>
-        </div>
-      </div>
+      {/* ── 액션 버튼: 자주 쓰는 기록(사기·팔기)은 버튼, 고치기·지우기는 작은 글자 버튼.
+           실험 계좌(봇이 관리)는 손대면 실험이 바뀌므로 접어 두고, 개입이 기록에 남는다고 알린다 ── */}
+      {rowAccountKey === '|||' ? (
+        <details className="portfolio-intervene">
+          <summary className="caption muted">직접 개입 (실험 기록에 남음)</summary>
+          {actionButtons}
+        </details>
+      ) : actionButtons}
     </div>
   )
 }

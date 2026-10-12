@@ -16,7 +16,7 @@ const ROWS = [
   },
   {
     id: 2, position_type: 'holding', code: '069500', stock_name: 'KODEX 200', quantity: 5, avg_price: 40000,
-    unrealized_pnl: -10000, unrealized_pct: -5, broker_name: '', account_name: '', buy_date: '2026-09-10',
+    unrealized_pnl: -10000, unrealized_pct: -5, broker_name: '', account_name: '', account_kind: 'virtual', buy_date: '2026-09-10',
     stock: { close: 38000 },
   },
 ]
@@ -51,23 +51,25 @@ function renderPage() {
 describe('포트폴리오 화면', () => {
   beforeEach(() => { sharesCreated.length = 0; try { localStorage.clear() } catch { /* ignore */ } })
 
-  it('보유 종목 카드와 상단 합계를 보여준다', async () => {
+  it('처음엔 실제 계좌만 보여 주고 실험 계좌와 합치지 않는다', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자', 'KODEX 200']))
+    await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
     expect(screen.getByText('보유 종목')).toBeTruthy()
-    expect(screen.getByText('키움 / 일반 (1)')).toBeTruthy()
+    expect(screen.getByText('내 계좌(실제) (1)')).toBeTruthy()
+    expect(screen.getByText('실험 계좌 (1)')).toBeTruthy()
   })
 
-  it('계좌 탭을 누르면 해당 계좌 종목만 남는다', async () => {
+  it('실험 계좌 탭을 누르면 봇 보유만 남고 직접 개입 버튼은 접혀 있다', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(cardNames(container)).toHaveLength(2))
-    fireEvent.click(screen.getByText('키움 / 일반 (1)'))
     await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
+    fireEvent.click(screen.getByText('실험 계좌 (1)'))
+    await waitFor(() => expect(cardNames(container)).toEqual(['KODEX 200']))
+    expect(screen.getByText('직접 개입 (실험 기록에 남음)')).toBeTruthy()
   })
 
   it('추가매수 버튼이 매매 모달을 연다', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(cardNames(container)).toHaveLength(2))
+    await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
     fireEvent.click(screen.getAllByText('추가매수')[0])
     expect(await screen.findByText(/현재 매수 내역: 10주/)).toBeTruthy()
     expect(screen.getByText('실행')).toBeTruthy()
@@ -75,7 +77,7 @@ describe('포트폴리오 화면', () => {
 
   it('필터 & 옵션을 펼치면 보유 상태 필터가 보인다', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(cardNames(container)).toHaveLength(2))
+    await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
     fireEvent.click(screen.getByText('필터 & 옵션'))
     expect(screen.getByText('보유 상태')).toBeTruthy()
     fireEvent.click(screen.getByText('추가매수(IN진입)'))
@@ -84,14 +86,14 @@ describe('포트폴리오 화면', () => {
 
   it('계좌/보유 추가가 유지보수 모달 1단계를 연다', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(cardNames(container)).toHaveLength(2))
+    await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
     fireEvent.click(screen.getByText('계좌/보유 추가'))
     expect(await screen.findByText('1단계 · 계좌 설정')).toBeTruthy()
   })
 
   it('공유 요약 보기가 공유 모달을 열고 공유 URL을 만든다', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(cardNames(container)).toHaveLength(2))
+    await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
     fireEvent.click(screen.getByText('공유 요약 보기'))
     expect(await screen.findByText('최근 공유 링크')).toBeTruthy()
     await waitFor(() => expect((document.querySelector('.portfolio-share-url-input') as HTMLInputElement)?.value).toBe('https://example.test/share/abc'))

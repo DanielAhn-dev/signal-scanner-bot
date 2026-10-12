@@ -80,10 +80,11 @@ export function usePortfolioView(input: PortfolioViewInput) {
   const totalPages = Math.ceil(total / pageSize)
   const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
   const summaryRows = selectAccountRows(holdingAll, selectedAccountKey)
-  const selectedAccountLabel = selectedAccountKey === 'all'
-    ? '전체 계좌'
-    : selectedAccountKey === 'virtual'
-      ? '가상매매'
+  const isVirtualTab = selectedAccountKey === 'virtual'
+  const selectedAccountLabel = selectedAccountKey === 'real'
+    ? '내 계좌(실제) 전체'
+    : isVirtualTab
+      ? '실험 계좌'
       : accountLabel(
           accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
           accountFolders.find(f => f.key === selectedAccountKey)?.accountName,
@@ -91,9 +92,10 @@ export function usePortfolioView(input: PortfolioViewInput) {
   const {
     totalUnrealized, totalInvested, totalTradeCost, adjustedUnrealized,
     totalReturnPct, totalEvaluationValue, estimatedCash, totalAssetValue,
-  } = summarizeHoldings(summaryRows, { includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital })
+  // 시드·현금은 실험 계좌(가상)에만 있다 — 실제 계좌 탭에 가상 시드를 넣으면 '현금 = 가상 시드 − 실제 매수금'이 섞였다
+  } = summarizeHoldings(summaryRows, { includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital: isVirtualTab ? initialCapital : 0 })
   const tradeCostOpts = { buyFeeRatePct, sellFeeRatePct }
-  const allocationRows = useMemo(() => buildAllocationRows(summaryRows, estimatedCash), [summaryRows, estimatedCash])
+  const allocationRows = useMemo(() => buildAllocationRows(summaryRows, isVirtualTab ? estimatedCash : 0), [summaryRows, estimatedCash, isVirtualTab])
   const allocationChartStyle = useMemo(() => buildDonutGradient(allocationRows), [allocationRows])
 
   return {

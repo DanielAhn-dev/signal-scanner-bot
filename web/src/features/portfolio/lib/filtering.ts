@@ -1,9 +1,12 @@
 import { buildAccountKey, isVirtualPositionRow } from './accountKey'
 import type { HoldingRow } from '../types'
 
-/** 계좌 탭 선택값('all' | 'virtual' | 계좌 키)에 맞는 보유 행만 남긴다 */
+/**
+ * 계좌 탭 선택값('real' | 'virtual' | 계좌 키)에 맞는 보유 행만 남긴다.
+ * 실제 계좌(내가 직접 매매)와 실험 계좌(봇 가상계좌)는 한 합계로 섞지 않는다 — 예전 '전체' 탭을 없앴다.
+ */
 export function selectAccountRows(rows: HoldingRow[], accountKey: string): HoldingRow[] {
-  if (accountKey === 'all') return rows
+  if (accountKey === 'real') return rows.filter((r) => !isVirtualPositionRow(r))
   if (accountKey === 'virtual') return rows.filter((r) => isVirtualPositionRow(r))
   return rows.filter((r) => buildAccountKey(r?.broker_name, r?.account_name) === accountKey)
 }

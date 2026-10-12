@@ -34,6 +34,7 @@ type PortfolioHeaderProps = {
   onSelectAccount: (key: string) => void
   accountFolders: AccountFolder[]
   virtualCount: number
+  realCount: number
   summaryCount: number
   totalInvested: number
   adjustedUnrealized: number
@@ -57,6 +58,7 @@ export default function PortfolioHeader({
   onSelectAccount,
   accountFolders,
   virtualCount,
+  realCount,
   summaryCount,
   totalInvested,
   adjustedUnrealized,
@@ -113,8 +115,12 @@ export default function PortfolioHeader({
         <tr className="xls-row">
           <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
             <div className="portfolio-account-tabs" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
-              <AccountTab active={selectedAccountKey === 'all'} onClick={() => onSelectAccount('all')}>전체</AccountTab>
-              <AccountTab active={selectedAccountKey === 'virtual'} onClick={() => onSelectAccount('virtual')}>가상매매 ({virtualCount})</AccountTab>
+              <AccountTab active={selectedAccountKey !== 'virtual'} onClick={() => onSelectAccount('real')}>내 계좌(실제) ({realCount})</AccountTab>
+              <AccountTab active={selectedAccountKey === 'virtual'} onClick={() => onSelectAccount('virtual')}>실험 계좌 ({virtualCount})</AccountTab>
+            </div>
+            {selectedAccountKey !== 'virtual' && accountFolders.length > 1 && (
+            <div className="portfolio-account-tabs portfolio-account-tabs--sub" role="group" aria-label="실제 계좌 고르기" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
+              <AccountTab active={selectedAccountKey === 'real'} onClick={() => onSelectAccount('real')}>전부</AccountTab>
               {accountFolders.map((account) => (
                 <AccountTab
                   key={account.key}
@@ -126,6 +132,12 @@ export default function PortfolioHeader({
                 </AccountTab>
               ))}
             </div>
+            )}
+            {selectedAccountKey === 'virtual' && (
+              <div className="caption muted" style={{ padding: '4px var(--space-3) 0', wordBreak: 'keep-all' }}>
+                실험 계좌는 봇이 &lsquo;내 계획&rsquo;대로 사고팝니다. 내가 직접 매매하는 계좌와 합치지 않습니다.
+              </div>
+            )}
           </td>
         </tr>
         <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--label">

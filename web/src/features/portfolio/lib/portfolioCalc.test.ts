@@ -14,8 +14,8 @@ describe('selectAccountRows', () => {
     row({ code: 'B', ...TOSS }),
     row({ code: 'C', account_kind: 'virtual' }),
   ]
-  it('all은 전체', () => {
-    expect(selectAccountRows(rows, 'all')).toHaveLength(3)
+  it('real은 실험(가상) 계좌를 뺀 실제 계좌 전부 — 둘을 한 합계로 섞지 않는다', () => {
+    expect(selectAccountRows(rows, 'real').map((r) => r.code)).toEqual(['A', 'B'])
   })
   it('virtual은 서버가 virtual로 판정한 행만', () => {
     expect(selectAccountRows(rows, 'virtual').map((r) => r.code)).toEqual(['C'])
@@ -43,7 +43,7 @@ describe('filterHoldings', () => {
     row({ code: '000660', stock_name: 'SK하이닉스', stock: { sector_id: 's1' }, ...TOSS }),
     row({ code: '051910', stock_name: 'LG화학', stock: { sector_id: 's2' }, ...KIWOOM }),
   ]
-  const all = { accountKey: 'all', sectorId: null, search: '', stateFilter: 'all', gradeFilter: 'all' } as const
+  const all = { accountKey: 'real', sectorId: null, search: '', stateFilter: 'all', gradeFilter: 'all' } as const
   const state = (r: any) => (r.code === '005930' ? 'add' : 'hold') as 'hold' | 'add' | 'partial'
   const grade = (r: any) => (r.code === '000660' ? 'A' : 'C') as 'A' | 'B' | 'C'
   const codes = (c: Parameters<typeof filterHoldings>[1]) => filterHoldings(rows, c, state, grade).map((r) => r.code)

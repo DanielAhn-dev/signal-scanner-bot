@@ -41,7 +41,7 @@ export function useAccountPolicies({ selectedAccountKey, load }: { selectedAccou
   }, [loadAccountPolicies])
 
   useEffect(() => {
-    if (selectedAccountKey === 'all' || selectedAccountKey === 'virtual') {
+    if (selectedAccountKey === 'real' || selectedAccountKey === 'virtual') {
       setPolicyDraft(null)
       return
     }
