@@ -147,4 +147,13 @@ describe('스캔 화면', () => {
     expect(await screen.findByText('데이 전략 실행 가이드')).toBeTruthy()
     expect(screen.getAllByText(/권장 0.5R/).length).toBeGreaterThan(0)
   })
+
+  it('표에서 눌림 점수가 55 이상인 종목에 눌림형 배지가 붙는다', async () => {
+    const { container } = renderPage()
+    await waitFor(() => expect(tableNames(container)).toEqual(['베타', '알파', '감마']))
+    // 알파(56점)·감마(62점)는 눌림형, 베타는 점수 미달
+    const rows = Array.from(container.querySelectorAll('.scan-candidates-table tbody tr'))
+    const badged = rows.filter((tr) => tr.textContent?.includes('눌림형')).map((tr) => tr.querySelector('td:nth-child(2)')?.textContent?.trim())
+    expect(badged).toEqual(['알파', '감마'])
+  })
 })

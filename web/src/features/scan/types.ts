@@ -201,8 +201,8 @@ export type ScanDisplayRow = ScanCandidate & {
   updatedDateText: string
   isExecutionPriority: boolean
   executionPriorityRank: number | null
-  /** 표 행에서는 계산하지 않는다(TOP 카드 항목에서만 채워진다) — 아래 CandidateTable의 배지 조건은 현재 항상 거짓 */
-  isAccumulationSignal?: boolean
+  /** 눌림 점수 55 이상이고 단계가 있을 때 — 표의 "눌림형/눌림 강함" 배지 표시 조건 */
+  isAccumulationSignal: boolean
 }
 
 /** 스캔 화면 컴포넌트들이 함께 쓰는 상태·파생값·핸들러 묶음(각 컴포넌트는 필요한 키만 골라 받는다) */

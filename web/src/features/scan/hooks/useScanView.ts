@@ -142,27 +142,31 @@ export function useScanView({
 
   const totalPages = Math.ceil(sortedCandidates.length / pageSize)
 
-  const displayRows = useMemo<ScanDisplayRow[]>(() => pagedCandidates.map((s) => ({
-    strategyLabel: isDayStrategyCandidate(s)
-      ? '데이'
-      : isOvernightStrategyCandidate(s, signalAgeByCode.get(s.code))
-        ? '오버나이트'
-        : isWeeklyStrategyCandidate(s)
-          ? '주간'
-          : '관찰',
-    ...s,
-    priorityScore: Number(computePriorityScore(s).toFixed(1)),
-    quickTradeScore: Number(computeQuickTradeScore(s).toFixed(1)),
-    leadAccumulationScore: Number(scoreLeadAccumulationCandidate(s).score.toFixed(1)),
-    leadAccumulationStage: scoreLeadAccumulationCandidate(s).stage,
-    quickLiteAgeDays: signalAgeByCode.get(s.code)?.quickLiteAgeDays ?? null,
-    intradayChangePct: typeof s.intraday_change_pct === 'number' ? s.intraday_change_pct : null,
-    tradeDateText: s.trade_date ?? '—',
-    updatedAtText: s.stock_updated_at ? formatKstDateTime(s.stock_updated_at) : null,
-    updatedDateText: formatKstDateTime(s.stock_updated_at, { hour: undefined, minute: undefined }),
-    isExecutionPriority: !!s.isExecutionPriority,
-    executionPriorityRank: s.executionPriorityRank ?? null,
-  })), [pagedCandidates, signalAgeByCode])
+  const displayRows = useMemo<ScanDisplayRow[]>(() => pagedCandidates.map((s) => {
+    const lead = scoreLeadAccumulationCandidate(s)
+    return {
+      strategyLabel: isDayStrategyCandidate(s)
+        ? '데이'
+        : isOvernightStrategyCandidate(s, signalAgeByCode.get(s.code))
+          ? '오버나이트'
+          : isWeeklyStrategyCandidate(s)
+            ? '주간'
+            : '관찰',
+      ...s,
+      priorityScore: Number(computePriorityScore(s).toFixed(1)),
+      quickTradeScore: Number(computeQuickTradeScore(s).toFixed(1)),
+      leadAccumulationScore: Number(lead.score.toFixed(1)),
+      leadAccumulationStage: lead.stage,
+      isAccumulationSignal: lead.stage !== 'none' && lead.score >= 55,
+      quickLiteAgeDays: signalAgeByCode.get(s.code)?.quickLiteAgeDays ?? null,
+      intradayChangePct: typeof s.intraday_change_pct === 'number' ? s.intraday_change_pct : null,
+      tradeDateText: s.trade_date ?? '—',
+      updatedAtText: s.stock_updated_at ? formatKstDateTime(s.stock_updated_at) : null,
+      updatedDateText: formatKstDateTime(s.stock_updated_at, { hour: undefined, minute: undefined }),
+      isExecutionPriority: !!s.isExecutionPriority,
+      executionPriorityRank: s.executionPriorityRank ?? null,
+    }
+  }), [pagedCandidates, signalAgeByCode])
 
   return {
     sectors,
