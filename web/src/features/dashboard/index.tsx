@@ -2,7 +2,7 @@
  * Dashboard — 중앙 패널: 엑셀 셀 병합 스타일 대시보드
  * 오늘 점검 / 포트폴리오 요약 / 점수 상위 섹터 Top 8
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { useCurrentChatId } from '../../stores/profileStore'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
@@ -241,20 +241,29 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     }).catch(() => {})
   }, [showMarketDetail])
 
+  // 빈 여백 줄은 실제 내용 높이를 재서 화면에 남는 만큼만 채운다(내용이 화면보다 길면 0줄).
+  // 예전엔 내용을 21줄로 가정해 창 높이만으로 셌기 때문에, 카드가 늘어난 뒤로 빈 줄만큼 스크롤이 생겼다.
+  const sheetRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const BASE_ROWS = 21
-    const updateFillerRows = () => {
-      const width = window.innerWidth
-      const height = window.innerHeight
-      const rowHeight = width < 640 ? 26 : width < 1024 ? 26 : 22
-      const chromeHeight = width < 640 ? 280 : 230
-      const estimatedVisibleRows = Math.floor(Math.max(0, height - chromeHeight) / rowHeight)
-      const needed = Math.max(0, estimatedVisibleRows - BASE_ROWS)
-      setFillerRows(Math.min(60, needed))
+    const sheet = sheetRef.current
+    if (!sheet) return
+    const update = () => {
+      const fillers = sheet.querySelectorAll<HTMLTableRowElement>('tr[data-filler]')
+      let fillerHeight = 0
+      fillers.forEach((row) => { fillerHeight += row.offsetHeight })
+      const rowHeight = fillers[0]?.offsetHeight || (window.innerWidth < 1024 ? 26 : 22)
+      const contentHeight = sheet.scrollHeight - fillerHeight
+      const spare = sheet.clientHeight - contentHeight - 1
+      const next = Math.max(0, Math.min(60, Math.floor(spare / rowHeight)))
+      setFillerRows((prev) => (prev === next ? prev : next))
     }
-    updateFillerRows()
-    window.addEventListener('resize', updateFillerRows)
-    return () => window.removeEventListener('resize', updateFillerRows)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(sheet)
+    const table = sheet.querySelector('table')
+    if (table) observer.observe(table)
+    return () => observer.disconnect()
   }, [])
 
   const nav = (r: string) => onNavigate?.(r)
@@ -294,7 +303,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const rowNum = () => ++rn
 
   return (
-    <div className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
+    <div ref={sheetRef} className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
       <MyPlanCard goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>{colWidths.map((width, index) => (
@@ -589,7 +598,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
           {/* ── 남는 높이만 채우는 빈 여백 ── */}
           {Array.from({ length: fillerRows }, (_, i) => (
-            <tr key={`empty${i}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
+            <tr key={`empty${i}`} data-filler className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell xls-cell--empty" colSpan={6}/>
             </tr>
