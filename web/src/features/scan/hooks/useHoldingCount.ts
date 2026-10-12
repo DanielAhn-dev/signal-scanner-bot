@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../../lib/api'
 import { useSyncedSettings } from '../../../lib/userState'
 import type { ConditionFilter } from '../types'
@@ -9,8 +9,12 @@ export function useHoldingCount({ conditionFilter }: { conditionFilter: Conditio
   const [holdingCountUpdatedAt, setHoldingCountUpdatedAt] = useState<number | null>(null)
   const [buycheckMaxHoldings, setBuycheckMaxHoldings] = useState<number>(8)
   const [buycheckHighlightTopN, setBuycheckHighlightTopN] = useState<number>(5)
+  // 마지막 시도 시각. 성공 시각만 보면 조회가 실패할 때 '오래됨' 판정이 풀리지 않아
+  // 실패 → 로딩 해제 → 재조회가 끝없이 반복됐다.
+  const lastAttemptAtRef = useRef<number | null>(null)
 
   const loadHoldingCount = useCallback(async () => {
+    lastAttemptAtRef.current = Date.now()
     setHoldingCountLoading(true)
     try {
       const params = new URLSearchParams({
@@ -44,7 +48,8 @@ export function useHoldingCount({ conditionFilter }: { conditionFilter: Conditio
 
   useEffect(() => {
     if (conditionFilter !== 'buycheck') return
-    const staleMs = holdingCountUpdatedAt == null ? Number.POSITIVE_INFINITY : Date.now() - holdingCountUpdatedAt
+    const lastAt = Math.max(holdingCountUpdatedAt ?? 0, lastAttemptAtRef.current ?? 0)
+    const staleMs = lastAt === 0 ? Number.POSITIVE_INFINITY : Date.now() - lastAt
     if (staleMs > 60_000 && !holdingCountLoading) {
       void loadHoldingCount()
     }
