@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../../lib/api'
 import type { OhlcvCandle } from '../../../lib/types'
 import { ANALYZE_PENDING_CODE_KEY } from '../constants'
@@ -8,6 +8,7 @@ import { buildAnalyzeShareUrl } from '../lib/shareUrl'
 /**
  * 종목 조회와 결과 상태. 조회를 시작하면 이전 결과를 모두 비운 뒤 채운다.
  * 마운트 시 URL `?code=` 또는 다른 화면이 sessionStorage로 넘긴 종목을 이어받는다.
+ * 연달아 조회하면 마지막 조회의 응답만 반영한다(먼저 보낸 조회가 늦게 와서 결과를 덮어쓰지 않게).
  */
 export function useAnalyzeData(input: {
   chatId: string
@@ -23,10 +24,13 @@ export function useAnalyzeData(input: {
   const [advisor, setAdvisor] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const requestSeqRef = useRef(0)
 
   const analyze = async (code?: string) => {
     const q = code ?? query.trim()
     if (!q) return
+    const seq = ++requestSeqRef.current
+    const isLatest = () => seq === requestSeqRef.current
 
     setLoading(true)
     setError(null)
@@ -39,6 +43,7 @@ export function useAnalyzeData(input: {
     try {
       const chatQs = chatId ? `&chat_id=${encodeURIComponent(chatId)}` : ''
       const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}${chatQs}`, { cacheMs: 0 })
+      if (!isLatest()) return
       if (res?.profile || res?.latest) {
         const merged = { ...res.profile, ...res.latest }
         setResult(merged)
@@ -57,9 +62,9 @@ export function useAnalyzeData(input: {
         setError('조회 결과 없음')
       }
     } catch (e: any) {
-      setError(e?.message || String(e))
+      if (isLatest()) setError(e?.message || String(e))
     } finally {
-      setLoading(false)
+      if (isLatest()) setLoading(false)
     }
   }
 

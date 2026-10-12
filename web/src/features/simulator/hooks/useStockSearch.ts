@@ -14,14 +14,20 @@ export function useStockSearch() {
     if (addDebounceRef.current) clearTimeout(addDebounceRef.current)
     const q = addSearch.trim()
     if (q.length < 2) { setAddResults([]); return }
+    // 입력이 바뀌거나 화면을 떠나면 이전 검색 응답은 버린다(늦게 온 옛 결과가 최신 결과를 덮어쓰지 않게)
+    let stale = false
     addDebounceRef.current = setTimeout(async () => {
       try {
         const results = await searchStocks(q, 8)
-        setAddResults(results)
+        if (!stale) setAddResults(results)
       } catch {
-        setAddResults([])
+        if (!stale) setAddResults([])
       }
     }, 100)
+    return () => {
+      stale = true
+      if (addDebounceRef.current) clearTimeout(addDebounceRef.current)
+    }
   }, [addSearch])
 
   const showAddDropdown = addFocused && addSearch.trim().length >= 2
