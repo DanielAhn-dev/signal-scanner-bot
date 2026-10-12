@@ -35,6 +35,7 @@ import { detectAutoTradeMarketPolicy } from '../../src/services/virtualAutoTrade
 import { createClient } from '@supabase/supabase-js'
 import { fetchMarketFlowCaution, MARKET_FLOW_EVIDENCE, type MarketFlowCaution } from '../../src/services/marketFlowCaution'
 import { fetchMarketShift, type MarketShift } from '../../src/services/marketShiftSignal'
+import { fetchDropDayContext, type DropDayContext } from '../../src/services/dropDayContext'
 
 interface MarketOverviewResponse {
   diagnosis: MarketDiagnosis
@@ -51,6 +52,8 @@ interface MarketOverviewResponse {
   marketFlowCaution: (MarketFlowCaution & { evidence: typeof MARKET_FLOW_EVIDENCE }) | null
   /** 네 지표의 자기 과거 대비 위치·변화(현황 표시, 예측 아님). 종가가 80일 미만이거나 조회 실패면 null */
   marketShift: MarketShift | null
+  /** 큰 하락일 카드의 실시간 부분(오늘 등락·고점 대비·연속 하락·올해 횟수·외국인). 카드 표시 여부는 웹이 정한다. 실패하면 null */
+  dropDay: DropDayContext | null
   fetchedAt: string
 }
 
@@ -80,6 +83,18 @@ async function resolveMarketShift(): Promise<MarketShift | null> {
   if (!url || !key) return null
   try {
     return await fetchMarketShift(createClient(url, key, { auth: { persistSession: false } }))
+  } catch {
+    return null
+  }
+}
+
+async function resolveDropDay(marketData: MarketOverview, today: string): Promise<DropDayContext | null> {
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const price = marketData.kospi?.price
+  try {
+    const supabase = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null
+    return await fetchDropDayContext(supabase, price ? { date: today, price } : null)
   } catch {
     return null
   }
@@ -162,10 +177,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const economicPhase = diagnoseEconomicPhase(marketData, cpi.yoy)
     const globalCorrelation = analyzeGlobalCorrelation(marketData)
     const tradingSignal = generateTradingSignal(diagnosis, economicPhase, globalCorrelation)
-    const [botBuyGate, marketFlowCaution, marketShift] = await Promise.all([
+    const [botBuyGate, marketFlowCaution, marketShift, dropDay] = await Promise.all([
       resolveBotBuyGate(marketData),
       resolveMarketFlowCaution(),
       resolveMarketShift(),
+      resolveDropDay(marketData, todayStr),
     ])
 
     const payload: MarketOverviewResponse = {
@@ -181,6 +197,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       botBuyGate,
       marketFlowCaution,
       marketShift,
+      dropDay,
       fetchedAt: new Date().toISOString(),
     }
 
