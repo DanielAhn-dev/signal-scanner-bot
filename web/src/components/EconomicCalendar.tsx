@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, ArrowUp, ArrowDown, Minus, Clock, CheckCircle2 } from 'lucide-react'
 import type { EconomicEvent, EventImportance } from '../../../src/types/economics'
-import { calculateEventImpactScore, generateEventTradeRestriction } from '../../../src/utils/fetchEconomicCalendar'
+import { calculateEventImpactScore, generateEventTradeRestriction } from '../../../src/utils/economicEventImpact'
 import { formatKstDateTime } from '../lib/format'
 import Skeleton from './Skeleton'
 
