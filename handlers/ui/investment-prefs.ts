@@ -10,7 +10,7 @@ import {
   readDepositLog,
   readDepositSettings,
 } from '../../src/services/monthlyDeposit'
-import { investPlanPrefsPatch, mergeInvestPlan, readInvestPlan } from '../../src/services/investPlan'
+import { investPlanPrefsPatch, mergeInvestPlan, readInvestPlan } from '../../src/services/userPlan'
 import { toKstDateKey } from '../../src/lib/krxCalendar'
 import { normalizeNotifyChannel } from '../../src/services/notifyChannel'
 import { readLifeProfile, sanitizeLifeInput } from '../../src/services/goalTracker'
@@ -96,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           virtual_cash: virtualCash != null && Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
           strategy_mode: normalizeStrategyMode(prefs.virtual_strategy_mode),
-          // 내 계획 — 방향을 바꾸는 유일한 저장 경로 (src/services/investPlan.ts)
+          // 내 계획 — 방향을 바꾸는 유일한 저장 경로 (src/services/userPlan.ts)
           plan: readInvestPlan(prefs),
           notify_channel: normalizeNotifyChannel(prefs.notify_channel),
           // 프로필의 나이·은퇴 시점 (목표 트래커가 은퇴 나이에 맞춰 계산한다)
@@ -158,7 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ data: { ...depositView(next), virtual_cash: Number(next.virtual_cash), virtual_seed_capital: Number(next.virtual_seed_capital) } })
       }
 
-      // 내 계획: 매달 투자할 돈·급여일·넣는 날·버틸 하락폭·개별주 몫 중 바꿀 칸만 받는다 (src/services/investPlan.ts).
+      // 내 계획: 매달 투자할 돈·급여일·넣는 날·버틸 하락폭·개별주 몫 중 바꿀 칸만 받는다 (src/services/userPlan.ts).
       // 실험 계좌의 월 입금·자동매매 방식은 여기서만 바뀐다 — 예전엔 설정·시작하기·목표 트래커·시드 만들기가 따로 썼다.
       if (body.plan !== undefined && body.virtual_seed_capital === undefined) {
         if (!body.plan || typeof body.plan !== 'object') return res.status(400).json({ error: 'plan must be an object' })

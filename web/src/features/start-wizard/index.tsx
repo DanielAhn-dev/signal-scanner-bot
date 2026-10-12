@@ -179,7 +179,7 @@ export default function StartWizardPage() {
       const prefs = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 })
       const exists = Number(prefs?.data?.virtual_seed_capital) > 0
       if (!exists) await post('/api/ui/investment-prefs', { virtual_seed_capital: Math.round(seedToStart), reset_cash: true })
-      // 내 계획 한 번에 저장 (src/services/investPlan.ts). 10,000원 미만은 화면에서 '없음 (목돈만)'으로 보여 준다 —
+      // 내 계획 한 번에 저장 (src/services/userPlan.ts). 10,000원 미만은 화면에서 '없음 (목돈만)'으로 보여 준다 —
       // 0을 보내야 기존 계좌의 자동 적립도 실제로 꺼진다. 넣는 날은 기존 계좌라면 정해 둔 날을 지키고, 새 계좌는 1일.
       // 자동매매 방식(개별주 몫)은 처음 만드는 계좌만 성향 답으로 정한다 — 쓰던 계좌는 덮지 않는다
       await post('/api/ui/investment-prefs', {
