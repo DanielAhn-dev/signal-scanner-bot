@@ -77,3 +77,49 @@ for label, start in (("1997~", "19970101"), ("2016~", "20160101")):
             v = np.array([K[e + h] / K[e] - 1 for e in ev if e + h < len(K)])
             out.append(f"{h}일 뒤 중앙 {np.median(v)*100:+.1f}%·플러스 {(v>0).mean()*100:.0f}%({len(v)})")
         print(f"  {label} ≤{t}%: 사건 {len(ev)}건 | " + " | ".join(out))
+
+
+# ---- 웹 데이터 파일 (web/src/data/dropDayFacts.ts) ----
+def build_web_facts():
+    sel = np.array([d >= "19970101" for d in kr_dates])
+    years = sel.sum() / 250
+    buckets = []
+    for t in (-1.5, -2, -3, -5):
+        ev, last = [], -999
+        for i, (d, r) in enumerate(zip(kr_dates, kr)):
+            if d >= "19970101" and r <= t / 100:
+                if i - last > 20:
+                    ev.append(i + 1)
+                last = i
+        row = {"threshold": t, "perYear": round(float((kr[sel] <= t / 100).sum() / years), 1), "events": len(ev)}
+        for h in (60, 250):
+            v = np.array([K[e + h] / K[e] - 1 for e in ev if e + h < len(K)])
+            row[f"h{h}"] = {"n": int(len(v)), "medianPct": round(float(np.median(v) * 100), 1), "upPct": int(round((v > 0).mean() * 100))}
+        buckets.append(row)
+    m = np.array([d >= "20160101" for d in ds])
+    b, _a = np.polyfit(xs[m], ys[m], 1)
+    r2 = float(np.corrcoef(xs[m], ys[m])[0, 1] ** 2)
+    facts = {
+        "period": f"{kr_dates[0][:4]}-{kr_dates[0][4:6]}~{END[:4]}-{END[4:6]}",
+        "buckets": buckets,
+        "us": {"period": f"2016-01~{END[:4]}-{END[4:6]}", "beta": round(float(b), 2), "r2Pct": int(round(r2 * 100))},
+    }
+    from datetime import date
+    meta = {
+        "title": "코스피 하락일 빈도·이후 흐름",
+        "asOf": f"{END[:4]}-{END[4:6]}",
+        "generated": date.today().isoformat(),
+        "script": "scripts/research/build_drop_day_facts.py",
+        "sample": f"코스피 종가 {facts['period']}(배당 제외), 큰 하락 뒤 수익은 20거래일 안에 다시 난 하락을 한 번으로 센 독립 사건",
+        "caveat": "과거 평균일 뿐 이번에도 같다는 뜻이 아님. 약 3번 중 1번은 1년 뒤에도 마이너스. 미국 몫은 간밤 S&P500 하나로만 본 근사(장중 선물·아시아 시장은 반영 안 됨)",
+    }
+    out = "web/src/data/dropDayFacts.ts"
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write("// 자동 생성 — scripts/research/build_drop_day_facts.py. 직접 고치지 말고 스크립트를 다시 돌린다.\n")
+        f.write("import type { FactMeta } from './researchFacts'\n")
+        f.write(f"export const DROP_DAY_FACTS = {json.dumps(facts, ensure_ascii=False)} as const\n")
+        f.write(f"export const DROP_DAY_META: FactMeta = {json.dumps(meta, ensure_ascii=False, indent=2)}\n")
+    print(f"\n→ {out} 생성")
+
+
+build_web_facts()
