@@ -1,38 +1,33 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { apiFetch } from '../../lib/api'
-import { formatKrw, formatNumber } from '../../lib/format'
-import { getStocks, type StockItem } from '../../lib/stockCache'
-import Button from '../../components/ui/Button'
+import { type StockItem } from '../../lib/stockCache'
 import Skeleton from '../../components/Skeleton'
-import StockSearchInput from '../../components/StockSearchInput'
 import { useToast } from '../../components/ToastProvider'
 import ShareModal from '../../components/ShareModal'
 import { useShareManager } from '../../hooks/useShareManager'
-import CandleChart from '../../components/CandleChart'
-import EconomicEventBadge from '../../components/EconomicEventBadge'
-import SheetHeaderBar from '../../components/SheetHeaderBar'
-import { LayoutDashboard, TrendingUp, Flag, Activity, Search, Link2, HelpCircle } from 'lucide-react'
 import type { OhlcvCandle } from '../../lib/types'
 import { useCurrentChatId } from '../../stores/profileStore'
 import { defaultPlanItem, readSimulationPlan, saveSimulationPlan } from '../simulator/planStore'
 import ChaseWarningNote from '../../components/ChaseWarningNote'
 import DisclosureCheckCard from '../../components/DisclosureCheckCard'
-import type { NarrativeSignal, SignalTone } from './types'
 import { ANALYZE_PENDING_CODE_KEY, EXECUTION_GUIDE_PENDING_KEY } from './constants'
-import { buildNarrativeLine, flowNarrativeSignal, pegNarrativeSignal, shortNarrativeSignal } from './lib/narrative'
-import { advisorStatusStyle, regimeLabel, toneStyle, twoStageActionStyle } from './lib/styles'
-import { formatFlowValue, getFlowMetricLabel } from './lib/flow'
+import { getFlowMetricLabel } from './lib/flow'
 import { buildAnalyzeShareUrl } from './lib/shareUrl'
 import { calcChartHud, normalizeCandles } from './lib/candles'
-import { calcPriceBarPct, formatDate, formatDateTime } from './lib/dates'
+import { calcPriceBarPct } from './lib/dates'
 import { buildShareSummaryLines, buildSignalText } from './lib/shareSummary'
 import { calcAnalysisCoverage, decideEntry, validateEntryGap } from './lib/validation'
+import SearchHeader from './components/SearchHeader'
+import ResultHead from './components/ResultHead'
+import DecisionCard from './components/DecisionCard'
+import PriceRangeBar from './components/PriceRangeBar'
+import MarketRatiosSection from './components/MarketRatiosSection'
+import FlowShortSection from './components/FlowShortSection'
+import CandleSection from './components/CandleSection'
+import SummarySection from './components/SummarySection'
+import AdvisorSection from './components/AdvisorSection'
 import { useLocalStorageBool } from './hooks/useLocalStorageBool'
 import { useRecentSearches } from './hooks/useRecentSearches'
-
-const DIVIDER = (
-  <div style={{ borderTop: '1px solid var(--color-border-default)', margin: 'var(--space-4) 0' }} />
-)
 
 export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const chatId = useCurrentChatId()
@@ -51,7 +46,6 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const [showTradeMarkers, setShowTradeMarkers] = useLocalStorageBool('chart.showMarkers', true)
   const [showForceLine, setShowForceLine] = useLocalStorageBool('chart.showForce', false)
   const [recentSearches, pushRecentSearch] = useRecentSearches()
-  const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
 
   const goRoute = (route: string) => {
@@ -109,10 +103,6 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const computedEma200 = result?.ema200 ?? null
   const computedRsi14 = result?.rsi14 ?? null
   const flowMetricLabel = getFlowMetricLabel(flow?.metric)
-  const hasCreditShortData =
-    creditShort?.creditRatio != null ||
-    creditShort?.shortRatio != null ||
-    creditShort?.shortBalance != null
   const intradayDelta =
     result?.close != null && result?.open != null
       ? Number(result.close) - Number(result.open)
@@ -248,136 +238,19 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
 
   return (
     <section className="container-app analyze-sheet xls-page-inset">
-      <table className="xls-table analyze-sheet__meta-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
-        <colgroup>
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-        </colgroup>
-        <tbody>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
-              <SheetHeaderBar
-                title="종목 분석"
-                action={<EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />}
-              />
-            </td>
-          </tr>
-          <tr className="xls-row" style={{ position: 'relative', zIndex: 30 }}>
-            <td
-              className="xls-cell"
-              colSpan={6}
-              style={{
-                padding: '8px 10px',
-                overflow: 'visible',
-                position: 'relative',
-                zIndex: 30,
-              }}
-            >
-              <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'nowrap', alignItems: 'center' }}>
-                <div style={{ flex: '1 1 0', minWidth: 0 }}>
-                  <StockSearchInput
-                    value={query}
-                    onChange={setQuery}
-                    onSelect={handleStockSelect}
-                    placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
-                    disabled={loading}
-                  />
-                </div>
-                <Button
-                  variant="primary"
-                  onClick={() => analyze()}
-                  disabled={loading || !query.trim()}
-                  aria-label="분석"
-                  title="분석"
-                  style={{ padding: '0 0.75rem', flexShrink: 0 }}
-                >
-                  {loading
-                    ? <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-                    : <Search size={16} />}
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={onShareAnalyze}
-                  disabled={loading || !result?.code}
-                  aria-label="링크 공유"
-                  title="링크 공유"
-                  style={{ padding: '0 0.75rem', flexShrink: 0 }}
-                >
-                  <Link2 size={16} />
-                </Button>
-                <button
-                  type="button"
-                  aria-label="검색 도움말"
-                  title={'종목 코드(6자리) 또는 종목명으로 검색합니다.\n텔레그램 /analyze 에 대응합니다.'}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '0 var(--space-1)',
-                    color: 'var(--color-text-tertiary)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    flexShrink: 0,
-                    lineHeight: 1,
-                  }}
-                >
-                  <HelpCircle size={16} />
-                </button>
-              </div>
-            </td>
-          </tr>
-          {recentSearches.length > 0 && (
-            <tr className="xls-row xls-row--even">
-              <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-secondary)', fontSize: 11, fontWeight: 600 }}>
-                최근 조회
-              </td>
-              <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 'var(--space-1)',
-                    overflowX: 'auto',
-                    WebkitOverflowScrolling: 'touch',
-                    scrollbarWidth: 'none',
-                    msOverflowStyle: 'none',
-                    flexWrap: 'nowrap',
-                  }}
-                >
-                  {recentSearches.map(s => (
-                    <button
-                      key={s.code}
-                      className="tag"
-                      style={{ flexShrink: 0 }}
-                      onClick={() => { setQuery(s.code); void analyze(s.code) }}
-                      title={s.code}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
-                </div>
-              </td>
-            </tr>
-          )}
-          {/* 흐름 4→5·6: 예전엔 분석 뒤 누를 게 없어 여기서 흐름이 끊겼다 */}
-          {result?.code && !loading && (
-            <tr className="xls-row">
-              <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-secondary)', fontSize: 11, fontWeight: 600 }}>
-                다음 단계
-              </td>
-              <td className="xls-cell" colSpan={4} style={{ padding: '6px 10px' }}>
-                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                  <Button size="sm" onClick={() => addResultToSimulator()}>5 시뮬레이터에 추가</Button>
-                  <Button size="sm" variant="secondary" onClick={() => sendResultToExecutionGuide()}>6 실행가이드로</Button>
-                </div>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <SearchHeader
+        query={query}
+        setQuery={setQuery}
+        result={result}
+        loading={loading}
+        recentSearches={recentSearches}
+        analyze={analyze}
+        handleStockSelect={handleStockSelect}
+        onShareAnalyze={onShareAnalyze}
+        addResultToSimulator={addResultToSimulator}
+        sendResultToExecutionGuide={sendResultToExecutionGuide}
+        onNavigate={onNavigate}
+      />
 
       {loading && <div className="card"><Skeleton lines={5} height={14} /></div>}
 
@@ -389,672 +262,78 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
 
       {result && !loading && (
         <div className="card card-lg analyze-sheet__result" id={analyzeCaptureId}>
-          <table className="xls-table analyze-sheet__result-head" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
-            <colgroup>
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '20%' }} />
-            </colgroup>
-            <tbody>
-              <tr className="xls-row xls-row--even">
-                <td className="xls-cell" colSpan={3} style={{ fontSize: 18, fontWeight: 700 }}>
-                  {result.name ?? result.code}
-                </td>
-                <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums' }}>
-                    {result.close != null ? formatKrw(result.close) : '—'}
-                  </div>
-                  {result.change_pct != null && (
-                    <div className={result.change_pct > 0 ? 'positive' : result.change_pct < 0 ? 'negative' : 'neutral'}>
-                      {result.change_pct > 0 ? '+' : ''}{formatNumber(result.change_pct, 2)}%
-                    </div>
-                  )}
-                </td>
-              </tr>
-              <tr className="xls-row">
-                <td className="xls-cell" colSpan={5} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
-                  {result.code} · {result.price_source === 'realtime'
-                    ? `실시간 반영${result.price_fetched_at ? ` · ${formatDateTime(result.price_fetched_at)}` : ''}`
-                    : '종가 기준'}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <ResultHead
+            result={result}
+          />
 
           <ChaseWarningNote changePct={result.change_pct} />
           <DisclosureCheckCard code={result.code} />
 
-          <section className={`analyze-decision analyze-decision--${entryDecision.tone}`} aria-label="현재 진입 판단">
-            <div className="analyze-decision__primary">
-              <div className="analyze-decision__label">현재 판단</div>
-              <div className="analyze-decision__value">{entryDecision.label}</div>
-              <div className="analyze-decision__reason">{entryDecision.reason}</div>
-            </div>
-            <dl className="analyze-decision__facts">
-              <div>
-                <dt>규칙 판정</dt>
-                <dd>{advisor?.statusLabel || '판정 없음'}</dd>
-              </div>
-              <div>
-                <dt>진입 구간</dt>
-                <dd>{advisor?.entryLow != null && advisor?.entryHigh != null ? `${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}` : '산출 불가'}</dd>
-              </div>
-              <div>
-                <dt>데이터 충족도</dt>
-                <dd>{analysisCoverage.available}/{analysisCoverage.total}</dd>
-              </div>
-            </dl>
-            {(analysisCoverage.missing.length > 0 || analysisCoverage.creditIsProxy || dataValidation.warnings.length > 0) && (
-              <div className="analyze-decision__data-note">
-                {analysisCoverage.missing.length > 0 && <span>미확보: {analysisCoverage.missing.join(', ')}</span>}
-                {analysisCoverage.creditIsProxy && <span>공매도/신용은 실데이터 대신 프록시 반영</span>}
-                {dataValidation.warnings.length > 0 && <span>{dataValidation.warnings[0]}</span>}
-              </div>
-            )}
-          </section>
+          <DecisionCard
+            advisor={advisor}
+            entryDecision={entryDecision}
+            analysisCoverage={analysisCoverage}
+            dataValidation={dataValidation}
+          />
 
           {/* ── 일중 범위 바 ── */}
-          {result.high != null && result.low != null && (
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-1)' }}>
-                <span className="caption">{formatKrw(result.low)}</span>
-                <span className="caption" style={{ color: 'var(--color-text-tertiary)' }}>일중 범위</span>
-                <span className="caption">{formatKrw(result.high)}</span>
-              </div>
-              <div style={{
-                height: 6,
-                background: 'var(--color-border-default)',
-                borderRadius: 999,
-                position: 'relative',
-              }}>
-                {priceBarPct != null && (
-                  <div style={{
-                    position: 'absolute',
-                    left: `${Math.max(2, Math.min(98, priceBarPct))}%`,
-                    top: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: 12,
-                    height: 12,
-                    borderRadius: '50%',
-                    background: intradayDelta != null
-                      ? intradayDelta > 0
-                        ? 'var(--color-stock-up)'
-                        : intradayDelta < 0
-                          ? 'var(--color-stock-down)'
-                          : 'var(--color-stock-flat)'
-                      : result.change_pct > 0
-                      ? 'var(--color-stock-up)'
-                      : result.change_pct < 0
-                        ? 'var(--color-stock-down)'
-                        : 'var(--color-stock-flat)',
-                    border: '2px solid var(--color-bg-surface)',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-                  }} />
-                )}
-              </div>
-              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                원형 색상 기준: 시가 대비 {intradayDelta == null ? '미확인' : intradayDelta > 0 ? '상승(빨강)' : intradayDelta < 0 ? '하락(파랑)' : '보합'}
-              </div>
-            </div>
-          )}
+          <PriceRangeBar
+            result={result}
+            intradayDelta={intradayDelta}
+            priceBarPct={priceBarPct}
+          />
 
           {/* ── 시장 데이터 ── */}
-          <div className="cards-grid cols-2">
-            {([
-              ['날짜', formatDate(result.date)],
-              ['시가', result.open != null ? formatKrw(result.open) : '—'],
-              ['고가', result.high != null ? formatKrw(result.high) : '—'],
-              ['저가', result.low != null ? formatKrw(result.low) : '—'],
-              ['거래량', result.volume != null ? formatNumber(result.volume, 0) : '—'],
-              ['시가총액', result.market_cap != null ? formatKrw(result.market_cap) : '—'],
-            ] as [string, string][]).map(([label, val]) => (
-              <div key={label}>
-                <div className="stat-label">{label}</div>
-                <div className="stat-value" style={{ fontSize: 'var(--font-size-lg)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
-              </div>
-            ))}
-          </div>
-
-          {DIVIDER}
-
-          {/* ── 투자지표 ── */}
-          <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>투자지표</div>
-          <div className="cards-grid cols-3">
-            {([
-              { label: 'PER', val: result.per != null ? formatNumber(result.per, 2) : '—' },
-              { label: 'PBR', val: result.pbr != null ? formatNumber(result.pbr, 2) : '—' },
-              {
-                label: 'PEG',
-                val: result.peg != null ? formatNumber(result.peg, 2) : '—',
-                tag: result?.peg_meta?.label ?? null,
-                hint:
-                  result?.peg_meta?.growthPct != null
-                    ? `${result?.peg_meta?.growthBasis === 'net_income_forward'
-                      ? '순이익 선행성장률'
-                      : result?.peg_meta?.growthBasis === 'op_income'
-                      ? '영업이익성장률'
-                      : result?.peg_meta?.growthBasis === 'sales'
-                        ? '매출성장률'
-                        : '순이익성장률'} ${formatNumber(result.peg_meta.growthPct, 2)}% 기반`
-                    : '성장률 데이터 부족 시 신뢰도 낮음',
-              },
-              { label: 'EPS', val: result.eps != null ? formatKrw(result.eps) : '—' },
-              { label: 'BPS', val: result.bps != null ? formatKrw(result.bps) : '—' },
-              { label: 'ROE', val: result.roe != null ? formatNumber(result.roe, 2) + '%' : '—' },
-              { label: '부채비율', val: result.debt_ratio != null ? formatNumber(result.debt_ratio, 2) + '%' : '—' },
-              {
-                // 봇 신규 매수 제외 기준과 같은 판정 (src/services/fundamentalQualityGate.ts)
-                label: '봇 실적 관문',
-                val:
-                  result?.fundamental_gate?.status === 'pass'
-                    ? '통과'
-                    : result?.fundamental_gate?.status === 'fail'
-                      ? '봇 매수 제외'
-                      : result?.fundamental_gate?.status === 'unknown'
-                        ? '판정 불가'
-                        : '—',
-                hint:
-                  result?.fundamental_gate?.status === 'pass'
-                    ? '최근 4분기 흑자 · 최근 분기 영업이익이 1년 전보다 증가'
-                    : result?.fundamental_gate?.reason ?? '적자·영업이익 감소 종목은 8년 검증에서 평균보다 부진',
-              },
-            ] as { label: string; val: string; tag?: string | null; hint?: string }[]).map(({ label, val, tag, hint }) => (
-              <div key={label}>
-                <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-                  <span>{label}</span>
-                  {tag && (
-                    <span
-                      style={{
-                        fontSize: 'var(--font-size-xs)',
-                        padding: '1px 6px',
-                        borderRadius: 999,
-                        background:
-                          tag === '실데이터'
-                            ? 'var(--color-success-bg)'
-                            : tag === '추정치'
-                              ? 'var(--color-warning-bg)'
-                              : 'var(--color-error-bg)',
-                        color:
-                          tag === '실데이터'
-                            ? 'var(--color-success)'
-                            : tag === '추정치'
-                              ? 'var(--color-warning)'
-                              : 'var(--color-error)',
-                      }}
-                    >
-                      {tag}
-                    </span>
-                  )}
-                </div>
-                <div className="stat-value" style={{ fontSize: 'var(--font-size-base)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
-                {hint && (
-                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                    {hint}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          {result.fundamentals_as_of && (
-            <div className="caption" style={{ marginTop: 'var(--space-2)' }}>
-              재무 기준일: {formatDate(result.fundamentals_as_of)}
-            </div>
-          )}
-
-          {DIVIDER}
+          <MarketRatiosSection
+            result={result}
+          />
 
           {/* ── 수급/기술 ── */}
-          <div className="analyze-section-head">
-            <div className="analyze-section-head__title">
-              <div className="title-md">수급/기술</div>
-            </div>
-            <button
-              className="btn btn-sm analyze-section-head__action"
-              type="button"
-              onClick={() => setShowExtendedIndicators((v) => !v)}
-              aria-pressed={showExtendedIndicators}
-            >
-              {showExtendedIndicators ? '확장 지표 숨기기' : '확장 지표 보기'}
-            </button>
-          </div>
-          <div className="cards-grid cols-3">
-            {([
-              result.foreign_ratio != null
-                ? ['외국인 보유비율', formatNumber(result.foreign_ratio, 2) + '%']
-                : null,
-              flowMetricLabel && flow?.personal != null
-                ? [`개인 순매수(${flowMetricLabel})`, formatFlowValue(flow.personal, flow?.metric)]
-                : null,
-              flowMetricLabel && flow?.foreign != null
-                ? [`외국인 순매수(${flowMetricLabel})`, formatFlowValue(flow.foreign, flow?.metric)]
-                : null,
-              flowMetricLabel && flow?.institution != null
-                ? [`기관 순매수(${flowMetricLabel})`, formatFlowValue(flow.institution, flow?.metric)]
-                : null,
-              ['SMA 20', computedSma20 != null ? formatKrw(computedSma20) : '—'],
-              ['SMA 50', computedSma50 != null ? formatKrw(computedSma50) : '—'],
-              ['SMA 200', computedSma200 != null ? formatKrw(computedSma200) : '—'],
-              ['RSI 14', computedRsi14 != null ? formatNumber(computedRsi14, 1) : '—'],
-              ...(showExtendedIndicators
-                ? ([
-                    ['EMA 20', computedEma20 != null ? formatKrw(computedEma20) : '—'],
-                    ['EMA 50', computedEma50 != null ? formatKrw(computedEma50) : '—'],
-                    ['EMA 200', computedEma200 != null ? formatKrw(computedEma200) : '—'],
-                  ] as [string, string][])
-                : []),
-            ].filter(Boolean) as [string, string][]).map(([label, val]) => (
-              <div key={label}>
-                <div className="stat-label">{label}</div>
-                <div className="stat-value" style={{ fontSize: 'var(--font-size-base)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
-              </div>
-            ))}
-          </div>
-          <div className="caption" style={{ marginTop: 'var(--space-2)' }}>
-            기술지표 기준일: {result.indicators_as_of ? formatDate(result.indicators_as_of) : '—'}
-            {flow?.date ? ` · 수급 기준일: ${formatDate(flow.date)}` : ''}
-          </div>
-
-          {/* ── 공매도 / 신용 ── */}
-          <div className="title-md" style={{ marginTop: 'var(--space-6)', marginBottom: 'var(--space-3)' }}>공매도 / 신용</div>
-          <div className="cards-grid cols-3">
-            {([
-              {
-                label: '신용비율',
-                val: creditShort?.creditRatio != null ? formatNumber(creditShort.creditRatio, 2) + '%' : '—',
-                hint: '신용잔고 ÷ 상장주식수',
-                warn: creditShort?.creditRatio != null ? creditShort.creditRatio > 5 : false,
-              },
-              {
-                label: '공매도 잔고비율',
-                val: creditShort?.shortRatio != null ? formatNumber(creditShort.shortRatio, 2) + '%' : '—',
-                hint: '공매도 잔고 ÷ 상장주식수',
-                warn: creditShort?.shortRatio != null ? creditShort.shortRatio > 1 : false,
-              },
-              {
-                label: '공매도 잔고(주)',
-                val: creditShort?.shortBalance != null ? formatNumber(creditShort.shortBalance, 0) : '—',
-                hint: '최근 KRX 신고 기준',
-                warn: false,
-              },
-            ] as { label: string; val: string; hint: string; warn: boolean }[]).map(({ label, val, hint, warn }) => (
-              <div key={label}>
-                <div className="stat-label">{label}</div>
-                <div className="stat-value" style={{
-                  fontSize: 'var(--font-size-base)',
-                  color: val === '—' ? 'var(--color-text-disabled)' : warn ? 'var(--color-error)' : undefined,
-                }}>{val}</div>
-                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>{hint}</div>
-              </div>
-            ))}
-          </div>
-          <div className="caption" style={{ marginTop: 'var(--space-2)' }}>
-            {creditShort?.source === 'db' && `공매도/신용 기준일: ${creditShort.asOf ? formatDate(creditShort.asOf) : '—'}`}
-            {creditShort?.source === 'live' && `공매도/신용 조회시각: ${creditShort.fetchedAt ? formatDateTime(creditShort.fetchedAt) : '—'} (실시간 스크래핑)`}
-            {creditShort?.source === 'stale' && `공매도/신용 마지막 기준일: ${creditShort.staleAsOf ? formatDate(creditShort.staleAsOf) : '—'} · 오래된 데이터로 분석에서 제외`}
-            {creditShort?.source === 'proxy' && '공매도/신용 실데이터 없음 · 프록시 리스크만 반영'}
-            {!creditShort && '공매도/신용 데이터 없음'}
-          </div>
-          {creditShort?.staleReason && (
-            <div className="caption" style={{ marginTop: 'var(--space-1)', color: 'var(--color-warning)' }}>
-              주의: {creditShort.staleReason}
-            </div>
-          )}
+          <FlowShortSection
+            result={result}
+            flow={flow}
+            creditShort={creditShort}
+            computedSma20={computedSma20}
+            computedSma50={computedSma50}
+            computedSma200={computedSma200}
+            computedEma20={computedEma20}
+            computedEma50={computedEma50}
+            computedEma200={computedEma200}
+            computedRsi14={computedRsi14}
+            flowMetricLabel={flowMetricLabel}
+            showExtendedIndicators={showExtendedIndicators}
+            setShowExtendedIndicators={setShowExtendedIndicators}
+          />
 
           {/* ── 캔들 차트 ── */}
-          {candles.length > 0 && (
-            <>
-              {DIVIDER}
-              <div className="analyze-section-head" style={{ marginBottom: 'var(--space-2)', alignItems: 'flex-start' }}>
-                <div className="analyze-section-head__title">
-                  <div className="title-md">가격 차트</div>
-                </div>
-                <div className="analyze-chart-toolbar">
-                  <button
-                    className="analyze-chart-toggle"
-                    type="button"
-                    onClick={() => setShowChartHud((v) => !v)}
-                    aria-pressed={showChartHud}
-                    title="HUD"
-                    data-tone="info"
-                    data-active={showChartHud}
-                  >
-                    <span className="analyze-chart-toggle__icon">
-                      <LayoutDashboard size={14} />
-                    </span>
-                    <span className="analyze-chart-toggle__label">
-                      HUD
-                    </span>
-                  </button>
-                  <button
-                    className="analyze-chart-toggle"
-                    type="button"
-                    onClick={() => setShowMaEmaOverlay((v) => !v)}
-                    aria-pressed={showMaEmaOverlay}
-                    title="EMA21/SMA50/SMA200"
-                    data-tone="warning"
-                    data-active={showMaEmaOverlay}
-                  >
-                    <span className="analyze-chart-toggle__icon">
-                      <TrendingUp size={14} />
-                    </span>
-                    <span className="analyze-chart-toggle__label">
-                      MA
-                    </span>
-                  </button>
-                  <button
-                    className="analyze-chart-toggle"
-                    type="button"
-                    onClick={() => setShowTradeMarkers((v) => !v)}
-                    aria-pressed={showTradeMarkers}
-                    title="신호 마커"
-                    data-tone="success"
-                    data-active={showTradeMarkers}
-                  >
-                    <span className="analyze-chart-toggle__icon">
-                      <Flag size={14} />
-                    </span>
-                    <span className="analyze-chart-toggle__label">
-                      마커
-                    </span>
-                  </button>
-                  <button
-                    className="analyze-chart-toggle"
-                    type="button"
-                    onClick={() => setShowForceLine((v) => !v)}
-                    aria-pressed={showForceLine}
-                    title="세력선"
-                    data-tone="teal"
-                    data-active={showForceLine}
-                  >
-                    <span className="analyze-chart-toggle__icon">
-                      <Activity size={14} />
-                    </span>
-                    <span className="analyze-chart-toggle__label">
-                      세력
-                    </span>
-                  </button>
-                </div>
-              </div>
-              {showChartHud && (
-                <div className="cards-grid cols-3" style={{ marginBottom: 'var(--space-3)' }}>
-                  {([
-                    ['신호', signalText],
-                    ['1단계 레짐', regimeLabel(advisor?.twoStage?.regime)],
-                    ['2단계 실행', advisor?.twoStage?.actionLabel ?? '—'],
-                    ['지지선 (최근 20봉 최저)', chartHud.support != null ? formatKrw(chartHud.support) : '—'],
-                    ['저항선 (최근 20봉 최고)', chartHud.resistance != null ? formatKrw(chartHud.resistance) : '—'],
-                    ['권장 비중', advisor?.twoStage?.allocationPct != null ? `${formatNumber(advisor.twoStage.allocationPct, 0)}%` : '—'],
-                    ['손절', advisor?.stopPrice != null ? formatKrw(advisor.stopPrice) : '—'],
-                    ['1차 익절', advisor?.target1 != null ? formatKrw(advisor.target1) : '—'],
-                    ['진입구간', advisor?.entryLow != null && advisor?.entryHigh != null ? `${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}` : '—'],
-                  ] as [string, string][]).map(([label, val]) => (
-                    <div key={label}>
-                      <div className="stat-label">{label}</div>
-                      <div className="stat-value" style={{ fontSize: 'var(--font-size-base)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <CandleChart
-                candles={candles}
-                entryLow={showChartHud ? advisor?.entryLow : null}
-                entryHigh={showChartHud ? advisor?.entryHigh : null}
-                stopLoss={showChartHud ? advisor?.stopPrice : null}
-                target1={showChartHud ? advisor?.target1 : null}
-                tradeSignal={advisor?.status ?? null}
-                showMaEmaOverlay={showMaEmaOverlay}
-                showTradeMarkers={showTradeMarkers}
-                showForceLine={showForceLine}
-                support={chartHud?.support ?? null}
-                resistance={chartHud?.resistance ?? null}
-              />
-            </>
-          )}
+          <CandleSection
+            advisor={advisor}
+            candles={candles}
+            chartHud={chartHud}
+            signalText={signalText}
+            showChartHud={showChartHud}
+            setShowChartHud={setShowChartHud}
+            showMaEmaOverlay={showMaEmaOverlay}
+            setShowMaEmaOverlay={setShowMaEmaOverlay}
+            showTradeMarkers={showTradeMarkers}
+            setShowTradeMarkers={setShowTradeMarkers}
+            showForceLine={showForceLine}
+            setShowForceLine={setShowForceLine}
+          />
 
           {/* ── 현황 요약 ── */}
-          {(() => {
-            const pegSig = pegNarrativeSignal(result.peg ?? null)
-            const flowSig = flowNarrativeSignal(flow?.institution ?? null, flow?.foreign ?? null)
-            const shortSig = shortNarrativeSignal(creditShort?.shortRatio ?? null)
-            if (!pegSig && !flowSig && !shortSig) return null
-            const summaryLine = buildNarrativeLine(pegSig, flowSig, shortSig)
-            const signals = [
-              pegSig ? { title: '밸류에이션', sig: pegSig } : null,
-              flowSig ? { title: '수급 방향', sig: flowSig } : null,
-              shortSig ? { title: '공매도', sig: shortSig } : null,
-            ].filter(Boolean) as Array<{ title: string; sig: NarrativeSignal }>
-            return (
-              <>
-                {DIVIDER}
-                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>판단 근거 요약</div>
-                <div className="cards-grid cols-3" style={{ marginBottom: summaryLine ? 'var(--space-3)' : undefined }}>
-                  {signals.map(({ title, sig }) => {
-                    const s = toneStyle(sig.tone)
-                    return (
-                      <div key={title} style={{
-                        background: s.bg,
-                        border: `1px solid ${s.border}`,
-                        borderRadius: 'var(--radius-md)',
-                        padding: 'var(--space-3)',
-                      }}>
-                        <div className="stat-label" style={{ color: s.color, marginBottom: 'var(--space-1)' }}>{title}</div>
-                        <div style={{ fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--font-size-base)', color: s.color }}>{sig.label}</div>
-                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>{sig.detail}</div>
-                      </div>
-                    )
-                  })}
-                </div>
-                {summaryLine && (
-                  <div style={{
-                    padding: 'var(--space-3)',
-                    background: 'var(--color-bg-sunken)',
-                    borderRadius: 'var(--radius-md)',
-                    borderLeft: '3px solid var(--color-border-emphasis)',
-                  }}>
-                    <div className="caption" style={{ color: 'var(--color-text-primary)', lineHeight: 1.7 }}>
-                      {summaryLine}
-                    </div>
-                  </div>
-                )}
-              </>
-            )
-          })()}
+          <SummarySection
+            result={result}
+            flow={flow}
+            creditShort={creditShort}
+          />
 
           {/* ── 어드바이저 ── */}
-          {advisor && (
-            <>
-              {DIVIDER}
-              <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
-                <div className="title-md">상세 규칙 및 가격 관리</div>
-                <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-                  {dataValidation.warnings.length > 0 && (
-                    <span
-                      title={dataValidation.warnings.join('; ')}
-                      style={{
-                      display: 'inline-block',
-                      padding: '0.2rem 0.75rem',
-                      borderRadius: 999,
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      background: 'var(--color-warning-bg)',
-                      color: 'var(--color-warning)',
-                      cursor: 'help',
-                    }}>
-                      ⚠️ 데이터 검증 필요
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="card" style={{ background: 'var(--color-bg-sunken)' }}>
-                {/* 판정 배지 */}
-                <div style={{ marginBottom: 'var(--space-3)' }}>
-                  <div className="stat-label" title="점수·진입구간·손익비 고정 규칙으로 정한 판정입니다. 10년 검증에서 점수는 종목 간 수익 차이를 예측하지 못했습니다.">규칙 판정</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-1)', marginBottom: 'var(--space-1)' }}>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '0.2rem 0.75rem',
-                      borderRadius: 999,
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      ...advisorStatusStyle(advisor.status),
-                    }}>
-                      {advisor.statusLabel ?? '—'}
-                    </span>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '0.2rem 0.75rem',
-                      borderRadius: 999,
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      background: advisor?.twoStage?.regime === 'risk_on'
-                        ? 'var(--color-success-bg)'
-                        : advisor?.twoStage?.regime === 'risk_off'
-                          ? 'var(--color-error-bg)'
-                          : 'var(--color-warning-bg)',
-                      color: advisor?.twoStage?.regime === 'risk_on'
-                        ? 'var(--color-success)'
-                        : advisor?.twoStage?.regime === 'risk_off'
-                          ? 'var(--color-error)'
-                          : 'var(--color-warning)',
-                    }}>
-                      1단계 {regimeLabel(advisor?.twoStage?.regime)}
-                    </span>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '0.2rem 0.75rem',
-                      borderRadius: 999,
-                      fontWeight: 'var(--font-weight-semibold)',
-                      fontSize: 'var(--font-size-sm)',
-                      ...twoStageActionStyle(advisor?.twoStage?.action),
-                    }}>
-                      2단계 {advisor?.twoStage?.actionLabel ?? '관망'}
-                    </span>
-                  </div>
-                  {advisor.signalReason && <div className="caption" style={{ marginBottom: 'var(--space-1)' }}>신호 근거: {advisor.signalReason}</div>}
-                  {advisor?.twoStage?.reason && (
-                    <div className="caption" style={{ marginBottom: 'var(--space-1)' }}>
-                      합성 근거: {advisor.twoStage.reason} · 권장 비중 {advisor?.twoStage?.allocationPct != null ? `${formatNumber(advisor.twoStage.allocationPct, 0)}%` : '—'}
-                    </div>
-                  )}
-                  {advisor.summary && <div className="caption">{advisor.summary}</div>}
-                </div>
-
-                {/* 진입구간 / 손절 / 목표 — 고정 규칙(손절 5.5~8%·목표 3~18%)으로 만든 가격이며 예측이 아니다 */}
-                <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>
-                  아래 가격은 고정 규칙(손절 5.5~8%, 목표 +3~18%)으로 정한 관리 기준입니다. 도달 확률을 뜻하지 않습니다.
-                </div>
-                <div className="cards-grid cols-2" style={{ marginBottom: 'var(--space-3)' }}>
-                  <div style={{
-                    background: 'var(--color-success-bg)',
-                    border: '1px solid rgba(0,180,147,0.25)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3)',
-                  }}>
-                    <div className="stat-label" style={{ color: 'var(--color-success)' }}>진입구간</div>
-                    <div style={{ fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--font-size-base)' }}>
-                      {advisor.entryLow != null && advisor.entryHigh != null
-                        ? `${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}`
-                        : '—'}
-                    </div>
-                  </div>
-                  <div style={{
-                    background: 'var(--color-error-bg)',
-                    border: '1px solid rgba(240,68,82,0.25)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3)',
-                  }}>
-                    <div className="stat-label" style={{ color: 'var(--color-error)' }}>손절기준</div>
-                    <div style={{ fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--font-size-base)' }}>
-                      {advisor.stopPrice != null
-                        ? `${formatKrw(advisor.stopPrice)} (${advisor.stopPct != null ? `-${formatNumber(Math.abs(advisor.stopPct * 100), 2)}%` : '—'})`
-                        : '—'}
-                    </div>
-                  </div>
-                  <div style={{
-                    background: 'var(--color-info-bg)',
-                    border: '1px solid rgba(0,96,255,0.15)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3)',
-                  }}>
-                    <div className="stat-label" style={{ color: 'var(--color-info)' }}>1차 목표</div>
-                    <div style={{ fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--font-size-base)' }}>
-                      {advisor.target1 != null
-                        ? `${formatKrw(advisor.target1)} (${advisor.target1Pct != null ? `+${formatNumber(advisor.target1Pct * 100, 2)}%` : '—'})`
-                        : '—'}
-                    </div>
-                  </div>
-                  <div style={{
-                    background: 'var(--color-info-bg)',
-                    border: '1px solid rgba(0,96,255,0.15)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3)',
-                  }}>
-                    <div className="stat-label" style={{ color: 'var(--color-info)' }}>2차 목표</div>
-                    <div style={{ fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--font-size-base)' }}>
-                      {advisor.target2 != null
-                        ? `${formatKrw(advisor.target2)} (${advisor.target2Pct != null ? `+${formatNumber(advisor.target2Pct * 100, 2)}%` : '—'})`
-                        : '—'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 트레일링 스탑 가이드 */}
-                {advisor.entryLow != null && (
-                  <div style={{
-                    background: 'var(--color-warning-bg, rgba(255,170,0,0.08))',
-                    border: '1px solid rgba(200,140,0,0.2)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3)',
-                    marginBottom: 'var(--space-2)',
-                  }}>
-                    <div className="stat-label" style={{ color: 'var(--color-warning-text, #a07000)', marginBottom: 'var(--space-1)' }}>
-                      트레일링 스탑 기준 (참고용)
-                    </div>
-                    {(() => {
-                      const baseEntry = advisor.entryLow ?? result.close ?? 0
-                      const TRAILING_ARM_PCT = 5   // 활성화 수익률
-                      const TRAILING_STOP_PCT = 10 // 고점 대비 이탈 %
-                      const trailingArmPrice = baseEntry > 0 ? Math.round(baseEntry * (1 + TRAILING_ARM_PCT / 100)) : null
-                      return (
-                        <div className="caption" style={{ lineHeight: '1.7' }}>
-                          <span>• 진입 후 <strong>+{TRAILING_ARM_PCT}%</strong> 도달 시 트레일링 활성화</span><br />
-                          {trailingArmPrice && (
-                            <><span style={{ paddingLeft: '1em' }}>→ 활성화 기준가 약 <strong>{formatKrw(trailingArmPrice)}</strong></span><br /></>
-                          )}
-                          <span>• 이후 고점 대비 <strong>-{TRAILING_STOP_PCT}%</strong> 이탈 시 익절</span><br />
-                          <span>• 손절: 진입가(평단) 대비 <strong>-{advisor.stopPct != null ? `${Math.abs(advisor.stopPct * 100).toFixed(1)}%` : '10%'}</strong></span><br />
-                          <span style={{ opacity: 0.7 }}>※ 상방은 무제한 — 고점 추적으로 수익 보호. 가상매매 자동사이클에 적용 중.</span>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
-
-                {/* 판단 근거 */}
-                {Array.isArray(advisor.rationale) && advisor.rationale.length > 0 && (
-                  <div style={{ marginBottom: 'var(--space-2)' }}>
-                    <div className="stat-label">판단 근거</div>
-                    {advisor.rationale.map((line: string, i: number) => (
-                      <div key={`r-${i}`} className="caption">- {line}</div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 주의 */}
-                {Array.isArray(advisor.warnings) && advisor.warnings.length > 0 && (
-                  <div style={{ marginBottom: 'var(--space-2)' }}>
-                    <div className="stat-label">주의</div>
-                    {advisor.warnings.map((line: string, i: number) => (
-                      <div key={`w-${i}`} className="caption" style={{ color: 'var(--color-error)' }}>- {line}</div>
-                    ))}
-                  </div>
-                )}
-
-              </div>
-            </>
-          )}
+          <AdvisorSection
+            result={result}
+            advisor={advisor}
+            dataValidation={dataValidation}
+          />
 
           {result.sector && (
             <div className="caption" style={{ marginTop: 'var(--space-4)' }}>섹터: {result.sector}</div>
