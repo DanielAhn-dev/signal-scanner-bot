@@ -14,55 +14,29 @@ import { useDetailed } from '../../stores/viewModeStore'
 import { useToast } from '../../components/ToastProvider'
 import { useShareManager } from '../../hooks/useShareManager'
 import { getCurrentClientIdFromStore, useCurrentChatId } from '../../stores/profileStore'
-
-const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
-
-type RiskMode = 'conservative' | 'neutral' | 'aggressive'
-type CandidateMode = 'balanced' | 'multibagger' | 'swing'
-type ScoreVersion = 'v2' | 'legacy'
-
-type GuideRow = {
-  code: string
-  name: string
-  score: number | null
-  statusLabel: string | null
-  summary: string | null
-  entryLow: number | null
-  entryHigh: number | null
-  entryRef: number | null
-  stopPrice: number | null
-  target1: number | null
-  target2: number | null
-  target1Pct: number | null
-  target2Pct: number | null
-  holdDays: [number, number] | null
-  riskReward: number | null
-  warnings: string[]
-  headlines: string[]
-  headlineLinks: Array<{ title: string; url: string | null; source: string | null }>
-  marketDataDate: string | null
-  newsDataDate: string | null
-  plannedBudget: number
-  qty: number
-  firstOrderAmount: number
-}
-
-type AutoCandidate = {
-  code: string
-  name: string
-  source: 'highlights' | 'scan'
-  sector: string | null
-  score: number
-  scoreLegacy: number
-  upsideSignal: number | null
-  riskSignal: number | null
-  confidencePct: number | null
-  liquidity: number | null
-  intradayChangePct: number | null
-  netFlow5d: number | null
-  netFlow20d: number | null
-  reason: string
-}
+import { EXECUTION_GUIDE_PENDING_KEY } from './constants'
+import type { AutoCandidate, CandidateMode, GuideRow, RiskMode, ScoreVersion } from './types'
+import { autoSourceLabelByMode, normalizeSourceLabel, parseCodes } from './lib/codes'
+import { applyRiskMode, parseHoldDays } from './lib/risk'
+import {
+  decodeHeadlineText,
+  formatDateRangeLabel,
+  formatRowDataAsOf,
+  normalizeNewsSource,
+  normalizeNewsUrl,
+} from './lib/news'
+import {
+  clampValue,
+  computeFlowAccelerationScore,
+  computeNetFlowScore,
+  computeOverheatRisk,
+  formatCompactKrw,
+  formatStageLabel,
+  getThemeBoost,
+  gradeToPct,
+  normalizeScoreFrom5,
+  scoreSignalFreshness,
+} from './lib/scoring'
 
 function getCandidateScoreByVersion(candidate: AutoCandidate, version: ScoreVersion): number {
   return version === 'legacy' ? candidate.scoreLegacy : candidate.score
@@ -202,283 +176,6 @@ function toExecutionGuideSnapshotText(input: {
     })),
   }
   return `__EXGUIDE__\n${JSON.stringify(egData)}\n__EGTEXT__\n${lines.join('\n')}`
-}
-
-function parseCodes(text: string): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const token of text.split(/[\s,\n]+/g)) {
-    const value = token.trim()
-    if (!value) continue
-    const code = value.replace(/[^0-9A-Za-z]/g, '').toUpperCase()
-    if (!code) continue
-    if (seen.has(code)) continue
-    seen.add(code)
-    out.push(code)
-  }
-  return out
-}
-
-function normalizeSourceLabel(input: string | null | undefined): string {
-  const value = String(input || '').trim().toLowerCase()
-  if (!value) return '수동 입력'
-  if (value === 'manual' || value === 'manual-input') return '수동 입력'
-  if (value === 'auto-scan' || value === 'autoscan') return '자동 후보(스캔)'
-  if (value === 'scan') return '스캔 연동'
-  if (value === 'highlights') return '집행우선 연동'
-  if (value === 'execution-guide') return '실행가이드'
-  if (value === 'analyze') return '분석 연동'
-  if (value === 'backtest') return '백테스트 연동'
-  if (value === 'discovery') return '발굴 연동'
-  return String(input || '').trim()
-}
-
-function autoSourceLabelByMode(mode: CandidateMode): string {
-  if (mode === 'multibagger') return '자동 후보(멀티배거)'
-  if (mode === 'swing') return '자동 후보(스윙)'
-  return '자동 후보(밸런스)'
-}
-
-function applyRiskMode(v: number | null, mode: RiskMode, kind: 'target' | 'stop'): number | null {
-  if (v == null) return null
-  const targetFactor: Record<RiskMode, number> = {
-    conservative: 0.85,
-    neutral: 1,
-    aggressive: 1.18,
-  }
-  const stopFactor: Record<RiskMode, number> = {
-    conservative: 0.9,
-    neutral: 1,
-    aggressive: 1.15,
-  }
-  const factor = kind === 'target' ? targetFactor[mode] : stopFactor[mode]
-  return Math.round(v * factor)
-}
-
-function parseHoldDays(input: unknown): [number, number] | null {
-  if (!Array.isArray(input) || input.length < 2) return null
-  const a = Number(input[0])
-  const b = Number(input[1])
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return null
-  return [Math.max(1, Math.floor(a)), Math.max(1, Math.floor(b))]
-}
-
-function decodeHeadlineText(input: string): string {
-  const base = String(input || '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#(\d+);/g, (_m, dec: string) => {
-      const value = Number(dec)
-      return Number.isFinite(value) ? String.fromCharCode(value) : _m
-    })
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex: string) => {
-      const value = Number.parseInt(hex, 16)
-      return Number.isFinite(value) ? String.fromCharCode(value) : _m
-    })
-
-  return base.replace(/\s{2,}/g, ' ').trim()
-}
-
-function normalizeNewsUrl(input: unknown): string | null {
-  const value = String(input || '').trim()
-  if (!value) return null
-  if (/^https?:\/\//i.test(value)) return value
-  if (value.startsWith('//')) return `https:${value}`
-  return null
-}
-
-function normalizeNewsSource(input: unknown): string | null {
-  const value = decodeHeadlineText(String(input || ''))
-  return value || null
-}
-
-function normalizeDateLabel(input: unknown): string | null {
-  const raw = String(input || '').trim()
-  if (!raw) return null
-  const dateOnly = raw.match(/\d{4}-\d{2}-\d{2}/)?.[0]
-  if (dateOnly) return dateOnly
-  const compact = raw.match(/(\d{4})[./](\d{1,2})[./](\d{1,2})/)
-  if (compact) {
-    const y = compact[1]
-    const m = compact[2].padStart(2, '0')
-    const d = compact[3].padStart(2, '0')
-    return `${y}-${m}-${d}`
-  }
-  const ts = Date.parse(raw)
-  if (Number.isFinite(ts)) {
-    return new Date(ts).toISOString().slice(0, 10)
-  }
-  return null
-}
-
-function formatDateRangeLabel(values: Array<string | null | undefined>): string | null {
-  const uniq = Array.from(new Set(values.map((value) => normalizeDateLabel(value)).filter(Boolean) as string[])).sort()
-  if (uniq.length === 0) return null
-  if (uniq.length === 1) return uniq[0]
-  return `${uniq[0]}~${uniq[uniq.length - 1]}`
-}
-
-function formatRowDataAsOf(marketDataDate: string | null, newsDataDate: string | null): string {
-  const market = normalizeDateLabel(marketDataDate)
-  const news = normalizeDateLabel(newsDataDate)
-  const parts = [
-    market ? `시세 ${market}` : null,
-    news ? `뉴스 ${news}` : null,
-  ].filter(Boolean)
-  return parts.length > 0 ? parts.join(' · ') : '—'
-}
-
-function clampValue(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min
-  return Math.max(min, Math.min(max, value))
-}
-
-function normalizeScoreFrom5(value: number | null | undefined): number {
-  const n = Number(value ?? 0)
-  if (!Number.isFinite(n)) return 0
-  if (n > 5) return clampValue(n, 0, 100)
-  return clampValue(n * 20, 0, 100)
-}
-
-function gradeToPct(grade: unknown): number {
-  const value = String(grade || '').trim().toUpperCase()
-  if (value === 'A') return 92
-  if (value === 'B') return 78
-  if (value === 'C') return 60
-  if (value === 'D') return 42
-  return 50
-}
-
-function pickFirstFiniteNumber(obj: any, keys: string[]): number | null {
-  for (const key of keys) {
-    const raw = obj?.[key]
-    if (raw == null || raw === '') continue
-    const value = Number(raw)
-    if (Number.isFinite(value)) return value
-  }
-  return null
-}
-
-function computeNetFlow(item: any): { net5d: number | null; net20d: number | null } {
-  const foreign = pickFirstFiniteNumber(item, [
-    'foreign_net_buy_5d',
-    'foreignNetBuy5d',
-    'foreign5d',
-  ])
-  const institution = pickFirstFiniteNumber(item, [
-    'institution_net_buy_5d',
-    'institutionNetBuy5d',
-    'institution5d',
-  ])
-  const foreign20 = pickFirstFiniteNumber(item, [
-    'foreign_net_buy_20d',
-    'foreignNetBuy20d',
-    'foreign20d',
-  ])
-  const institution20 = pickFirstFiniteNumber(item, [
-    'institution_net_buy_20d',
-    'institutionNetBuy20d',
-    'institution20d',
-  ])
-
-  const net5d = foreign == null && institution == null
-    ? null
-    : (foreign ?? 0) + (institution ?? 0)
-  const net20d = foreign20 == null && institution20 == null
-    ? null
-    : (foreign20 ?? 0) + (institution20 ?? 0)
-
-  return { net5d, net20d }
-}
-
-function formatCompactKrw(value: number | null | undefined): string {
-  if (value == null) return '—'
-  const n = Number(value)
-  if (!Number.isFinite(n)) return '—'
-  const sign = n >= 0 ? '+' : '-'
-  const abs = Math.abs(Math.round(n))
-  if (abs >= 100_000_000) return `${sign}${formatNumber(abs / 100_000_000, abs >= 1_000_000_000 ? 1 : 0)}억원`
-  if (abs >= 10_000) return `${sign}${formatNumber(Math.round(abs / 10_000))}만원`
-  return `${sign}${formatNumber(abs)}원`
-}
-
-function computeNetFlowScore(item: any): { score: number; label: string | null; net5d: number | null; net20d: number | null } {
-  const flow = computeNetFlow(item)
-  if (flow.net5d == null && flow.net20d == null) return { score: 50, label: null, net5d: null, net20d: null }
-
-  const net5d = flow.net5d ?? 0
-  const net20d = flow.net20d ?? 0
-  const billions5d = net5d / 1_000_000_000
-  const billions20d = net20d / 1_000_000_000
-  const score = clampValue(50 + billions5d * 3.6 + billions20d * 1.4, 0, 100)
-  const leadNet = flow.net5d ?? flow.net20d ?? 0
-  const label = leadNet >= 0
-    ? `수급 순유입(5D) ${formatKrw(Math.round(Math.abs(net5d)))}`
-    : `수급 순유출(5D) ${formatKrw(Math.round(Math.abs(net5d)))}`
-  return { score, label, net5d: flow.net5d, net20d: flow.net20d }
-}
-
-function computeFlowAccelerationScore(net5d: number | null, net20d: number | null): { score: number; label: string | null } {
-  if (net5d == null && net20d == null) return { score: 50, label: null }
-  const daily5 = (net5d ?? 0) / 5
-  const daily20 = (net20d ?? 0) / 20
-  const delta = daily5 - daily20
-  const score = clampValue(50 + (delta / 200_000_000) * 18 + ((net5d ?? 0) / 1_000_000_000) * 1.2, 0, 100)
-  const label = delta >= 0
-    ? `수급 가속(최근) +${formatKrw(Math.round(Math.abs(delta * 5)))}`
-    : `수급 둔화(최근) -${formatKrw(Math.round(Math.abs(delta * 5)))}`
-  return { score, label }
-}
-
-function scoreSignalFreshness(ageDays: number | null | undefined, liteAgeDays: number | null | undefined): { score: number; label: string | null } {
-  const strictAge = Number(ageDays)
-  const liteAge = Number(liteAgeDays)
-  if (Number.isFinite(strictAge) && strictAge >= 0) {
-    const score = strictAge <= 0 ? 100 : strictAge <= 1 ? 92 : strictAge <= 3 ? 80 : strictAge <= 5 ? 68 : strictAge <= 10 ? 52 : 36
-    return { score, label: `신호 신선도(D-${strictAge})` }
-  }
-  if (Number.isFinite(liteAge) && liteAge >= 0) {
-    const score = liteAge <= 0 ? 92 : liteAge <= 1 ? 84 : liteAge <= 3 ? 72 : liteAge <= 5 ? 60 : liteAge <= 10 ? 46 : 32
-    return { score, label: `라이트 신호(D-${liteAge})` }
-  }
-  return { score: 55, label: null }
-}
-
-function computeOverheatRisk(intradayPct: number): number {
-  const upRisk = Math.max(0, intradayPct - 4.2)
-  const downRisk = Math.max(0, -intradayPct - 4.8)
-  return clampValue(upRisk * 18 + downRisk * 10, 0, 100)
-}
-
-function formatStageLabel(stage: unknown): string {
-  const value = String(stage || '').trim().toLowerCase()
-  if (value === 'breakout') return '리드 돌파'
-  if (value === 'lead') return '리드 축적'
-  return '일반'
-}
-
-function getThemeBoost(name?: string | null, sector?: string | null): { score: number; labels: string[] } {
-  const text = `${name || ''} ${sector || ''}`.toLowerCase()
-  const tags: Array<{ score: number; label: string; tokens: string[] }> = [
-    { score: 1.6, label: 'LG그룹/전장', tokens: ['lg', '엘지', '전장'] },
-    { score: 2, label: '반도체/소부장', tokens: ['반도체', 'semiconductor', '소부장', 'hbm', '메모리'] },
-    { score: 1.8, label: '로봇/자동화', tokens: ['로봇', 'robot', '자동화'] },
-    { score: 1.4, label: '현대차그룹', tokens: ['현대차', '현대모비스', '오토에버', 'hl만도', '기아'] },
-  ]
-
-  let score = 0
-  const labels: string[] = []
-  for (const tag of tags) {
-    if (tag.tokens.some((token) => text.includes(token))) {
-      score += tag.score
-      labels.push(tag.label)
-    }
-  }
-  return { score, labels }
 }
 
 function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
