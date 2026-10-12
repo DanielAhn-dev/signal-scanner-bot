@@ -1,452 +1,59 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { searchStocks } from '../../lib/stockCache'
-import {
-  defaultPlanItem,
-  readSimulationPlan,
-  saveSimulationPlan,
-} from '../simulator/planStore'
-import type {
-  AutoPickItem,
-  AutoPickTier,
-  BacktestResponse,
-  ReturnProfileKey,
-  ScanCandidateLite,
-  StockIndicators,
-} from './types'
-import {
-  ANALYZE_PENDING_CODE_KEY,
-  BACKTEST_PENDING_CODE_KEY,
-  EXECUTION_GUIDE_PENDING_KEY,
-  type Horizon,
-} from './constants'
-import { toEokFromWon } from './lib/format'
-import { bucketAutoPicks, estimateExpectedReturnPct, evaluateAutoPick } from './lib/autoPick'
+import type { AutoPickTier, BacktestTab } from './types'
+import { bucketAutoPicks } from './lib/autoPick'
 import {
   computeInvestSim,
   computeVisibleHorizons,
   filterFeatureStats,
   hasExtendedHorizon as hasExtendedHorizonData,
   sortRisers,
+  type SortDir,
+  type SortKey,
 } from './lib/backtestView'
+import {
+  addAutoPicksToSimulator as addAutoPicksToSimulatorFor,
+  goAnalyze,
+  goExecutionGuide,
+  goSimulator,
+} from './lib/navigation'
 import { buildPatternMatch } from './lib/patternMatch'
+import { filterSamplesByRule, isRuleKeyMatched } from './lib/ruleMatch'
+import { useAutoPicks } from './hooks/useAutoPicks'
+import { useBacktestRun } from './hooks/useBacktestRun'
+import { useReturnProfile } from './hooks/useReturnProfile'
+import { useStockCheck } from './hooks/useStockCheck'
 import BacktestSkeleton from './components/BacktestSkeleton'
 import ParamsCard from './components/ParamsCard'
 import SummaryTab from './components/SummaryTab'
 import CheckTab from './components/CheckTab'
 import SamplesTab from './components/SamplesTab'
-import { filterSamplesByRule, isRuleKeyMatched, matchesRuleFilter } from './lib/ruleMatch'
-import { isBuySignal } from './lib/signal'
-
-function navigateTo(route: string) {
-  try {
-    window.history.pushState({}, '', `/${route}`)
-    window.dispatchEvent(new PopStateEvent('popstate'))
-  } catch { /* ignore */ }
-}
 
 export default function BacktestPage() {
-  const [horizon, setHorizon] = useState<Horizon>(20)
-  const [lookbackDays, setLookbackDays] = useState(120)
-  const [rallyPct, setRallyPct] = useState(20)
-  const [topN, setTopN] = useState(30)
-  const [loading, setLoading] = useState(false)
-  const [hasRun, setHasRun] = useState(false) // auto-run 후 재실행 여부 추적용
-  const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<BacktestResponse | null>(null)
-  const [selectedRuleKey, setSelectedRuleKey] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<BacktestTab>('summary')
   const [showAllFeatureRows, setShowAllFeatureRows] = useState(false)
-  const [activeTab, setActiveTab] = useState<'summary' | 'check' | 'samples'>('summary')
-  const [sortKey, setSortKey] = useState<'forwardReturnPct' | 'totalScore' | 'rsi14' | 'asof'>('forwardReturnPct')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-
-  // 종목 패턴 점검
-  const [checkSearch, setCheckSearch] = useState('')
-  const [checkResults, setCheckResults] = useState<any[]>([])
-  const [checkFocused, setCheckFocused] = useState(false)
-  const [selectedStock, setSelectedStock] = useState<{ code: string; name: string } | null>(null)
-  const [indicators, setIndicators] = useState<StockIndicators | null>(null)
-  const [checkLoading, setCheckLoading] = useState(false)
-  const [checkError, setCheckError] = useState<string | null>(null)
-  const [autoPickLoading, setAutoPickLoading] = useState(false)
-  const [autoPickError, setAutoPickError] = useState<string | null>(null)
-  const [autoPicks, setAutoPicks] = useState<AutoPickItem[]>([])
-  const [conditionStats, setConditionStats] = useState({
-    buySignalPct: 0,
-    score50PlusPct: 0,
-    rsi45_65Pct: 0,
-    totalScanned: 0,
-  })
-  const [returnProfile, setReturnProfile] = useState<ReturnProfileKey>('strict')
-  // 기대수익 = 규칙 일치 과거 사례 평균(모든 후보 동일). 0이면 과거 평균이 플러스인 규칙만 통과.
-  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(0)
-  const [minShortMomentumPct, setMinShortMomentumPct] = useState(-2)
-  const [minLiquidityEok, setMinLiquidityEok] = useState(50)
+  const [sortKey, setSortKey] = useState<SortKey>('forwardReturnPct')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [investAmount, setInvestAmount] = useState(1_000_000)
-  const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const checkWrapRef = useRef<HTMLDivElement>(null)
 
-  const load = async () => {
-    setHasRun(true)
-    setLoading(true)
-    setError(null)
-    try {
-      const requestTs = Date.now()
-      const q = new URLSearchParams({
-        horizon: String(horizon),
-        lookbackDays: String(lookbackDays),
-        rallyPct: String(rallyPct),
-        topN: String(topN),
-      })
-      q.set('_ts', String(requestTs))
-      const res = await apiFetch(`/api/ui/backtest-risers?${q.toString()}`, {
-        cacheMs: 0,
-        timeoutMs: 30_000,
-      })
-      setData((res?.data ?? null) as BacktestResponse | null)
-    } catch (e: any) {
-      setError(e?.message || String(e))
-      setData(null)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const {
+    horizon, setHorizon, lookbackDays, setLookbackDays, rallyPct, setRallyPct, topN, setTopN,
+    loading, error, data, load, selectedRuleKey, setSelectedRuleKey,
+  } = useBacktestRun()
+  const {
+    returnProfile, minExpectedReturnPct, setMinExpectedReturnPct, minShortMomentumPct, setMinShortMomentumPct,
+    minLiquidityEok, setMinLiquidityEok, applyReturnProfile,
+  } = useReturnProfile()
+  const { autoPickLoading, autoPickError, autoPicks, conditionStats } = useAutoPicks({
+    data, selectedRuleKey, returnProfile, minExpectedReturnPct, minShortMomentumPct, minLiquidityEok,
+  })
+  const {
+    checkSearch, setCheckSearch, checkResults, setCheckResults, checkFocused, setCheckFocused,
+    selectedStock, setSelectedStock, indicators, setIndicators, checkLoading, checkError, setCheckError,
+    checkWrapRef, selectStock,
+  } = useStockCheck(setActiveTab)
 
-  useEffect(() => {
-    const candidates = data?.ruleCandidates ?? []
-    if (candidates.length === 0) return
-
-    setSelectedRuleKey((current) => {
-      if (current && candidates.some((rule) => rule.key === current)) return current
-      return candidates[0].key
-    })
-  }, [data])
-
-  useEffect(() => {
-    const selectedRule = (data?.ruleCandidates ?? []).find((rule) => rule.key === selectedRuleKey)
-      ?? (data?.ruleCandidates ?? [])[0]
-    if (!data || !selectedRule) {
-      setAutoPicks([])
-      setAutoPickError(null)
-      setAutoPickLoading(false)
-      return
-    }
-
-    let disposed = false
-    const run = async () => {
-      setAutoPickLoading(true)
-      setAutoPickError(null)
-      try {
-        const scanRes = await apiFetch('/api/ui/scan-candidates?limit=60&includeIndicatorLiquidity=1&cacheMs=0', {
-          cacheMs: 0,
-          timeoutMs: 12_000,
-        })
-        const candidates = Array.isArray(scanRes?.data)
-          ? (scanRes.data as ScanCandidateLite[]).filter((row) => !!row?.code)
-          : []
-        const candidateMap = new Map(
-          candidates.map((row) => [String(row.code || '').trim(), row]),
-        )
-
-        console.log(`[Auto-Pick] 스캔 후보: ${candidates.length}개`)
-
-        if (candidates.length === 0) {
-          if (!disposed) setAutoPicks([])
-          return
-        }
-
-        // 스캔 후보 신호/점수 분포 확인
-        const signalStats: Record<string, number> = {}
-        const scoreBySignal: Record<string, number[]> = {}
-        candidates.slice(0, 36).forEach((c) => {
-          const sig = String(c.name || 'unknown')
-          signalStats[sig] = (signalStats[sig] || 0) + 1
-        })
-
-        let evaluatedCount = 0
-        let ruleFilteredCount = 0
-        let returnFilteredCount = 0
-        let momentumFilteredCount = 0
-        let liquidityFilteredCount = 0
-        let buySignalCount = 0
-        let score50PlusCount = 0
-        let rsi45_65Count = 0
-
-        const scanSlice = candidates.slice(0, 36)
-        const settled = await Promise.allSettled(
-          scanSlice.map(async (candidate) => {
-            const code = String(candidate.code || '').trim()
-            if (!code) return null
-            const indicatorRes = await apiFetch(`/api/ui/stock-indicators?code=${encodeURIComponent(code)}`, {
-              cacheMs: 0,
-              timeoutMs: 8_000,
-            })
-            const indicator = (indicatorRes?.data ?? null) as StockIndicators | null
-            if (!indicator) return null
-            
-            // 조건별 충족 여부 확인
-            const score = Number(indicator.total_score ?? 0)
-            const rsi = indicator.rsi14
-            if (isBuySignal(indicator.signal)) buySignalCount++
-            if (score >= 50) score50PlusCount++
-            if (rsi != null && rsi >= 45 && rsi <= 65) rsi45_65Count++
-            
-            const ranked = evaluateAutoPick(indicator)
-            if (!ranked) return null
-            if (ranked.tier === 'watch') return null
-            evaluatedCount++
-            
-            const ruleMatched = matchesRuleFilter(indicator, selectedRule.filter)
-            if (!ruleMatched && ranked.coreMatchCount < 2) {
-              ruleFilteredCount++
-              return null
-            }
-
-            const scan = candidateMap.get(code)
-            const intradayChangePct = Number(scan?.intraday_change_pct)
-            const inferredMomentum = Number(indicator.roc21 ?? 0) / 4.2
-            const shortMomentumPct = Number.isFinite(intradayChangePct) && intradayChangePct !== 0
-              ? intradayChangePct
-              : inferredMomentum
-
-            const expectedReturnPct = estimateExpectedReturnPct({
-              baseReturnPct: Number(
-                (ruleMatched ? selectedRule.matchedAvgReturnPct : data.baseline.avgForwardReturnPct) ?? 0,
-              ),
-              coreMatchCount: ranked.coreMatchCount,
-              ruleMatched,
-              score: Number(indicator.total_score ?? 0),
-              shortMomentumPct,
-              tier: ranked.tier,
-              profile: returnProfile,
-            })
-
-            const liquidity = Number(scan?.liquidity)
-            const liquidityWon = Number.isFinite(liquidity) && liquidity > 0 ? liquidity : null
-            const liquidityEok = toEokFromWon(liquidityWon)
-
-            if (expectedReturnPct < minExpectedReturnPct) {
-              returnFilteredCount++
-              return null
-            }
-            if (shortMomentumPct < minShortMomentumPct) {
-              momentumFilteredCount++
-              return null
-            }
-            if (liquidityEok < minLiquidityEok) {
-              liquidityFilteredCount++
-              return null
-            }
-
-            return {
-              code,
-              name: String(indicator.name || candidate.name || code),
-              score: Number(indicator.total_score ?? 0),
-              signal: String(indicator.signal || '-'),
-              rsi14: indicator.rsi14,
-              market: indicator.market,
-              warnGrade: indicator.warn_grade,
-              ruleMatched,
-              coreMatchCount: ranked.coreMatchCount,
-              edgeScore: ranked.edgeScore,
-              expectedReturnPct,
-              shortMomentumPct: Number(shortMomentumPct.toFixed(1)),
-              liquidity: liquidityWon,
-              tier: ranked.tier,
-            } as AutoPickItem
-          }),
-        )
-
-        const tierRank: Record<AutoPickTier, number> = { now: 3, prepare: 2, watch: 1 }
-        const next = settled
-          .filter((row): row is PromiseFulfilledResult<AutoPickItem | null> => row.status === 'fulfilled')
-          .map((row) => row.value)
-          .filter((row): row is AutoPickItem => !!row)
-          .sort((a, b) => {
-            if (tierRank[b.tier] !== tierRank[a.tier]) return tierRank[b.tier] - tierRank[a.tier]
-            if (b.edgeScore !== a.edgeScore) return b.edgeScore - a.edgeScore
-            return b.score - a.score
-          })
-          .slice(0, 12)
-
-        console.log(`[Auto-Pick] 필터 결과:
-  - 조건 충족률 (36개 중):
-    • BUY 신호: ${buySignalCount}개 (${Math.round(buySignalCount / 36 * 100)}%)
-    • 점수 50+: ${score50PlusCount}개 (${Math.round(score50PlusCount / 36 * 100)}%)
-    • RSI 45-65: ${rsi45_65Count}개 (${Math.round(rsi45_65Count / 36 * 100)}%)
-  - 티어 평가 통과: ${evaluatedCount}개
-  - 규칙 필터 제외: ${ruleFilteredCount}개
-  - 기대수익 필터 제외: ${returnFilteredCount}개 (최소값: ${minExpectedReturnPct}%)
-  - 모멘텀 필터 제외: ${momentumFilteredCount}개 (최소값: ${minShortMomentumPct}%)
-  - 거래대금 필터 제외: ${liquidityFilteredCount}개 (최소값: ${minLiquidityEok}억)
-  - 최종 추천: ${next.length}개`)
-
-        const scanned = scanSlice.length
-        if (!disposed) {
-          setConditionStats({
-            buySignalPct: scanned > 0 ? Math.round(buySignalCount / scanned * 100) : 0,
-            score50PlusPct: scanned > 0 ? Math.round(score50PlusCount / scanned * 100) : 0,
-            rsi45_65Pct: scanned > 0 ? Math.round(rsi45_65Count / scanned * 100) : 0,
-            totalScanned: scanned,
-          })
-          setAutoPicks(next)
-        }
-      } catch (e: any) {
-        if (!disposed) {
-          setAutoPicks([])
-          setAutoPickError(e?.message || '자동 추천 조회 실패')
-        }
-      } finally {
-        if (!disposed) setAutoPickLoading(false)
-      }
-    }
-
-    void run()
-    return () => {
-      disposed = true
-    }
-  }, [data, selectedRuleKey, minExpectedReturnPct, minShortMomentumPct, minLiquidityEok, returnProfile])
-
-  // 최초 마운트 시 자동 실행
-  useEffect(() => {
-    void load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // URL param 또는 sessionStorage로 전달된 종목 자동 로드
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlCode = params.get('code')?.trim()
-    let pending: string | null = null
-    try {
-      pending = sessionStorage.getItem(BACKTEST_PENDING_CODE_KEY)
-      if (pending) sessionStorage.removeItem(BACKTEST_PENDING_CODE_KEY)
-    } catch { /* ignore */ }
-    const initCode = urlCode || pending
-    if (!initCode) return
-
-    searchStocks(initCode, 1)
-      .then((results) => {
-        const name = results[0]?.name || initCode
-        selectStock({ code: initCode, name })
-      })
-      .catch(() => selectStock({ code: initCode, name: initCode }))
-  }, [])
-
-  // 종목 검색 디바운스
-  useEffect(() => {
-    if (checkDebounceRef.current) clearTimeout(checkDebounceRef.current)
-    const q = checkSearch.trim()
-    if (q.length < 2) { setCheckResults([]); return }
-    checkDebounceRef.current = setTimeout(async () => {
-      try {
-        const results = await searchStocks(q, 8)
-        setCheckResults(results)
-      } catch {
-        setCheckResults([])
-      }
-    }, 150)
-  }, [checkSearch])
-
-  const fetchIndicators = async (code: string) => {
-    setCheckLoading(true)
-    setIndicators(null)
-    setCheckError(null)
-    try {
-      const res = await apiFetch(`/api/ui/stock-indicators?code=${encodeURIComponent(code)}`, {
-        cacheMs: 0,
-        timeoutMs: 12_000,
-      })
-      setIndicators((res?.data ?? null) as StockIndicators | null)
-    } catch (e: any) {
-      setCheckError(e?.message || '지표 조회 실패')
-    } finally {
-      setCheckLoading(false)
-    }
-  }
-
-  const selectStock = (stock: { code: string; name: string }) => {
-    setSelectedStock(stock)
-    setCheckSearch(stock.name)
-    setCheckResults([])
-    void fetchIndicators(stock.code)
-    setActiveTab('check')
-  }
-
-  const goAnalyze = (code: string) => {
-    try { sessionStorage.setItem(ANALYZE_PENDING_CODE_KEY, code) } catch { /* ignore */ }
-    navigateTo('analyze')
-  }
-
-  const goExecutionGuide = (code: string) => {
-    try {
-      sessionStorage.setItem(
-        EXECUTION_GUIDE_PENDING_KEY,
-        JSON.stringify({ codes: [code], source: 'backtest' }),
-      )
-    } catch {
-      // ignore
-    }
-    navigateTo('execution-guide')
-  }
-
-  const goSimulator = (stock: { code: string; name: string }) => {
-    const existing = readSimulationPlan()
-    const newItem = defaultPlanItem(stock)
-    const items = [...(existing?.items ?? []), newItem]
-    saveSimulationPlan({
-      ...(existing ?? { totalCapital: 0, notes: '' }), // 0이면 시뮬레이터가 내 시드로 채운다
-      createdAt: Date.now(),
-      items,
-    })
-    navigateTo('simulator')
-  }
-
-  const addAutoPicksToSimulator = (tiers: AutoPickTier[]) => {
-    const targets = autoPicks.filter((row) => tiers.includes(row.tier))
-    if (targets.length === 0) return
-
-    const existing = readSimulationPlan()
-    const prevItems = existing?.items ?? []
-    const codeSet = new Set(prevItems.map((item) => String(item.code || '')))
-
-    const newItems = targets
-      .filter((row) => !codeSet.has(row.code))
-      .map((row) => defaultPlanItem({ code: row.code, name: row.name }))
-
-    if (newItems.length === 0) {
-      navigateTo('simulator')
-      return
-    }
-
-    saveSimulationPlan({
-      ...(existing ?? { totalCapital: 0, notes: '' }), // 0이면 시뮬레이터가 내 시드로 채운다
-      createdAt: Date.now(),
-      items: [...prevItems, ...newItems],
-    })
-    navigateTo('simulator')
-  }
-
-  const applyReturnProfile = (profile: ReturnProfileKey) => {
-    setReturnProfile(profile)
-    if (profile === 'strict') {
-      setMinExpectedReturnPct(1)
-      setMinShortMomentumPct(-2)
-      setMinLiquidityEok(50)
-      return
-    }
-    if (profile === 'conservative') {
-      setMinExpectedReturnPct(0)
-      setMinShortMomentumPct(-5)
-      setMinLiquidityEok(30)
-      return
-    }
-    // 공격형: 필터 거의 없음 (기술지표 신호 품질만 봄)
-    setMinExpectedReturnPct(-100)
-    setMinShortMomentumPct(-10)
-    setMinLiquidityEok(10)
-  }
+  const addAutoPicksToSimulator = (tiers: AutoPickTier[]) => addAutoPicksToSimulatorFor(autoPicks, tiers)
 
   const patternMatch = useMemo(() => {
     if (!data || !selectedStock || !indicators) return null
