@@ -146,13 +146,13 @@ function changeColor(v?: number): string | undefined {
   return v >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
 }
 
-/** "9/28 기준 · 9/29 19:13 갱신" — 스캔 기준 거래일 + 섹터 점수 갱신 시각(KST) */
+/** "9/28 스캔 · 섹터 점수 9/29 19:13" — 스캔 기준 거래일 + 섹터 점수 갱신 시각(KST). 둘은 따로 갱신되니 무엇의 날짜인지 붙인다 */
 function formatLastScan(scan: { tradeDate: string | null; updatedAt: string | null } | null): string {
   if (!scan?.tradeDate && !scan?.updatedAt) return '—'
   const parts: string[] = []
   if (scan.tradeDate) {
     const [, m, d] = scan.tradeDate.slice(0, 10).split('-')
-    parts.push(`${Number(m)}/${Number(d)} 기준`)
+    parts.push(`${Number(m)}/${Number(d)} 스캔`)
   }
   if (scan.updatedAt) {
     const t = new Date(scan.updatedAt)
@@ -161,7 +161,7 @@ function formatLastScan(scan: { tradeDate: string | null; updatedAt: string | nu
         timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
       }).formatToParts(t)
       const get = (type: string) => kst.find((p) => p.type === type)?.value ?? ''
-      parts.push(`${get('month')}/${get('day')} ${get('hour')}:${get('minute')} 갱신`)
+      parts.push(`섹터 점수 ${get('month')}/${get('day')} ${get('hour')}:${get('minute')}`)
     }
   }
   return parts.join(' · ')
