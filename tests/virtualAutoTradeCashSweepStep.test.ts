@@ -172,3 +172,11 @@ test("runCashSweepStep: 현금이 바닥나도 지수 보유분을 팔지 않는
   assert.equal(h.tradeLogs.length, 0);
   assert.equal(h.prefs.virtual_cash, 0);
 });
+
+test("runCashSweepStep: 관리자 실험 계좌(몫 100)는 현금이 남아도 지수를 사지 않는다", async () => {
+  const h = createHarness({ ...buyScenario, prefs: { ...buyScenario.prefs, virtual_satellite_cap_pct: 100 } });
+  await h.steps.runCashSweepStep({ supabase: h.supabase, chatId: CHAT_ID, dryRun: false, depositAmount: 500_000 });
+
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.prefs.virtual_cash, 5_000_000);
+});

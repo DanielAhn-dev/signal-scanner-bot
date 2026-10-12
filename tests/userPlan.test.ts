@@ -56,3 +56,15 @@ test("investPlanPrefsPatch: 개별주 몫만 바꾸면 이번 달 입금 처리 
   const changed = investPlanPrefsPatch({ ...readInvestPlan(prefs), monthly: 700_000 }, prefs, "2026-10-12");
   assert.equal(changed.virtual_last_deposit_month, "2026-10");
 });
+
+test("실험(관리자): 개별주 몫 100은 종목 봇 + 몫 100으로 저장하고 다시 읽힌다", () => {
+  const merged = mergeInvestPlan(base, { satellitePct: 100 });
+  assert.ok(merged.ok);
+  const patch = investPlanPrefsPatch(merged.value, {}, "2026-10-13");
+  assert.equal(patch.virtual_strategy_mode, "stock");
+  assert.equal(patch.virtual_satellite_cap_pct, 100);
+  assert.equal(readInvestPlan({ ...patch }).satellitePct, 100);
+  // 10%로 돌아오면 몫도 10으로
+  const back = investPlanPrefsPatch({ ...merged.value, satellitePct: 10 }, patch, "2026-10-13");
+  assert.equal(back.virtual_satellite_cap_pct, 10);
+});

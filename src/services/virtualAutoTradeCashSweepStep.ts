@@ -15,6 +15,8 @@ import {
   INDEX_SWEEP_CODES,
   isIndexSweepCode,
   resolveCashSweepIdleAmount,
+  readSatelliteCapPct,
+  EXPERIMENT_CAP_PCT,
 } from "./virtualAutoTradeCashSweep";
 
 type SupabaseClientAny = any;
@@ -310,8 +312,8 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
   }
 
   /**
-   * 수동 학습 실행 전용: 지수(스윕) 보유분을 전량 현금화해 이번 회차 개별주 매수 판단에 쓸 수 있게 한다.
-   * 사용자가 직접 고른 실행에서만 부른다. 자동 실행은 지수를 개별주 자금으로 팔지 않는다(2026-10-12) —
+   * 수동 학습 실행·관리자 실험 계좌 전용: 지수(스윕) 보유분을 전량 현금화해 이번 회차 개별주 매수 판단에 쓸 수 있게 한다.
+   * 사용자가 직접 고른 실행이거나 시드 전체를 종목 봇이 쓰는 실험 계좌에서만 부른다. 자동 실행은 지수를 개별주 자금으로 팔지 않는다(2026-10-12) —
    * 예전엔 현금이 30만원 밑이거나 매수 자금이 모자라면 자동으로 지수를 팔아 채웠다.
    */
   async function runCashSweepLiquidateStep(payload: {
@@ -331,7 +333,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
 
       if (payload.dryRun) {
         notes.push(
-          `[유휴현금 스윕][테스트] ${holding.name} 전량 현금화 예정 (평가액 ${fmtKrw(sweepCurrentValue)}) · 수동 학습 판단용`
+          `[유휴현금 스윕][테스트] ${holding.name} 전량 현금화 예정 (평가액 ${fmtKrw(sweepCurrentValue)}) · 수동 학습·실험 계좌`
         );
         return { notes, liquidated: false, releasedCash: estimateSweepSell(prefs, holding, holding.quantity).net };
       }
@@ -344,7 +346,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
         event: "sweep-liquidate",
         note: "cash-sweep-liquidate",
       });
-      notes.push(`[유휴현금 스윕] ${holding.name} 전량 현금화 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)}) · 수동 학습 판단용`);
+      notes.push(`[유휴현금 스윕] ${holding.name} 전량 현금화 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)}) · 수동 학습·실험 계좌`);
       return { notes, liquidated: true, releasedCash: net };
     } catch (e) {
       console.error("[autoTrade] cash sweep liquidate step failed", e);
@@ -407,6 +409,9 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
         toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
       );
       if (seedCapital <= 0) return { notes };
+      // 관리자 실험 계좌는 시드 전체를 종목 봇이 쓴다 — 지수에 넣지 않는다
+      const capPct = readSatelliteCapPct(prefs);
+      if (capPct >= EXPERIMENT_CAP_PCT) return { notes };
 
       const prices = await loadSweepPrices(payload.supabase);
       const sweepRows = await loadSweepPositionRows(payload.supabase, payload.chatId);
@@ -464,6 +469,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
         seedCapital,
         satelliteValue,
         depositAmount: payload.depositAmount,
+        capPct,
       });
       if (idleAmount <= 0) return { notes };
       const buyQty = Math.floor(idleAmount / sweepPrice);

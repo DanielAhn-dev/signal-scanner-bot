@@ -60,3 +60,10 @@ test("resolveCashSweepIdleAmount: 월 입금액은 최소 스윕금액(100만원
 test("스윕 후보 ETF: 지수형·금리형 모두 보유분 조회 대상", () => {
   for (const code of [...INDEX_SWEEP_CODES, ...RATE_SWEEP_CODES]) assert.ok(CASH_SWEEP_CANDIDATE_CODES.includes(code));
 });
+
+test("resolveCashSweepIdleAmount: 실험 계좌(몫 100)는 입금이 있어도 지수로 옮기지 않는다", () => {
+  assert.equal(
+    resolveCashSweepIdleAmount({ availableCash: 9_000_000, seedCapital: 20_000_000, capPct: 100, depositAmount: 500_000 }),
+    0
+  );
+});

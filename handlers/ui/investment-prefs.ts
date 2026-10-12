@@ -10,7 +10,8 @@ import {
   readDepositLog,
   readDepositSettings,
 } from '../../src/services/monthlyDeposit'
-import { investPlanPrefsPatch, mergeInvestPlan, readInvestPlan } from '../../src/services/userPlan'
+import { ADMIN_ONLY_SATELLITE, investPlanPrefsPatch, mergeInvestPlan, readInvestPlan } from '../../src/services/userPlan'
+import { evaluateAdvancedAccess, resolveRequesterIdentity } from './_accessControl'
 import { toKstDateKey } from '../../src/lib/krxCalendar'
 import { normalizeNotifyChannel } from '../../src/services/notifyChannel'
 import { readLifeProfile, sanitizeLifeInput } from '../../src/services/goalTracker'
@@ -168,6 +169,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const before = readInvestPlan(current)
         const merged = mergeInvestPlan(before, body.plan)
         if (!merged.ok) return res.status(400).json({ error: merged.error })
+        // 실험(종목 봇 전체)은 관리자만 새로 고를 수 있다 — 데이터를 쌓아 규칙을 고치는 쪽이고, 일반 사용자는 검증된 쪽을 따른다
+        if (merged.value.satellitePct === ADMIN_ONLY_SATELLITE && before.satellitePct !== ADMIN_ONLY_SATELLITE) {
+          const access = await evaluateAdvancedAccess(await resolveRequesterIdentity(req))
+          if (!access.isAdmin) return res.status(403).json({ error: '실험 선택지는 관리자만 고를 수 있습니다' })
+        }
         const next: Record<string, unknown> = { ...current, ...investPlanPrefsPatch(merged.value, current, toKstDateKey()) }
         const { error: planError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: next }, { onConflict: 'tg_id' })
         if (planError) return res.status(500).json({ error: planError.message })

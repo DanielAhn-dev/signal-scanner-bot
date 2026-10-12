@@ -9,6 +9,7 @@
  * 예전 계정은 invest_plan이 없다 — 지금 저장된 월 입금·입금일·자동매매 방식에서 읽어 온다.
  */
 import { INDEX_HOLD_MODE, normalizeStrategyMode, type VirtualStrategyMode } from "./indexHoldStrategy";
+import { EXPERIMENT_CAP_PCT, SATELLITE_CAP_PCT, readSatelliteCapPct } from "./virtualAutoTradeCashSweep";
 import {
   MAX_DEPOSIT_DAY,
   normalizeDepositDay,
@@ -18,7 +19,10 @@ import {
   resolveLastDepositMonthOnSave,
 } from "./monthlyDeposit";
 
-export const SATELLITE_OPTIONS = [0, 10] as const;
+/** 0 지수만 · 10 개별주 10%까지 · 100 관리자 실험(종목 봇 전체, 11/23 검증 데이터 수집) */
+export const SATELLITE_OPTIONS = [0, 10, 100] as const;
+/** 관리자만 고를 수 있는 값 — 일반 사용자는 검증된 규칙을 따라가는 쪽이다 */
+export const ADMIN_ONLY_SATELLITE = EXPERIMENT_CAP_PCT;
 export type SatellitePct = (typeof SATELLITE_OPTIONS)[number];
 /** 계획 점검의 버틸 하락폭 슬라이더와 같은 범위 */
 export const TOLERANCE_MIN = 10;
@@ -33,7 +37,7 @@ export type InvestPlan = {
   depositDay: number;
   /** 버틸 수 있는 하락폭(%) — 주식 비중 상한의 근거. 안 정했으면 null */
   tolerancePct: number | null;
-  /** 개별주 몫(%) — 0이면 지수만 */
+  /** 개별주 몫(%) — 0이면 지수만, 100은 관리자 실험 */
   satellitePct: SatellitePct;
 };
 
@@ -53,7 +57,10 @@ function normalizeTolerance(raw: unknown): number | null {
   return Number.isInteger(n) && n >= TOLERANCE_MIN && n <= TOLERANCE_MAX && n % 5 === 0 ? n : null;
 }
 
-const satelliteFromMode = (mode: VirtualStrategyMode): SatellitePct => (mode === INDEX_HOLD_MODE ? 0 : 10);
+function readSatellitePct(prefs: Record<string, unknown>): SatellitePct {
+  if (normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE) return 0;
+  return readSatelliteCapPct(prefs) === EXPERIMENT_CAP_PCT ? 100 : 10;
+}
 const modeFromSatellite = (pct: SatellitePct): VirtualStrategyMode => (pct === 0 ? INDEX_HOLD_MODE : "stock");
 
 export function readInvestPlan(prefs: Record<string, unknown>): InvestPlan {
@@ -64,7 +71,7 @@ export function readInvestPlan(prefs: Record<string, unknown>): InvestPlan {
     depositDay: deposit.depositDay,
     payday: normalizePayday(stored.payday),
     tolerancePct: normalizeTolerance(stored.tolerancePct),
-    satellitePct: satelliteFromMode(normalizeStrategyMode(prefs.virtual_strategy_mode)),
+    satellitePct: readSatellitePct(prefs),
   };
 }
 
@@ -104,7 +111,7 @@ export function mergeInvestPlan(
   }
   if (patch.satellitePct !== undefined) {
     const pct = Number(patch.satellitePct);
-    if (!SATELLITE_OPTIONS.includes(pct as SatellitePct)) return { ok: false, error: "개별주 몫은 0 또는 10%만 고를 수 있습니다" };
+    if (!SATELLITE_OPTIONS.includes(pct as SatellitePct)) return { ok: false, error: "개별주 몫은 0·10%(관리자는 실험 100%)만 고를 수 있습니다" };
     next.satellitePct = pct as SatellitePct;
   }
   return { ok: true, value: next };
@@ -136,5 +143,7 @@ export function investPlanPrefsPatch(
         }
       : {}),
     virtual_strategy_mode: modeFromSatellite(plan.satellitePct),
+    // 지수만(0)일 때는 몫을 쓰지 않으므로 기본값으로 둔다
+    virtual_satellite_cap_pct: plan.satellitePct === 100 ? EXPERIMENT_CAP_PCT : SATELLITE_CAP_PCT,
   };
 }

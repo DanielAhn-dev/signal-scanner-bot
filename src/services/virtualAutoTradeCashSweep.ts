@@ -47,6 +47,16 @@ export function isIndexSweepCode(code: string | null | undefined): boolean {
  */
 export const SATELLITE_CAP_PCT = 10;
 /**
+ * 관리자 실험 계좌용: 시드 전체를 종목 봇이 운용한다 (11/23 관문 검증 데이터 수집, 2026-10-13).
+ * 이때는 유휴현금을 지수에 넣지 않는다 — 넣으면 다음 매수 때 다시 팔아야 해 왕복이 생긴다.
+ */
+export const EXPERIMENT_CAP_PCT = 100;
+
+/** 계좌의 개별주 몫(%) — 실험 계좌만 100, 나머지는 SATELLITE_CAP_PCT */
+export function readSatelliteCapPct(prefs: Record<string, unknown>): number {
+  return Number(prefs.virtual_satellite_cap_pct) === EXPERIMENT_CAP_PCT ? EXPERIMENT_CAP_PCT : SATELLITE_CAP_PCT;
+}
+/**
  * 이 금액 미만의 유휴현금은 스윕하지 않는다 (몇만 원씩 자주 사서 수수료만 나가는 것 방지).
  * 월 입금이 들어온 회차는 이 하한 없이 입금액만큼 산다 (resolveCashSweepIdleAmount의 depositAmount).
  */
@@ -65,11 +75,15 @@ export function resolveCashSweepIdleAmount(input: {
   /** 봇 계좌 개별주(지수 ETF 제외) 평가액 */
   satelliteValue?: number;
   depositAmount?: number;
+  /** 개별주 몫(%) — 기본 SATELLITE_CAP_PCT */
+  capPct?: number;
 }): number {
   const availableCash = Math.max(0, input.availableCash);
   const seedCapital = Math.max(0, input.seedCapital);
   if (seedCapital <= 0) return 0;
-  const satelliteCash = Math.max(0, seedCapital * (SATELLITE_CAP_PCT / 100) - Math.max(0, input.satelliteValue ?? 0));
+  const capPct = input.capPct ?? SATELLITE_CAP_PCT;
+  if (capPct >= EXPERIMENT_CAP_PCT) return 0;
+  const satelliteCash = Math.max(0, seedCapital * (capPct / 100) - Math.max(0, input.satelliteValue ?? 0));
   const idle = Math.max(0, availableCash - satelliteCash);
   const deposit = Math.min(availableCash, Math.max(0, input.depositAmount ?? 0));
   if (idle >= CASH_SWEEP_MIN_BUY_AMOUNT) return Math.floor(Math.max(idle, deposit));

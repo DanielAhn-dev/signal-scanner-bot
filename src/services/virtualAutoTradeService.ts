@@ -139,7 +139,7 @@ import {
   type AutoTradeSkipReasonStat,
 } from "./virtualAutoTradeObservability";
 import { runLongTermCoachForChat } from "./longTermCoachService";
-import { CASH_SWEEP_STRATEGY_ID } from "./virtualAutoTradeCashSweep";
+import { CASH_SWEEP_STRATEGY_ID, EXPERIMENT_CAP_PCT, readSatelliteCapPct } from "./virtualAutoTradeCashSweep";
 import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSweepStep";
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
@@ -6615,7 +6615,9 @@ async function runVirtualAutoTradingForChatUnlocked(input: {
   const seedRebaseNote = dryRun ? null : await applySeedRebaseIfDue(input.chatId, prefs);
   // 월 입금: 지수 보유 모드는 매매 전에 넣어 그 회차에 지수로 산다. 종목 봇은 매매가 끝난 뒤 넣어
   // 개별주 매수에 쓰이지 않고 마지막 스윕에서 전액 지수로 간다 (새 돈은 지수로, 2026-10-12).
-  const depositFirst = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
+  // 관리자 실험 계좌(종목 봇 전체)도 매매 전에 넣는다 — 새 돈도 종목 봇이 쓴다
+  const experimentAccount = readSatelliteCapPct(prefs) >= EXPERIMENT_CAP_PCT;
+  const depositFirst = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE || experimentAccount;
   const earlyDeposit = dryRun || !depositFirst ? null : await applyMonthlyDepositIfDue(supabase, input.chatId);
   const distributionNotes = dryRun ? [] : await applyDistributionsIfDue(supabase, input.chatId);
   if (earlyDeposit || distributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(input.chatId));
@@ -6665,8 +6667,9 @@ async function runVirtualAutoTradingForChatUnlocked(input: {
     ? { notes: [] as string[] }
     : await releaseIndexModeHoldings({ supabase, chatId: input.chatId, dryRun });
 
-  // 수동 학습 실행만 지수(스윕) 보유분을 현금화해 이번 회차 매수 판단에 쓴다. 자동 실행은 지수를 팔지 않는다.
-  const preBuyLiquidate = indexMode || !manualLearning
+  // 수동 학습 실행, 또는 관리자 실험 계좌(시드 전체를 종목 봇이 쓰며 지수에 다시 넣지 않음)만 지수(스윕) 보유분을
+  // 현금화해 이번 회차 매수 판단에 쓴다. 다른 계좌의 자동 실행은 지수를 팔지 않는다.
+  const preBuyLiquidate = indexMode || !(manualLearning || experimentAccount)
     ? { notes: [] as string[], liquidated: false, releasedCash: 0 }
     : await runCashSweepLiquidateStep({
         supabase,
@@ -7013,7 +7016,8 @@ export async function runVirtualAutoTradingCycle(input?: {
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const cycleSeedRebaseNote = userDryRun ? null : await applySeedRebaseIfDue(setting.chat_id, prefs);
       // 월 입금 순서는 수동 실행과 같다: 지수 보유 모드는 매매 전, 종목 봇은 매매 뒤 (새 돈은 지수로)
-      const depositFirst = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
+      const experimentAccount = readSatelliteCapPct(prefs) >= EXPERIMENT_CAP_PCT;
+      const depositFirst = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE || experimentAccount;
       const cycleEarlyDeposit = userDryRun || !depositFirst ? null : await applyMonthlyDepositIfDue(supabase, setting.chat_id);
       const cycleDistributionNotes = userDryRun ? [] : await applyDistributionsIfDue(supabase, setting.chat_id);
       if (cycleEarlyDeposit || cycleDistributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(setting.chat_id));
@@ -7023,6 +7027,11 @@ export async function runVirtualAutoTradingCycle(input?: {
       const indexRelease = indexMode
         ? { notes: [] as string[] }
         : await releaseIndexModeHoldings({ supabase, chatId: setting.chat_id, dryRun: userDryRun });
+
+      // 관리자 실험 계좌는 남아 있는 지수 파킹분을 현금으로 돌려 종목 봇이 쓴다 (한 번 돌리면 다시 넣지 않는다)
+      const experimentRelease = indexMode || !experimentAccount
+        ? { notes: [] as string[] }
+        : await runCashSweepLiquidateStep({ supabase, chatId: setting.chat_id, dryRun: userDryRun }).catch(() => ({ notes: [] as string[] }));
 
       const promotedStrategy = indexMode ? null : await resolveActivePromotedStrategy(supabase, setting.chat_id);
       const actionSummary = indexMode
@@ -7045,6 +7054,7 @@ export async function runVirtualAutoTradingCycle(input?: {
             apiBudget,
           });
 
+      actionSummary.notes.unshift(...experimentRelease.notes);
       actionSummary.notes.unshift(...indexRelease.notes);
       if (cycleDistributionNotes.length) actionSummary.notes.unshift(...cycleDistributionNotes);
       if (cycleEarlyDeposit) actionSummary.notes.unshift(cycleEarlyDeposit.note);
