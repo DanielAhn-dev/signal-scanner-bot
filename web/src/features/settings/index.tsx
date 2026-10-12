@@ -241,7 +241,7 @@ export default function Settings(){
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 10_000,
-        body: JSON.stringify({ monthly_deposit: Math.round(man * 10_000), deposit_day: day }),
+        body: JSON.stringify({ plan: { monthly: Math.round(man * 10_000), depositDay: day } }),
       })
       applyDepositInfo(json?.data)
       setDepositStatus(man > 0 ? '저장 완료' : '저장 완료 — 월 적립을 하지 않습니다')
@@ -302,7 +302,7 @@ export default function Settings(){
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 10_000,
-        body: JSON.stringify({ strategy_mode: next }),
+        body: JSON.stringify({ plan: { satellitePct: next === 'index_hold' ? 0 : 10 } }),
       })
       setStrategyMode(json?.data?.strategy_mode === 'index_hold' ? 'index_hold' : 'stock')
       setModeStatus('저장 완료 — 다음 자동매매 실행부터 적용됩니다')

@@ -82,9 +82,8 @@ export default function GoalTrackerPage() {
     setAutoBusy(true)
     setAutoMsg(null)
     try {
-      const prefs = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 })
-      const day = Number(prefs?.data?.deposit_day) || 1
-      await apiFetch('/api/ui/investment-prefs', { method: 'POST', body: JSON.stringify({ monthly_deposit: Math.round(amountWon), deposit_day: day }), cacheMs: 0, timeoutMs: 15_000 })
+      // 금액만 바꾼다 — 넣는 날은 내 계획에 정해 둔 날 그대로 (src/services/investPlan.ts)
+      await apiFetch('/api/ui/investment-prefs', { method: 'POST', body: JSON.stringify({ plan: { monthly: Math.round(amountWon) } }), cacheMs: 0, timeoutMs: 15_000 })
       await load()
       setAutoMsg(`월 자동 입금을 ${man(amountWon)}으로 저장했습니다`)
     } catch (e) {

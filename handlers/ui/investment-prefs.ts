@@ -1,18 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { isStrictIdentity, resolveUiUserContext } from './_userContext'
-import { INDEX_HOLD_MODE, normalizeStrategyMode } from '../../src/services/indexHoldStrategy'
+import { normalizeStrategyMode } from '../../src/services/indexHoldStrategy'
 import { logUserDecision } from './_userDecisionLog'
 import {
   applyManualDeposit,
   nextDepositDate,
-  normalizeDepositDay,
   normalizeManualDeposit,
-  normalizeMonthlyDeposit,
   readDepositLog,
   readDepositSettings,
-  resolveLastDepositMonthOnSave,
 } from '../../src/services/monthlyDeposit'
+import { investPlanPrefsPatch, mergeInvestPlan, readInvestPlan } from '../../src/services/investPlan'
 import { toKstDateKey } from '../../src/lib/krxCalendar'
 import { normalizeNotifyChannel } from '../../src/services/notifyChannel'
 import { readLifeProfile, sanitizeLifeInput } from '../../src/services/goalTracker'
@@ -98,6 +96,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           virtual_cash: virtualCash != null && Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
           strategy_mode: normalizeStrategyMode(prefs.virtual_strategy_mode),
+          // 내 계획 — 방향을 바꾸는 유일한 저장 경로 (src/services/investPlan.ts)
+          plan: readInvestPlan(prefs),
           notify_channel: normalizeNotifyChannel(prefs.notify_channel),
           // 프로필의 나이·은퇴 시점 (목표 트래커가 은퇴 나이에 맞춰 계산한다)
           life: readLifeProfile(prefs),
@@ -158,46 +158,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ data: { ...depositView(next), virtual_cash: Number(next.virtual_cash), virtual_seed_capital: Number(next.virtual_seed_capital) } })
       }
 
-      // 월 자동 입금 설정만 바꾸는 요청 (src/services/monthlyDeposit.ts)
-      if (body.monthly_deposit !== undefined && body.virtual_seed_capital === undefined) {
-        const amount = normalizeMonthlyDeposit(body.monthly_deposit)
-        if (amount === null) return res.status(400).json({ error: '월 입금액은 0(적립 안 함) 또는 1만원 이상이어야 합니다' })
-        const depositDay = normalizeDepositDay(body.deposit_day)
-        const { data: depRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
-        const current = ((depRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>
-        const next: Record<string, unknown> = {
-          ...current,
-          virtual_monthly_deposit: amount,
-          virtual_deposit_day: depositDay,
-          virtual_last_deposit_month: resolveLastDepositMonthOnSave({
-            depositDay,
-            previousLastDepositMonth: readDepositSettings(current).lastDepositMonth,
-            todayKey: toKstDateKey(),
-            depositLog: readDepositLog(current),
-          }),
-        }
-        const { error: depError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: next }, { onConflict: 'tg_id' })
-        if (depError) return res.status(500).json({ error: depError.message })
-        return res.status(200).json({ data: depositView(next) })
-      }
-
-      // 자동매매 방식만 바꾸는 요청 (종목 봇 ↔ 지수 보유, src/services/indexHoldStrategy.ts)
-      if (body.strategy_mode !== undefined && body.virtual_seed_capital === undefined) {
-        const mode = body.strategy_mode === INDEX_HOLD_MODE ? INDEX_HOLD_MODE : body.strategy_mode === 'stock' ? 'stock' : null
-        if (!mode) return res.status(400).json({ error: 'strategy_mode must be stock or index_hold' })
-        const { data: modeRow } = await supabase
-          .from('users')
-          .select('prefs')
-          .eq('tg_id', targetChatId)
-          .maybeSingle()
-        const modePrefs = { ...((modeRow?.prefs as Record<string, unknown>) || {}), virtual_strategy_mode: mode }
-        const { error: modeError } = await supabase
-          .from('users')
-          .upsert({ tg_id: targetChatId, prefs: modePrefs }, { onConflict: 'tg_id' })
-        if (modeError) return res.status(500).json({ error: modeError.message })
-        const prevMode = normalizeStrategyMode((modeRow?.prefs as Record<string, unknown> | undefined)?.virtual_strategy_mode)
-        if (prevMode !== mode) await logUserDecision(supabase, targetChatId, 'mode-switch', { from: prevMode, to: mode })
-        return res.status(200).json({ data: { strategy_mode: mode } })
+      // 내 계획: 매달 투자할 돈·급여일·넣는 날·버틸 하락폭·개별주 몫 중 바꿀 칸만 받는다 (src/services/investPlan.ts).
+      // 실험 계좌의 월 입금·자동매매 방식은 여기서만 바뀐다 — 예전엔 설정·시작하기·목표 트래커·시드 만들기가 따로 썼다.
+      if (body.plan !== undefined && body.virtual_seed_capital === undefined) {
+        if (!body.plan || typeof body.plan !== 'object') return res.status(400).json({ error: 'plan must be an object' })
+        const { data: planRow, error: planReadError } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        if (planReadError) return res.status(500).json({ error: planReadError.message })
+        const current = ((planRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>
+        const before = readInvestPlan(current)
+        const merged = mergeInvestPlan(before, body.plan)
+        if (!merged.ok) return res.status(400).json({ error: merged.error })
+        const next: Record<string, unknown> = { ...current, ...investPlanPrefsPatch(merged.value, current, toKstDateKey()) }
+        const { error: planError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: next }, { onConflict: 'tg_id' })
+        if (planError) return res.status(500).json({ error: planError.message })
+        const prevMode = normalizeStrategyMode(current.virtual_strategy_mode)
+        const nextMode = normalizeStrategyMode(next.virtual_strategy_mode)
+        if (prevMode !== nextMode) await logUserDecision(supabase, targetChatId, 'mode-switch', { from: prevMode, to: nextMode })
+        return res.status(200).json({ data: { plan: readInvestPlan(next), strategy_mode: nextMode, ...depositView(next) } })
       }
 
       const newSeedCapital = toPositiveInt(body.virtual_seed_capital)

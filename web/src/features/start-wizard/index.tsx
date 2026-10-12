@@ -179,9 +179,15 @@ export default function StartWizardPage() {
       const prefs = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 })
       const exists = Number(prefs?.data?.virtual_seed_capital) > 0
       if (!exists) await post('/api/ui/investment-prefs', { virtual_seed_capital: Math.round(seedToStart), reset_cash: true })
-      // 10,000원 미만은 화면에서 '없음 (목돈만)'으로 보여 준다 — 0을 보내야 기존 계좌의 자동 적립도 실제로 꺼진다
-      // 입금일은 기존 계좌라면 사용자가 정해 둔 날을 지킨다
-      await post('/api/ui/investment-prefs', { monthly_deposit: monthly >= 10_000 ? Math.round(monthly) : 0, deposit_day: exists ? Number(prefs?.data?.deposit_day) || 1 : 1 })
+      // 내 계획 한 번에 저장 (src/services/investPlan.ts). 10,000원 미만은 화면에서 '없음 (목돈만)'으로 보여 준다 —
+      // 0을 보내야 기존 계좌의 자동 적립도 실제로 꺼진다. 넣는 날은 기존 계좌라면 정해 둔 날을 지키고, 새 계좌는 1일.
+      // 자동매매 방식(개별주 몫)은 처음 만드는 계좌만 성향 답으로 정한다 — 쓰던 계좌는 덮지 않는다
+      await post('/api/ui/investment-prefs', {
+        plan: {
+          monthly: monthly >= 10_000 ? Math.round(monthly) : 0,
+          ...(exists ? {} : { depositDay: 1, satellitePct: setup.strategyMode === 'index_hold' ? 0 : 10 }),
+        },
+      })
       if (targetMonthly > 0) await post('/api/ui/goal-tracker', { targetMonthlyProfit: Math.round(targetMonthly) })
       if (income > 0) {
         // 이번 달을 시드 만들기에서 이미 자세히 적었다면 그 항목(식비·급여일·일시 수입 등)은 지우지 않고 마법사가 묻는 칸만 덮는다
@@ -207,7 +213,6 @@ export default function StartWizardPage() {
       // 성향 답으로 자동매매 방식과 기본값을 맞춘다 — 사용자가 설정 화면을 찾아가지 않아도 되게.
       // 이미 쓰던 계좌는 직접 고친 자동매매 설정·켜짐 여부를 덮지 않는다 (화면 안내도 '월 적립과 목표만 갱신')
       if (!exists) {
-        await post('/api/ui/investment-prefs', { strategy_mode: setup.strategyMode })
         await post('/api/ui/settings', { ...setup.preset, is_enabled: enableBot })
       }
       try { const key = storageKey(); if (key) window.localStorage.removeItem(key) } catch { /* 무시 */ }
