@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DROP_DAY_FACTS } from '../data/dropDayFacts'
-import { dropDayLines, pickDropBucket, type DropDayView } from './dropDay'
+import { dropDayLines, pickDropBucket, rallyLines, type DropDayView } from './dropDay'
 
 const view = (over: Partial<DropDayView> = {}): DropDayView => ({
   asOf: '2026-10-12',
@@ -66,5 +66,35 @@ describe('dropDayLines', () => {
     expect(l.caution).toContain(`5% 넘게 더 빠진 경우가 ${b2.further60.down5Pct}%`)
     const base = DROP_DAY_FACTS.baseFurther60.down10Pct
     expect(l.after).toContain(b2.further60.down10Pct >= base + 5 ? '보다 높았습니다' : '큰 차이가 없습니다')
+  })
+})
+
+describe('rallyLines', () => {
+  const { surge, newHigh } = DROP_DAY_FACTS.rally
+  it('평범한 상승일·하락일에는 만들지 않는다', () => {
+    expect(rallyLines(view({ changePct: 2.5, newHigh52w: false }), '2026-10-12')).toBeNull()
+    expect(rallyLines(view({ changePct: 1.2, newHigh52w: true }), '2026-10-12')).toBeNull()
+    expect(rallyLines(view({ changePct: -2 }), '2026-10-12')).toBeNull()
+  })
+
+  it('급등일: 빈도와 이후 추가 하락 비율, 계획대로 문구', () => {
+    const l = rallyLines(view({ changePct: 3.2, newHigh52w: true, yearCounts: { '+3': 5 } }), '2026-10-12')!
+    expect(l.kind).toBe('surge')
+    expect(l.headline).toBe(`오늘 코스피 +3.20% — 1년에 약 ${Math.round(surge.perYear)}번 있는 급등`)
+    expect(l.sub).toBe('52주 신고가 · 올해 5번째(+3% 이상 기준)')
+    expect(l.caution).toContain(`10% 넘게 빠진 경우가 ${surge.further60.down10Pct}%`)
+    expect(l.caution).toContain('몰아서 사지 말고 적립일에 계획대로')
+  })
+
+  it('신고가 날(+1.5% 이상): 서두를 필요도 피할 필요도 없다는 근거를 숫자로', () => {
+    const l = rallyLines(view({ changePct: 1.8, newHigh52w: true }), '2026-10-12')!
+    expect(l.kind).toBe('newHigh')
+    expect(l.headline).toBe('오늘 코스피 52주 신고가 (+1.80%)')
+    expect(l.caution).toContain(`1년 뒤 오른 경우 ${newHigh.h250.upPct}%`)
+  })
+
+  it('예전 응답(newHigh52w 없음)은 급등만 본다', () => {
+    const { newHigh52w: _omit, ...old } = view({ changePct: 1.8 })
+    expect(rallyLines(old as DropDayView, '2026-10-12')).toBeNull()
   })
 })

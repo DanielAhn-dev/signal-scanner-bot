@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { DROP_DAY_META } from '../../data/dropDayFacts'
-import { dropDayFactsStale, dropDayLines, type DropDayView } from '../../lib/dropDay'
+import { dropDayFactsStale, dropDayLines, rallyLines, type DropDayView } from '../../lib/dropDay'
 
 const todayKst = () => new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10)
 
@@ -9,7 +9,8 @@ const labelCell: CSSProperties = { ...cellText, borderRight: '2px solid var(--co
 const linkStyle: CSSProperties = { color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, background: 'none', border: 0, padding: 0 }
 
 /**
- * 코스피가 하루 −1.5% 이하로 빠진 날에만 나오는 안내 행. 평소에는 한 줄 요약만, '자세히'를 누르면 근거가 펼쳐진다.
+ * 코스피가 하루 −1.5% 이하로 빠진 날, +3% 이상 급등한 날, +1.5% 이상 오르며 52주 신고가인 날에만 나오는 안내 행.
+ * 평소에는 한 줄 요약과 경계 문구만, '자세히'를 누르면 근거가 펼쳐진다.
  * 원인을 단정하지 않고 얼마나 흔한 일인지와 같이 움직인 것만 보여준다(예측 아님).
  * 컴포넌트가 아니라 대시보드 렌더 중에 바로 부르는 함수다 — 행 번호(rowNum)가 부모 렌더 순서대로 매겨져야 해서.
  */
@@ -28,20 +29,25 @@ export function renderDropDayRows({
   onToggle: () => void
   onOpenPlan: () => void
 }) {
-  const lines = view ? dropDayLines(view, sp500ChangePct, todayKst()) : null
+  if (!view) return null
+  const today = todayKst()
+  const drop = dropDayLines(view, sp500ChangePct, today)
+  const rally = drop ? null : rallyLines(view, today)
+  const lines = drop ?? rally
   if (!lines) return null
   const m = DROP_DAY_META
+  const label = drop ? '시장 하락 안내' : rally?.kind === 'surge' ? '시장 급등 안내' : '신고가 안내'
 
   const detail: Array<[string, string]> = []
-  if (lines.us) detail.push(['같이 움직인 것', lines.us])
+  if (drop?.us) detail.push(['같이 움직인 것', drop.us])
   if (lines.foreign) detail.push(['외국인', lines.foreign])
-  detail.push(['과거 같은 하락 뒤', lines.after])
+  detail.push([drop ? '과거 같은 하락 뒤' : '과거 같은 날 뒤', lines.after])
 
   return (
     <>
       <tr className="xls-row">
         <td className="xls-row-num">{rowNum()}</td>
-        <td className="xls-cell" colSpan={2} style={{ ...labelCell, fontWeight: 700, color: 'var(--color-text-primary)' }}>시장 하락 안내</td>
+        <td className="xls-cell" colSpan={2} style={{ ...labelCell, fontWeight: 700, color: 'var(--color-text-primary)' }}>{label}</td>
         <td className="xls-cell" colSpan={4} style={cellText}>
           <strong>{lines.headline}</strong>
           {lines.sub && <span style={{ color: 'var(--color-text-secondary)' }}> · {lines.sub}</span>}
