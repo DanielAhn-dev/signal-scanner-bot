@@ -8,148 +8,36 @@ import {
   readSimulationPlan,
   saveSimulationPlan,
 } from '../simulator/planStore'
-
-const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
-const BACKTEST_PENDING_CODE_KEY = 'backtest_pending_code'
-const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
+import type {
+  AutoPickItem,
+  AutoPickTier,
+  BacktestResponse,
+  ReturnProfileKey,
+  RuleFilter,
+  ScanCandidateLite,
+  StockIndicators,
+} from './types'
+import {
+  ANALYZE_PENDING_CODE_KEY,
+  BACKTEST_PENDING_CODE_KEY,
+  DEFAULT_VISIBLE_HORIZONS,
+  EXECUTION_GUIDE_PENDING_KEY,
+  EXTENDED_HORIZONS,
+  HORIZONS,
+  STEPS,
+  STEP_THRESHOLDS,
+  TOTAL_SECONDS,
+  type Horizon,
+} from './constants'
+import { pct, signedPct, toEokFromWon } from './lib/format'
+import { isBuySignal, signalCls } from './lib/signal'
+import { autoTierLabel, confidenceMeta, matchMeta, pbrMeta } from './lib/meta'
 
 function navigateTo(route: string) {
   try {
     window.history.pushState({}, '', `/${route}`)
     window.dispatchEvent(new PopStateEvent('popstate'))
   } catch { /* ignore */ }
-}
-
-type BacktestRiser = {
-  code: string
-  name?: string
-  asof: string
-  totalScore: number
-  signal: string
-  rsi14: number | null
-  forwardReturnPct: number
-}
-
-type BacktestResponse = {
-  params: { horizonBars: number; lookbackDays: number; rallyThresholdPct: number; topN: number }
-  availableHorizons?: number[]
-  horizonAvailability?: Record<string, number>
-  baseline: { labelableEvents: number; score70RatePct: number; buySignalRatePct: number; avgForwardReturnPct?: number }
-  riserSummary: { riserEvents: number; avgForwardReturnPct: number }
-  commonFeatures: {
-    score70RatePct: number
-    score70LiftPct: number
-    buySignalRatePct: number
-    buySignalLiftPct: number
-    rsi45to65RatePct: number
-  }
-  featureStats?: Array<{
-    key: string
-    label: string
-    baselineMatches: number
-    baselineRatePct: number
-    riserMatches: number
-    riserRatePct: number
-    liftPct: number
-    supportPct: number
-  }>
-  ruleCandidates?: Array<{
-    key: string
-    label: string
-    supportPct: number
-    liftPct: number
-    precisionPct: number
-    matchedEvents: number
-    riserMatches: number
-    /** 규칙에 맞은 모든 사례(급등 여부 무관)의 평균 수익 */
-    matchedAvgReturnPct?: number
-    filter?: {
-      scoreMin?: number
-      buyOnly?: boolean
-      rsiMin?: number
-      rsiMax?: number
-    }
-  }>
-  risers: BacktestRiser[]
-}
-
-type StockIndicators = {
-  code: string
-  name: string | null
-  market: string | null
-  close: number | null
-  score_date: string | null
-  total_score: number | null
-  signal: string | null
-  indicator_date: string | null
-  rsi14: number | null
-  roc21?: number | null
-  sma20: number | null
-  sma50: number | null
-  sma200: number | null
-  pullback_date: string | null
-  entry_grade: string | null
-  warn_grade: string | null
-  dist_pct: number | null
-  per: number | null
-  pbr: number | null
-  roe: number | null
-  debt_ratio: number | null
-  market_cap: number | null
-}
-
-type RuleFilter = {
-  scoreMin?: number
-  buyOnly?: boolean
-  rsiMin?: number
-  rsiMax?: number
-}
-
-type AutoPickTier = 'now' | 'prepare' | 'watch'
-type ReturnProfileKey = 'strict' | 'conservative' | 'aggressive'
-
-type AutoPickItem = {
-  code: string
-  name: string
-  score: number
-  signal: string
-  rsi14: number | null
-  market: string | null
-  warnGrade: string | null
-  ruleMatched: boolean
-  coreMatchCount: number
-  edgeScore: number
-  expectedReturnPct: number
-  shortMomentumPct: number
-  liquidity: number | null
-  tier: AutoPickTier
-}
-
-type ScanCandidateLite = {
-  code: string
-  name?: string
-  intraday_change_pct?: number | null
-  liquidity?: number | null
-}
-
-function pct(value: number | null | undefined, digits = 1): string {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return '-'
-  return `${n.toFixed(digits)}%`
-}
-
-function signalCls(signal: string): string {
-  const u = signal.toUpperCase()
-  if (u.includes('BUY')) return 'bt-table-signal bt-table-signal--buy'
-  if (u.includes('SELL')) return 'bt-table-signal bt-table-signal--sell'
-  if (u.includes('WATCH')) return 'bt-table-signal bt-table-signal--watch'
-  return 'bt-table-signal'
-}
-
-function isBuySignal(signal: string | null): boolean {
-  if (!signal) return false
-  const u = signal.toUpperCase()
-  return ['BUY', 'STRONG_BUY', 'ACCUMULATE', '매수'].some((s) => u.includes(s))
 }
 
 function matchesRuleFilter(indicator: StockIndicators, filter?: RuleFilter): boolean {
@@ -217,48 +105,6 @@ function evaluateAutoPick(indicator: StockIndicators): { tier: AutoPickTier; cor
   return { tier, coreMatchCount, edgeScore: Number(edgeScore.toFixed(1)) }
 }
 
-function autoTierLabel(tier: AutoPickTier): string {
-  if (tier === 'now') return '즉시 매수 후보'
-  if (tier === 'prepare') return '반등 준비 후보'
-  return '관찰 후보'
-}
-
-function matchMeta(n: number): { label: string; cls: string } {
-  if (n >= 3) return { label: '패턴 일치 높음 (3/3)', cls: 'bt-match--high' }
-  if (n >= 2) return { label: '패턴 일치 중간 (2/3)', cls: 'bt-match--mid' }
-  if (n >= 1) return { label: '패턴 일치 낮음 (1/3)', cls: 'bt-match--low' }
-  return { label: '패턴 불일치', cls: 'bt-match--none' }
-}
-
-function confidenceMeta(sampleCount: number): { label: string; cls: string } {
-  if (sampleCount >= 20) return { label: `표본 충분 (${sampleCount})`, cls: 'bt-match--high' }
-  if (sampleCount >= 10) return { label: `표본 보통 (${sampleCount})`, cls: 'bt-match--mid' }
-  if (sampleCount >= 5) return { label: `표본 적음 (${sampleCount})`, cls: 'bt-match--low' }
-  return { label: `표본 매우 적음 (${sampleCount})`, cls: 'bt-match--none' }
-}
-
-function pbrMeta(pbr: number): { note: string; cls: string } {
-  if (pbr <= 1.0) return { note: '청산가치 이하 — 강한 저평가', cls: 'bt-check-fund-value--good' }
-  if (pbr <= 1.5) return { note: '저평가 구간', cls: 'bt-check-fund-value--good' }
-  if (pbr <= 2.5) return { note: '적정 수준', cls: '' }
-  return { note: '고평가', cls: 'bt-check-fund-value--warn' }
-}
-
-function signedPct(value: number | null | undefined, digits = 1): string {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return '-'
-  return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}%`
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function toEokFromWon(value: number | null | undefined): number {
-  const n = Number(value)
-  if (!Number.isFinite(n) || n <= 0) return 0
-  return n / 100_000_000
-}
 
 function estimateExpectedReturnPct(input: {
   baseReturnPct: number
@@ -275,14 +121,6 @@ function estimateExpectedReturnPct(input: {
   return Number(input.baseReturnPct.toFixed(1))
 }
 
-const HORIZONS = [20, 40, 60, 90, 120] as const
-const DEFAULT_VISIBLE_HORIZONS = [20, 40, 60] as const
-const EXTENDED_HORIZONS = [90, 120] as const
-type Horizon = typeof HORIZONS[number]
-
-const STEPS = ['종목 수집', '이벤트 탐색', '특징 분석', '결과 계산']
-const STEP_THRESHOLDS = [4, 10, 18, 26]
-const TOTAL_SECONDS = 30
 
 function BacktestSkeleton() {
   const [elapsed, setElapsed] = useState(0)
