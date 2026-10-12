@@ -15,6 +15,9 @@ export function useShare() {
   const [shareHistoryLoading, setShareHistoryLoading] = useState(false)
   const [revokingShareId, setRevokingShareId] = useState('')
   const [deletingShareId, setDeletingShareId] = useState('')
+  // 모달을 열 때 자동 생성은 한 번만. 실패하면 shareCreating이 바뀌며 효과가 다시 돌아
+  // 공유 링크 생성 POST가 모달이 열려 있는 동안 반복됐다. 다시 만들기는 버튼으로 한다.
+  const autoCreateTriedRef = useRef(false)
 
   const captureGeneratedAt = useMemo(
     () => new Intl.DateTimeFormat('ko-KR', {
@@ -155,7 +158,10 @@ export function useShare() {
   }
 
   useEffect(() => {
-    if (!shareModalOpen) return
+    if (!shareModalOpen) {
+      autoCreateTriedRef.current = false
+      return
+    }
 
     let cancelled = false
     ;(async () => {
@@ -169,7 +175,8 @@ export function useShare() {
         return
       }
 
-      if (!shareCreating) {
+      if (!shareCreating && !autoCreateTriedRef.current) {
+        autoCreateTriedRef.current = true
         await createPublicShareUrl()
       }
     })()
