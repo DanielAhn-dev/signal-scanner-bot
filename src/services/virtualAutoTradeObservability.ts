@@ -22,6 +22,8 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   regime_defense_no_new_buy: "방어장 신규매수 중지",
   event_risk_no_new_buy: "경제이벤트 임박 신규매수 중지",
   add_on_anti_pyramiding: "추가매수 제한(물타기·불타기 방지)",
+  add_on_weight_caution: "추가매수 보류(과열·고점 변동성)",
+  add_on_entry_guard: "추가매수 보류(급등 추격·윗꼬리·한 달 급락)",
   rebalance_signal_gate_reject: "리밸런싱 신호 관문 탈락",
   other: "기타",
 };
@@ -40,6 +42,15 @@ export function resolveAutoTradeSkipReasonCode(note: string): string | null {
   if (value === "regime-defense-no-new-buy") return "regime_defense_no_new_buy";
   if (value === "event-risk-no-new-buy") return "event_risk_no_new_buy";
   if (value === "add-on-anti-pyramiding") return "add_on_anti_pyramiding";
+  if (value === "add-on-weight-caution" || value.includes("추가매수 보류: 과열·고점 변동성")) return "add_on_weight_caution";
+  if (
+    value === "add-on-chase-entry" ||
+    value === "add-on-upper-wick" ||
+    value === "add-on-falling-knife" ||
+    /추가매수 보류: (?:급등 추격|긴 윗꼬리|한 달 급락)/.test(value)
+  ) {
+    return "add_on_entry_guard";
+  }
   if (value === "rebalance-signal-gate-reject") return "rebalance_signal_gate_reject";
   if (value === "insufficient-cash") return "insufficient_cash";
   if (value === "no-buy-slots") return "no_buy_slots";

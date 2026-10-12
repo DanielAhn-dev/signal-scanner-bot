@@ -11,6 +11,15 @@ test("resolveAutoTradeSkipReasonCode: 대표 스킵 메모를 코드로 변환�
   assert.equal(resolveAutoTradeSkipReasonCode("[자동사이클] 동일 실행창(2026-04-24T10:10) 이미 처리됨"), "duplicate_window");
 });
 
+test("resolveAutoTradeSkipReasonCode: 추가매수 보류(과열·추격 회피) 사유를 기타로 흘리지 않는다", () => {
+  assert.equal(resolveAutoTradeSkipReasonCode("add-on-weight-caution"), "add_on_weight_caution");
+  assert.equal(resolveAutoTradeSkipReasonCode("삼성전자(005930) 추가매수 보류: 과열·고점 변동성"), "add_on_weight_caution");
+  for (const raw of ["add-on-chase-entry", "add-on-upper-wick", "add-on-falling-knife"]) {
+    assert.equal(resolveAutoTradeSkipReasonCode(raw), "add_on_entry_guard");
+  }
+  assert.equal(resolveAutoTradeSkipReasonCode("LG전자(066570) 추가매수 보류: 긴 윗꼬리"), "add_on_entry_guard");
+});
+
 test("buildAutoTradeSkipReasonStats: 액션 메모에서 스킵 사유를 집계한다", () => {
   const stats = buildAutoTradeSkipReasonStats({
     actions: [
