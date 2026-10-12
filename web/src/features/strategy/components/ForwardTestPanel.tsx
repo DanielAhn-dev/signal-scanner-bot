@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { apiFetch } from '../../lib/api'
-import Button from '../../components/ui/Button'
+import { apiFetch } from '../../../lib/api'
+import Button from '../../../components/ui/Button'
 
 type StrategyResult = {
   name: string

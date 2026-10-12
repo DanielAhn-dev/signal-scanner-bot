@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
-import ForwardTestPanel from './ForwardTestPanel'
+import ForwardTestPanel from './components/ForwardTestPanel'
 import OverviewTab from './components/OverviewTab'
 import SettingsTab from './components/SettingsTab'
 import GrowthTab from './components/GrowthTab'
