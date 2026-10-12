@@ -12,8 +12,15 @@ import { useToast } from '../../components/ToastProvider'
 import { searchStocks } from '../../lib/stockCache'
 import StockDetailModal from '../../components/StockDetailModal'
 import { empiricalWinProb, lookupTpSlBaseRate, TP_SL_HORIZON_DAYS } from '../../lib/tpSlBaseRates'
-import { SCENARIOS } from './constants'
 import type { CompareResult, PlanHistoryEntry, RecommendSource } from './types'
+import { mergeAlgoCandidates } from './lib/algoCandidates'
+import {
+  countTradeable,
+  getCandidatesBySource as getCandidatesBySourceFor,
+  recommendWithStyleFallback as recommendWithStyleFallbackFor,
+} from './lib/recommend'
+import { calcItemMeta, calcScenarioRows, calcSummary } from './lib/summary'
+import { buildWatchlistCandidates } from './lib/watchlistCandidates'
 import GradeChip from './components/GradeChip'
 import PositionStatusBadge from './components/PositionStatusBadge'
 import RRBar from './components/RRBar'
@@ -28,16 +35,10 @@ import {
 import {
   buildTelegramMessage,
   calcExpectedValue,
-  calcKelly,
-  calcMaxPortfolioLoss,
   calcPositionStatus,
   calcRR,
-  calcScenarioNet,
-  calcSplitInvested,
   calcWeeklyCyclePlan,
   clampPercent,
-  getTradeGrade,
-  recommendPortfolio,
   calcRequiredAnnualReturn,
   calcAllocationWeight,
   type RecommendationStyle,
@@ -111,39 +112,17 @@ export default function SimulatorPage() {
     }, 100)
   }, [addSearch])
 
-  const summary = useMemo(() => {
-    const allocated = items.reduce((acc, row) => acc + Number(row.amount || 0), 0)
-    const splitInvested = items.reduce((acc, row) => acc + calcSplitInvested(row, fillRatePct), 0)
-    const ev = items.reduce((acc, row) => acc + calcExpectedValue(row), 0)
-    const feeTax = splitInvested * ((feePct + taxPct) / 100)
-    const maxLoss = calcMaxPortfolioLoss(items)
-    return {
-      allocated,
-      splitInvested,
-      ev,
-      evAfterCost: ev - feeTax,
-      feeTax,
-      remaining: totalCapital - allocated,
-      maxLoss,
-    }
-  }, [items, fillRatePct, feePct, taxPct, totalCapital])
+  const summary = useMemo(
+    () => calcSummary({ items, fillRatePct, feePct, taxPct, totalCapital }),
+    [items, fillRatePct, feePct, taxPct, totalCapital],
+  )
 
-  const scenarioRows = useMemo(() =>
-    SCENARIOS.map((pct) => ({
-      pct,
-      net: calcScenarioNet(items, pct, fillRatePct, feePct, taxPct),
-    })),
-  [items, fillRatePct, feePct, taxPct])
+  const scenarioRows = useMemo(
+    () => calcScenarioRows(items, fillRatePct, feePct, taxPct),
+    [items, fillRatePct, feePct, taxPct],
+  )
 
-  const itemMeta = useMemo(() =>
-    items.map((item) => ({
-      rr: calcRR(item),
-      kelly: calcKelly(item),
-      grade: getTradeGrade(item),
-      ev: calcExpectedValue(item),
-      splitInvested: calcSplitInvested(item, fillRatePct),
-    })),
-  [items, fillRatePct])
+  const itemMeta = useMemo(() => calcItemMeta(items, fillRatePct), [items, fillRatePct])
 
   const statusMeta = useMemo(() =>
     items.map((item) => calcPositionStatus(item)),
@@ -170,44 +149,14 @@ export default function SimulatorPage() {
     else if (expandedIdx !== null && expandedIdx > idx) setExpandedIdx(expandedIdx - 1)
   }
 
-  const countTradeable = (rows: HighlightPlanItem[]) => rows.filter(r => r.code !== 'CASH').length
-
-  const getCandidatesBySource = (source: RecommendSource): HighlightPlanItem[] => {
-    if (source === 'algo') return algoCandidates
-    if (source === 'watchlist') return watchlistCandidates
-    return items.filter(i => i.code !== 'CASH')
-  }
+  const getCandidatesBySource = (source: RecommendSource): HighlightPlanItem[] =>
+    getCandidatesBySourceFor(source, { algo: algoCandidates, watchlist: watchlistCandidates, items })
 
   const recommendWithStyleFallback = (
     baseCandidates: HighlightPlanItem[],
     preferredStyle: RecommendationStyle,
     allowFallback: boolean,
-  ): { rows: HighlightPlanItem[]; styleUsed: RecommendationStyle } => {
-    const styleOrder: RecommendationStyle[] = !allowFallback
-      ? [preferredStyle]
-      : preferredStyle === 'stable'
-        ? ['stable', 'balanced', 'aggressive']
-        : preferredStyle === 'balanced'
-          ? ['balanced', 'aggressive']
-          : ['aggressive']
-
-    for (const style of styleOrder) {
-      const rows = recommendPortfolio(baseCandidates, totalCapital, monthlyProfitTarget, {
-        style,
-      })
-      if (countTradeable(rows) > 0) {
-        return { rows, styleUsed: style }
-      }
-    }
-
-    const fallbackStyle = styleOrder[styleOrder.length - 1]
-    return {
-      rows: recommendPortfolio(baseCandidates, totalCapital, monthlyProfitTarget, {
-        style: fallbackStyle,
-      }),
-      styleUsed: fallbackStyle,
-    }
-  }
+  ) => recommendWithStyleFallbackFor(baseCandidates, preferredStyle, allowFallback, totalCapital, monthlyProfitTarget)
 
   const generateRecommendation = () => {
     if (monthlyProfitTarget <= 0) {
@@ -323,27 +272,7 @@ export default function SimulatorPage() {
         timeoutMs: 10_000 
       })
       const positions = res?.data ?? []
-      // position을 HighlightPlanItem으로 변환
-      const candidates: HighlightPlanItem[] = positions
-        .map((pos: any) => {
-          const code = String(pos.code || pos.symbol || pos.ticker || '').trim()
-          const name = String(pos.stock_name || pos.name || code || '').trim()
-          if (!code || !name) return null
-          const currentPrice = Number(pos.current_price ?? pos.close ?? pos.stock?.close ?? 0) || 50000
-          const closePrice = Number(pos.close ?? pos.stock?.close ?? 0) || currentPrice
-          // 기본값으로 초기화 (나중에 사용자가 조정 가능)
-          return {
-            ...defaultPlanItem({ code, name, sector_id: pos.sector_id }),
-            source: 'watchlist',
-            signal_score: Number(pos.priority ?? 0) || 0,
-            signal_rank: Number(pos.rank ?? 9999) || 9999,
-            market: String(pos.market || pos.market_type || pos.exchange || pos.stock?.market || ''),
-            current_price: currentPrice,
-            close: closePrice,
-          }
-        })
-        .filter((item: any) => item != null)
-      setWatchlistCandidates(candidates)
+      setWatchlistCandidates(buildWatchlistCandidates(positions))
     } catch (e: any) {
       console.warn('관심종목 로드 실패:', e?.message)
       setWatchlistCandidates([])
@@ -375,135 +304,7 @@ export default function SimulatorPage() {
       const hlList = Array.isArray(hlRes?.data) ? hlRes.data : []
       console.log('[loadAlgoCandidates] scan-highlights:', hlList.length, '개')
 
-      const asNum = (v: any, fallback = 0) => {
-        const n = Number(v)
-        return Number.isFinite(n) ? n : fallback
-      }
-      const getRank = (row: any) => {
-        const rank = asNum(
-          row?.signal_rank ?? row?.pullback_rank ?? row?.rank ?? row?.priority_rank,
-          9999,
-        )
-        return rank > 0 ? rank : 9999
-      }
-      const getSignalScore = (row: any) => asNum(
-        row?.signal_score ?? row?.adaptive_score ?? row?.confidence_pct ?? row?.score,
-        0,
-      )
-
-      // 스캔 페이지 기본 정렬(priority_score desc)과 동일한 우선순위 정렬
-      const sortedScanList = [...scanList].sort((a, b) => {
-        const pa = Number.isFinite(Number(a?.adaptive_score))
-          ? Number(a.adaptive_score)
-          : (Number(a?.entry_score ?? 0) * 20 - Number(a?.warn_score ?? 0) * 3)
-        const pb = Number.isFinite(Number(b?.adaptive_score))
-          ? Number(b.adaptive_score)
-          : (Number(b?.entry_score ?? 0) * 20 - Number(b?.warn_score ?? 0) * 3)
-        if (pb !== pa) return pb - pa
-        const rankDiff = getRank(a) - getRank(b)
-        if (rankDiff !== 0) return rankDiff
-        return getSignalScore(b) - getSignalScore(a)
-      })
-      const sortedHlList = [...hlList].sort((a, b) => {
-        const rankDiff = getRank(a) - getRank(b)
-        if (rankDiff !== 0) return rankDiff
-        return getSignalScore(b) - getSignalScore(a)
-      })
-      
-      // code 기준 중복 제거 & 품질 등급별 파라미터 설정
-      const merged: Record<string, HighlightPlanItem> = {}
-      
-      // scan-candidates 처리 (entry_grade 기반) - A/B/C는 포함, D만 제외
-      let scanCandidateCount = 0
-      for (const row of sortedScanList) {
-        const code = String(row.code || '').trim()
-        const name = String(row.name || code || '').trim()
-        if (!code || !name) continue
-        
-        // 품질 필터: entry_grade D는 제외 (A/B/C는 포함)
-        const grade = String(row.entry_grade || '').toUpperCase()
-        if (grade === 'D') continue
-        
-        // 예전엔 진입등급별로 승률을 가정했다(A: 목표+8%/손절-2.5%/승률 70%). 실측하면 이 조합은 5거래일 안에
-        // 목표 도달 15%, 손절 58%였고, 10년 검증에서 진입 A가 오히려 가장 부진했다. 등급과 무관하게
-        // 기본 목표·손절을 두고 승률은 실측 환산값을 쓴다.
-        const targetPct = 5
-        const stopPct = 3
-        const winProb = empiricalWinProb(targetPct, stopPct)
-        
-        // 가격 정보 저장 (current_price 우선, 없으면 close, 둘 다 없으면 기본값 50,000원)
-        const currentPrice = Number(row.current_price ?? row.close ?? 0) || 50000
-        const closePrice = Number(row.close ?? 0) || 50000
-        
-        const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
-        merged[code] = {
-          ...item,
-          source: 'scan-candidates',
-          signal_score: getSignalScore(row),
-          signal_rank: getRank(row),
-          market: String(row.market || row.market_type || row.exchange || ''),
-          targetPct,
-          stopPct,
-          winProb: Math.round(winProb),
-          current_price: currentPrice,
-          close: closePrice,
-        }
-        scanCandidateCount++
-        if (scanCandidateCount <= 3) {
-          console.log(`[loadAlgoCandidates] scan-candidates[${scanCandidateCount}] ${code}: current_price=${row.current_price}, close=${row.close} → stored=${currentPrice}`)
-        }
-      }
-      console.log('[loadAlgoCandidates] scan-candidates 필터 통과:', scanCandidateCount, '개')
-      
-      // scan-highlights 처리 (expected_upside_pct 기반)
-      let hlCandidateCount = 0
-      for (const row of sortedHlList) {
-        const code = String(row.code || '').trim()
-        const name = String(row.name || code || '').trim()
-        if (!code || !name) continue
-        
-        // 하이라이트 데이터: upside/downside 직접 사용
-        // expected_* 는 20거래일 과거 분포라 주 1사이클 목표·손절로 쓰지 않는다.
-        const targetPct = 5
-        const stopPct = 3
-        const winProb = empiricalWinProb(targetPct, stopPct)
-        
-        // 하이라이트와 후보가 중복되면, 하이라이트 신호 정보를 우선 반영
-        if (code in merged) {
-          merged[code] = {
-            ...merged[code],
-            source: 'scan-highlights',
-            signal_score: Math.max(Number(merged[code].signal_score || 0), getSignalScore(row)),
-            signal_rank: Math.min(Number(merged[code].signal_rank || 9999), getRank(row)),
-            market: String(row.market || row.market_type || row.exchange || merged[code].market || ''),
-            current_price: Number(row.entry_price ?? merged[code].current_price ?? 0) || merged[code].current_price,
-          }
-          continue
-        }
-        
-        // 가격 정보 저장 (entry_price 우선, 없으면 현황 가격)
-        const entryPrice = Number(row.entry_price ?? 0)
-        
-        const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
-        merged[code] = {
-          ...item,
-          source: 'scan-highlights',
-          signal_score: getSignalScore(row),
-          signal_rank: getRank(row),
-          market: String(row.market || row.market_type || row.exchange || ''),
-          targetPct,
-          stopPct,
-          winProb: Math.round(winProb),
-          current_price: entryPrice || undefined,
-        }
-        hlCandidateCount++
-        if (hlCandidateCount <= 3) {
-          console.log(`[loadAlgoCandidates] scan-highlights[${hlCandidateCount}] ${code}: entry_price=${row.entry_price} → stored=${entryPrice}`)
-        }
-      }
-      console.log('[loadAlgoCandidates] scan-highlights 필터 통과:', hlCandidateCount, '개')
-      
-      const finalCandidates = Object.values(merged)
+      const finalCandidates = mergeAlgoCandidates(scanList, hlList)
       console.log('[loadAlgoCandidates] 최종 후보:', finalCandidates.length, '개')
       if (finalCandidates.length > 0) {
         console.log('[loadAlgoCandidates] 첫 후보:', finalCandidates[0].code, finalCandidates[0].name)
