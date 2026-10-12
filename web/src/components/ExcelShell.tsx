@@ -326,7 +326,8 @@ export default function ExcelShell({
   const isToolRouteActive = !!activeRoute && !SHEET_TABS.some(t => t.key === activeRoute) && MENU_TABS.some(t => t.key === activeRoute)
   const activeSheetIndex = Math.max(0, SHEET_TABS.findIndex(t => t.key === activeRoute))
   const pageLabel   = activeMenu?.label ?? activeRoute ?? ''
-  const nameBox     = activeRoute ? activeRoute.toUpperCase().slice(0, 6) : 'A1'
+  // 이름 상자: 영문 경로를 6자로 자르면 'DASHBO'처럼 보여 화면 이름(한글)으로, 길면 CSS 말줄임
+  const nameBox     = pageLabel || 'A1'
   const groups      = getRibbonGroups(ribbonTab === 'file' || ribbonTabs.some(t => t.key === ribbonTab) ? ribbonTab : 'home', sections)
   const workbookTitle = useMemo(() => {
     const now = new Date()
@@ -861,7 +862,7 @@ export default function ExcelShell({
 
       {/* ── 4. 수식 표시줄 ── */}
       <div className="excel-formula-bar">
-        <div className="excel-formula-bar__name-box">{nameBox}</div>
+        <div className="excel-formula-bar__name-box" title={nameBox}><span className="excel-formula-bar__name-box-text">{nameBox}</span></div>
         <div className="excel-formula-bar__divider">
           <button className="excel-formula-bar__fn-btn" disabled title="함수 편집은 아직 지원하지 않습니다">
             <em style={{ fontFamily: 'Georgia,serif', fontStyle: 'italic' }}>f</em>

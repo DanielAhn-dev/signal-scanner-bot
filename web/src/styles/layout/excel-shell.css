@@ -1006,6 +1006,12 @@
   padding: 0;
 }
 
+.excel-formula-bar__name-box-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .excel-formula-bar__name-box {
   width: 96px;
   flex-shrink: 0;
