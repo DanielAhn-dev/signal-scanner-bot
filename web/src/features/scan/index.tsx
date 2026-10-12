@@ -1,29 +1,29 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSyncedSettings } from '../../lib/userState'
-import { ArrowDown, ArrowUp, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { ArrowDown, ArrowUp } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { formatKstDateTime, formatNumber } from '../../lib/format'
-import Button from '../../components/ui/Button'
-import Skeleton from '../../components/Skeleton'
-import { ErrorState, EmptyState } from '../../components/StateViews'
+import { ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
-import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
 import ShareModal from '../../components/ShareModal'
-import EconomicEventBadge from '../../components/EconomicEventBadge'
-import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { useShareManager } from '../../hooks/useShareManager'
 import { scoreLeadAccumulationCandidate } from '../../lib/accumulationSignal'
-import type { MarketPhase, ConditionFilter, SignalHistoryMap, SignalAgeMeta, ConfirmPromotionTrendMeta, StrategyMetricSummary, StrategyDrilldownItem, StrategyCoverageSummary, StrategyRiskTier, StrategyLookbackDays, SortDirection, SortKey, ScanCandidate, ScanHighlightItem } from './types'
-import { ANALYZE_PENDING_CODE_KEY, EXECUTION_GUIDE_PENDING_KEY, CONDITION_FILTER_OPTIONS, PRIMARY_MODE_OPTIONS, BASIC_CONDITION_FILTER_KEYS, ALL_CONDITION_FILTER_KEYS, CONDITION_FILTER_LABEL_MAP, STRATEGY_FILTER_BY_METRIC_KEY, STRATEGY_METRIC_KEY_BY_FILTER, STRATEGY_BASE_POSITION_R, STRATEGY_GUIDE_BY_FILTER, FILTER_DEFAULT_SORT } from './constants'
+import type { MarketPhase, ConditionFilter, SignalHistoryMap, SignalAgeMeta, ConfirmPromotionTrendMeta, StrategyMetricSummary, StrategyDrilldownItem, StrategyCoverageSummary, StrategyLookbackDays, SortDirection, SortKey, ScanCandidate, ScanHighlightItem } from './types'
+import { ANALYZE_PENDING_CODE_KEY, EXECUTION_GUIDE_PENDING_KEY, CONDITION_FILTER_OPTIONS, BASIC_CONDITION_FILTER_KEYS, ALL_CONDITION_FILTER_KEYS, CONDITION_FILTER_LABEL_MAP, STRATEGY_FILTER_BY_METRIC_KEY, STRATEGY_METRIC_KEY_BY_FILTER, STRATEGY_BASE_POSITION_R, STRATEGY_GUIDE_BY_FILTER, FILTER_DEFAULT_SORT } from './constants'
 import { getKstDateKey, normalizeDateKey, uniqueSortedDateKeys, computeSignalAgeDays } from './lib/dateKeys'
 import { readSignalHistory, writeSignalHistory, readScanSnapshot, writeScanSnapshot, buildCandidateSignature } from './lib/snapshot'
-import { getEntryLevel, gradeScore, computePriorityScore, computeQuickTradeScore } from './lib/candidateScore'
+import { gradeScore, computePriorityScore, computeQuickTradeScore } from './lib/candidateScore'
 import { isQuickTradeCandidate, isQuickTradeLiteCandidate, isDayStrategyCandidate, isOvernightStrategyCandidate, isWeeklyStrategyCandidate, isCandidateStage, isConfirmStage, isBuycheckStage } from './lib/candidateStage'
 import { toComparableValue } from './lib/sorting'
 import { getStrategyRiskTier, getTierAdjustedPosition } from './lib/strategyRisk'
-import { GradeBadge, WarnBadge, SignalBadge, AccumulationBadge } from './components/badges'
-import { StrategySparkline, ConfirmTrendSparkline } from './components/Sparklines'
+import ScanHeader from './components/ScanHeader'
+import StrategyMetricsPanel from './components/StrategyMetricsPanel'
+import StrategyGuideCard from './components/StrategyGuideCard'
+import StrategyDrilldown from './components/StrategyDrilldown'
+import HighlightsSection from './components/HighlightsSection'
+import CandidateTable from './components/CandidateTable'
+import type { ScanPanelState } from './types'
 
 export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const snapshot = readScanSnapshot()
@@ -909,980 +909,83 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     )
   }
 
+  const scan: ScanPanelState = {
+    onNavigate,
+    candidates,
+    total,
+    latestDate,
+    marketPhase,
+    realtimeAppliedCount,
+    buycheckMaxHoldings,
+    setBuycheckMaxHoldings,
+    buycheckHighlightTopN,
+    setBuycheckHighlightTopN,
+    loading,
+    error,
+    strategyMetricsLoading,
+    strategyLookbackDays,
+    setStrategyLookbackDays,
+    strategyCoverage,
+    strategyCoverageLoading,
+    strategyDrilldown,
+    strategyDrilldownLoading,
+    strategyDrilldownError,
+    selectedSector,
+    setSelectedSector,
+    conditionFilter,
+    showAdvancedFilters,
+    setShowAdvancedFilters,
+    page,
+    setPage,
+    isMobileViewport,
+    pageSize,
+    filterChipScrollRef,
+    activeStrategyMetricKey,
+    isWatched,
+    isAdding,
+    isRemoving,
+    advancedConditionOptions,
+    handleFilterChipWheel,
+    handleFilterChipKeyDown,
+    navigateToAnalyze,
+    navigateToExecutionGuide,
+    sectors,
+    activeHighlights,
+    highlightOverlapSet,
+    filterCounts,
+    confirmPromotionMeta,
+    buycheckRiskGuard,
+    sortedCandidates,
+    totalPages,
+    displayRows,
+    handleConditionFilter,
+    strategyMetricDisplay,
+    onStrategyMetricCardClick,
+    activeStrategyGuide,
+    getStrategyMetricStatus,
+    activeStrategyMetric,
+    activeStrategyStatus,
+    activeStrategyPositionText,
+    activeStrategyBackfillGuard,
+    onToggleWatchlist,
+    renderSortableHeader,
+  }
+
   return (
     <div className="xls-page-inset scan-page">
-      {/* ── 헤더 테이블 (제목·필터·섹터) — 4열, B2 안전 여백 내 ── */}
-      <div className="xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '360px' }}>
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-        <colgroup>
-          <col style={{ width: '20%' }} />
-          <col style={{ width: '30%' }} />
-          <col style={{ width: '30%' }} />
-          <col style={{ width: '20%' }} />
-        </colgroup>
-        <tbody>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
-              <SheetHeaderBar
-                title="눌림목(스윙/중기)"
-                action={<EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />}
-              />
-            </td>
-          </tr>
-          <tr className="xls-row">
-            <td className="xls-cell xls-cell--wrap" colSpan={4}
-              style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
-              <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
-              최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
-              {conditionFilter === 'confirm' && (
-                <span
-                  style={{
-                    marginLeft: 8,
-                    padding: '1px 6px',
-                    borderRadius: 999,
-                    border: '1px solid var(--color-brand)',
-                    color: 'var(--color-brand)',
-                    fontWeight: 700,
-                    background: 'var(--color-brand-subtle)',
-                  }}
-                  title={[
-                    `후보 ${formatNumber(confirmPromotionMeta.base, 0)}개 중 확인 ${formatNumber(confirmPromotionMeta.promoted, 0)}개`,
-                    confirmPromotionMeta.latest5AvgRatioPct != null
-                      ? `최근 ${Math.max(1, confirmPromotionMeta.trendSampleDays)}일 평균 ${formatNumber(confirmPromotionMeta.latest5AvgRatioPct, 1)}%`
-                      : '최근 5일 평균 데이터 없음',
-                  ].join(' · ')}
-                >
-                  후보→확인 승격 {confirmPromotionMeta.ratioPct}%
-                  {' · '}
-                  최근5일 평균 {confirmPromotionMeta.latest5AvgRatioPct != null ? `${formatNumber(confirmPromotionMeta.latest5AvgRatioPct, 1)}%` : '—'}
-                  <ConfirmTrendSparkline values={confirmPromotionMeta.recentRatios} />
-                  {confirmPromotionMeta.trendDeltaPct != null && (
-                    <>
-                      {' '}
-                      ({confirmPromotionMeta.trendDeltaPct > 0 ? <TrendingUp size={12} aria-hidden /> : confirmPromotionMeta.trendDeltaPct < 0 ? <TrendingDown size={12} aria-hidden /> : <Minus size={12} aria-hidden />}
-                      {' '}
-                      {confirmPromotionMeta.trendDeltaPct > 0 ? '+' : ''}{formatNumber(confirmPromotionMeta.trendDeltaPct, 1)}%p)
-                    </>
-                  )}
-                </span>
-              )}
-            </td>
-          </tr>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ padding: '3px 6px', overflow: 'visible' }}>
-              <div style={{ display: 'grid', gap: 6 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
-                  {PRIMARY_MODE_OPTIONS.map((option) => (
-                    <Button
-                      key={option.key}
-                      variant={conditionFilter === option.key ? 'primary' : 'secondary'}
-                      size="lg"
-                      onClick={() => handleConditionFilter(option.key)}
-                      title={`${option.label} 모드`}
-                      style={{ width: '100%' }}
-                    >
-                      {option.label} ({filterCounts[option.key]})
-                    </Button>
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      className={`tag${conditionFilter === 'all' ? ' active' : ''}`}
-                      onClick={() => handleConditionFilter('all')}
-                    >
-                      전체 ({filterCounts.all})
-                    </button>
-                    <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-                      기본은 후보·확인·매수검토만 표시됩니다.
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="tag"
-                    style={{ fontSize: 10, padding: '1px 8px' }}
-                    onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                  >
-                    {showAdvancedFilters ? '고급 필터 접기' : '고급 필터 펼치기'}
-                  </button>
-                </div>
-
-                <div
-                  className="scan-cond-chips"
-                  ref={filterChipScrollRef}
-                  role="tablist"
-                  aria-label="스캔 고급 필터"
-                  onWheel={handleFilterChipWheel}
-                  onKeyDown={handleFilterChipKeyDown}
-                  style={{
-                    display:
-                      showAdvancedFilters ||
-                      (conditionFilter !== 'all' && !BASIC_CONDITION_FILTER_KEYS.has(conditionFilter))
-                        ? 'flex'
-                        : 'none',
-                  }}
-                >
-                  {advancedConditionOptions.map((option) => (
-                    <button
-                      key={option.key}
-                      data-filter-chip="1"
-                      className={`tag${conditionFilter === option.key ? ' active' : ''}`}
-                      id={`scan-filter-tab-${option.key}`}
-                      role="tab"
-                      aria-selected={conditionFilter === option.key}
-                      aria-controls="scan-candidates-section-capture"
-                      tabIndex={conditionFilter === option.key ? 0 : -1}
-                      onClick={() => handleConditionFilter(option.key)}
-                    >
-                      {option.label} ({filterCounts[option.key]})
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </td>
-          </tr>
-          <tr className="xls-row">
-            <td className="xls-cell" style={{ fontWeight: 600, fontSize: 11, color: 'var(--color-text-secondary)' }}>
-              섹터 필터
-            </td>
-            <td className="xls-cell" colSpan={3} style={{ padding: '2px 6px' }}>
-              <select
-                className="input scan-sector-select"
-                value={selectedSector}
-                onChange={(e) => setSelectedSector(e.target.value)}
-                style={{ width: '100%', height: 18, fontSize: 11, padding: '0 4px', border: '1px solid var(--color-excel-grid-border)', background: 'var(--color-gray-0)' }}
-              >
-                {sectors.map((sector) => (
-                  <option key={sector} value={sector}>{sector === 'all' ? '전체 섹터' : sector}</option>
-                ))}
-              </select>
-            </td>
-          </tr>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              권장 사용: 후보(먼저 찾기) → 확인(전환 체크) → 매수검토(집행 후보)
-            </td>
-          </tr>
-          {conditionFilter === 'buycheck' && (
-            <tr className="xls-row">
-              <td
-                className="xls-cell"
-                colSpan={4}
-                style={{
-                  fontSize: 11,
-                  color: buycheckRiskGuard.overLimit ? 'var(--color-error)' : 'var(--color-warning)',
-                  fontWeight: 700,
-                  background: buycheckRiskGuard.overLimit ? 'var(--color-error-bg)' : 'transparent',
-                }}
-              >
-                {buycheckRiskGuard.label}
-              </td>
-            </tr>
-          )}
-          {conditionFilter === 'buycheck' && (
-            <tr className="xls-row xls-row--even">
-              <td className="xls-cell" colSpan={4} style={{ fontSize: 11, padding: '4px 6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: 'var(--color-text-secondary)' }}>최대 보유 기준</span>
-                    <input
-                      className="input"
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={buycheckMaxHoldings}
-                      onChange={(e) => setBuycheckMaxHoldings(Math.max(1, Math.min(30, Number(e.target.value || 8))))}
-                      style={{ width: 74, height: 22, fontSize: 11, padding: '0 6px' }}
-                    />
-                    <span style={{ color: 'var(--color-text-tertiary)' }}>종목</span>
-                  </label>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: 'var(--color-text-secondary)' }}>초과 시 강조 TOP</span>
-                    <input
-                      className="input"
-                      type="number"
-                      min={1}
-                      max={15}
-                      value={buycheckHighlightTopN}
-                      onChange={(e) => setBuycheckHighlightTopN(Math.max(1, Math.min(15, Number(e.target.value || 5))))}
-                      style={{ width: 66, height: 22, fontSize: 11, padding: '0 6px' }}
-                    />
-                  </label>
-                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>
-                    보유 초과 시 매수검토는 우선순위 기준 자동 정렬됩니다.
-                  </span>
-                </div>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      </div>
+      <ScanHeader scan={scan} />
 
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
-      {!error && !!activeStrategyMetricKey && (
-        <div className="xls-scroll-frame scan-strategy-summary-frame" style={{ ['--xls-table-min-width' as any]: '1040px', marginTop: 6 }}>
-          <table className="xls-table scan-strategy-summary-table" style={{ width: 'max-content', minWidth: '100%', tableLayout: 'auto' }}>
-            <colgroup>
-              <col style={{ width: 190 }} />
-              <col style={{ width: 280 }} />
-              <col style={{ width: 280 }} />
-              <col style={{ width: 280 }} />
-            </colgroup>
-            <tbody>
-              <tr className="xls-row xls-row--even">
-                <td className="xls-cell" style={{ fontWeight: 700, color: 'var(--color-text-secondary)', fontSize: 11, overflow: 'visible' }}>
-                  <div style={{ marginBottom: 4 }}>전략 성과({strategyLookbackDays}일)</div>
-                  <div className="scan-cond-chips" style={{ gap: 2 }}>
-                    {([30, 60, 120, 240] as StrategyLookbackDays[]).map((days) => (
-                      <button
-                        key={days}
-                        type="button"
-                        className={`tag${strategyLookbackDays === days ? ' active' : ''}`}
-                        onClick={() => setStrategyLookbackDays(days)}
-                        disabled={strategyMetricsLoading && strategyLookbackDays === days}
-                      >
-                        {days}D
-                      </button>
-                    ))}
-                  </div>
-                  {!!strategyCoverage?.alerts?.length && (
-                    <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {strategyCoverage.alerts.slice(0, 2).map((alert, idx) => (
-                        <span
-                          key={`${idx}-${alert}`}
-                          style={{
-                            fontSize: 10,
-                            color: 'var(--color-warning)',
-                            background: 'var(--color-warning-bg)',
-                            border: '1px solid var(--color-warning)',
-                            borderRadius: 999,
-                            padding: '1px 6px',
-                            maxWidth: 182,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                          title={alert}
-                        >
-                          백필 필요
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                {(strategyMetricsLoading
-                  ? [
-                    { key: 'day', label: '데이(당일)' },
-                    { key: 'overnight', label: '오버나이트' },
-                    { key: 'weekly', label: '주간(5거래일)' },
-                  ]
-                  : strategyMetricDisplay
-                ).map((metric: any) => (
-                  (() => {
-                    const typedMetric = metric as StrategyMetricSummary
-                    const status = getStrategyMetricStatus(typedMetric)
-                    const coverage = strategyCoverage?.strategies?.[typedMetric.key]
-                    const sampleProgressPct = coverage
-                      ? Math.max(0, Math.min(100, (coverage.returnCount / Math.max(1, coverage.minRequired)) * 100))
-                      : 0
-                    const sampleStageLabel = coverage
-                      ? coverage.hasEnoughSamples
-                        ? '충분'
-                        : sampleProgressPct >= 70
-                          ? '축적중'
-                          : '초기'
-                      : '-'
-                    const sampleDailyRate = coverage && strategyCoverage?.lookbackDays
-                      ? coverage.returnCount / Math.max(1, strategyCoverage.lookbackDays)
-                      : 0
-                    const missingSamples = coverage
-                      ? Math.max(0, coverage.minRequired - coverage.returnCount)
-                      : 0
-                    const expectedDaysToReady = coverage && !coverage.hasEnoughSamples && sampleDailyRate > 0
-                      ? Math.ceil(missingSamples / sampleDailyRate)
-                      : null
-                    return (
-                  <td
-                    key={metric.key}
-                    className="xls-cell"
-                    role={strategyMetricsLoading ? undefined : 'button'}
-                    tabIndex={strategyMetricsLoading ? -1 : 0}
-                    aria-label={strategyMetricsLoading ? undefined : `${metric.label} 전략 필터 적용`}
-                    aria-pressed={
-                      !strategyMetricsLoading &&
-                      conditionFilter === STRATEGY_FILTER_BY_METRIC_KEY[metric.key as StrategyMetricSummary['key']]
-                    }
-                    style={{
-                      padding: '6px 8px',
-                      cursor: strategyMetricsLoading ? 'default' : 'pointer',
-                      background: !strategyMetricsLoading && conditionFilter === STRATEGY_FILTER_BY_METRIC_KEY[metric.key as StrategyMetricSummary['key']]
-                        ? 'var(--color-brand-subtle)'
-                        : undefined,
-                    }}
-                    onClick={() => { if (!strategyMetricsLoading) onStrategyMetricCardClick(metric.key as StrategyMetricSummary['key']) }}
-                    onKeyDown={(event) => {
-                      if (strategyMetricsLoading) return
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        onStrategyMetricCardClick(metric.key as StrategyMetricSummary['key'])
-                      }
-                    }}
-                    title={strategyMetricsLoading ? '' : '클릭하면 해당 전략 필터로 이동'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 4 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                        {metric.label}
-                      </div>
-                      {!strategyMetricsLoading && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            padding: '1px 6px',
-                            borderRadius: 999,
-                            color: status.textColor,
-                            background: status.bgColor,
-                            border: `1px solid ${status.textColor}`,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {status.label}
-                        </span>
-                      )}
-                    </div>
-                    {strategyMetricsLoading ? (
-                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>집계 중…</div>
-                    ) : (
-                      <div style={{ display: 'grid', gap: 2, fontSize: 11 }}>
-                        <div style={{ color: 'var(--color-text-secondary)' }}>
-                          거래 {formatNumber(metric.trades ?? 0, 0)}건 · 승률 {formatNumber(metric.winRatePct ?? 0, 1)}%
-                        </div>
-                        <div style={{ color: Number(metric.avgReturnPct ?? 0) >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)', fontWeight: 600 }}>
-                          평균 {Number(metric.avgReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.avgReturnPct ?? 0, 2)}%
-                        </div>
-                        <div style={{ color: Number(metric.sumReturnPct ?? 0) >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
-                          누적 {Number(metric.sumReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.sumReturnPct ?? 0, 2)}%
-                        </div>
-                        <div style={{ color: 'var(--color-text-tertiary)' }}>
-                          최고 {Number(metric.bestReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.bestReturnPct ?? 0, 2)}% ·
-                          최저 {Number(metric.worstReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.worstReturnPct ?? 0, 2)}%
-                        </div>
-                        <div style={{ color: coverage && !coverage.hasEnoughSamples ? 'var(--color-warning)' : 'var(--color-text-tertiary)' }}>
-                          {strategyCoverageLoading
-                            ? '커버리지 집계 중…'
-                            : coverage
-                              ? `커버리지 ${formatNumber(coverage.coveragePct, 1)}% · 표본 ${formatNumber(coverage.returnCount, 0)}/${formatNumber(coverage.minRequired, 0)}`
-                              : '커버리지 정보 없음'}
-                        </div>
-                        <div style={{ color: 'var(--color-text-tertiary)' }}>
-                          {strategyCoverageLoading
-                            ? '표본 진행상태 계산 중…'
-                            : coverage
-                              ? `신호 ${formatNumber(coverage.signalCount, 0)}건 · 유효수익 ${formatNumber(coverage.returnCount, 0)}건 · ${coverage.hasEnoughSamples ? '의미 기준 충족' : `기준까지 ${formatNumber(Math.max(0, coverage.minRequired - coverage.returnCount), 0)}건`}`
-                              : '표본 진행상태 정보 없음'}
-                        </div>
-                        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>
-                          {strategyCoverageLoading
-                            ? '충족 시점 추정 중…'
-                            : coverage
-                              ? coverage.hasEnoughSamples
-                                ? '표본 기준 이미 충족됨'
-                                : expectedDaysToReady != null && Number.isFinite(expectedDaysToReady)
-                                  ? `최근 ${formatNumber(strategyCoverage?.lookbackDays ?? 0, 0)}일 적재 속도 기준, 예상 D+${formatNumber(expectedDaysToReady, 0)}`
-                                  : '충족 시점 추정 불가 (표본 축적 필요)'
-                              : '충족 시점 정보 없음'}
-                        </div>
-                        <div style={{ display: 'grid', gap: 2, marginTop: 1 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--color-text-tertiary)', fontSize: 10, gap: 6, flexWrap: 'wrap' }}>
-                            <span>표본 진행률</span>
-                            <span>{strategyCoverageLoading ? '-' : `${formatNumber(sampleProgressPct, 0)}% · ${sampleStageLabel}`}</span>
-                          </div>
-                          <div style={{ height: 4, borderRadius: 999, background: 'var(--color-border-subtle)', overflow: 'hidden' }}>
-                            <div
-                              style={{
-                                width: `${strategyCoverageLoading ? 0 : sampleProgressPct}%`,
-                                height: '100%',
-                                background: coverage?.hasEnoughSamples ? 'var(--color-stock-up)' : 'var(--color-warning)',
-                                transition: 'width 0.35s ease',
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div className="scan-strategy-sparkline-wrap" aria-label="최근 20신호 수익률 추이">
-                          <StrategySparkline values={Array.isArray(typedMetric.recentReturns20) ? typedMetric.recentReturns20 : []} />
-                        </div>
-                      </div>
-                    )}
-                  </td>
-                    )
-                  })()
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
+      <StrategyMetricsPanel scan={scan} />
 
-      {!error && activeStrategyGuide && (
-        <div className="xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '680px', marginTop: 6 }}>
-          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '78%' }} />
-            </colgroup>
-            <tbody>
-              <tr className="xls-row xls-row--even">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-brand)' }}>
-                  {activeStrategyGuide.title}
-                </td>
-                <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                  실전 감산 규칙: 양호 1.0R · 주의 0.7R · 경고 0.5R
-                  {activeStrategyStatus && (
-                    <span style={{ marginLeft: 8, color: activeStrategyStatus.textColor, fontWeight: 700 }}>
-                      현재 상태 {activeStrategyStatus.label}
-                    </span>
-                  )}
-                  {activeStrategyBackfillGuard && (
-                    <span style={{ marginLeft: 8, color: 'var(--color-warning)', fontWeight: 700 }}>
-                      {activeStrategyBackfillGuard}
-                    </span>
-                  )}
-                </td>
-              </tr>
-              <tr className="xls-row">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>진입</td>
-                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.entry}</td>
-              </tr>
-              <tr className="xls-row xls-row--even">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>포지션</td>
-                <td className="xls-cell" style={{ fontSize: 11 }}>
-                  {activeStrategyGuide.positionSize}
-                  {activeStrategyPositionText && (
-                    <span style={{ marginLeft: 8, color: 'var(--color-brand)', fontWeight: 600 }}>
-                      {activeStrategyPositionText}
-                    </span>
-                  )}
-                </td>
-              </tr>
-              <tr className="xls-row">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>보유</td>
-                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.holding}</td>
-              </tr>
-              <tr className="xls-row xls-row--even">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>손절</td>
-                <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-stock-down)' }}>{activeStrategyGuide.stopLoss}</td>
-              </tr>
-              <tr className="xls-row">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>익절</td>
-                <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-stock-up)' }}>{activeStrategyGuide.takeProfit}</td>
-              </tr>
-              <tr className="xls-row xls-row--even">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>강제청산</td>
-                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.forceExit}</td>
-              </tr>
-              <tr className="xls-row">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>주의</td>
-                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.caution}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
+      <StrategyGuideCard scan={scan} />
 
-      {!error && activeStrategyMetricKey && (
-        <div className="xls-scroll-frame scan-strategy-drilldown" style={{ ['--xls-table-min-width' as any]: '680px', marginTop: 6 }}>
-          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '20%' }} />
-            </colgroup>
-            <tbody>
-              <tr className="xls-row xls-row--even">
-                <td className="xls-cell" colSpan={5} style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-secondary)' }}>
-                  전략 근거 리스트 · {activeStrategyMetric?.label ?? '선택 전략'} · 최근 {strategyLookbackDays}일
-                </td>
-              </tr>
-              <tr className="xls-row">
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>날짜</td>
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>종목코드</td>
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>종목명</td>
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>전략</td>
-                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>수익률</td>
-              </tr>
-              {strategyDrilldownLoading && (
-                <tr className="xls-row xls-row--even">
-                  <td className="xls-cell" colSpan={5} style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>근거 데이터를 불러오는 중…</td>
-                </tr>
-              )}
-              {!strategyDrilldownLoading && strategyDrilldownError && (
-                <tr className="xls-row xls-row--even">
-                  <td className="xls-cell" colSpan={5} style={{ fontSize: 11, color: 'var(--color-stock-down)' }}>{strategyDrilldownError}</td>
-                </tr>
-              )}
-              {!strategyDrilldownLoading && !strategyDrilldownError && strategyDrilldown.length === 0 && (
-                <tr className="xls-row xls-row--even">
-                  <td className="xls-cell" colSpan={5} style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>표시할 근거 데이터가 없습니다.</td>
-                </tr>
-              )}
-              {!strategyDrilldownLoading && !strategyDrilldownError && strategyDrilldown.map((row, idx) => (
-                <tr key={`${row.strategyKey}-${row.code}-${row.tradeDate}-${idx}`} className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`}>
-                  <td className="xls-cell" style={{ fontSize: 11 }}>{row.tradeDate}</td>
-                  <td className="xls-cell" style={{ fontSize: 11, fontFamily: 'var(--font-family-mono)' }}>{row.code}</td>
-                  <td className="xls-cell" style={{ fontSize: 11 }}>{row.name}</td>
-                  <td className="xls-cell" style={{ fontSize: 11 }}>{row.strategyLabel}</td>
-                  <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600, color: typeof row.returnPct === 'number' ? (row.returnPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)') : 'var(--color-text-tertiary)' }}>
-                    {typeof row.returnPct === 'number'
-                      ? `${row.returnPct > 0 ? '+' : ''}${formatNumber(row.returnPct, 2)}%`
-                      : '대기중'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <StrategyDrilldown scan={scan} />
 
-      {/* 참고용 추천 섹션 */}
-      {!loading && !error && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
-        <div className="scan-highlights-section" id="scan-highlight-section-capture">
-        {isMobileViewport ? (
-          <>
-            <div className="scan-highlight-section-head">
-              <div className="scan-highlight-section-copy">
-                <div className="scan-highlight-section-title">눌림목 집행 TOP 카드</div>
-                <div className="scan-highlight-section-subtitle">스윙/중기 기준 · 하단 잔여 후보와 분리</div>
-              </div>
-              {onNavigate && (
-                <Button variant="secondary" onClick={() => onNavigate('highlights')}>
-                  집행우선 허브
-                </Button>
-              )}
-            </div>
-            <div className="scan-highlight-mobile-list">
-              {activeHighlights.map((c, idx) => {
-                const rank = idx + 1
-                const isTop1 = rank === 1
-                return (
-                  <button
-                    key={c.code}
-                    type="button"
-                    className={`scan-highlight-mobile-card${isTop1 ? ' scan-highlight-mobile-card--top' : ''}`}
-                    onClick={() => navigateToAnalyze(c.code)}
-                    title={`${c.name} 참고용 상세 보기`}
-                  >
-                    <div className="scan-highlight-mobile-card__head">
-                      <span className="scan-highlight-mobile-card__rank">TOP {rank}</span>
-                      <WarnBadge grade={c.warn_grade} />
-                    </div>
-                    <div className="scan-highlight-mobile-card__name">{c.name}</div>
-                    <div className="scan-highlight-mobile-card__code">
-                      {c.code}
-                      <span className="scan-highlight-mobile-card__source">
-                        {highlightOverlapSet.has(c.code) ? '하이라이트 공통' : '스캔 전용'}
-                      </span>
-                    </div>
-                    <div className="scan-highlight-mobile-card__grades">
-                      <GradeBadge grade={c.entry_grade} label="진입" />
-                      <GradeBadge grade={c.trend_grade} label="추세" />
-                      <GradeBadge grade={c.dist_grade} label="이격" />
-                      {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="저점" />}
-                      {c.signal && <SignalBadge signal={c.signal} />}
-                    </div>
-                    <div className="scan-highlight-mobile-card__meta">
-                      {[
-                        c.sector_id,
-                        c.entry_score != null ? `진입 ${formatNumber(c.entry_score, 1)}` : null,
-                      ].filter(Boolean).join(' · ')}
-                    </div>
-                    <div className="scan-highlight-mobile-card__cta">눌림목 상세 분석 →</div>
-                  </button>
-                )
-              })}
-            </div>
-          </>
-        ) : (
-        <table className="xls-table scan-highlight-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-          <colgroup>
-            {Array.from({ length: 26 }, (_, i) => <col key={i} />)}
-          </colgroup>
-          <tbody>
-            {/* 추천 섹션 제목 행 */}
-            <tr className="xls-row xls-row--even">
-              <td className="xls-cell" colSpan={20}
-                style={{ fontWeight: 700, fontSize: 12, color: 'var(--color-brand)' }}>
-                눌림목 집행 TOP 카드
-                <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
-                  스윙/중기 기준 · 하단 잔여 후보와 분리
-                </span>
-              </td>
-              <td className="xls-cell" colSpan={6} style={{ textAlign: 'right', padding: '1px 4px' }}>
-                {onNavigate && (
-                  <Button variant="secondary" onClick={() => onNavigate('highlights')}>
-                    집행우선 허브
-                  </Button>
-                )}
-              </td>
-            </tr>
-            {/* ── 추천 카드 ──
-                각 카드 = colSpan(열 분할) × rowSpan(9행 × 22px = 198px)
-                내용은 자연스럽게 위→아래 배치, height:100% 사용 안 함
-            ── */}
-            {(isMobileViewport ? activeHighlights.map((_, i) => i) : [0, 3]).map((startIdx) => {
-              const rowCards = isMobileViewport
-                ? activeHighlights.slice(startIdx, startIdx + 1)
-                : activeHighlights.slice(startIdx, startIdx + 3)
-              if (rowCards.length === 0) return null
-              const count = rowCards.length
-              const CARD_ROWS = isMobileViewport ? 7 : 9
-              /* 열 균등 분배: 26열을 카드 수로 나눔 */
-              const colsPerCard = Math.floor(26 / count)
-              return (
-                <React.Fragment key={`card-row-${startIdx}`}>
-                  <tr>
-                    {rowCards.map((c, i) => {
-                      const rank = startIdx + i + 1
-                      const isTop1 = rank === 1
-                      const colSpan = i === count - 1 ? 26 - colsPerCard * i : colsPerCard
-                      return (
-                        <td
-                          key={c.code}
-                          className={`xls-cell scan-highlight-card-cell${isTop1 ? ' scan-highlight-card-cell--top' : ''}`}
-                          colSpan={colSpan}
-                          rowSpan={CARD_ROWS}
-                          onClick={() => navigateToAnalyze(c.code)}
-                          title={`${c.name} 참고용 상세 보기`}
-                          style={{
-                            verticalAlign: 'top',
-                            cursor: 'pointer',
-                            padding: '12px 14px',
-                          }}
-                        >
-                          {/* ① 랭크 + 경고 뱃지 */}
-                          <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: 6,
-                          }}>
-                            <span style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: isTop1 ? 'var(--color-brand)' : 'var(--color-text-tertiary)',
-                              letterSpacing: '0.05em',
-                            }}>
-                              TOP {rank}
-                            </span>
-                            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                              <AccumulationBadge stage={c.leadAccumulationStage === 'none' ? null : c.leadAccumulationStage} />
-                              <WarnBadge grade={c.warn_grade} />
-                            </div>
-                          </div>
+      <HighlightsSection scan={scan} />
 
-                          {/* ② 종목명 */}
-                          <div style={{
-                            fontWeight: 700,
-                            fontSize: 15,
-                            color: 'var(--color-text-primary)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            marginBottom: 2,
-                          }}>
-                            {c.name}
-                          </div>
-
-                          {/* ③ 종목코드 */}
-                          <div style={{
-                            fontSize: 11,
-                            color: 'var(--color-text-tertiary)',
-                            fontFamily: 'var(--font-family-mono)',
-                            marginBottom: 10,
-                          }}>
-                            {c.code}
-                            <span style={{ marginLeft: 8, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-base)' }}>
-                              {highlightOverlapSet.has(c.code) ? '하이라이트 공통' : '스캔 전용'}
-                            </span>
-                          </div>
-
-                          {/* ④ 등급 뱃지 */}
-                          <div style={{
-                            display: 'flex',
-                            gap: 5,
-                            flexWrap: 'wrap',
-                            marginBottom: 8,
-                          }}>
-                            <GradeBadge grade={c.entry_grade} label="진입" />
-                            <GradeBadge grade={c.trend_grade} label="추세" />
-                            <GradeBadge grade={c.dist_grade} label="이격" />
-                            {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="저점" />}
-                            <AccumulationBadge stage={c.leadAccumulationStage === 'none' ? null : c.leadAccumulationStage} />
-                            {c.signal && <SignalBadge signal={c.signal} />}
-                          </div>
-
-                          {/* ⑤ 섹터 · 진입점수 */}
-                          <div style={{
-                            fontSize: 11,
-                            color: 'var(--color-text-secondary)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            marginBottom: 10,
-                          }}>
-                            {[
-                              c.sector_id,
-                              c.entry_score != null ? `진입 ${formatNumber(c.entry_score, 1)}` : null,
-                            ].filter(Boolean).join(' · ')}
-                          </div>
-
-                          {/* ⑥ 상세 링크 힌트 */}
-                          <div style={{
-                            fontSize: 11,
-                            color: 'var(--color-brand)',
-                            fontWeight: 500,
-                          }}>
-                            눌림목 상세 분석 →
-                          </div>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                  {/* rowSpan 채우는 더미 행 */}
-                  {Array.from({ length: CARD_ROWS - 1 }, (_, ri) => (
-                    <tr key={`spacer-${startIdx}-${ri}`} style={{ height: 22 }} />
-                  ))}
-                </React.Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-        )}
-        </div>
-      )}
-
-      {/* 전체 목록 */}
-      {loading && candidates.length === 0 ? (
-        <div className="card"><Skeleton lines={6} height={16} /></div>
-      ) : !error && sortedCandidates.length === 0 ? (
-        <div className={conditionFilter === 'quick' ? 'scan-empty-viewport-center' : undefined}>
-          <EmptyState title="스캔 결과 없음" description="스캔을 실행하거나 필터를 조정해 보세요." />
-        </div>
-      ) : (
-        <div id="scan-candidates-section-capture" className="scan-candidates-section">
-          {(conditionFilter !== 'all' || selectedSector !== 'all') && (
-            <div className="scan-section-label scan-section-label--plain">
-              {conditionFilter !== 'all'
-                ? `필터 결과 · ${sortedCandidates.length}개`
-                : `${selectedSector} 섹터 · ${sortedCandidates.length}개`}
-              {conditionFilter === 'buycheck' && buycheckRiskGuard.overLimit && (
-                <span style={{ marginLeft: 8, color: 'var(--color-error)', fontWeight: 700 }}>
-                  자동 우선정렬 ON · 상위 {buycheckHighlightTopN}개 강조
-                </span>
-              )}
-            </div>
-          )}
-          {conditionFilter === 'all' && selectedSector === 'all' && (
-            <div className="scan-section-label scan-section-label--plain">
-              TOP 카드 제외 잔여 후보 · {sortedCandidates.length}개 (실전 기준, 오늘 장중/종가 신호 반영)
-            </div>
-          )}
-          <div className="scan-candidates-stage">
-            <div className="scan-table-wrap xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '1280px' }}>
-            <table className="xls-table scan-table scan-candidates-table" style={{ width: 'max(100%, 1280px)', tableLayout: 'auto', minWidth: 1280 }}>
-              <thead>
-                <tr className="xls-header-row">
-                  <th className="xls-th">{renderSortableHeader('코드', 'code')}</th>
-                  <th className="xls-th">{renderSortableHeader('종목명', 'name')}</th>
-                  <th className="xls-th">{renderSortableHeader('섹터', 'sector_id')}</th>
-                  <th className="xls-th">{renderSortableHeader('우선순위', 'priority_score')}</th>
-                  <th className="xls-th">{renderSortableHeader('눌림점수', 'lead_accumulation_score')}</th>
-                  <th className="xls-th">{renderSortableHeader('진입', 'entry_grade')}</th>
-                  <th className="xls-th">{renderSortableHeader('진입점수', 'entry_score')}</th>
-                  <th className="xls-th">{renderSortableHeader('추세', 'trend_grade')}</th>
-                  <th className="xls-th">{renderSortableHeader('이격', 'dist_grade')}</th>
-                  <th className="xls-th">{renderSortableHeader('저점근접', 'pivot_grade')}</th>
-                  <th className="xls-th">{renderSortableHeader('경고', 'warn_score')}</th>
-                  <th className="xls-th">{renderSortableHeader('유동성', 'liquidity')}</th>
-                  <th className="xls-th">전략</th>
-                  <th className="xls-th">신호경과</th>
-                  <th className="xls-th">{renderSortableHeader('변동(%)', 'intraday_change_pct')}</th>
-                  <th className="xls-th">{renderSortableHeader('기준일', 'trade_date')}</th>
-                  <th className="xls-th">관리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayRows.map((s: any, idx: number) => {
-                  const code = String(s.code)
-                  const isAdded = isWatched(code)
-                  const isAddingNow = isAdding(code)
-                  const isRemovingNow = isRemoving(code)
-                  const isMutating = isAddingNow || isRemovingNow
-                  /* 진입 등급별 코드 셀 색상 */
-                  const codeColor = getEntryLevel(s.entry_grade) === 'a'
-                    ? 'var(--color-success)'
-                    : getEntryLevel(s.entry_grade) === 'b'
-                      ? 'var(--color-brand)'
-                      : 'var(--color-text-secondary)'
-                  return (
-                    <tr
-                      key={s.code}
-                      className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`}
-                      onClick={() => navigateToAnalyze(code)}
-                      style={{
-                        cursor: 'pointer',
-                        background: s.isExecutionPriority ? 'var(--color-brand-subtle)' : undefined,
-                        outline: s.isExecutionPriority ? '1px solid var(--color-brand)' : undefined,
-                        outlineOffset: s.isExecutionPriority ? '-1px' : undefined,
-                      }}
-                      title={`${s.name} 상세 분석`}
-                    >
-                      {/* 코드 */}
-                      <td className="xls-cell" style={{ fontFamily: 'var(--font-family-mono)', fontSize: 11, color: codeColor, fontWeight: 600 }}>
-                        {s.code}
-                        {s.isExecutionPriority && (
-                          <span
-                            style={{
-                              marginLeft: 4,
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: 'var(--color-brand)',
-                            }}
-                            title="보유 초과 구간의 집행 우선 후보"
-                          >
-                            #{s.executionPriorityRank}
-                          </span>
-                        )}
-                      </td>
-                      {/* 종목명 — 말줄임 */}
-                      <td className="xls-cell" title={s.name} style={{ fontWeight: 500 }}>
-                        {s.name}
-                      </td>
-                      {/* 섹터 — 말줄임 */}
-                      <td className="xls-cell" title={s.sector_id ?? ''} style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                        {s.sector_id ?? '—'}
-                      </td>
-                      {/* 우선순위 */}
-                      <td className="xls-cell xls-cell--num" title="진입점수×20 − 경고점수×3 + 장중 현재가 보정">
-                        <span className={s.priorityScore >= 60 ? 'scan-grade-badge scan-grade-a' : s.priorityScore >= 40 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
-                          {formatNumber(s.priorityScore, 1)}
-                        </span>
-                      </td>
-                      {/* 눌림점수 (이격·저점근접·추세·경고 등급 합산) */}
-                      <td className="xls-cell xls-cell--num">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
-                          <span className={s.leadAccumulationScore >= 75 ? 'scan-grade-badge scan-grade-a' : s.leadAccumulationScore >= 55 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
-                            {formatNumber(s.leadAccumulationScore, 0)}
-                          </span>
-                          {s.isAccumulationSignal && <AccumulationBadge stage={s.leadAccumulationStage} />}
-                        </div>
-                      </td>
-                      {/* 진입 */}
-                      <td className="xls-cell"><GradeBadge grade={s.entry_grade} /></td>
-                      {/* 진입점수 */}
-                      <td className="xls-cell xls-cell--num" style={{ fontSize: 11 }}>
-                        {s.entry_score != null ? formatNumber(s.entry_score, 2) : '—'}
-                      </td>
-                      {/* 추세 */}
-                      <td className="xls-cell"><GradeBadge grade={s.trend_grade} /></td>
-                      {/* 매집 */}
-                      <td className="xls-cell">
-                        <GradeBadge grade={s.dist_grade} />
-                        {s.dist_pct != null && (
-                          <span className="scan-grade-label" style={{ fontSize: 10 }}> ({formatNumber(s.dist_pct, 1)}%)</span>
-                        )}
-                      </td>
-                      {/* 세력선 */}
-                      <td className="xls-cell">
-                        <GradeBadge grade={s.pivot_grade} />
-                        {s.vol_atr_grade && (
-                          <span className="scan-grade-label" style={{ fontSize: 10 }}> /{s.vol_atr_grade}</span>
-                        )}
-                      </td>
-                      {/* 경고 */}
-                      <td className="xls-cell">
-                        <WarnBadge grade={s.warn_grade} />
-                      </td>
-                      {/* 유동성 */}
-                      <td className="xls-cell xls-cell--num" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                        {s.liquidity != null ? formatNumber(s.liquidity, 0) : '—'}
-                      </td>
-                      {/* 전략 */}
-                      <td className="xls-cell" style={{ fontSize: 11 }}>
-                        <span className={
-                          s.strategyLabel === '데이'
-                            ? 'scan-grade-badge scan-grade-a'
-                            : s.strategyLabel === '오버나이트'
-                              ? 'scan-grade-badge scan-grade-b'
-                              : s.strategyLabel === '주간'
-                                ? 'scan-grade-badge scan-grade-c'
-                                : 'scan-grade-label'
-                        }>
-                          {s.strategyLabel}
-                        </span>
-                      </td>
-                      {/* 신호경과 */}
-                      <td className="xls-cell" style={{ fontSize: 11 }}>
-                        {typeof s.quickLiteAgeDays === 'number'
-                          ? (s.quickLiteAgeDays === 0 ? '당일' : `D-${s.quickLiteAgeDays}`)
-                          : '—'}
-                      </td>
-                      {/* 변동(%) */}
-                      <td className="xls-cell xls-cell--num">
-                        {typeof s.intradayChangePct === 'number' ? (
-                          <span style={{
-                            color: s.intradayChangePct > 0 ? 'var(--color-stock-up)' : s.intradayChangePct < 0 ? 'var(--color-stock-down)' : undefined,
-                            fontWeight: 600, fontSize: 11,
-                          }}>
-                            {s.intradayChangePct > 0 ? '+' : ''}{formatNumber(s.intradayChangePct, 2)}%
-                          </span>
-                        ) : '—'}
-                      </td>
-                      {/* 기준일 — 단일 행 말줄임 */}
-                      <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                        {s.tradeDateText}
-                      </td>
-                      {/* 관리 */}
-                      <td className="xls-cell" onClick={(e) => e.stopPropagation()}>
-                        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                          <Button
-                            variant="ghost"
-                            onClick={() => navigateToExecutionGuide(code)}
-                            title="실행 가이드 열기"
-                            style={{ fontSize: 11, padding: '1px 6px' }}
-                          >
-                            가이드
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            onClick={(e: React.MouseEvent) => onToggleWatchlist(e, code)}
-                            disabled={isMutating}
-                            title={isAdded ? '관심 종목에서 제거' : '관심 종목에 추가'}
-                            style={{ fontSize: 11, padding: '1px 6px' }}
-                          >
-                            {isAdded ? '⊖제거' : '⊕추가'}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            </div>
-
-            {totalPages > 1 && (
-              <div className="pagination-wrap">
-                <Pagination page={page} pageSize={pageSize} total={sortedCandidates.length} onChange={setPage} />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <CandidateTable scan={scan} />
       <ShareModal
         open={shareManager.open}
         onClose={shareManager.close}

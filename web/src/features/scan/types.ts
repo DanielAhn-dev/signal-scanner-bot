@@ -1,3 +1,6 @@
+import type { useShareManager } from '../../hooks/useShareManager'
+import type { useToast } from '../../components/ToastProvider'
+
 export type MarketPhase = 'intraday' | 'after-close'
 export type ConditionFilter =
   | 'all'
@@ -181,4 +184,67 @@ export type ScanHighlightItem = {
   adaptive_adjustment?: number | null
   adaptive_reasons?: string[] | null
   adaptive_score?: number | null
+}
+
+/** 스캔 화면 컴포넌트들이 함께 쓰는 상태·파생값·핸들러 묶음(각 컴포넌트는 필요한 키만 골라 받는다) */
+export type ScanPanelState = {
+  onNavigate?: (route: string) => void
+  candidates: ScanCandidate[]
+  total: number
+  latestDate: string | null
+  marketPhase: MarketPhase
+  realtimeAppliedCount: number
+  buycheckMaxHoldings: number
+  setBuycheckMaxHoldings: (v: number) => void
+  buycheckHighlightTopN: number
+  setBuycheckHighlightTopN: (v: number) => void
+  loading: boolean
+  error: string | null
+  strategyMetricsLoading: boolean
+  strategyLookbackDays: StrategyLookbackDays
+  setStrategyLookbackDays: (v: StrategyLookbackDays) => void
+  strategyCoverage: StrategyCoverageSummary | null
+  strategyCoverageLoading: boolean
+  strategyDrilldown: StrategyDrilldownItem[]
+  strategyDrilldownLoading: boolean
+  strategyDrilldownError: string | null
+  selectedSector: string
+  setSelectedSector: (v: string) => void
+  conditionFilter: ConditionFilter
+  showAdvancedFilters: boolean
+  setShowAdvancedFilters: React.Dispatch<React.SetStateAction<boolean>>
+  page: number
+  setPage: (v: number) => void
+  isMobileViewport: boolean
+  pageSize: number
+  filterChipScrollRef: React.MutableRefObject<HTMLDivElement | null>
+  activeStrategyMetricKey: StrategyMetricSummary['key'] | null
+  isWatched: (code: string) => boolean
+  isAdding: (code: string) => boolean
+  isRemoving: (code: string) => boolean
+  advancedConditionOptions: Array<{ key: ConditionFilter; label: string; advanced?: boolean }>
+  handleFilterChipWheel: (event: React.WheelEvent<HTMLDivElement>) => void
+  handleFilterChipKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void
+  navigateToAnalyze: (code: string) => void
+  navigateToExecutionGuide: (code: string) => void
+  sectors: string[]
+  activeHighlights: ScanHighlightItem[]
+  highlightOverlapSet: Set<string>
+  filterCounts: Record<ConditionFilter, number>
+  confirmPromotionMeta: { base: number; promoted: number; ratioPct: number; latest5AvgRatioPct: number | null; trendDeltaPct: number | null; trendSampleDays: number; recentRatios: number[] }
+  buycheckRiskGuard: { label: string; overLimit: boolean; recommendedMax: number; remainingSlots: number | null }
+  sortedCandidates: ScanCandidate[]
+  totalPages: number
+  displayRows: any[]
+  handleConditionFilter: (filter: ConditionFilter) => void
+  strategyMetricDisplay: StrategyMetricSummary[]
+  onStrategyMetricCardClick: (key: StrategyMetricSummary['key']) => void
+  activeStrategyGuide: StrategyGuide | null
+  getStrategyMetricStatus: (metric: StrategyMetricSummary) => { label: string; textColor: string; bgColor: string }
+  activeStrategyMetric: StrategyMetricSummary | null
+  activeStrategyStatus: { label: string; textColor: string; bgColor: string } | null
+  activeStrategyPositionText: string | null
+  activeStrategyBackfillGuard: string | null
+  onToggleWatchlist: (e: React.MouseEvent, code: string) => Promise<void>
+  renderSortableHeader: (label: string, key: SortKey) => React.ReactNode
 }

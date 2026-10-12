@@ -140,4 +140,11 @@ describe('스캔 화면', () => {
     expect(onNavigate).toHaveBeenCalledWith('analyze')
     expect(sessionStorage.getItem('analyze_pending_code')).toBe('222222')
   })
+
+  it('데이 전략 모드를 열면 실행 가이드 카드와 근거 패널이 함께 나온다', async () => {
+    window.history.pushState({}, '', '/scan?filter=strategy_day')
+    renderPage()
+    expect(await screen.findByText('데이 전략 실행 가이드')).toBeTruthy()
+    expect(screen.getAllByText(/권장 0.5R/).length).toBeGreaterThan(0)
+  })
 })
