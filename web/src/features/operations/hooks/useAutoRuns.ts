@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { apiFetch } from '../../../lib/api'
 import { normalizeStep } from '../lib/jobs'
 import type { JobSnapshot, OpStatus } from '../types'
@@ -19,8 +19,13 @@ export function useAutoRuns(input: {
   const [autotriggerStatus, setAutotriggerStatus] = useState<OpStatus>('idle')
   const [autotriggerStep, setAutotriggerStep] = useState<'intraday' | 'ready'>('intraday')
   const [autotriggerResult, setAutotriggerResult] = useState<string | null>(null)
+  // 재진입 가드: disabled={status==='loading'}만으로는 모바일 연타에 실행 요청이 두 번 갈 수 있다
+  const autocycleInFlightRef = useRef(false)
+  const autotriggerInFlightRef = useRef(false)
 
   const runAutocycle = async (dryRun: boolean, learning = false) => {
+    if (autocycleInFlightRef.current) return
+    autocycleInFlightRef.current = true
     setAutocycleStatus('loading')
     try {
       const json = await apiFetch('/api/ui/operations', {
@@ -49,10 +54,15 @@ export function useAutoRuns(input: {
       toast.show(`자동사이클 ${label} 등록 완료`)
     } catch (e: any) {
       setAutocycleStatus('error')
+      toast.show(`자동사이클 요청 실패: ${String(e?.message || e)}`)
+    } finally {
+      autocycleInFlightRef.current = false
     }
   }
 
   const runAutotrigger = async (stepOverride?: 'intraday' | 'ready') => {
+    if (autotriggerInFlightRef.current) return
+    autotriggerInFlightRef.current = true
     const stepToRun = stepOverride || autotriggerStep
     setAutotriggerStatus('loading')
     setAutotriggerResult(null)
@@ -79,6 +89,8 @@ export function useAutoRuns(input: {
     } catch (e: any) {
       setAutotriggerResult(String(e?.message || e))
       setAutotriggerStatus('error')
+    } finally {
+      autotriggerInFlightRef.current = false
     }
   }
 
