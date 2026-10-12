@@ -48,6 +48,7 @@ export function renderDropDayRows({
           <button type="button" style={{ ...linkStyle, marginLeft: 8 }} aria-expanded={open} onClick={onToggle}>
             {open ? '접기' : '자세히'}
           </button>
+          <div style={{ marginTop: 2, color: 'var(--color-text-secondary)' }}>{lines.caution}</div>
         </td>
       </tr>
       {open && (

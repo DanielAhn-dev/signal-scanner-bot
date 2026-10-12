@@ -80,6 +80,11 @@ for label, start in (("1997~", "19970101"), ("2016~", "20160101")):
 
 
 # ---- 웹 데이터 파일 (web/src/data/dropDayFacts.ts) ----
+def further(i, h=60):
+    """K 인덱스 i 종가 대비 이후 h거래일 최저 종가까지의 하락률"""
+    return K[i + 1:i + h + 1].min() / K[i] - 1
+
+
 def build_web_facts():
     sel = np.array([d >= "19970101" for d in kr_dates])
     years = sel.sum() / 250
@@ -95,13 +100,19 @@ def build_web_facts():
         for h in (60, 250):
             v = np.array([K[e + h] / K[e] - 1 for e in ev if e + h < len(K)])
             row[f"h{h}"] = {"n": int(len(v)), "medianPct": round(float(np.median(v) * 100), 1), "upPct": int(round((v > 0).mean() * 100))}
+        # 바닥은 모른다: 하락일 종가에서 이후 60거래일 안에 추가로 더 빠진 비율
+        f = np.array([further(e) for e in ev if e + 60 < len(K)])
+        row["further60"] = {"down5Pct": int(round((f <= -0.05).mean() * 100)), "down10Pct": int(round((f <= -0.10).mean() * 100))}
         buckets.append(row)
+    base = np.array([further(i) for i in range(len(K) - 60) if kd[i] >= "19970101"])
+    base_further = {"down5Pct": int(round((base <= -0.05).mean() * 100)), "down10Pct": int(round((base <= -0.10).mean() * 100))}
     m = np.array([d >= "20160101" for d in ds])
     b, _a = np.polyfit(xs[m], ys[m], 1)
     r2 = float(np.corrcoef(xs[m], ys[m])[0, 1] ** 2)
     facts = {
         "period": f"{kr_dates[0][:4]}-{kr_dates[0][4:6]}~{END[:4]}-{END[4:6]}",
         "buckets": buckets,
+        "baseFurther60": base_further,
         "us": {"period": f"2016-01~{END[:4]}-{END[4:6]}", "beta": round(float(b), 2), "r2Pct": int(round(r2 * 100))},
     }
     from datetime import date
@@ -111,7 +122,7 @@ def build_web_facts():
         "generated": date.today().isoformat(),
         "script": "scripts/research/build_drop_day_facts.py",
         "sample": f"코스피 종가 {facts['period']}(배당 제외), 큰 하락 뒤 수익은 20거래일 안에 다시 난 하락을 한 번으로 센 독립 사건",
-        "caveat": "과거 평균일 뿐 이번에도 같다는 뜻이 아님. 약 3번 중 1번은 1년 뒤에도 마이너스. 미국 몫은 간밤 S&P500 하나로만 본 근사(장중 선물·아시아 시장은 반영 안 됨)",
+        "caveat": "과거 평균일 뿐 이번에도 같다는 뜻이 아님. 약 3번 중 1번은 1년 뒤에도 마이너스. 미국 몫은 간밤 S&P500 하나로만 본 근사(장중 선물·아시아 시장은 반영 안 됨). 추가 하락 비율은 평소 아무 날과 큰 차이가 없고(−3% 이하만 다소 높음), 2016년 이후로는 그 차이도 없음",
     }
     out = "web/src/data/dropDayFacts.ts"
     with open(out, "w", encoding="utf-8", newline="\n") as f:

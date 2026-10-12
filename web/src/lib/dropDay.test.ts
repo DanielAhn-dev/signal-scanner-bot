@@ -58,4 +58,13 @@ describe('dropDayLines', () => {
     expect(l.after).toContain(`${b.events}번 뒤`)
     expect(l.after).toContain(`마이너스였던 때가 ${100 - b.h250.upPct}%`)
   })
+
+  it('경계 문구는 구간별 추가 하락 비율을 쓰고, 평소와 비교한다', () => {
+    const b2 = DROP_DAY_FACTS.buckets.find((x) => x.threshold === -2)!
+    const l = dropDayLines(view({ changePct: -2.1 }), 0, '2026-10-12')!
+    expect(l.caution).toContain('바닥은 아무도 모릅니다')
+    expect(l.caution).toContain(`5% 넘게 더 빠진 경우가 ${b2.further60.down5Pct}%`)
+    const base = DROP_DAY_FACTS.baseFurther60.down10Pct
+    expect(l.after).toContain(b2.further60.down10Pct >= base + 5 ? '보다 높았습니다' : '큰 차이가 없습니다')
+  })
 })

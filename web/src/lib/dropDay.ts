@@ -16,6 +16,8 @@ export type DropDayLines = {
   dayLabel: string
   headline: string
   sub: string
+  /** 늘 보이는 경계 문구 — 바닥은 모른다는 것을 과거 추가 하락 비율로 보여 준다 */
+  caution: string
   us: string | null
   foreign: string | null
   after: string
@@ -72,7 +74,17 @@ export function dropDayLines(view: DropDayView, sp500ChangePct: number | null | 
     `과거 ${signed(bucket.threshold)}% 이하 하락 ${bucket.events}번 뒤: 3개월 뒤 중앙 ${signed(h60.medianPct)}%(오른 경우 ${h60.upPct}%), ` +
     `1년 뒤 중앙 ${signed(h250.medianPct)}%(오른 경우 ${h250.upPct}%). 1년 뒤에도 마이너스였던 때가 ${100 - h250.upPct}% 있었습니다.`
 
-  return { dayLabel, headline, sub: subParts.join(' · '), us, foreign, after }
+  const f = bucket.further60
+  const base = DROP_DAY_FACTS.baseFurther60
+  const caution =
+    `바닥은 아무도 모릅니다. 과거 이런 날 뒤 3개월 안에 5% 넘게 더 빠진 경우가 ${f.down5Pct}%, 10% 넘게 더 빠진 경우가 ${f.down10Pct}%였습니다. ` +
+    `한 번에 몰아서 사거나 팔지 말고 정해 둔 계획대로 하세요.`
+  const vsBase =
+    f.down10Pct >= base.down10Pct + 5
+      ? `평소 아무 날(10% 더 빠진 경우 ${base.down10Pct}%)보다 높았습니다.`
+      : `평소 아무 날(10% 더 빠진 경우 ${base.down10Pct}%)과 큰 차이가 없습니다 — 큰 하락 뒤라서 바닥이 가까운 것도, 더 위험한 것도 아니었습니다.`
+
+  return { dayLabel, headline, sub: subParts.join(' · '), caution, us, foreign, after: `${after} 추가 하락 비율은 ${vsBase}` }
 }
 
 /** 자료를 만든 지 180일이 넘었는지(planGuide.isFactStale과 같은 기준). planGuide는 큰 장기 데이터를 끌고 와 대시보드에서 직접 쓰지 않는다 */
