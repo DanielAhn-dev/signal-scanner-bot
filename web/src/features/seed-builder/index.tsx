@@ -93,6 +93,7 @@ function QuickAdd({ label, onAdd }: { label: string; onAdd: (amount: number) => 
 
 export default function SeedBuilderPage() {
   const navigate = useNavigate()
+  const [virtualDeposit, setVirtualDeposit] = useState<number | null>(null)
   const clientId = useCurrentClientId()
   const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date()))
   const [records, setRecords] = useState<Record<string, MonthRecord>>({})
@@ -147,13 +148,10 @@ export default function SeedBuilderPage() {
         }))
         setRecords(loaded)
         setDraft(loaded[selectedMonth] ?? blankFor(selectedMonth))
-        // 월 자동 입금(목표 트래커가 따르는 값)이 이번 달 계획의 기준 — 다른 화면에서 바꿨어도 여기 계획이 같이 보이게 한다
-        const nowKey = monthKey(new Date())
+        // 실험(가상) 계좌의 월 입금은 실제 돈 기록과 따로 둔다 — 여기서는 보여주기만 하고 서로 덮어쓰지 않는다
         void apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 }).then((prefsRes) => {
           const deposit = Number(prefsRes?.data?.monthly_deposit)
-          if (!active || !(deposit >= 10_000)) return
-          setRecords((current) => current[nowKey] && current[nowKey].plan !== deposit ? { ...current, [nowKey]: { ...current[nowKey], plan: deposit } } : current)
-          setDraft((current) => selectedMonth === nowKey && current.plan !== deposit ? { ...current, plan: deposit } : current)
+          if (active && Number.isFinite(deposit)) setVirtualDeposit(deposit)
         }).catch(() => {})
       })
       .catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : String(error)) })
@@ -279,20 +277,6 @@ export default function SeedBuilderPage() {
     setNotice('지난달 반복 항목(수입·급여일·생활비류)을 채웠습니다. 카드대금·세금·추가 수입·목표는 채우지 않았으니 이번 달 금액을 직접 입력하세요.')
   }
 
-  // 이번 달 계획과 월 자동 입금은 같은 숫자다 — 목표 트래커·가상 계좌 입금이 월 자동 입금을 따르므로, 저장할 때 그쪽도 함께 맞춘다
-  const syncDepositToPlan = async (plan: number): Promise<string | null> => {
-    if (plan < 10_000) return null
-    try {
-      const res = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 })
-      const current = Number(res?.data?.monthly_deposit)
-      if (!Number.isFinite(current) || current === plan) return null
-      await apiFetch('/api/ui/investment-prefs', { method: 'POST', body: JSON.stringify({ monthly_deposit: plan, deposit_day: Number(res?.data?.deposit_day) || 1 }), cacheMs: 0, timeoutMs: 15_000 })
-      return `월 자동 입금도 ${krw(plan)}으로 맞췄습니다. 목표 트래커에도 반영됩니다.`
-    } catch (error) {
-      return `계획은 저장했지만 월 자동 입금은 바꾸지 못했습니다: ${error instanceof Error ? error.message : String(error)}`
-    }
-  }
-
   const save = async (): Promise<boolean> => {
     if (!clientId || loading || loadError) return false
     if ([draft.ownIncome, draft.partnerIncome, draft.reserve, draft.plan, ...Object.values(draft.expenses), ...Object.values(draft.extraIncome)].some((amount) => !Number.isSafeInteger(amount) || amount < 0)
@@ -307,8 +291,7 @@ export default function SeedBuilderPage() {
       await apiFetch('/api/ui/seed-builder', { method: 'PUT', body: JSON.stringify({ month: selectedMonth, ...toSave }), cacheMs: 0 })
       setRecords((current) => ({ ...current, [selectedMonth]: { ...toSave, expenses: { ...draft.expenses }, extraIncome: { ...draft.extraIncome } } }))
       setDraft(toSave)
-      const synced = selectedMonth === monthKey(new Date()) ? await syncDepositToPlan(toSave.plan) : null
-      setNotice(synced ? `이번 달 기록을 저장했습니다. ${synced}` : '이번 달 기록을 저장했습니다.')
+      setNotice('이번 달 기록을 저장했습니다.')
       return true
     } catch (error) {
       setNotice(`저장 실패: ${error instanceof Error ? error.message : String(error)}`)
@@ -621,7 +604,7 @@ export default function SeedBuilderPage() {
             : <span className="seed-delete-confirm" role="alertdialog" aria-label="전체 삭제 확인">모든 연도의 월 기록과 확보 내역이 삭제되며 되돌릴 수 없습니다. <button type="button" className="seed-primary" disabled={saving} onClick={() => void deleteAll()}>삭제</button> <button type="button" className="seed-link-button" onClick={() => setConfirmDeleteAll(false)}>취소</button></span>}
         </div>
       </section></Detail>
-      <p className="seed-disclaimer"><Wallet size={15} /> 이 기록은 가상 시드·자동 입금·자동매매에 반영되지 않습니다. 투자 원금과 수익도 구분됩니다.</p>
+      <p className="seed-disclaimer"><Wallet size={15} /> 이 기록은 실제 돈 기록입니다. 실험(가상) 계좌의 시드·월 입금·자동매매에는 반영되지 않습니다.{virtualDeposit !== null && <> 실험 계좌 월 입금은 {virtualDeposit > 0 ? krw(virtualDeposit) : '꺼짐'}이며 <button type="button" className="seed-link-button" onClick={() => navigate('/settings')}>설정</button>에서 바꿉니다.</>}</p>
     </main>
   )
 }
