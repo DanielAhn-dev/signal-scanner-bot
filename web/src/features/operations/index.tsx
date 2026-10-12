@@ -1,12 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
-import { formatKrw, formatKstDateTime, formatNumber } from '../../lib/format'
-import Skeleton from '../../components/Skeleton'
 import Button from '../../components/ui/Button'
-import Modal from '../../components/Modal'
 import { useToast } from '../../components/ToastProvider'
-
 import type {
   AutoCycleInsights,
   JobSnapshot,
@@ -15,19 +11,17 @@ import type {
   SellCandidate,
   TradeRow,
 } from './types'
-import { classifyDryRunNote, interpretMemo, resolveFailureCause, translateOperationMessage } from './lib/memo'
-import { getTimelineMeta, normalizeJobState, normalizeStep, progressFill, renderRunSummary, resolveTaskLabel } from './lib/jobs'
-import {
-  decisionTone,
-  estimateMissingReason,
-  filterLatestCompareRows,
-  filterRunCompareRows,
-  normalizeDecisionFilter,
-  reasonCategoryFromText,
-  runStatusLabel,
-  runStatusTone,
-} from './lib/insights'
-import { cardBgStyle, sideBadge } from './components/badges'
+import { normalizeJobState, normalizeStep, renderRunSummary } from './lib/jobs'
+import TradeNowCard from './components/TradeNowCard'
+import DryRunBanner from './components/DryRunBanner'
+import KpiCards from './components/KpiCards'
+import LiveJobsCard from './components/LiveJobsCard'
+import DryRunApprovalCard from './components/DryRunApprovalCard'
+import ActivityList from './components/ActivityList'
+import LearningRunCard from './components/LearningRunCard'
+import SellCheckCard from './components/SellCheckCard'
+import InsightsCard from './components/InsightsCard'
+import DryRunModal from './components/DryRunModal'
 
 export default function OperationsPage() {
   const toast = useToast()
@@ -281,360 +275,56 @@ export default function OperationsPage() {
       </div>
 
       {/* 지금 매매 체크 — 핵심 CTA를 최상단으로 */}
-      <div className="card card-lg" style={{ marginBottom: 'var(--space-4)' }}>
-        <div style={{ marginBottom: 'var(--space-3)' }}>
-          <div className="title-lg">📊 지금 매매 체크</div>
-          <div className="muted caption" style={{ marginTop: 'var(--space-1)' }}>
-            현재 보유 포지션의 신호 재평가 및 손절/익절 조건을 확인합니다.
-            보유 종목 중 조건을 만족하는 것이 있으면 거래 대기 상태로 표시됩니다.
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-          <Button
-            variant="primary"
-            onClick={() => { void runAutotrigger() }}
-            disabled={autotriggerStatus === 'loading'}
-            style={{ minWidth: 160 }}
-          >
-            {autotriggerStatus === 'loading' ? '확인 중...' : '🔍 지금 확인'}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => setAutotriggerStep(autotriggerStep === 'intraday' ? 'ready' : 'intraday')}
-            disabled={autotriggerStatus === 'loading'}
-          >
-            {autotriggerStep === 'intraday' ? '장중' : '장전'} 모드
-          </Button>
-        </div>
-        {autotriggerResult && (
-          <div
-            className={autotriggerStatus === 'error' ? 'state-error' : 'caption muted'}
-            style={{ marginTop: 'var(--space-3)' }}
-          >
-            {autotriggerResult}
-          </div>
-        )}
-      </div>
+      <TradeNowCard
+        autotriggerStatus={autotriggerStatus}
+        autotriggerStep={autotriggerStep}
+        setAutotriggerStep={setAutotriggerStep}
+        autotriggerResult={autotriggerResult}
+        runAutotrigger={runAutotrigger}
+      />
 
       {showStickyDryRunBanner && pendingDryRunApproval && (
-        <div
-          className="card"
-          style={{
-            marginBottom: 'var(--space-4)',
-            borderColor: 'var(--color-blue-200)',
-            background: 'var(--color-blue-50)',
-            position: 'sticky',
-            top: 72,
-            zIndex: 220,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <div>
-              <div className="title-md">드라이런 검토 완료: 실행 여부를 선택하세요</div>
-              <div className="caption muted" style={{ marginTop: 4 }}>job_id: {pendingDryRunApproval.jobId} · {pendingDryRunApproval.summary}</div>
-            </div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <Button variant="primary" onClick={() => runAutocycle(false)} disabled={autocycleStatus === 'loading'}>
-                결과 수락 후 실제 실행
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setSelectedDryRunJobId(pendingDryRunApproval.jobId)}
-              >
-                상세 보기
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setBannerDismissedForJobId(pendingDryRunApproval.jobId)}
-              >
-                닫기
-              </Button>
-            </div>
-          </div>
-        </div>
+        <DryRunBanner
+          autocycleStatus={autocycleStatus}
+          runAutocycle={runAutocycle}
+          pendingDryRunApproval={pendingDryRunApproval}
+          setBannerDismissedForJobId={setBannerDismissedForJobId}
+          setSelectedDryRunJobId={setSelectedDryRunJobId}
+        />
       )}
 
-      <div
-        className="ops-kpi-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: 'var(--space-3)',
-          marginBottom: 'var(--space-6)',
-        }}
-      >
-        {dashboardLoading && <Skeleton lines={2} height={16} />}
-        {!dashboardLoading && dashboardKpi && (
-          <>
-            <div className="card">
-              <div className="caption muted">오늘 체결</div>
-              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.buy_count + dashboardKpi.sell_count}건</div>
-              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>매수 {dashboardKpi.buy_count} · 매도 {dashboardKpi.sell_count}</div>
-            </div>
-            <div className="card">
-              <div className="caption muted">오늘 거래금액</div>
-              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{formatKrw(dashboardKpi.trade_amount)}</div>
-              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>기준일 {dashboardKpi.asof}</div>
-            </div>
-            <div className="card">
-              <div className="caption muted">자동사이클 실행</div>
-              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.run_total}회</div>
-              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>성공 {dashboardKpi.run_success} · 실패 {dashboardKpi.run_failed}</div>
-              {dashboardKpi.run_failed > 0 && dashboardKpi.latest_failed_reason && (
-                <div className="caption" style={{ marginTop: 'var(--space-1)', color: 'var(--color-error)' }}>
-                  최근 실패: {translateOperationMessage(dashboardKpi.latest_failed_reason)}
-                </div>
-              )}
-            </div>
-            <div className="card">
-              <div className="caption muted">큐 대기/보유</div>
-              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.queue_waiting} / {dashboardKpi.holding_count}</div>
-              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>대기작업 / 보유종목</div>
-            </div>
-            {dashboardKpi.virtual_seed_capital != null && (
-              <div className="card">
-                <div className="caption muted">가상 현금 잔액</div>
-                <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>
-                  {dashboardKpi.virtual_cash != null ? formatKrw(dashboardKpi.virtual_cash) : '-'}
-                </div>
-                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                  시드 {formatKrw(dashboardKpi.virtual_seed_capital)}
-                  {dashboardKpi.virtual_cash != null && dashboardKpi.virtual_seed_capital > 0 && (
-                    <span style={{ marginLeft: 6 }}>
-                      ({((dashboardKpi.virtual_cash / dashboardKpi.virtual_seed_capital) * 100).toFixed(1)}%)
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      <KpiCards
+        dashboardKpi={dashboardKpi}
+        dashboardLoading={dashboardLoading}
+      />
 
-      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
-          <div>
-            <div className="title-lg">실시간 실행 보드</div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              큐 등록 - 실행 중 - 완료 단계를 2초 간격으로 자동 갱신합니다.
-            </div>
-          </div>
-          <Button variant="ghost" onClick={() => {
-            for (const jobId of watchingJobIds) void refreshJobSnapshot(jobId, true)
-          }}>
-            지금 갱신
-          </Button>
-        </div>
-
-        {liveJobItems.length === 0 ? (
-          <div className="caption muted">현재 추적 중인 작업이 없습니다. 상단 작업을 실행하면 이 보드에 상태가 표시됩니다.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            {liveJobItems.slice(0, 6).map((item) => {
-              const state = normalizeJobState(item.job.status)
-              const jobId = String(item.job.id)
-              const running = state === 'running'
-              const failed = state === 'failed'
-              const expanded = failed || expandedJobIds.includes(jobId)
-              return (
-                <div key={jobId} className="card" style={{ borderColor: failed ? 'var(--color-border-error)' : 'var(--color-border-default)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                    <div className="font-medium">{resolveTaskLabel(item.job.payload)}</div>
-                    <div className="caption" style={{ color: failed ? 'var(--color-error)' : running ? 'var(--color-brand)' : 'var(--color-text-tertiary)', fontWeight: 700 }}>
-                      {failed ? '실패' : running ? '실행 중' : state === 'done' ? '완료' : '대기 중'}
-                    </div>
-                  </div>
-
-                  {failed && (
-                    <div style={{ marginTop: 'var(--space-2)', padding: '8px 10px', borderRadius: 8, background: '#FFF0F1', border: '1px solid #FFD6D9' }}>
-                      <div className="caption" style={{ color: '#B42318', fontWeight: 700 }}>실패 원인</div>
-                      <div className="caption" style={{ color: '#7A271A', marginTop: 4 }}>{resolveFailureCause(item)}</div>
-                      <div style={{ marginTop: 8 }}>
-                        <Button
-                          variant="ghost"
-                          onClick={() => { void retryJob(item) }}
-                          disabled={autocycleStatus === 'loading' || autotriggerStatus === 'loading'}
-                        >
-                          동일 조건 재시도
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: 'var(--space-2)', height: 8, borderRadius: 999, background: 'var(--color-gray-100)', overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        width: progressFill(state),
-                        height: '100%',
-                        background: failed ? 'var(--color-error)' : 'linear-gradient(90deg, #63A0FF 0%, #0060FF 100%)',
-                        transition: 'width var(--duration-normal) var(--ease-out)',
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-2)' }}>
-                    <span className="caption muted">요청 {new Date(item.job.created_at).toLocaleTimeString('ko-KR')}</span>
-                    <span className="caption muted">job_id: {String(item.job.id)}</span>
-                  </div>
-
-                  <div className="caption" style={{ marginTop: 'var(--space-2)', color: failed ? 'var(--color-error)' : 'var(--color-text-secondary)' }}>
-                    {failed ? (item.job.error || '오류 상세가 없습니다.') : renderRunSummary(item.latest_run)}
-                  </div>
-
-                  {Array.isArray(item.timeline) && item.timeline.length > 0 && (
-                    <div style={{ marginTop: 'var(--space-3)', borderTop: '1px dashed var(--color-border-default)', paddingTop: 'var(--space-2)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-1)' }}>
-                        <div className="caption muted">실행 타임라인</div>
-                        {!failed && (
-                          <button
-                            className="caption"
-                            style={{ border: 'none', background: 'transparent', color: 'var(--color-brand)', cursor: 'pointer', fontWeight: 600 }}
-                            onClick={() => {
-                              setExpandedJobIds(prev => prev.includes(jobId) ? prev.filter(id => id !== jobId) : [...prev, jobId])
-                            }}
-                          >
-                            {expanded ? '접기' : '전체 보기'}
-                          </button>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                        {(expanded ? item.timeline : item.timeline.slice(-4)).map((event, index) => {
-                          const meta = getTimelineMeta(event)
-                          return (
-                          <div key={`${String(item.job.id)}-timeline-${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'center' }}>
-                            <span className="caption" style={{ color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ width: 18, height: 18, borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: meta.bg, color: meta.color, fontSize: 10, fontWeight: 700 }}>{meta.icon}</span>
-                              {event.label}
-                            </span>
-                            <span className="caption muted">{new Date(event.ts).toLocaleTimeString('ko-KR')}</span>
-                          </div>
-                        )})}
-                      </div>
-                    </div>
-                  )}
-
-                  {item.recent_trades.length > 0 && (
-                    <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                      {item.recent_trades.slice(0, 3).map(trade => (
-                        <span key={trade.id} className="caption" style={{ padding: '4px 8px', borderRadius: 999, background: 'var(--color-gray-50)', color: 'var(--color-text-secondary)' }}>
-                          {(trade.stock_name || trade.code)} {trade.side === 'BUY' ? '매수' : trade.side === 'SELL' ? '매도' : '조정'} {trade.quantity}주 @{formatKrw(trade.price)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {item.job.payload?.dry_run !== false && (
-                    <div style={{ marginTop: 'var(--space-2)' }}>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setSelectedDryRunJobId(String(item.job.id))}
-                      >
-                        드라이런 상세 보기
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      <LiveJobsCard
+        autocycleStatus={autocycleStatus}
+        autotriggerStatus={autotriggerStatus}
+        setSelectedDryRunJobId={setSelectedDryRunJobId}
+        liveJobItems={liveJobItems}
+        watchingJobIds={watchingJobIds}
+        refreshJobSnapshot={refreshJobSnapshot}
+        expandedJobIds={expandedJobIds}
+        setExpandedJobIds={setExpandedJobIds}
+        retryJob={retryJob}
+      />
 
       {pendingDryRunApproval && (
-        <div className="card card-lg" style={{ marginBottom: 'var(--space-6)', borderColor: 'var(--color-blue-200)', background: 'var(--color-blue-50)' }}>
-          <div className="title-lg">드라이런 결과 검토 완료</div>
-          <div className="muted" style={{ marginTop: 'var(--space-1)' }}>
-            job_id: {pendingDryRunApproval.jobId}
-          </div>
-          <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-            {pendingDryRunApproval.summary}
-          </div>
-          <div style={{ marginTop: 'var(--space-3)', display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <Button
-              variant="primary"
-              onClick={() => runAutocycle(false)}
-              disabled={autocycleStatus === 'loading'}
-            >
-              결과 수락 후 실제 실행
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setPendingDryRunApproval(null)}
-            >
-              보류
-            </Button>
-          </div>
-        </div>
+        <DryRunApprovalCard
+          autocycleStatus={autocycleStatus}
+          runAutocycle={runAutocycle}
+          pendingDryRunApproval={pendingDryRunApproval}
+          setPendingDryRunApproval={setPendingDryRunApproval}
+        />
       )}
 
       {/* 최근 실행 이력 */}
-      <div style={{ marginBottom: 'var(--space-6)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
-          <h2 className="title-lg">최근 실행 이력 (최근 20건)</h2>
-          <Button variant="ghost" onClick={loadActivity} disabled={activityLoading}>새로고침</Button>
-        </div>
-        {activityLoading && <Skeleton lines={5} height={18} />}
-        {!activityLoading && activity.length === 0 && (
-          <div className="card"><div className="muted">실행 이력 없음</div></div>
-        )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        {!activityLoading && activity.map((row, idx) => {
-          const { label: memoLabel, reason: memoReason } = interpretMemo(row.memo)
-          const isRecent = idx === 0
-          const feeAmt = Number(row.fee_amount ?? 0)
-          const taxAmt = Number(row.tax_amount ?? 0)
-          const buyFeeAmt = Number(row.buy_fee_amount ?? 0)
-          const totalCost = feeAmt + taxAmt + buyFeeAmt
-          const pnlAmt = row.pnl_amount != null ? Number(row.pnl_amount) : null
-          const isSell = row.side === 'SELL'
-          return (
-          <div key={row.id} className="card" style={{ ...cardBgStyle(row.side), ...(isRecent ? { boxShadow: '0 0 0 2px var(--color-brand)' } : {}) }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <span className="font-medium">{row.stock_name || row.code}</span>
-                {row.stock_name && (
-                  <span className="caption muted" style={{ marginLeft: 'var(--space-2)' }}>({row.code})</span>
-                )}
-                <span style={{ marginLeft: 'var(--space-2)' }}>{sideBadge(row.side)}</span>
-                <span className="caption muted" style={{ marginLeft: 'var(--space-2)' }}>
-                  {row.quantity}주 · {formatKrw(row.price)}
-                </span>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div className="caption muted">{formatKstDateTime(row.created_at)}</div>
-                {isRecent && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-brand)', fontWeight: 'var(--font-weight-semibold)' }}>최근</div>}
-              </div>
-            </div>
-            {/* 해석된 매매 이유 */}
-            <div style={{ marginTop: 'var(--space-1)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: row.side === 'BUY' ? 'var(--color-stock-up)' : row.side === 'SELL' ? 'var(--color-stock-down)' : 'var(--color-text-secondary)', background: row.side === 'BUY' ? 'var(--color-stock-up-bg)' : row.side === 'SELL' ? 'var(--color-stock-down-bg)' : 'var(--color-stock-flat-bg)', borderRadius: 'var(--radius-sm)', padding: '2px 8px' }}>
-                {memoLabel}
-              </span>
-              {memoReason && <span className="caption muted">{memoReason}</span>}
-            </div>
-            {/* 매매비용 / 실수익 */}
-            {totalCost > 0 && (
-              <div className="caption muted" style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-3)' }}>
-                <span>수수료 {formatKrw(feeAmt)}</span>
-                {taxAmt > 0 && <span>거래세 {formatKrw(taxAmt)}</span>}
-                {isSell && buyFeeAmt > 0 && <span>매수 수수료 {formatKrw(buyFeeAmt)}</span>}
-                <span>총비용 {formatKrw(totalCost)}</span>
-              </div>
-            )}
-            {isSell && pnlAmt != null && (
-              <div style={{ marginTop: 'var(--space-1)', fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: pnlAmt >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
-                순손익 {pnlAmt >= 0 ? '+' : ''}{formatKrw(pnlAmt)}
-                {totalCost > 0 && (
-                  <span style={{ fontWeight: 'var(--font-weight-regular)', color: 'var(--color-text-tertiary)', marginLeft: 'var(--space-2)' }}>
-                    (수수료·세금 빼기 전 {pnlAmt + totalCost >= 0 ? '+' : ''}{formatKrw(pnlAmt + totalCost)})
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        )})}
-        </div>
-      </div>
+      <ActivityList
+        activity={activity}
+        activityLoading={activityLoading}
+        loadActivity={loadActivity}
+      />
 
       {/* 고급 진단 — 검증/디버깅용 지표. 기본 접힘. 일상적인 매매 팔로우에는 필요 없음 */}
       <div style={{ marginBottom: 'var(--space-3)' }}>
@@ -645,563 +335,40 @@ export default function OperationsPage() {
 
       {showAdvanced && (
         <>
-          <div className="card card-lg" style={{ marginBottom: 'var(--space-4)' }}>
-            <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>학습 실행</div>
-            <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
-              전략 파라미터 학습용 점검/실행입니다. 일상적인 매매 확인과는 별개의 운영자 작업입니다.
-            </div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <Button variant="secondary" onClick={() => runAutocycle(true, true)} disabled={autocycleStatus === 'loading'}>
-                학습 점검
-              </Button>
-              <Button variant="secondary" onClick={() => runAutocycle(false, true)} disabled={autocycleStatus === 'loading'}>
-                학습 실행
-              </Button>
-            </div>
-          </div>
+          <LearningRunCard
+            autocycleStatus={autocycleStatus}
+            runAutocycle={runAutocycle}
+          />
 
-      <div className="card card-lg" style={{ marginBottom: 'var(--space-4)' }}>
-        <div style={{ marginBottom: 'var(--space-3)' }}>
-          <div className="title-lg">자동매도 점검 (autosellcheck)</div>
-          <div className="muted caption" style={{ marginTop: 'var(--space-1)' }}>
-            현재 보유 종목의 현재가 기준 수익률을 조회합니다. 하락 순으로 정렬됩니다.
-          </div>
-        </div>
-        <Button
-          variant="secondary"
-          onClick={fetchSellCandidates}
-          disabled={sellLoading}
-        >
-          {sellLoading ? '조회 중...' : '점검 조회'}
-        </Button>
-        {sellFetched && (
-          <div style={{ marginTop: 'var(--space-3)' }}>
-            {sellCandidates.length === 0 ? (
-              <div className="caption muted">보유 포지션 없음</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {sellCandidates.map(c => (
-                  <div key={c.code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <span className="font-medium">{c.name || c.code}</span>
-                      <span className="caption muted"> ({c.code}) · {c.quantity}주</span>
-                    </div>
-                    <div className="text-right">
-                      <span
-                        className={c.pct_change < 0 ? 'negative' : 'positive'}
-                        style={{ fontWeight: 600 }}
-                      >
-                        {c.pct_change > 0 ? '+' : ''}{formatNumber(c.pct_change, 2)}%
-                      </span>
-                      <div className="caption muted">
-                        {formatKrw(c.current_price)} / 평균 {formatKrw(c.buy_price)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+          <SellCheckCard
+            sellCandidates={sellCandidates}
+            sellLoading={sellLoading}
+            sellFetched={sellFetched}
+            fetchSellCandidates={fetchSellCandidates}
+          />
 
-      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
-          <div>
-            <div className="title-lg">자동매매 실행 인사이트</div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              후보 생성부터 최종 체결까지, 왜 매수가 없었는지 퍼널과 게이트 사유를 시각적으로 보여줍니다.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <Button variant={insightTab === 'summary' ? 'primary' : 'ghost'} onClick={() => setInsightTab('summary')}>
-              요약
-            </Button>
-            <Button variant={insightTab === 'details' ? 'primary' : 'ghost'} onClick={() => setInsightTab('details')}>
-              상세
-            </Button>
-            <Button variant="ghost" onClick={() => { void loadAutoCycleInsights() }} disabled={autocycleInsightsLoading}>
-              {autocycleInsightsLoading ? '조회 중...' : '새로고침'}
-            </Button>
-          </div>
-        </div>
-
-        {!autocycleInsightsLoading && !autocycleInsights?.latest && (
-          <div className="caption muted">최근 실행 데이터가 없습니다. 자동사이클을 한 번 실행하면 인사이트가 생성됩니다.</div>
-        )}
-
-        {!autocycleInsightsLoading && autocycleInsights?.latest && (
-          <>
-            {insightTab === 'summary' && (
-            <div className="card" style={{ marginBottom: 'var(--space-3)', background: '#FAFCFF' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                <div>
-                  <div className="font-medium">최신 실행: {autocycleInsights.latest.run_type} · {autocycleInsights.latest.run_key}</div>
-                  <div className="caption muted" style={{ marginTop: 4 }}>{formatKstDateTime(autocycleInsights.latest.started_at)}</div>
-                </div>
-                {(() => {
-                  const tone = runStatusTone(autocycleInsights.latest.status)
-                  return (
-                    <span className="caption" style={{ borderRadius: 999, padding: '4px 10px', background: tone.bg, color: tone.color, fontWeight: 700 }}>
-                      {runStatusLabel(autocycleInsights.latest.status)}
-                    </span>
-                  )
-                })()}
-              </div>
-
-              <div className="caption" style={{ marginTop: 'var(--space-2)', color: 'var(--color-text-secondary)' }}>
-                매수 {autocycleInsights.latest.buys} · 매도 {autocycleInsights.latest.sells} · 스킵 {autocycleInsights.latest.skipped} · 오류 {autocycleInsights.latest.errors}
-              </div>
-
-              <div className="card" style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2)', background: '#F7FAFF', borderColor: '#D7E6FF' }}>
-                <div className="caption muted" style={{ marginBottom: 4 }}>한줄 진단</div>
-                <div className="caption" style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-                  {autocycleInsights.latest.diagnosis_line || '진단 데이터가 아직 없습니다.'}
-                </div>
-              </div>
-
-              {autocycleInsights.latest.diagnosis_breakdown.length > 0 && (
-                <div className="card" style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2)' }}>
-                  <div className="caption muted" style={{ marginBottom: 6 }}>원인 비중 (클릭하면 아래 비교표 필터)</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {autocycleInsights.latest.diagnosis_breakdown.map((item, idx) => (
-                      <button
-                        key={`diag-breakdown-${idx}`}
-                        onClick={() => {
-                          setLatestReasonCategoryFilter((prev) => prev === item.label ? 'ALL' : item.label)
-                          setLatestCompareDecisionFilter('ALL')
-                        }}
-                        style={{
-                          border: latestReasonCategoryFilter === item.label ? '1px solid #2563EB' : '1px solid #E4E7EC',
-                          borderRadius: 8,
-                          background: latestReasonCategoryFilter === item.label ? '#EFF6FF' : '#fff',
-                          padding: '6px 8px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span className="caption" style={{ color: 'var(--color-text-secondary)' }}>{item.label}</span>
-                          <span className="caption muted">{item.ratio.toFixed(1)}% ({item.count})</span>
-                        </div>
-                        <div style={{ marginTop: 4, height: 6, borderRadius: 999, background: '#EDF2F7', overflow: 'hidden' }}>
-                          <div style={{ width: `${Math.max(3, Math.min(100, item.ratio))}%`, height: '100%', background: '#3B82F6' }} />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {autocycleInsights.latest.funnel && (
-                <div style={{ marginTop: 'var(--space-3)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-2)' }}>
-                  <div className="card" style={{ padding: 'var(--space-2)' }}>
-                    <div className="caption muted">초기</div>
-                    <div className="font-medium">{autocycleInsights.latest.funnel.initial}</div>
-                  </div>
-                  <div className="card" style={{ padding: 'var(--space-2)' }}>
-                    <div className="caption muted">정책 통과</div>
-                    <div className="font-medium">{autocycleInsights.latest.funnel.policy}</div>
-                  </div>
-                  <div className="card" style={{ padding: 'var(--space-2)' }}>
-                    <div className="caption muted">기본 필터</div>
-                    <div className="font-medium">{autocycleInsights.latest.funnel.base}</div>
-                  </div>
-                  <div className="card" style={{ padding: 'var(--space-2)' }}>
-                    <div className="caption muted">후보 풀</div>
-                    <div className="font-medium">{autocycleInsights.latest.funnel.pool}</div>
-                  </div>
-                  <div className="card" style={{ padding: 'var(--space-2)' }}>
-                    <div className="caption muted">최종 후보</div>
-                    <div className="font-medium">{autocycleInsights.latest.funnel.selected}</div>
-                  </div>
-                </div>
-              )}
-
-              {(autocycleInsights.latest.key_gate_reasons.length > 0 || autocycleInsights.latest.top_reject_reasons.length > 0) && (
-                <div style={{ marginTop: 'var(--space-3)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-2)' }}>
-                  <div className="card" style={{ padding: 'var(--space-2)' }}>
-                    <div className="caption muted" style={{ marginBottom: 6 }}>왜 매수가 없었나(게이트)</div>
-                    {autocycleInsights.latest.key_gate_reasons.length > 0 ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {autocycleInsights.latest.key_gate_reasons.map((reason, idx) => (
-                          <span key={`gate-${idx}`} className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: '#FFF4E5', color: '#92400E', fontWeight: 700 }}>{reason}</span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="caption muted">주요 게이트 차단 신호 없음</div>
-                    )}
-                  </div>
-                  <div className="card" style={{ padding: 'var(--space-2)' }}>
-                    <div className="caption muted" style={{ marginBottom: 6 }}>탈락 상위 사유</div>
-                    {autocycleInsights.latest.top_reject_reasons.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {autocycleInsights.latest.top_reject_reasons.map((reason, idx) => (
-                          <div key={`reject-${idx}`} className="caption" style={{ color: 'var(--color-text-secondary)' }}>{reason}</div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="caption muted">탈락 사유 데이터 없음</div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ marginTop: 'var(--space-3)' }}>
-                <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>
-                  스캔 TOP 원본 (점수순)
-                </div>
-                {autocycleInsights.scan_top_rows.length > 0 ? (
-                  <div className="ops-compare-table" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 'var(--space-3)' }}>
-                    <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>종목</th>
-                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>점수</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>신호</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>집행후보 포함</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap', minWidth: 200 }}>미포함/차단 추정</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {autocycleInsights.scan_top_rows.map((row, idx) => {
-                          // 실행 기록(latest)이 아직 없어도 스캔 상위는 있을 수 있다 — 예전엔 여기서 null을 읽어 화면이 멈췄다
-                          const latestRun = autocycleInsights.latest
-                          const compareEntry = latestRun?.compare_rows.find((item) => item.code === row.code)
-                          const included = Boolean(compareEntry)
-                          const estimatedReason = compareEntry
-                            ? compareEntry.reason
-                            : (row.exclusion_reason || (latestRun ? estimateMissingReason({ signal: row.signal, latest: latestRun }) : '실행 기록 없음'))
-                          return (
-                            <tr key={`scan-top-${idx}`} data-label={row.name || row.code}>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="종목">{row.name || row.code}{row.name ? ` (${row.code})` : ''}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="점수">{row.score.toFixed(1)}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="신호">{row.signal || '-'}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="집행후보 포함">
-                                <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: included ? '#E8F7F3' : '#F5F7FA', color: included ? '#0F766E' : '#667085', fontWeight: 700 }}>
-                                  {included ? '포함' : '미포함'}
-                                </span>
-                              </td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 200 }} data-th="미포함/차단 추정">{estimatedReason}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    <div className="caption muted" style={{ marginTop: 6 }}>
-                      score asof: {autocycleInsights.score_asof || '-'}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>스캔 TOP 원본 데이터가 없습니다.</div>
-                )}
-
-                <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>TOP 후보 vs 최종 미체결</div>
-                {autocycleInsights.latest.compare_rows.length > 0 ? (
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                      <div className="ops-filter-pills" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(['ALL', 'BUY', 'SKIP', 'HOLD', 'SELL', 'ERROR'] as const).map((kind) => {
-                          const active = latestCompareDecisionFilter === kind
-                          return (
-                            <button
-                              key={`latest-compare-filter-${kind}`}
-                              onClick={() => setLatestCompareDecisionFilter(kind)}
-                              className="ops-filter-pill"
-                              style={{
-                                border: active ? '1px solid #2563EB' : '1px solid #D0D5DD',
-                                background: active ? '#EBF3FF' : '#fff',
-                                color: active ? '#0B57D0' : '#475467',
-                              }}
-                            >
-                              {kind}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      {latestReasonCategoryFilter !== 'ALL' && (
-                        <button
-                          onClick={() => setLatestReasonCategoryFilter('ALL')}
-                          className="ops-filter-pill"
-                          style={{
-                            border: '1px solid #D0D5DD',
-                            background: '#fff',
-                            color: '#475467',
-                          }}
-                        >
-                          원인필터 해제
-                        </button>
-                      )}
-                    </div>
-
-                    {(() => {
-                      const filteredRows = filterLatestCompareRows(
-                        autocycleInsights.latest.compare_rows,
-                        latestCompareDecisionFilter,
-                        latestReasonCategoryFilter,
-                      )
-
-                      if (filteredRows.length <= 0) {
-                        return <div className="caption muted">현재 필터 조건에 맞는 비교 행이 없습니다.</div>
-                      }
-
-                      return (
-                  <div className="ops-compare-table" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                    <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>종목</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>결과</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap', minWidth: 200 }}>사유</th>
-                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>점수</th>
-                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>기술관문</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredRows.map((row, idx) => {
-                          const tone = decisionTone(row.decision)
-                          const trustText = row.trust_score != null
-                            ? row.min_trust_score != null
-                              ? `${row.trust_score.toFixed(0)} / ${row.min_trust_score.toFixed(0)}`
-                              : `${row.trust_score.toFixed(0)}`
-                            : '-'
-                          return (
-                            <tr key={`compare-row-${idx}`} data-label={row.code}>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="종목">{row.code}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="결과">
-                                <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>{row.decision}</span>
-                              </td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 200 }} data-th="사유">{row.reason}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="점수">{row.score != null ? row.score.toFixed(1) : '-'}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="기술관문">{trustText}</td>
-                            </tr>
-                          )
-                        })}</tbody>
-                    </table>
-                  </div>
-                      )
-                    })()}
-                  </div>
-                ) : (
-                  <div className="caption muted">비교 가능한 액션 로그가 없습니다.</div>
-                )}
-              </div>
-            </div>
-            )}
-
-            {insightTab === 'details' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-              {autocycleInsights.recent_runs.slice(0, 5).map((run) => {
-                const tone = runStatusTone(run.status)
-                const expanded = expandedInsightRunIds.includes(run.id)
-                return (
-                  <div key={`insight-run-${run.id}`} className="card" style={{ padding: 'var(--space-3)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                      <div className="caption" style={{ color: 'var(--color-text-secondary)' }}>
-                        {run.run_type} · {run.run_key} · {formatKstDateTime(run.started_at)}
-                      </div>
-                      <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>
-                        {runStatusLabel(run.status)}
-                      </span>
-                    </div>
-                    <div className="caption muted" style={{ marginTop: 4 }}>
-                      매수 {run.buys} · 매도 {run.sells} · 스킵 {run.skipped} · 오류 {run.errors}
-                    </div>
-                    <div className="caption" style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
-                      {run.diagnosis_line || '요약 진단 없음'}
-                    </div>
-
-                    <div style={{ marginTop: 'var(--space-2)' }}>
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          setExpandedInsightRunIds((prev) => prev.includes(run.id) ? prev.filter((id) => id !== run.id) : [...prev, run.id])
-                        }}
-                      >
-                        {expanded ? '상세 접기' : '상세 펼치기'}
-                      </Button>
-                    </div>
-
-                    {expanded && (
-                      <div style={{ marginTop: 'var(--space-2)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'var(--space-2)' }}>
-                        <div className="card" style={{ padding: 'var(--space-2)' }}>
-                          <div className="caption muted" style={{ marginBottom: 6 }}>주요 노트</div>
-                          {run.notes.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              {run.notes.slice(0, 6).map((note, idx) => (
-                                <div key={`run-note-${run.id}-${idx}`} className="caption" style={{ color: 'var(--color-text-secondary)' }}>{note}</div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="caption muted">노트 없음</div>
-                          )}
-                        </div>
-                        <div className="card" style={{ padding: 'var(--space-2)' }}>
-                          <div className="caption muted" style={{ marginBottom: 6 }}>주요 차단 사유</div>
-                          {run.key_gate_reasons.length > 0 ? (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                              {run.key_gate_reasons.map((reason, idx) => (
-                                <span key={`run-gate-${run.id}-${idx}`} className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: '#FFF4E5', color: '#92400E', fontWeight: 700 }}>{reason}</span>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="caption muted">게이트 차단 없음</div>
-                          )}
-                        </div>
-
-                        <div className="card" style={{ padding: 'var(--space-2)', gridColumn: '1 / -1' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                            <div className="caption muted">액션 비교 행</div>
-                            <div className="ops-filter-pills" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              {(['ALL', 'BUY', 'SKIP', 'HOLD', 'SELL', 'ERROR'] as const).map((kind) => {
-                                const current = normalizeDecisionFilter(runCompareDecisionFilterById[run.id])
-                                const active = current === kind
-                                return (
-                                  <button
-                                    key={`run-filter-${run.id}-${kind}`}
-                                    onClick={() => {
-                                      setRunCompareDecisionFilterById((prev) => ({ ...prev, [run.id]: kind }))
-                                    }}
-                                    className="ops-filter-pill"
-                                    style={{
-                                      border: active ? '1px solid #2563EB' : '1px solid #D0D5DD',
-                                      background: active ? '#EBF3FF' : '#fff',
-                                      color: active ? '#0B57D0' : '#475467',
-                                    }}
-                                  >
-                                    {kind}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </div>
-
-                          {(() => {
-                            const decisionFilter = normalizeDecisionFilter(runCompareDecisionFilterById[run.id])
-                            const filteredRows = filterRunCompareRows(run.compare_rows, decisionFilter)
-
-                            if (filteredRows.length <= 0) {
-                              return <div className="caption muted">해당 필터의 액션 행이 없습니다.</div>
-                            }
-
-                            return (
-                              <div className="ops-compare-table" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                                <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>종목</th>
-                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>결과</th>
-                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap', minWidth: 180 }}>사유</th>
-                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>점수</th>
-                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>기술관문</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {filteredRows.map((row, idx) => {
-                                      const tone = decisionTone(row.decision)
-                                      const trustText = row.trust_score != null
-                                        ? row.min_trust_score != null
-                                          ? `${row.trust_score.toFixed(0)} / ${row.min_trust_score.toFixed(0)}`
-                                          : `${row.trust_score.toFixed(0)}`
-                                        : '-'
-                                      return (
-                                        <tr key={`run-compare-${run.id}-${idx}`} data-label={row.code}>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="종목">{row.code}</td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="결과">
-                                            <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>{row.decision}</span>
-                                          </td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 180 }} data-th="사유">{row.reason}</td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="점수">{row.score != null ? row.score.toFixed(1) : '-'}</td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="기술관문">{trustText}</td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-            )}
-          </>
-        )}
-      </div>
+          <InsightsCard
+            autocycleInsights={autocycleInsights}
+            autocycleInsightsLoading={autocycleInsightsLoading}
+            loadAutoCycleInsights={loadAutoCycleInsights}
+            insightTab={insightTab}
+            setInsightTab={setInsightTab}
+            expandedInsightRunIds={expandedInsightRunIds}
+            setExpandedInsightRunIds={setExpandedInsightRunIds}
+            latestCompareDecisionFilter={latestCompareDecisionFilter}
+            setLatestCompareDecisionFilter={setLatestCompareDecisionFilter}
+            latestReasonCategoryFilter={latestReasonCategoryFilter}
+            setLatestReasonCategoryFilter={setLatestReasonCategoryFilter}
+            runCompareDecisionFilterById={runCompareDecisionFilterById}
+            setRunCompareDecisionFilterById={setRunCompareDecisionFilterById}
+          />
         </>
       )}
 
-      <Modal
-        isOpen={!!selectedDryRunSnapshot}
-        title="드라이런 상세 리포트"
-        onClose={() => setSelectedDryRunJobId(null)}
-        size="lg"
-      >
-        {selectedDryRunSnapshot && (
-          <div style={{ padding: 'var(--space-4)' }}>
-            <div className="caption muted">job_id: {String(selectedDryRunSnapshot.job.id)}</div>
-            <div className="title-lg" style={{ marginTop: 'var(--space-2)' }}>
-              {resolveTaskLabel(selectedDryRunSnapshot.job.payload)}
-            </div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              {selectedDryRunSnapshot.dry_run_details
-                ? `매수 ${selectedDryRunSnapshot.dry_run_details.buys} · 매도 ${selectedDryRunSnapshot.dry_run_details.sells} · 스킵 ${selectedDryRunSnapshot.dry_run_details.skipped} · 오류 ${selectedDryRunSnapshot.dry_run_details.errors}`
-                : renderRunSummary(selectedDryRunSnapshot.latest_run)}
-            </div>
-
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>단계별 로그</div>
-              {selectedDryRunSnapshot.timeline && selectedDryRunSnapshot.timeline.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                  {selectedDryRunSnapshot.timeline.map((event, index) => (
-                    <div key={`modal-timeline-${index}`} className="card" style={{ padding: 'var(--space-3)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)' }}>
-                        <span className="font-medium" style={{ fontSize: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          {(() => {
-                            const meta = getTimelineMeta(event)
-                            return <span style={{ width: 18, height: 18, borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: meta.bg, color: meta.color, fontSize: 10, fontWeight: 700 }}>{meta.icon}</span>
-                          })()}
-                          {event.label}
-                        </span>
-                        <span className="caption muted">{formatKstDateTime(event.ts)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="caption muted">타임라인 데이터 없음</div>
-              )}
-            </div>
-
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>매수 후보/제외 사유 요약</div>
-              {selectedDryRunSnapshot.dry_run_details?.notes?.length ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: 260, overflowY: 'auto' }}>
-                  {selectedDryRunSnapshot.dry_run_details.notes.map((note, index) => (
-                    <div key={`dryrun-note-${index}`} className="card" style={{ padding: 'var(--space-3)', background: '#FAFCFF' }}>
-                      {(() => {
-                        const tag = classifyDryRunNote(note)
-                        return (
-                          <span className="caption" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 999, padding: '2px 8px', background: tag.bg, color: tag.color, fontWeight: 700, marginBottom: 6 }}>
-                            {tag.label}
-                          </span>
-                        )
-                      })()}
-                      <div className="caption" style={{ color: 'var(--color-text-secondary)' }}>{note}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="caption muted">상세 노트가 없습니다.</div>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
+      <DryRunModal
+        setSelectedDryRunJobId={setSelectedDryRunJobId}
+        selectedDryRunSnapshot={selectedDryRunSnapshot}
+      />
     </section>
   )
 }
