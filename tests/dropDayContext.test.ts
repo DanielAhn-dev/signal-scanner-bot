@@ -16,8 +16,9 @@ test("연속 하락·고점 대비·올해 하락 횟수", () => {
   assert.equal(c.asOf, "2026-01-08");
   assert.equal(c.downStreak, 2);
   assert.ok(Math.abs(c.fromHighPct - (104 / 110 - 1) * 100) < 1e-9);
-  // 2026년: -2.73, -1.85, -1.89 → ≤-1.5 세 번, ≤-2 한 번. 2025-12-30→2026-01-02(상승)는 2026 해에 들어가지만 상승이라 0
-  assert.deepEqual(c.yearCounts, { "-1.5": 3, "-2": 1, "-3": 0, "-5": 0 });
+  // 2026년: -2.73, -1.85, -1.89 → ≤-1.5 세 번, ≤-2 한 번. 2025-12-30→2026-01-02(+10%)는 급등 한 번
+  assert.deepEqual(c.yearCounts, { "-1.5": 3, "-2": 1, "-3": 0, "-5": 0, "+3": 1 });
+  assert.equal(c.newHigh52w, false); // 직전 자료 250일 미만
   assert.equal(c.foreign, null);
 });
 
@@ -45,4 +46,12 @@ test("외국인: 오늘 자료가 있을 때만 최근 250일 위치를 낸다",
 
 test("종가가 2개 미만이면 null", () => {
   assert.equal(computeDropDayContext({ closes: closes.slice(0, 1), flows: [] }), null);
+});
+
+test("52주 신고가: 직전 250거래일 최고 종가 이상일 때만", () => {
+  const base = Array.from({ length: 260 }, (_, i) => ({ date: `2025-${String(i).padStart(5, "0")}`, close: i === 100 ? 200 : 100 }));
+  const below = computeDropDayContext({ closes: [...base, { date: "2026-01-02", close: 199 }], flows: [] })!;
+  assert.equal(below.newHigh52w, false);
+  const at = computeDropDayContext({ closes: [...base, { date: "2026-01-02", close: 200 }], flows: [] })!;
+  assert.equal(at.newHigh52w, true);
 });

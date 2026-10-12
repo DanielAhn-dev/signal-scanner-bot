@@ -1,5 +1,5 @@
 /**
- * '오늘 시장이 크게 빠졌어요' 카드의 실시간 부분 — 오늘 등락, 최근 고점 대비, 연속 하락 일수, 올해 같은 크기 하락 횟수,
+ * 큰 하락일·급등일 안내 카드의 실시간 부분 — 오늘 등락, 최근 고점 대비, 연속 하락 일수, 올해 같은 크기 하락 횟수,
  * 외국인 순매수와 최근 1년 위치. 원인을 단정하지 않고 '같이 움직인 것'만 보여준다(예측 아님, 매매 규칙에 쓰지 않음).
  * 과거 빈도·이후 흐름·간밤 미국 민감도 같은 고정 수치는 web/src/data/dropDayFacts.ts(scripts/research/build_drop_day_facts.py)에 있다.
  */
@@ -9,6 +9,10 @@ type SupabaseClientAny = any;
 
 /** 카드에서 쓰는 하락 구간 경계(%). dropDayFacts.ts의 buckets와 같아야 한다 */
 export const DROP_DAY_THRESHOLDS = [-1.5, -2, -3, -5] as const;
+/** 급등 경계(%). dropDayFacts.ts의 rally.surge.threshold와 같아야 한다 */
+export const SURGE_THRESHOLD = 3;
+/** 52주 신고가를 재는 기간(거래일) */
+export const NEW_HIGH_WINDOW = 250;
 /** 최근 고점을 찾는 기간(거래일) */
 export const DROP_DAY_HIGH_WINDOW = 60;
 /** 외국인 순매수 위치를 재는 기간(거래일) */
@@ -23,8 +27,10 @@ export type DropDayContext = {
   fromHighPct: number;
   /** 연속 하락 거래일 수(오늘 포함, 오늘 올랐으면 0) */
   downStreak: number;
-  /** asOf가 속한 해의 하루 하락 횟수. 키는 경계(%) 문자열 */
+  /** asOf가 속한 해의 하루 하락·급등 횟수. 키는 경계(%) 문자열(급등은 "+3") */
   yearCounts: Record<string, number>;
+  /** 오늘 종가가 직전 250거래일 최고 종가 이상(52주 신고가). 직전 자료가 250일 미만이면 false */
+  newHigh52w: boolean;
   /** 외국인 순매수(억원)와 최근 250거래일 중 오늘보다 적게 산(많이 판) 날 비율. 오늘 자료가 없으면 null */
   foreign: { date: string; net: number; rank: number } | null;
 };
@@ -64,11 +70,21 @@ export function computeDropDayContext(input: {
 
   const year = asOf.slice(0, 4);
   const yearCounts: Record<string, number> = {};
+  const surgeKey = `+${SURGE_THRESHOLD}`;
   for (const t of DROP_DAY_THRESHOLDS) yearCounts[String(t)] = 0;
+  yearCounts[surgeKey] = 0;
   for (let i = 1; i < n; i += 1) {
     if (days[i].date.slice(0, 4) !== year) continue;
     const r = ret(i);
     for (const t of DROP_DAY_THRESHOLDS) if (r <= t) yearCounts[String(t)] += 1;
+    if (r >= SURGE_THRESHOLD) yearCounts[surgeKey] += 1;
+  }
+
+  let newHigh52w = false;
+  if (n - 1 >= NEW_HIGH_WINDOW) {
+    let prior = 0;
+    for (let i = n - 1 - NEW_HIGH_WINDOW; i < n - 1; i += 1) prior = Math.max(prior, days[i].close);
+    newHigh52w = days[n - 1].close >= prior;
   }
 
   let foreign: DropDayContext["foreign"] = null;
@@ -80,7 +96,7 @@ export function computeDropDayContext(input: {
     foreign = { date: lastFlow.date, net: lastFlow.foreignNet, rank: lower / hist.length };
   }
 
-  return { asOf, changePct, fromHighPct, downStreak, yearCounts, foreign };
+  return { asOf, changePct, fromHighPct, downStreak, yearCounts, newHigh52w, foreign };
 }
 
 let flowCache: { expiresAt: number; value: FlowDay[] } | null = null;
