@@ -10,9 +10,7 @@ import { EmptyState, ErrorState } from '../../components/StateViews'
 import ForwardTestPanel from './ForwardTestPanel'
 import {
   COLOR_NEGATIVE,
-  COLOR_NEGATIVE_BG,
   COLOR_POSITIVE,
-  COLOR_POSITIVE_BG,
   COLOR_WARNING,
   STRATEGY_OPTIONS,
 } from './constants'
@@ -27,9 +25,13 @@ import type {
   PreRallySortKey,
   Tab,
 } from './types'
-import { buildLinePath, calculateMovingAverage, formatKrwShort } from './lib/chartMath'
+import { buildLinePath, formatKrwShort } from './lib/chartMath'
 import { formatMarketRegimeLabel, formatTriggerLabel } from './lib/labels'
-import { getPreRallyBadge } from './lib/preRally'
+import { getPreRallyBadge, sortPreRallyPatterns } from './lib/preRally'
+import { summarizeDecisions } from './lib/decisionSummary'
+import { buildGrowthTimeline } from './lib/growthTimeline'
+import { buildProfitTrend } from './lib/profitTrend'
+import { buildRollingWinRate } from './lib/rollingWinRate'
 
 export default function StrategyPage() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -145,238 +147,23 @@ export default function StrategyPage() {
     void loadPreRallyReport(preRallyHorizon)
   }, [preRallyHorizon])
 
-  const sortedPreRallyPatterns = useMemo(() => {
-    const rows = (preRallyReport?.stablePatterns ?? []).slice()
-    if (preRallySortKey === 'win') return rows.sort((a, b) => b.winRatePct - a.winRatePct)
-    if (preRallySortKey === 'ret') return rows.sort((a, b) => b.avgForwardReturnPct - a.avgForwardReturnPct)
-    if (preRallySortKey === 'samples') return rows.sort((a, b) => b.samples - a.samples)
-    return rows.sort((a, b) => b.liftVsBasePct - a.liftVsBasePct)
-  }, [preRallyReport, preRallySortKey])
+  const sortedPreRallyPatterns = useMemo(
+    () => sortPreRallyPatterns(preRallyReport?.stablePatterns ?? [], preRallySortKey),
+    [preRallyReport, preRallySortKey],
+  )
 
-  const summary = useMemo(() => {
-    const total = rows.length
-    const autoCount = rows.filter((row) => !!row.is_auto).length
-    const buyCount = rows.filter((row) => String(row.action || '').toUpperCase() === 'BUY').length
-    const sellCount = rows.filter((row) => String(row.action || '').toUpperCase() === 'SELL').length
+  const summary = useMemo(() => summarizeDecisions(rows), [rows])
 
-    const triggerCount = new Map<string, number>()
-    const versionCount = new Map<string, number>()
-    const regimeCount = new Map<string, number>()
-
-    for (const row of rows) {
-      const trigger = String(row.trigger_label || '').trim()
-      const version = String(row.strategy_version || '').trim()
-      const regime = String(row.market_regime || '').trim()
-
-      if (trigger) triggerCount.set(trigger, (triggerCount.get(trigger) || 0) + 1)
-      if (version) versionCount.set(version, (versionCount.get(version) || 0) + 1)
-      if (regime) regimeCount.set(regime, (regimeCount.get(regime) || 0) + 1)
-    }
-
-    return {
-      total,
-      autoCount,
-      buyCount,
-      sellCount,
-      autoRatio: total > 0 ? Math.round((autoCount / total) * 100) : 0,
-      topTriggers: Array.from(triggerCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8),
-      topVersions: Array.from(versionCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5),
-      topRegimes: Array.from(regimeCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5),
-    }
-  }, [rows])
-
-  const growthTimeline = useMemo(() => {
-    const events: Array<{ key: string; time: string; kind: 'version' | 'regime'; text: string; subtitle: string }> = []
-    let prevVersion = ''
-    let prevRegime = ''
-
-    for (const row of rows) {
-      const created = formatKstDateTime(row.created_at)
-      const version = String(row.strategy_version || '').trim()
-      const regime = String(row.market_regime || '').trim()
-      const action = String(row.action || '').toUpperCase()
-      const code = row.stock_name || row.code || '-'
-      const trigger = String(row.trigger_label || '').trim()
-
-      if (version && version !== prevVersion) {
-        events.push({
-          key: `v-${row.id ?? Math.random()}`,
-          time: created,
-          kind: 'version',
-          text: `전략 버전 전환 → ${version}`,
-          subtitle: `${code} · ${action || '-'}`,
-        })
-        prevVersion = version
-      }
-
-      if (regime && regime !== prevRegime) {
-        events.push({
-          key: `r-${row.id ?? Math.random()}`,
-          time: created,
-          kind: 'regime',
-          text: `시장 국면 전환 → ${formatMarketRegimeLabel(regime)}`,
-          subtitle: `${code} · ${action || '-'}${trigger ? ` · ${formatTriggerLabel(trigger)}` : ''}`,
-        })
-        prevRegime = regime
-      }
-    }
-
-    return events.slice(0, 30)
-  }, [rows])
+  const growthTimeline = useMemo(() => buildGrowthTimeline(rows), [rows])
 
   const currentStrategyInfo = useMemo(() => {
     const id = String(settings?.selected_strategy || 'HOLD_SAFE').toUpperCase()
     return STRATEGY_OPTIONS.find((item) => item.id === id) ?? STRATEGY_OPTIONS[0]
   }, [settings])
 
-  const profitTrend = useMemo(() => {
-    const realizedRows = [...activityRows]
-      .filter((row) => row.side === 'SELL' && Number.isFinite(Number(row.pnl_amount)))
-      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  const profitTrend = useMemo(() => buildProfitTrend(activityRows), [activityRows])
 
-    let cumulative = 0
-    const series = realizedRows.map((row, index) => {
-      cumulative += Number(row.pnl_amount || 0)
-      return {
-        id: row.id || `${row.code}-${index}`,
-        label: row.stock_name || row.code || '-',
-        date: new Date(row.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }),
-        value: cumulative,
-      }
-    })
-
-    if (series.length === 0) {
-      return {
-        points: [] as Array<{ id: string; x: number; y: number; label: string; date: string; value: number }>,
-        movingAvgPoints: [] as Array<{ x: number; y: number }>,
-        path: '',
-        maPath: '',
-        baselineY: 84,
-        lastValue: 0,
-        fillSegments: [] as Array<{ start: number; end: number; color: string }>,
-        segments: [] as Array<{ x1: number; y1: number; x2: number; y2: number; color: string }>,
-        projectionPoints: [] as Array<{ x: number; y: number }>,
-        tradeBars: [] as Array<{ x: number; amount: number; isPositive: boolean; barW: number; barH: number; barBaseY: number; label: string; date: string; rectY: number }>,
-      }
-    }
-
-    const width = 560
-    const height = 168
-    const paddingX = 18
-    const paddingY = 16
-    const values = series.map((item) => item.value)
-    const min = Math.min(0, ...values)
-    const max = Math.max(0, ...values)
-    const range = Math.max(1, max - min)
-
-    const points = series.map((item, index) => {
-      const x = series.length === 1
-        ? width / 2
-        : paddingX + (index / (series.length - 1)) * (width - paddingX * 2)
-      const y = paddingY + ((max - item.value) / range) * (height - paddingY * 2)
-      return { ...item, x, y }
-    })
-
-    // 이동평균선 (3-point MA)
-    const maValues = calculateMovingAverage(values, Math.min(3, Math.max(1, Math.floor(series.length / 3))))
-    const movingAvgPoints = series.map((item, index) => {
-      const x = series.length === 1
-        ? width / 2
-        : paddingX + (index / (series.length - 1)) * (width - paddingX * 2)
-      const y = paddingY + ((max - maValues[index]) / range) * (height - paddingY * 2)
-      return { x, y }
-    })
-
-    // 구간별 배경색
-    const fillSegments: Array<{ start: number; end: number; color: string }> = []
-    for (let i = 0; i < points.length - 1; i++) {
-      const currIsPositive = values[i] >= 0
-      const nextIsPositive = values[i + 1] >= 0
-      if (currIsPositive !== nextIsPositive) {
-        // 경계 지점에서 컬러 전환
-        const color = values[i + 1] >= 0 ? COLOR_POSITIVE_BG : COLOR_NEGATIVE_BG
-        fillSegments.push({ start: i, end: i + 1, color })
-      } else {
-        const color = currIsPositive ? COLOR_POSITIVE_BG : COLOR_NEGATIVE_BG
-        fillSegments.push({ start: i, end: i + 1, color })
-      }
-    }
-
-    // 구간별 색상 세그먼트 (각 구간의 중간값 기준)
-    const segments = points.slice(0, -1).map((p, i) => {
-      const next = points[i + 1]!
-      const midValue = (values[i] + values[i + 1]) / 2
-      return { x1: p.x, y1: p.y, x2: next.x, y2: next.y, color: midValue >= 0 ? COLOR_POSITIVE : COLOR_NEGATIVE }
-    })
-
-    // 선형 추세 기반 예상선 (최근 3거래 전망)
-    const projectionPoints: Array<{ x: number; y: number }> = []
-    if (points.length >= 2) {
-      const stepX = (points[points.length - 1]!.x - points[0]!.x) / Math.max(points.length - 1, 1)
-      const avgDeltaVal = (values[values.length - 1] - values[0]) / Math.max(values.length - 1, 1)
-      for (let i = 1; i <= 3; i++) {
-        const projVal = values[values.length - 1] + avgDeltaVal * i
-        const projY = paddingY + ((max - projVal) / range) * (height - paddingY * 2)
-        projectionPoints.push({
-          x: points[points.length - 1]!.x + stepX * i,
-          y: Math.max(paddingY / 2, Math.min(height - paddingY / 2, projY)),
-        })
-      }
-    }
-
-    // 거래별 손익 막대 데이터
-    const barBaseY = 44
-    const barPad = 8
-    const barMaxAbs = Math.max(1, ...realizedRows.map((r) => Math.abs(Number(r.pnl_amount || 0))))
-    const barBandH = barBaseY - barPad
-    const barW = Math.max(4, Math.min(14, ((width - paddingX * 2) / Math.max(realizedRows.length, 1)) * 0.65))
-    const tradeBars = realizedRows.map((row, i) => {
-      const x = realizedRows.length === 1
-        ? width / 2
-        : paddingX + (i / (realizedRows.length - 1)) * (width - paddingX * 2)
-      const amount = Number(row.pnl_amount || 0)
-      const isPositive = amount >= 0
-      const barH = Math.max(2, (Math.abs(amount) / barMaxAbs) * barBandH)
-      return {
-        x, amount, isPositive, barW, barH, barBaseY,
-        label: row.stock_name || row.code || '-',
-        date: new Date(row.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }),
-        rectY: isPositive ? barBaseY - barH : barBaseY,
-      }
-    })
-
-    return {
-      points,
-      movingAvgPoints,
-      path: buildLinePath(points),
-      maPath: buildLinePath(movingAvgPoints),
-      baselineY: paddingY + ((max - 0) / range) * (height - paddingY * 2),
-      lastValue: points[points.length - 1]?.value ?? 0,
-      fillSegments,
-      segments,
-      projectionPoints,
-      tradeBars,
-    }
-  }, [activityRows])
-
-  const rollingWinRate = useMemo(() => {
-    const sellRows = [...activityRows]
-      .filter((row) => row.side === 'SELL' && Number.isFinite(Number(row.pnl_amount)))
-      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    if (sellRows.length < 3) return { points: [] as Array<{ x: number; y: number; winRate: number }>, path: '', avgWinRate: 0 }
-    const windowSize = Math.min(5, Math.max(2, Math.floor(sellRows.length / 2)))
-    const wWidth = 560; const wPadX = 18; const wPadY = 8; const wH = 60
-    const pts = sellRows.slice(windowSize - 1).map((_, i) => {
-      const win = sellRows.slice(i, i + windowSize).filter((r) => Number(r.pnl_amount || 0) > 0).length
-      const winRate = Math.round((win / windowSize) * 100)
-      const tradeIdx = i + windowSize - 1
-      const x = sellRows.length <= 1 ? wWidth / 2 : wPadX + (tradeIdx / (sellRows.length - 1)) * (wWidth - wPadX * 2)
-      const y = wPadY + ((100 - winRate) / 100) * (wH - wPadY * 2)
-      return { x, y, winRate }
-    })
-    const avgWinRate = pts.length > 0 ? Math.round(pts.reduce((s, p) => s + p.winRate, 0) / pts.length) : 0
-    return { points: pts, path: buildLinePath(pts), avgWinRate }
-  }, [activityRows])
+  const rollingWinRate = useMemo(() => buildRollingWinRate(activityRows), [activityRows])
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: '현황' },
