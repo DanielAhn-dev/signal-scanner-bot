@@ -27,7 +27,7 @@ export function SignalBadge({ signal }: { signal: string | null | undefined }) {
   return <span className={`scan-grade-badge ${cls}`} title="종합시그널">{label}</span>
 }
 
-export function AccumulationBadge({ stage }: { stage: 'lead' | 'breakout' | null | undefined }) {
+export function AccumulationBadge({ stage }: { stage: 'lead' | 'breakout' | 'none' | null | undefined }) {
   if (!stage) return null
   // 이격·저점근접·추세·경고 등급을 합산한 눌림 점수 배지. 차트의 박스권 매집 판정과는 다른 계산이다.
   const label = stage === 'breakout' ? '눌림 강함' : '눌림형'

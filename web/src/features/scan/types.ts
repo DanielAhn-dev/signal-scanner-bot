@@ -1,5 +1,6 @@
 import type { useShareManager } from '../../hooks/useShareManager'
 import type { useToast } from '../../components/ToastProvider'
+import type { scoreLeadAccumulationCandidate } from '../../lib/accumulationSignal'
 
 export type MarketPhase = 'intraday' | 'after-close'
 export type ConditionFilter =
@@ -186,6 +187,24 @@ export type ScanHighlightItem = {
   adaptive_score?: number | null
 }
 
+/** 표 한 줄에 그리는 값: 후보 원본 + 화면용 계산값(전략 라벨, 점수, 날짜 문구, 집행 우선 순위) */
+export type ScanDisplayRow = ScanCandidate & {
+  strategyLabel: '데이' | '오버나이트' | '주간' | '관찰'
+  priorityScore: number
+  quickTradeScore: number
+  leadAccumulationScore: number
+  leadAccumulationStage: ReturnType<typeof scoreLeadAccumulationCandidate>['stage']
+  quickLiteAgeDays: number | null
+  intradayChangePct: number | null
+  tradeDateText: string
+  updatedAtText: string | null
+  updatedDateText: string
+  isExecutionPriority: boolean
+  executionPriorityRank: number | null
+  /** 표 행에서는 계산하지 않는다(TOP 카드 항목에서만 채워진다) — 아래 CandidateTable의 배지 조건은 현재 항상 거짓 */
+  isAccumulationSignal?: boolean
+}
+
 /** 스캔 화면 컴포넌트들이 함께 쓰는 상태·파생값·핸들러 묶음(각 컴포넌트는 필요한 키만 골라 받는다) */
 export type ScanPanelState = {
   onNavigate?: (route: string) => void
@@ -235,7 +254,7 @@ export type ScanPanelState = {
   buycheckRiskGuard: { label: string; overLimit: boolean; recommendedMax: number; remainingSlots: number | null }
   sortedCandidates: ScanCandidate[]
   totalPages: number
-  displayRows: any[]
+  displayRows: ScanDisplayRow[]
   handleConditionFilter: (filter: ConditionFilter) => void
   strategyMetricDisplay: StrategyMetricSummary[]
   onStrategyMetricCardClick: (key: StrategyMetricSummary['key']) => void

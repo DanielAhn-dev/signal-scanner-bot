@@ -4,7 +4,7 @@ import { formatKstDateTime } from '../../../lib/format'
 import { computePriorityScore, computeQuickTradeScore } from '../lib/candidateScore'
 import { isBuycheckStage, isCandidateStage, isConfirmStage, isDayStrategyCandidate, isOvernightStrategyCandidate, isQuickTradeCandidate, isQuickTradeLiteCandidate, isWeeklyStrategyCandidate } from '../lib/candidateStage'
 import { toComparableValue } from '../lib/sorting'
-import type { ConditionFilter, ConfirmPromotionTrendMeta, ScanCandidate, ScanHighlightItem, SignalAgeMeta, SortDirection, SortKey } from '../types'
+import type { ConditionFilter, ConfirmPromotionTrendMeta, ScanCandidate, ScanDisplayRow, ScanHighlightItem, SignalAgeMeta, SortDirection, SortKey } from '../types'
 
 export function useScanView({
   candidates, selectedSector, conditionFilter, signalAgeByCode, activeHighlights, sortKey, sortDirection, page, pageSize,
@@ -142,7 +142,7 @@ export function useScanView({
 
   const totalPages = Math.ceil(sortedCandidates.length / pageSize)
 
-  const displayRows = useMemo(() => pagedCandidates.map((s: any) => ({
+  const displayRows = useMemo<ScanDisplayRow[]>(() => pagedCandidates.map((s) => ({
     strategyLabel: isDayStrategyCandidate(s)
       ? '데이'
       : isOvernightStrategyCandidate(s, signalAgeByCode.get(s.code))
@@ -161,7 +161,7 @@ export function useScanView({
     updatedAtText: s.stock_updated_at ? formatKstDateTime(s.stock_updated_at) : null,
     updatedDateText: formatKstDateTime(s.stock_updated_at, { hour: undefined, minute: undefined }),
     isExecutionPriority: !!s.isExecutionPriority,
-    executionPriorityRank: s.executionPriorityRank,
+    executionPriorityRank: s.executionPriorityRank ?? null,
   })), [pagedCandidates, signalAgeByCode])
 
   return {

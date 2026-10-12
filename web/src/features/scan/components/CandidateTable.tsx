@@ -84,7 +84,7 @@ export default function CandidateTable({ scan }: { scan: Pick<ScanPanelState, 'c
                 </tr>
               </thead>
               <tbody>
-                {displayRows.map((s: any, idx: number) => {
+                {displayRows.map((s, idx) => {
                   const code = String(s.code)
                   const isAdded = isWatched(code)
                   const isAddingNow = isAdding(code)
