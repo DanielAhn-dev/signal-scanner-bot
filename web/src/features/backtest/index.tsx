@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { searchStocks } from '../../lib/stockCache'
-import AnchoredDropdown from '../../components/AnchoredDropdown'
 import {
   defaultPlanItem,
   readSimulationPlan,
@@ -13,23 +12,16 @@ import type {
   AutoPickTier,
   BacktestResponse,
   ReturnProfileKey,
-  RuleFilter,
   ScanCandidateLite,
   StockIndicators,
 } from './types'
 import {
   ANALYZE_PENDING_CODE_KEY,
   BACKTEST_PENDING_CODE_KEY,
-  DEFAULT_VISIBLE_HORIZONS,
   EXECUTION_GUIDE_PENDING_KEY,
-  EXTENDED_HORIZONS,
-  HORIZONS,
-  STEPS,
-  STEP_THRESHOLDS,
-  TOTAL_SECONDS,
   type Horizon,
 } from './constants'
-import { pct, signedPct, toEokFromWon } from './lib/format'
+import { toEokFromWon } from './lib/format'
 import { bucketAutoPicks, estimateExpectedReturnPct, evaluateAutoPick } from './lib/autoPick'
 import {
   computeInvestSim,
@@ -39,77 +31,19 @@ import {
   sortRisers,
 } from './lib/backtestView'
 import { buildPatternMatch } from './lib/patternMatch'
+import BacktestSkeleton from './components/BacktestSkeleton'
+import ParamsCard from './components/ParamsCard'
+import SummaryTab from './components/SummaryTab'
+import CheckTab from './components/CheckTab'
+import SamplesTab from './components/SamplesTab'
 import { filterSamplesByRule, isRuleKeyMatched, matchesRuleFilter } from './lib/ruleMatch'
-import { isBuySignal, signalCls } from './lib/signal'
-import { autoTierLabel, confidenceMeta, matchMeta, pbrMeta } from './lib/meta'
+import { isBuySignal } from './lib/signal'
 
 function navigateTo(route: string) {
   try {
     window.history.pushState({}, '', `/${route}`)
     window.dispatchEvent(new PopStateEvent('popstate'))
   } catch { /* ignore */ }
-}
-
-function BacktestSkeleton() {
-  const [elapsed, setElapsed] = useState(0)
-
-  useEffect(() => {
-    const t = setInterval(() => setElapsed((e) => e + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
-
-  const progressPct = Math.min(92, (elapsed / TOTAL_SECONDS) * 100)
-  let completedStep = -1
-  for (let i = 0; i < STEP_THRESHOLDS.length; i++) {
-    if (elapsed >= STEP_THRESHOLDS[i]) completedStep = i
-  }
-  const activeStep = completedStep + 1 < STEPS.length ? completedStep + 1 : STEPS.length - 1
-
-  return (
-    <div className="bt-skeleton">
-      <div>
-        <div className="bt-skeleton-progress-header">
-          <span className="bt-skeleton-step-label">{STEPS[activeStep]}...</span>
-          <span className="bt-skeleton-elapsed">{elapsed}초 경과</span>
-        </div>
-        <div className="bt-skeleton-track">
-          <div className="bt-skeleton-fill" style={{ width: `${progressPct}%` }} />
-        </div>
-        <div className="bt-skeleton-step-names">
-          {STEPS.map((s, i) => (
-            <span
-              key={i}
-              className={
-                'bt-skeleton-step-name' +
-                (i <= completedStep
-                  ? ' bt-skeleton-step-name--done'
-                  : i === activeStep
-                  ? ' bt-skeleton-step-name--active'
-                  : '')
-              }
-            >
-              {s}
-            </span>
-          ))}
-        </div>
-      </div>
-      <hr className="bt-skeleton-divider" />
-      <div className="bt-skeleton-summary-grid">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="bt-skeleton-summary-item">
-            <div className="skeleton" style={{ height: 10, width: '55%' }} />
-            <div className="skeleton" style={{ height: 22, width: '70%' }} />
-          </div>
-        ))}
-      </div>
-      <div className="bt-skeleton-rows">
-        <div className="skeleton" style={{ height: 13 }} />
-        <div className="skeleton" style={{ height: 13 }} />
-        <div className="skeleton" style={{ height: 13 }} />
-        <div className="skeleton" style={{ height: 13, width: '75%' }} />
-      </div>
-    </div>
-  )
 }
 
 export default function BacktestPage() {
@@ -609,77 +543,18 @@ export default function BacktestPage() {
       </div>
 
       {/* 파라미터 */}
-      <div className="bt-params-card">
-        <div className="bt-params-grid">
-          <div className="bt-param-group">
-            <span className="bt-param-label">Horizon</span>
-            <div className="bt-horizon-tabs">
-              {visibleHorizons.map((h) => (
-                <button
-                  key={h}
-                  className={`bt-horizon-tab${horizon === h ? ' bt-horizon-tab--active' : ''}`}
-                  onClick={() => setHorizon(h)}
-                >
-                  {h}일
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="bt-param-group">
-            <span className="bt-param-label">탐색 기간(일)</span>
-            <div className="sim-input-row">
-              <input
-                className="sim-input"
-                type="number"
-                min={60}
-                max={365}
-                value={lookbackDays}
-                onChange={(e) =>
-                  setLookbackDays(Math.max(60, Math.min(365, Number(e.target.value) || 60)))
-                }
-              />
-              <span className="sim-input-suffix">일</span>
-            </div>
-          </div>
-          <div className="bt-param-group">
-            <span className="bt-param-label">급등 기준(%)</span>
-            <div className="sim-input-row">
-              <input
-                className="sim-input"
-                type="number"
-                min={5}
-                max={80}
-                value={rallyPct}
-                onChange={(e) =>
-                  setRallyPct(Math.max(5, Math.min(80, Number(e.target.value) || 5)))
-                }
-              />
-              <span className="sim-input-suffix">%</span>
-            </div>
-          </div>
-          <div className="bt-param-group">
-            <span className="bt-param-label">표본 수(top N)</span>
-            <div className="sim-input-row">
-              <input
-                className="sim-input"
-                type="number"
-                min={5}
-                max={100}
-                value={topN}
-                onChange={(e) =>
-                  setTopN(Math.max(5, Math.min(100, Number(e.target.value) || 5)))
-                }
-              />
-            </div>
-          </div>
-        </div>
-        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 'var(--space-3) 0 0', lineHeight: 1.5 }}>
-          {hasExtendedHorizon
-            ? '※ 90일·120일은 데이터가 확인된 경우에만 자동으로 노출됩니다.'
-            : '※ 기본 표시 Horizon은 20·40·60일이며, 90·120일은 데이터가 확인되면 자동 표시됩니다.'}
-        </p>
-      </div>
-
+      <ParamsCard
+        horizon={horizon}
+        setHorizon={setHorizon}
+        lookbackDays={lookbackDays}
+        setLookbackDays={setLookbackDays}
+        rallyPct={rallyPct}
+        setRallyPct={setRallyPct}
+        topN={topN}
+        setTopN={setTopN}
+        visibleHorizons={visibleHorizons}
+        hasExtendedHorizon={hasExtendedHorizon}
+      />
       {loading && <BacktestSkeleton />}
       {!loading && error && (
         <div className="bt-section" style={{ color: 'var(--color-error)' }}>{error}</div>
@@ -747,901 +622,73 @@ export default function BacktestPage() {
 
           {/* ── 백테스트 결과 탭: 요약 + 공통 패턴 ── */}
           {activeTab === 'summary' && (
-          <>
-          <div className="bt-summary-card">
-            <div className="bt-summary-grid">
-              <div className="bt-summary-item">
-                <span className="bt-summary-label">라벨 가능 이벤트</span>
-                <span className="bt-summary-value">
-                  {data.baseline.labelableEvents.toLocaleString('ko-KR')}건
-                </span>
-              </div>
-              <div className="bt-summary-item">
-                <span className="bt-summary-label">급등 이벤트</span>
-                <span className="bt-summary-value">
-                  {data.riserSummary.riserEvents.toLocaleString('ko-KR')}건
-                </span>
-              </div>
-              <div className="bt-summary-item">
-                <span className="bt-summary-label" title="급등한 종목만의 평균(사후 선택). 기대수익이 아닙니다.">급등 종목 평균(사후)</span>
-                <span className="bt-summary-value" style={{ color: 'var(--color-success)' }}>
-                  +{pct(data.riserSummary.avgForwardReturnPct, 2)}
-                </span>
-              </div>
-              <div className="bt-summary-item">
-                <span className="bt-summary-label">score≥70 비중(Lift)</span>
-                <span className="bt-summary-value">
-                  {pct(data.commonFeatures.score70RatePct)}
-                  <span className="bt-summary-lift">
-                    {' '}({data.commonFeatures.score70LiftPct >= 0 ? '+' : ''}
-                    {pct(data.commonFeatures.score70LiftPct)})
-                  </span>
-                </span>
-              </div>
-              <div className="bt-summary-item">
-                <span className="bt-summary-label">BUY계열 비중(Lift)</span>
-                <span className="bt-summary-value">
-                  {pct(data.commonFeatures.buySignalRatePct)}
-                  <span className="bt-summary-lift">
-                    {' '}({data.commonFeatures.buySignalLiftPct >= 0 ? '+' : ''}
-                    {pct(data.commonFeatures.buySignalLiftPct)})
-                  </span>
-                </span>
-              </div>
-              <div className="bt-summary-item">
-                <span className="bt-summary-label">RSI 45~65 비중 (매집 구간)</span>
-                <span className="bt-summary-value">
-                  {pct(data.commonFeatures.rsi45to65RatePct)}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="bt-section">
-            <div className="bt-section-title">공통점 탐색 리포트 (Support / Lift / Precision)</div>
-            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '0 0 var(--space-3)', lineHeight: 1.55 }}>
-              Support는 급등 이벤트 내 해당 특징의 커버리지, Lift는 전체 이벤트 대비 강화 정도,
-              Precision은 해당 룰이 잡은 이벤트 중 급등 비율입니다.
-            </p>
-
-            {(data.featureStats ?? []).length > 0 ? (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-                    기본은 의미 있는 행만 표시하고, 전체보기로 나머지도 확인할 수 있습니다.
-                    {!showAllFeatureRows && hiddenFeatureCount > 0 && (
-                      <span style={{ marginLeft: 8 }}>
-                        숨김 {hiddenFeatureCount}개
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    className="sim-btn sim-btn--ghost"
-                    onClick={() => setShowAllFeatureRows((value) => !value)}
-                    style={{ padding: '6px 10px', minHeight: 'unset' }}
-                  >
-                    {showAllFeatureRows ? '유의미한 값만 보기' : '전체보기'}
-                  </button>
-                </div>
-              <div className="mobile-card-table" style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
-                <table className="bt-table" style={{ minWidth: 940 }}>
-                  <thead>
-                    <tr>
-                      <th>특징</th>
-                      <th style={{ textAlign: 'right' }}>Baseline 수</th>
-                      <th style={{ textAlign: 'right' }}>Baseline 비중</th>
-                      <th style={{ textAlign: 'right' }}>Riser 수</th>
-                      <th style={{ textAlign: 'right' }}>Riser 비중</th>
-                      <th style={{ textAlign: 'right' }}>Lift</th>
-                      <th style={{ textAlign: 'right' }}>Support</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleFeatureStats.length > 0 ? (
-                      visibleFeatureStats.map((row) => (
-                        <tr key={row.key}>
-                          <td data-th="특징">
-                            <span>{row.label}</span>
-                            <span className={`bt-check-match-badge ${confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).cls}`} style={{ marginLeft: 8 }}>
-                              {confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).label}
-                            </span>
-                          </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Baseline 수">{row.baselineMatches.toLocaleString('ko-KR')}</td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Baseline 비중">{pct(row.baselineRatePct)}</td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Riser 수">{row.riserMatches.toLocaleString('ko-KR')}</td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Riser 비중">{pct(row.riserRatePct)}</td>
-                          <td style={{ textAlign: 'right' }} data-th="Lift">
-                            <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
-                              {signedPct(row.liftPct)}
-                            </span>
-                          </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Support">{pct(row.supportPct)}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', padding: '18px 12px', color: 'var(--color-text-tertiary)' }}>
-                          기본 필터에서 보여줄 유의미한 행이 없습니다. 전체보기를 눌러 모든 구간을 확인하세요.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              </>
-            ) : (
-              <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>
-                공통점 통계를 계산할 데이터가 부족합니다.
-              </p>
-            )}
-
-            <div style={{ height: 'var(--space-3)' }} />
-
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>
-              추천 패턴 룰 TOP 5
-            </div>
-            {(data.ruleCandidates ?? []).length > 0 ? (
-              <>
-                <div style={{ marginBottom: 'var(--space-3)', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-                  지표 기반 자동 순위: 실제 급등 정확도(Precision) 중심으로 정렬됨. 행 클릭 시 선택 가능.
-                </div>
-                <div className="mobile-card-table" style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
-                  <table className="bt-table" style={{ minWidth: 860 }}>
-                    <thead>
-                      <tr>
-                        <th>룰</th>
-                        <th style={{ textAlign: 'right' }}>Support</th>
-                        <th style={{ textAlign: 'right' }}>Lift</th>
-                        <th style={{ textAlign: 'right' }}>Precision</th>
-                        <th style={{ textAlign: 'right' }}>매칭 이벤트</th>
-                        <th style={{ textAlign: 'right' }}>급등 매칭</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(data.ruleCandidates ?? []).map((row, idx) => (
-                        <tr
-                          key={row.key}
-                          onClick={() => setSelectedRuleKey(row.key)}
-                          style={{
-                            cursor: 'pointer',
-                            background:
-                              selectedRuleKey === row.key
-                                ? 'var(--color-info-bg)'
-                                : idx === 0
-                                ? 'var(--color-success-bg)'
-                                : 'transparent',
-                          }}
-                        >
-                          <td data-th="룰">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            {idx === 0 && (
-                              <span
-                                style={{
-                                  display: 'inline-block',
-                                  background: 'var(--color-success)',
-                                  color: '#fff',
-                                  padding: '2px 6px',
-                                  borderRadius: 'var(--radius-full)',
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  marginRight: 6,
-                                }}
-                              >
-                                추천
-                              </span>
-                            )}
-                            <span>{row.label}</span>
-                            <span className={`bt-check-match-badge ${confidenceMeta(row.matchedEvents).cls}`}>
-                              {confidenceMeta(row.matchedEvents).label}
-                            </span>
-                            </div>
-                          </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Support">
-                            {pct(row.supportPct)}
-                          </td>
-                          <td style={{ textAlign: 'right' }} data-th="Lift">
-                            <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
-                              {signedPct(row.liftPct)}
-                            </span>
-                          </td>
-                          <td
-                            className="bt-table-num"
-                            style={{
-                              textAlign: 'right',
-                              fontWeight: idx === 0 ? 700 : 400,
-                              color: idx === 0 ? 'var(--color-success)' : 'var(--color-text-secondary)',
-                            }}
-                            data-th="Precision"
-                          >
-                            {pct(row.precisionPct)}
-                          </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="매칭 이벤트">
-                            {row.matchedEvents.toLocaleString('ko-KR')}
-                          </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="급등 매칭">
-                            {row.riserMatches.toLocaleString('ko-KR')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {selectedRuleKey && (
-                  <div
-                    style={{
-                      marginTop: 'var(--space-3)',
-                      padding: 'var(--space-3) var(--space-4)',
-                      background: 'var(--color-info-bg)',
-                      border: '1px solid var(--color-info)',
-                      borderRadius: 'var(--radius-md)',
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-info)', marginBottom: 6 }}>
-                      선택한 룰의 성능
-                    </div>
-                    {(() => {
-                      const selected = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
-                      if (!selected) return null
-                      return (
-                        <div style={{ fontSize: 12, color: 'var(--color-text-primary)', lineHeight: 1.6 }}>
-                          <div>
-                            <strong>{selected.label}</strong>
-                          </div>
-                          <div style={{ marginTop: 4, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                            <div>
-                              급등 예측 정확도:{' '}
-                              <span style={{ fontWeight: 700, color: 'var(--color-success)' }}>
-                                {pct(selected.precisionPct)}
-                              </span>
-                              <br />
-                              (이 룰에 매칭된 {selected.matchedEvents.toLocaleString('ko-KR')}개 이벤트 중{' '}
-                              {selected.riserMatches.toLocaleString('ko-KR')}개가 실제 급등)
-                            </div>
-                            <div>
-                              급등 이벤트 포괄:{' '}
-                              <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                                {pct(selected.supportPct)}
-                              </span>
-                              <br />
-                              (전체 급등 이벤트 중 이 룰로 잡히는 비중)
-                            </div>
-                          </div>
-                          <div style={{ marginTop: 10, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                            ※ 이 룰의 적중률과 커버리지로 성능을 판단할 수 있습니다.
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
-
-                {/* 선택한 룰의 실제 샘플 */}
-                {selectedRuleKey && filteredSamplesByRule.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: 'var(--space-4)',
-                      padding: 'var(--space-3) var(--space-4)',
-                      background: 'var(--color-success-bg)',
-                      border: '1px solid var(--color-success)',
-                      borderRadius: 'var(--radius-md)',
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-success)', marginBottom: 12 }}>
-                      이 룰이 잡은 급등 샘플 ({filteredSamplesByRule.length}건)
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 10 }}>
-                      아래 {Math.min(5, filteredSamplesByRule.length)}개의 대표 사례를 보면 "{(() => {
-                        const rule = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
-                        return rule?.label || ''
-                      })()} 규칙의 정확도 {(() => {
-                        const rule = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
-                        return rule?.precisionPct.toFixed(1) || '0'
-                      })()}%가 어떻게 나왔는지" 직관적으로 검증할 수 있습니다.
-                    </div>
-                    <div className="mobile-card-table" style={{ overflowX: 'auto' }}>
-                      <table className="bt-table" style={{ minWidth: 680 }}>
-                        <thead>
-                          <tr>
-                            <th>종목</th>
-                            <th>기준일</th>
-                            <th style={{ textAlign: 'right' }}>Horizon 수익률</th>
-                            <th style={{ textAlign: 'right' }}>점수</th>
-                            <th>시그널</th>
-                            <th style={{ textAlign: 'right' }}>RSI14</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredSamplesByRule.slice(0, 5).map((row) => (
-                            <tr
-                              key={`${row.code}-${row.asof}`}
-                              style={{ cursor: 'pointer' }}
-                              onClick={() =>
-                                selectStock({ code: row.code, name: row.name || row.code })
-                              }
-                            >
-                              <td data-th="종목">
-                                <span className="bt-table-stock-name">{row.name || row.code}</span>
-                                {row.name && (
-                                  <span className="bt-table-stock-code">{row.code}</span>
-                                )}
-                              </td>
-                              <td className="bt-table-num" data-th="기준일">{row.asof}</td>
-                              <td style={{ textAlign: 'right' }} data-th="Horizon 수익률">
-                                <span className={row.forwardReturnPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
-                                  {row.forwardReturnPct > 0 ? '+' : ''}
-                                  {pct(row.forwardReturnPct, 2)}
-                                </span>
-                              </td>
-                              <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="점수">
-                                {row.totalScore.toFixed(1)}
-                              </td>
-                              <td data-th="시그널">
-                                {row.signal ? (
-                                  <span className={signalCls(row.signal)}>{row.signal}</span>
-                                ) : (
-                                  <span className="bt-table-num">-</span>
-                                )}
-                              </td>
-                              <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="RSI14">
-                                {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {filteredSamplesByRule.length > 5 && (
-                      <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 'var(--space-3) 0 0' }}>
-                        ※ 이 규칙에 매칭되는 총 {filteredSamplesByRule.length}건 중 상위 5개를 표시합니다. 종목 클릭으로 패턴 점검 가능.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>
-                추천 룰을 계산할 표본이 충분하지 않습니다.
-              </p>
-            )}
-          </div>
-          </> )}
-
-          {/* ── 종목 점검 탭 ── */}
-          {activeTab === 'check' && (
-          <div className="bt-section">
-            <div className="bt-section-title">종목 패턴 점검</div>
-            <p className="bt-check-guide">
-              스캔·하이라이트에 등장한 종목을 입력하면 위 역추적에서 발견한 급등 전 패턴과 얼마나
-              일치하는지 확인하고, 투자 금액 대비 예상 수익을 계산합니다.
-              스캔 목록 외 임의 종목도 조회 가능합니다.
-            </p>
-
-            <div
-              style={{
-                border: '1px solid var(--color-border-muted)',
-                borderRadius: 'var(--radius-md)',
-                padding: 'var(--space-3) var(--space-4)',
-                background: 'var(--color-bg-sunken)',
-                marginBottom: 'var(--space-3)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                  자동 추천 종목
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                  장세 무관 공통분모 점수로 즉시매수/준비/관찰 자동 분류
-                </div>
-              </div>
-
-              <div style={{ marginTop: 'var(--space-2)' }}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-                    gap: 8,
-                    marginBottom: 'var(--space-3)',
-                  }}
-                >
-                  <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
-                    기대수익 프리셋
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className={`sim-btn ${returnProfile === 'strict' ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
-                        style={{ minHeight: 30, padding: '6px 10px' }}
-                        onClick={() => applyReturnProfile('strict')}
-                      >
-                        실전형
-                      </button>
-                      <button
-                        type="button"
-                        className={`sim-btn ${returnProfile === 'conservative' ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
-                        style={{ minHeight: 30, padding: '6px 10px' }}
-                        onClick={() => applyReturnProfile('conservative')}
-                      >
-                        보수형
-                      </button>
-                      <button
-                        type="button"
-                        className={`sim-btn ${returnProfile === 'aggressive' ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
-                        style={{ minHeight: 30, padding: '6px 10px' }}
-                        onClick={() => applyReturnProfile('aggressive')}
-                      >
-                        공격형
-                      </button>
-                    </div>
-                  </div>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
-                    최소 기대수익률(%)
-                    <input
-                      className="sim-input"
-                      type="number"
-                      min={-100}
-                      max={30}
-                      value={minExpectedReturnPct}
-                      onChange={(e) =>
-                        setMinExpectedReturnPct(Math.max(-100, Math.min(30, Number(e.target.value) || 0)))
-                      }
-                    />
-                  </label>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
-                    최소 단기모멘텀(%)
-                    <input
-                      className="sim-input"
-                      type="number"
-                      min={-5}
-                      max={10}
-                      step={0.1}
-                      value={minShortMomentumPct}
-                      onChange={(e) =>
-                        setMinShortMomentumPct(Math.max(-5, Math.min(10, Number(e.target.value) || 0)))
-                      }
-                    />
-                  </label>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
-                    최소 거래대금(억원)
-                    <input
-                      className="sim-input"
-                      type="number"
-                      min={0}
-                      max={50000}
-                      step={50}
-                      value={minLiquidityEok}
-                      onChange={(e) =>
-                        setMinLiquidityEok(Math.max(0, Math.min(50000, Number(e.target.value) || 0)))
-                      }
-                    />
-                  </label>
-                </div>
-
-                {autoPickLoading && (
-                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>자동 추천 계산 중...</div>
-                )}
-                {!autoPickLoading && autoPickError && (
-                  <div style={{ fontSize: 12, color: 'var(--color-error)' }}>{autoPickError}</div>
-                )}
-                {!autoPickLoading && !autoPickError && autoPicks.length === 0 && (
-                  <div style={{ display: 'grid', gap: 8, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-                    <div>
-                      <strong>현재 스캔 후보 조건 충족률:</strong><br/>
-                      BUY 신호: {conditionStats.buySignalPct}% · 점수 50+: {conditionStats.score50PlusPct}% · RSI 45-65: {conditionStats.rsi45_65Pct}%
-                    </div>
-                    <div>
-                      현재 조건에 맞는 자동 추천 종목이 없습니다. Horizon/급등 기준을 완화하거나 룰을 변경해 보세요.
-                    </div>
-                  </div>
-                )}
-                {!autoPickLoading && !autoPickError && autoPicks.length > 0 && (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {(['now', 'prepare', 'watch'] as const).map((tier) => {
-                      const rows = autoPickBuckets[tier]
-                      if (rows.length === 0) return null
-                      return (
-                        <div key={tier} style={{ display: 'grid', gap: 6 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-secondary)' }}>
-                            {autoTierLabel(tier)} · {rows.length}개
-                          </div>
-                          {rows.map((row) => (
-                            <button
-                              key={`${tier}-${row.code}`}
-                              type="button"
-                              className="sim-btn sim-btn--ghost"
-                              style={{ flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 6 }}
-                              onClick={() => selectStock({ code: row.code, name: row.name })}
-                            >
-                              {/* 종목명 + 배지 줄 */}
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', width: '100%' }}>
-                                <strong style={{ fontSize: 13 }}>{row.name}</strong>
-                                <span className="bt-table-stock-code">{row.code}</span>
-                                {row.market && (
-                                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{row.market}</span>
-                                )}
-                                <span className={`bt-check-match-badge ${matchMeta(row.coreMatchCount).cls}`}>
-                                  코어 {row.coreMatchCount}/3
-                                </span>
-                                {row.ruleMatched && (
-                                  <span className="bt-check-rule-badge bt-check-rule-badge--on">추천 룰 적합</span>
-                                )}
-                                <span className={signalCls(row.signal)} style={{ marginLeft: 'auto' }}>{row.signal}</span>
-                              </span>
-                              {/* 지표 줄 — 모바일에서 wrap */}
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, width: '100%' }}>
-                                <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>기대 {row.expectedReturnPct.toFixed(1)}%</span>
-                                <span style={{ color: 'var(--color-text-secondary)' }}>모멘텀 {signedPct(row.shortMomentumPct, 1)}</span>
-                                <span style={{ color: 'var(--color-text-secondary)' }}>거래대금 {toEokFromWon(row.liquidity).toFixed(0)}억</span>
-                                <span style={{ color: 'var(--color-text-secondary)' }}>점수 {row.score.toFixed(1)}</span>
-                                <span style={{ color: 'var(--color-text-secondary)' }}>RSI {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</span>
-                                {row.warnGrade && row.warnGrade !== 'SAFE' && (
-                                  <span style={{ color: 'var(--color-warning)' }}>주의 {row.warnGrade}</span>
-                                )}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )
-                    })}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                      <button
-                        type="button"
-                        className="sim-btn sim-btn--primary"
-                        onClick={() => addAutoPicksToSimulator(['now'])}
-                      >
-                        즉시 후보 시뮬레이터 추가
-                      </button>
-                      <button
-                        type="button"
-                        className="sim-btn sim-btn--ghost"
-                        onClick={() => addAutoPicksToSimulator(['now', 'prepare'])}
-                      >
-                        즉시+준비 일괄 추가
-                      </button>
-                      <button
-                        type="button"
-                        className="sim-btn sim-btn--ghost"
-                        onClick={() => addAutoPicksToSimulator(['now', 'prepare', 'watch'])}
-                      >
-                        즉시+준비+관찰 일괄 추가
-                      </button>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-                      코어 조건: 점수≥70, BUY계열, RSI 45~65. 단기모멘텀은 장중 등락률 우선, 없으면 ROC21 기반 추정치를 사용합니다.
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="bt-check-search-wrap" ref={checkWrapRef}>
-              <div className="sim-add-input-row">
-                <input
-                  className="sim-add-input"
-                  placeholder="종목명 또는 코드 입력..."
-                  value={checkSearch}
-                  onChange={(e) => {
-                    setCheckSearch(e.target.value)
-                    setSelectedStock(null)
-                    setIndicators(null)
-                    setCheckError(null)
-                  }}
-                  onFocus={() => setCheckFocused(true)}
-                  onBlur={() => setTimeout(() => setCheckFocused(false), 150)}
-                />
-                {checkSearch && (
-                  <button
-                    className="sim-add-clear"
-                    onClick={() => {
-                      setCheckSearch('')
-                      setSelectedStock(null)
-                      setIndicators(null)
-                      setCheckError(null)
-                      setCheckResults([])
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              {showCheckDropdown && (
-                <AnchoredDropdown anchorRef={checkWrapRef} className="sim-add-dropdown">
-                  {checkResults.slice(0, 6).map((s: any) => (
-                    <button
-                      key={s.code}
-                      className="sim-add-result"
-                      onClick={() =>
-                        selectStock({ code: String(s.code), name: String(s.name ?? s.code) })
-                      }
-                    >
-                      <span className="sim-add-result-name">{s.name ?? s.code}</span>
-                      <span className="sim-add-result-code">{s.code}</span>
-                    </button>
-                  ))}
-                </AnchoredDropdown>
-              )}
-            </div>
-
-            {selectedStock && (
-              <div className="bt-check-result">
-                <div className="bt-check-stock-head">
-                  <span className="bt-check-stock-name">
-                    {indicators?.name ?? selectedStock.name}
-                  </span>
-                  <span className="bt-check-stock-code">{selectedStock.code}</span>
-                  {indicators?.market && (
-                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', background: 'var(--color-bg-sunken)', padding: '2px 6px', borderRadius: 4 }}>
-                      {indicators.market}
-                    </span>
-                  )}
-                  {checkLoading && <span className="bt-check-loading">지표 조회 중...</span>}
-                </div>
-
-                {checkError && (
-                  <div className="bt-check-not-found" style={{ color: 'var(--color-error)' }}>
-                    {checkError}
-                  </div>
-                )}
-
-                {!checkLoading && !checkError && indicators && patternMatch && (
-                  <>
-                    {/* 기준일 + 현재가 헤더 */}
-                    {patternMatch.dataDate && (
-                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        <span>기준일: {patternMatch.dataDate}</span>
-                        {indicators.close != null && (
-                          <span>현재가 {indicators.close.toLocaleString('ko-KR')}원</span>
-                        )}
-                        {patternMatch.entryGrade && (
-                          <span>눌림목 등급 <strong>{patternMatch.entryGrade}</strong></span>
-                        )}
-                        {patternMatch.warnGrade && patternMatch.warnGrade !== 'SAFE' && (
-                          <span style={{ color: 'var(--color-warning)' }}>⚠ 경고 {patternMatch.warnGrade}</span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 패턴 조건 3가지 */}
-                    <div className="bt-check-criteria">
-                      <div className={`bt-check-criterion ${patternMatch.scoreMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
-                        <span className="bt-check-criterion-icon">{patternMatch.scoreMatch ? '✅' : '❌'}</span>
-                        <div className="bt-check-criterion-info">
-                          <span className="bt-check-criterion-label">점수 ≥ 70</span>
-                          <span className="bt-check-criterion-current">현재 점수 {patternMatch.score ?? '-'}</span>
-                        </div>
-                        <span className="bt-check-criterion-stat">급등 전 {pct(data.commonFeatures.score70RatePct)}가 해당</span>
-                      </div>
-                      <div className={`bt-check-criterion ${patternMatch.buyMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
-                        <span className="bt-check-criterion-icon">{patternMatch.buyMatch ? '✅' : '❌'}</span>
-                        <div className="bt-check-criterion-info">
-                          <span className="bt-check-criterion-label">BUY계열 시그널</span>
-                          <span className="bt-check-criterion-current">현재 {patternMatch.signal || '-'}</span>
-                        </div>
-                        <span className="bt-check-criterion-stat">급등 전 {pct(data.commonFeatures.buySignalRatePct)}가 해당</span>
-                      </div>
-                      <div className={`bt-check-criterion ${patternMatch.rsiMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
-                        <span className="bt-check-criterion-icon">{patternMatch.rsiMatch ? '✅' : '❌'}</span>
-                        <div className="bt-check-criterion-info">
-                          <span className="bt-check-criterion-label">RSI 45~65 (매집 구간)</span>
-                          <span className="bt-check-criterion-current">현재 RSI {patternMatch.rsi ? patternMatch.rsi.toFixed(1) : '-'}</span>
-                        </div>
-                        <span className="bt-check-criterion-stat">급등 전 {pct(data.commonFeatures.rsi45to65RatePct)}가 해당</span>
-                      </div>
-                      <div className="bt-check-match-summary">
-                        <span className="bt-check-match-count">{patternMatch.matchCount}/3 조건 충족</span>
-                        <span className={`bt-check-match-badge ${matchMeta(patternMatch.matchCount).cls}`}>
-                          {matchMeta(patternMatch.matchCount).label}
-                        </span>
-                      </div>
-                    </div>
-
-                    {(data.ruleCandidates ?? []).length > 0 && (
-                      <div className="bt-check-rule-candidates">
-                        <div className="bt-check-rule-candidates-title">추천 룰 TOP 5 매칭</div>
-                        <div className="bt-check-rule-candidates-list">
-                          {matchedRuleCandidates.map((rule) => (
-                            <span
-                              key={rule.key}
-                              className={`bt-check-rule-badge ${rule.matched ? 'bt-check-rule-badge--on' : 'bt-check-rule-badge--off'}`}
-                            >
-                              {rule.matched ? '적합' : '미적합'} · {rule.label}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 펀더멘털 패널 — 장기 보유 판단용 */}
-                    {hasFundamental && (
-                      <div className="bt-check-fundamental">
-                        <div className="bt-check-fundamental-title">펀더멘털 지표 — 장기 보유 판단용</div>
-                        <div className="bt-check-fundamental-grid">
-                          {indicators.pbr != null && (() => {
-                            const m = pbrMeta(indicators.pbr)
-                            return (
-                              <div className="bt-check-fund-item">
-                                <span className="bt-check-fund-label">PBR</span>
-                                <span className={`bt-check-fund-value ${m.cls}`}>{indicators.pbr.toFixed(2)}x</span>
-                                <span className="bt-check-fund-note">{m.note}</span>
-                              </div>
-                            )
-                          })()}
-                          {indicators.per != null && indicators.per > 0 && (
-                            <div className="bt-check-fund-item">
-                              <span className="bt-check-fund-label">PER</span>
-                              <span className={`bt-check-fund-value ${indicators.per < 10 ? 'bt-check-fund-value--good' : indicators.per > 30 ? 'bt-check-fund-value--warn' : ''}`}>
-                                {indicators.per.toFixed(1)}x
-                              </span>
-                              <span className="bt-check-fund-note">{indicators.per < 10 ? '저PER 저평가' : indicators.per > 30 ? '고PER 주의' : '적정 수준'}</span>
-                            </div>
-                          )}
-                          {indicators.roe != null && (
-                            <div className="bt-check-fund-item">
-                              <span className="bt-check-fund-label">ROE</span>
-                              <span className={`bt-check-fund-value ${indicators.roe >= 15 ? 'bt-check-fund-value--good' : indicators.roe < 5 ? 'bt-check-fund-value--warn' : ''}`}>
-                                {indicators.roe.toFixed(1)}%
-                              </span>
-                              <span className="bt-check-fund-note">{indicators.roe >= 15 ? '우수한 수익성' : indicators.roe < 5 ? '수익성 낮음' : '보통'}</span>
-                            </div>
-                          )}
-                          {indicators.debt_ratio != null && (
-                            <div className="bt-check-fund-item">
-                              <span className="bt-check-fund-label">부채비율</span>
-                              <span className={`bt-check-fund-value ${indicators.debt_ratio > 200 ? 'bt-check-fund-value--bad' : indicators.debt_ratio < 100 ? 'bt-check-fund-value--good' : ''}`}>
-                                {indicators.debt_ratio.toFixed(0)}%
-                              </span>
-                              <span className="bt-check-fund-note">{indicators.debt_ratio > 200 ? '고부채 위험' : indicators.debt_ratio < 100 ? '재무 건전' : '보통'}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 투자 시뮬레이션 */}
-                    <div className="bt-check-invest">
-                      <p className="bt-check-invest-title">투자 시뮬레이션 (모든 과거 사례 평균 기준)</p>
-                      <div className="bt-check-invest-row">
-                        <div className="sim-input-row" style={{ maxWidth: 200 }}>
-                          <input
-                            className="sim-input"
-                            type="number"
-                            min={0}
-                            step={100_000}
-                            value={investAmount}
-                            onChange={(e) =>
-                              setInvestAmount(Math.max(0, Number(e.target.value || 0)))
-                            }
-                          />
-                          <span className="sim-input-suffix">원</span>
-                        </div>
-                        {investSim && (
-                          <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
-                            <div className="bt-check-invest-result">
-                              <span className="bt-check-invest-desc">
-                                전체 사례 평균 <strong>{investSim.avgReturn >= 0 ? '+' : ''}{pct(investSim.avgReturn, 2)}</strong> ({horizon}일)
-                              </span>
-                              <span className="bt-check-invest-gain">
-                                {investSim.avgGain >= 0 ? '+' : ''}{Math.round(investSim.avgGain).toLocaleString('ko-KR')}원
-                              </span>
-                            </div>
-                            {investSim.patternReturn != null && investSim.patternGain != null && (
-                              <div className="bt-check-invest-result">
-                                <span className="bt-check-invest-desc">
-                                  규칙 일치 사례 평균 <strong>{investSim.patternReturn >= 0 ? '+' : ''}{pct(investSim.patternReturn, 1)}</strong>
-                                </span>
-                                <span className="bt-check-invest-gain">
-                                  {investSim.patternGain >= 0 ? '+' : ''}{Math.round(investSim.patternGain).toLocaleString('ko-KR')}원
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <p className="bt-check-invest-note">
-                        ※ 급등한 종목만의 평균(+{pct(data.riserSummary.avgForwardReturnPct, 1)})은 결과를 알고 고른 값이라 기대수익이 아닙니다. 위 수치는 급등 여부와 무관한 모든 과거 사례의 평균입니다.
-                      </p>
-                    </div>
-
-                    {/* 다음 단계 액션 */}
-                    <div className="bt-check-actions">
-                      <button
-                        className="sim-btn sim-btn--ghost"
-                        onClick={() => goAnalyze(selectedStock.code)}
-                      >
-                        📈 상세 분석 보기
-                      </button>
-                      <button
-                        className="sim-btn sim-btn--ghost"
-                        onClick={() => goExecutionGuide(selectedStock.code)}
-                      >
-                        🧭 실행 가이드
-                      </button>
-                      <button
-                        className="sim-btn sim-btn--primary"
-                        onClick={() => goSimulator(selectedStock)}
-                      >
-                        ➕ 시뮬레이터에 추가
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+            <SummaryTab
+              data={data}
+              selectedRuleKey={selectedRuleKey}
+              setSelectedRuleKey={setSelectedRuleKey}
+              showAllFeatureRows={showAllFeatureRows}
+              setShowAllFeatureRows={setShowAllFeatureRows}
+              selectStock={selectStock}
+              filteredSamplesByRule={filteredSamplesByRule}
+              visibleFeatureStats={visibleFeatureStats}
+              hiddenFeatureCount={hiddenFeatureCount}
+            />
           )}
 
-          {/* ── 이벤트 샘플 탭 ── */}
+          {activeTab === 'check' && (
+            <CheckTab
+              horizon={horizon}
+              loading={loading}
+              data={data}
+              checkSearch={checkSearch}
+              setCheckSearch={setCheckSearch}
+              checkResults={checkResults}
+              setCheckResults={setCheckResults}
+              setCheckFocused={setCheckFocused}
+              selectedStock={selectedStock}
+              setSelectedStock={setSelectedStock}
+              indicators={indicators}
+              setIndicators={setIndicators}
+              checkLoading={checkLoading}
+              checkError={checkError}
+              setCheckError={setCheckError}
+              autoPickLoading={autoPickLoading}
+              autoPickError={autoPickError}
+              autoPicks={autoPicks}
+              conditionStats={conditionStats}
+              returnProfile={returnProfile}
+              minExpectedReturnPct={minExpectedReturnPct}
+              setMinExpectedReturnPct={setMinExpectedReturnPct}
+              minShortMomentumPct={minShortMomentumPct}
+              setMinShortMomentumPct={setMinShortMomentumPct}
+              minLiquidityEok={minLiquidityEok}
+              setMinLiquidityEok={setMinLiquidityEok}
+              investAmount={investAmount}
+              setInvestAmount={setInvestAmount}
+              checkWrapRef={checkWrapRef}
+              selectStock={selectStock}
+              goAnalyze={goAnalyze}
+              goExecutionGuide={goExecutionGuide}
+              goSimulator={goSimulator}
+              addAutoPicksToSimulator={addAutoPicksToSimulator}
+              applyReturnProfile={applyReturnProfile}
+              patternMatch={patternMatch}
+              matchedRuleCandidates={matchedRuleCandidates}
+              investSim={investSim}
+              autoPickBuckets={autoPickBuckets}
+              showCheckDropdown={showCheckDropdown}
+              hasFundamental={hasFundamental}
+            />
+          )}
+
           {activeTab === 'samples' && (
-          <div className="bt-section">
-            <div className="bt-section-title">급등 이벤트 샘플</div>
-            {sorted.length === 0 ? (
-              <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>
-                조건에 맞는 급등 이벤트가 없습니다. 기간/기준을 완화해 보세요.
-              </p>
-            ) : (
-              <div className="mobile-card-table" style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
-                <table className="bt-table" style={{ minWidth: 680 }}>
-                  <thead>
-                    <tr>
-                      <th>종목</th>
-                      <th data-sortable onClick={() => toggleSort('asof')} style={{ textAlign: 'left' }}>
-                        기준일{sortIcon('asof')}
-                      </th>
-                      <th data-sortable onClick={() => toggleSort('forwardReturnPct')} style={{ textAlign: 'right' }}>
-                        Horizon 수익률{sortIcon('forwardReturnPct')}
-                      </th>
-                      <th data-sortable onClick={() => toggleSort('totalScore')} style={{ textAlign: 'right' }}>
-                        점수{sortIcon('totalScore')}
-                      </th>
-                      <th>시그널</th>
-                      <th data-sortable onClick={() => toggleSort('rsi14')} style={{ textAlign: 'right' }}>
-                        RSI14{sortIcon('rsi14')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sorted.map((row) => (
-                      <tr
-                        key={`${row.code}-${row.asof}`}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() =>
-                          selectStock({ code: row.code, name: row.name || row.code })
-                        }
-                        title={`${row.name || row.code} 패턴 점검`}
-                      >
-                        <td data-th="종목">
-                          <span className="bt-table-stock-name">{row.name || row.code}</span>
-                          {row.name && (
-                            <span className="bt-table-stock-code">{row.code}</span>
-                          )}
-                        </td>
-                        <td className="bt-table-num" data-th="기준일">{row.asof}</td>
-                        <td style={{ textAlign: 'right' }} data-th="Horizon 수익률">
-                          <span className={row.forwardReturnPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
-                            {row.forwardReturnPct > 0 ? '+' : ''}
-                            {pct(row.forwardReturnPct, 2)}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="점수">
-                          {row.totalScore.toFixed(1)}
-                        </td>
-                        <td data-th="시그널">
-                          {row.signal ? (
-                            <span className={signalCls(row.signal)}>{row.signal}</span>
-                          ) : (
-                            <span className="bt-table-num">-</span>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="RSI14">
-                          {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 'var(--space-3) 0 0' }}>
-              종목 클릭 시 종목 점검 탭에 자동 입력됩니다.
-            </p>
-          </div>
+            <SamplesTab
+              data={data}
+              selectStock={selectStock}
+              sorted={sorted}
+              toggleSort={toggleSort}
+              sortIcon={sortIcon}
+            />
           )}
         </>
       )}

@@ -109,3 +109,12 @@ export type ScanCandidateLite = {
   intraday_change_pct?: number | null
   liquidity?: number | null
 }
+
+export type BacktestTab = 'summary' | 'check' | 'samples'
+
+export type ConditionStats = {
+  buySignalPct: number
+  score50PlusPct: number
+  rsi45_65Pct: number
+  totalScanned: number
+}
