@@ -82,6 +82,15 @@ describe('섹터', () => {
     expect(callsTo('/api/ui/sectors')).toHaveLength(0)
   })
 
+  it('섹터를 캐시로 보여줘도 시장 개요는 한 번 조회해 국면 추정에 쓴다', async () => {
+    localStorage.setItem('ls_sectors_page', JSON.stringify({ ts: Date.now(), data: SECTORS }))
+    render(<SectorsPage />)
+    await waitFor(() => expect(callsTo('/api/ui/market-overview')).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(callsTo('/api/ui/market-overview')).toHaveLength(1)
+    expect(callsTo('/api/ui/sectors')).toHaveLength(0)
+  })
+
   it('오래된 캐시는 무시하고 다시 조회한다', async () => {
     localStorage.setItem('ls_sectors_page', JSON.stringify({ ts: Date.now() - 120_000, data: SECTORS }))
     render(<SectorsPage />)
