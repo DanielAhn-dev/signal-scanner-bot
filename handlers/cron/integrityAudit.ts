@@ -16,7 +16,7 @@ import {
 import { checkDataQuality } from "../../src/services/dataQualityService";
 import { fetchNegativeDisclosures, formatDisclosureFilterNote } from "../../src/services/dartDisclosureFilter";
 import { sendMessage } from "../../src/telegram/api";
-import { economicCalendarCoverage } from "../../src/utils/fetchEconomicCalendar";
+import { economicCalendarCoverage, economicCalendarSyncStatus } from "../../src/utils/fetchEconomicCalendar";
 import { krxCalendarStatus, toKstDateKey } from "../../src/lib/krxCalendar";
 import { findMislabeledSells, type SellActionRow } from "../../src/lib/sellLabelAudit";
 import { selectPaged } from "../../src/services/supabasePaging";
@@ -267,13 +267,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const disclosureFilter = await fetchNegativeDisclosures();
     const disclosureIssue = disclosureFilter.status === "ok" ? 0 : 1;
     const ymd = kstYmd();
-    // 경제 일정은 하드코딩이라 끝나면 경고가 조용히 사라진다 — 60일 안에 끝나는 항목을 알린다
+    // 경제 일정이 끝나면 경고가 조용히 사라진다 — 60일 안에 끝나는 항목과 수집 배치 상태를 알린다
     const calendarLimit = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
-    const calendarEnding = economicCalendarCoverage().filter((c) => c.lastDate < calendarLimit);
+    const calendarEnding = (await economicCalendarCoverage()).filter((c) => c.lastDate < calendarLimit);
     const calendarIssue = calendarEnding.some((c) => /FOMC 금리|CPI/.test(c.name)) ? 1 : 0;
-    const calendarNote = calendarEnding.length
-      ? `${calendarIssue ? "❌" : "⚠️"} 경제 일정 갱신 필요(src/utils/fetchEconomicCalendar.ts): ${calendarEnding.map((c) => `${c.name} ~${c.lastDate}`).join(", ")}`
-      : "✅ 경제 일정 60일 이상 채워짐";
+    const calendarSync = await economicCalendarSyncStatus();
+    // 주 1회 배치라 GitHub 지연까지 감안해 10일을 넘기면 멈춘 것으로 본다
+    const calendarSyncStale =
+      !calendarSync.generatedAt || Date.now() - Date.parse(calendarSync.generatedAt) > 10 * 86_400_000;
+    const calendarSyncWarn = calendarSyncStale || calendarSync.failed.length > 0;
+    const calendarNotes = [
+      calendarEnding.length
+        ? `${calendarIssue ? "❌" : "⚠️"} 경제 일정 끝나 감: ${calendarEnding.map((c) => `${c.name} ~${c.lastDate}`).join(", ")}`
+        : "✅ 경제 일정 60일 이상 채워짐",
+    ];
+    if (calendarSyncStale) {
+      calendarNotes.push(
+        `⚠️ 경제 일정 자동 수집 ${calendarSync.generatedAt ? `멈춤(마지막 ${calendarSync.generatedAt.slice(0, 10)})` : "결과 없음"} — economic_calendar.yml 실행 확인`,
+      );
+    }
+    if (calendarSync.failed.length) {
+      calendarNotes.push(`⚠️ 경제 일정 수집 실패 출처(이전 값 유지): ${calendarSync.failed.join(", ")}`);
+    }
+    const calendarNote = calendarNotes.join("\n");
     // 휴장일 목록도 하드코딩 — 빠지면 휴장일에 매매한다 (장중 실행은 krxLiveSession이 한 번 더 막는다)
     const krxCal = krxCalendarStatus(toKstDateKey());
     const krxCalIssue = krxCal.level === "error" ? 1 : 0;
@@ -320,7 +336,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 경고(⚠️)는 이상 건수에 들어가지 않지만 미리 손봐야 하는 항목이라 알린다 (경제 일정·휴장일 목록 만료 임박)
-    const hasWarning = (calendarEnding.length > 0 && !calendarIssue) || krxCal.level === "warn";
+    const hasWarning = (calendarEnding.length > 0 && !calendarIssue) || calendarSyncWarn || krxCal.level === "warn";
     if (AUTO_TRADE_ALERT_CHAT_ID > 0 && (INTEGRITY_NOTIFY_ALWAYS || !isHealthy || hasWarning)) {
       await sendMessage(AUTO_TRADE_ALERT_CHAT_ID, message);
     }

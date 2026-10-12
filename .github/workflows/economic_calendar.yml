@@ -1,0 +1,42 @@
+name: Economic Calendar Sync
+
+# 경제 일정(CPI·PPI·고용·GDP·PCE·FOMC·한국 기준금리)을 공식 출처에서 받아 Storage에 저장한다.
+# 하드코딩 일정이 끝나 매수 제한·경고가 조용히 사라지던 문제를 사람 손 없이 막는다.
+# 출처가 일정을 바꾸는 일은 드물어 주 1회면 충분하다(GitHub 지연 4~5시간은 문제없음).
+# 실패하면 이 job이 실패하고, 무결성 점검이 실패 출처·멈춤을 알린다.
+on:
+  schedule:
+    # 매주 월요일 00:30 UTC (한국 시간 09:30)
+    - cron: "30 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "저장하지 않고 결과만 출력"
+        required: false
+        default: "false"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync economic calendar
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: pnpm exec tsx scripts/economic_calendar_sync.ts --dryRun=${{ github.event.inputs.dry_run || 'false' }}
