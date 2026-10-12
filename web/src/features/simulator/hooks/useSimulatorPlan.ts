@@ -18,7 +18,7 @@ export function useSimulatorPlan(input: { fromSeedBuilder: boolean; proposedCapi
     if (!fromSeedBuilder && !(initialPlan?.totalCapital) && seedCapital) setTotalCapital(seedCapital)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedCapital])
-  const [monthlyProfitTarget, setMonthlyProfitTarget] = useState(500_000) // 월 500만원 기본값
+  const [monthlyProfitTarget, setMonthlyProfitTarget] = useState(500_000) // 월 50만원 기본값
   const [fillRatePct, setFillRatePct] = useState(100)
   const [feePct, setFeePct] = useState(0.15)
   const [taxPct, setTaxPct] = useState(0.2)

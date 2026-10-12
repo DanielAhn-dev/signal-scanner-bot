@@ -37,30 +37,14 @@ export function useCandidates(chatId: string) {
   const loadAlgoCandidates = async () => {
     setLoadingAlgo(true)
     try {
-      console.log('[loadAlgoCandidates] 시작...')
-      // scan-candidates fetch
+      // scan-candidates + scan-highlights를 합친다
       const ts = Date.now()
       const scanRes = await apiFetch(`/api/ui/scan-candidates?limit=80&cacheMs=0&_ts=${ts}`, { cacheMs: 0, timeoutMs: 20_000 })
       const scanList = Array.isArray(scanRes?.data) ? scanRes.data : []
-      console.log('[loadAlgoCandidates] scan-candidates:', scanList.length, '개')
-      if (scanList.length > 0) {
-        console.log('[loadAlgoCandidates] API 원본 첫 종목:', {
-          code: scanList[0].code,
-          current_price: scanList[0].current_price,
-          close: scanList[0].close,
-          entry_grade: scanList[0].entry_grade,
-        })
-      }
-      // scan-highlights fetch
       const hlRes = await apiFetch('/api/ui?route=scan-highlights', { cacheMs: 10000, timeoutMs: 15000 })
       const hlList = Array.isArray(hlRes?.data) ? hlRes.data : []
-      console.log('[loadAlgoCandidates] scan-highlights:', hlList.length, '개')
 
       const finalCandidates = mergeAlgoCandidates(scanList, hlList)
-      console.log('[loadAlgoCandidates] 최종 후보:', finalCandidates.length, '개')
-      if (finalCandidates.length > 0) {
-        console.log('[loadAlgoCandidates] 첫 후보:', finalCandidates[0].code, finalCandidates[0].name)
-      }
       setAlgoCandidates(finalCandidates)
     } catch (e: any) {
       console.warn('내부 추천 후보 로드 실패:', e?.message)

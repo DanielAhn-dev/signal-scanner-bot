@@ -45,7 +45,6 @@ export function mergeAlgoCandidates(scanList: any[], hlList: any[]): HighlightPl
   const merged: Record<string, HighlightPlanItem> = {}
   
   // scan-candidates 처리 (entry_grade 기반) - A/B/C는 포함, D만 제외
-  let scanCandidateCount = 0
   for (const row of sortedScanList) {
     const code = String(row.code || '').trim()
     const name = String(row.name || code || '').trim()
@@ -79,15 +78,9 @@ export function mergeAlgoCandidates(scanList: any[], hlList: any[]): HighlightPl
       current_price: currentPrice,
       close: closePrice,
     }
-    scanCandidateCount++
-    if (scanCandidateCount <= 3) {
-      console.log(`[loadAlgoCandidates] scan-candidates[${scanCandidateCount}] ${code}: current_price=${row.current_price}, close=${row.close} → stored=${currentPrice}`)
-    }
   }
-  console.log('[loadAlgoCandidates] scan-candidates 필터 통과:', scanCandidateCount, '개')
   
   // scan-highlights 처리 (expected_upside_pct 기반)
-  let hlCandidateCount = 0
   for (const row of sortedHlList) {
     const code = String(row.code || '').trim()
     const name = String(row.name || code || '').trim()
@@ -127,12 +120,7 @@ export function mergeAlgoCandidates(scanList: any[], hlList: any[]): HighlightPl
       winProb: Math.round(winProb),
       current_price: entryPrice || undefined,
     }
-    hlCandidateCount++
-    if (hlCandidateCount <= 3) {
-      console.log(`[loadAlgoCandidates] scan-highlights[${hlCandidateCount}] ${code}: entry_price=${row.entry_price} → stored=${entryPrice}`)
-    }
   }
-  console.log('[loadAlgoCandidates] scan-highlights 필터 통과:', hlCandidateCount, '개')
   
   return Object.values(merged)
 }

@@ -330,7 +330,6 @@ export function recommendPortfolio(
   },
 ): HighlightPlanItem[] {
   if (candidates.length === 0 || totalCapitalKrw <= 0 || monthlyProfitKrw <= 0) {
-    console.log('[recommendPortfolio] 입력 검증 실패:', { candidates: candidates.length, totalCapitalKrw, monthlyProfitKrw })
     return []
   }
 
@@ -361,11 +360,8 @@ export function recommendPortfolio(
       return b.sourceScore - a.sourceScore
     })
 
-  console.log('[recommendPortfolio] 품질 통과 종목:', withWeights.length, '개')
-  withWeights.slice(0, 3).forEach(w => console.log(`  - ${w.code}(${w.name}): weight=${w.weight.toFixed(3)}, RR=${calcRR(w).toFixed(2)}, EV=${calcExpectedValue(w).toLocaleString('ko-KR')} 원`))
 
   if (withWeights.length === 0) {
-    console.log('[recommendPortfolio] 품질 기준 통과 종목 없음')
     return [] // 추천할 종목 없음
   }
 
@@ -409,25 +405,12 @@ export function recommendPortfolio(
   const kospiFloorAmount = kospiCandidates > 0 ? Math.round(deployBudget * minKospiRatio) : 0
   const perStockCapAmount = Math.round(deployBudget * perStockCapRatio)
   const result: HighlightPlanItem[] = []
-  console.log('[recommendPortfolio] 배분액 계산 시작', {
-    style,
-    baseDeployRatio,
-    baseDeployBudget,
-    deployBudget,
-    requiredCycleProfit,
-    weightedCycleYield,
-    targetDeployBudget,
-    maxKosdaqRatio,
-    minKospiRatio,
-    kospiCandidates,
-  })
   for (const x of topCandidates) {
     if (result.length >= maxStocks || remainingDeployBudget <= 0) break
 
     // 장중이면 current_price, 아니면 close 사용
     const price = Number(x.current_price ?? x.close ?? 0)
     if (!price || price <= 0) {
-      console.log(`  - ${x.code}: 가격 없음 (current_price=${x.current_price}, close=${x.close})`)
       continue
     }
 
@@ -454,7 +437,6 @@ export function recommendPortfolio(
     // 실제 매수 가능 주수 (정수)
     const shares = Math.floor(alloc / price)
     if (shares <= 0) {
-      console.log(`  - ${x.code}: 주수 부족 (alloc=${alloc.toLocaleString('ko-KR')} 원, price=${price.toLocaleString('ko-KR')} 원/주 → shares=${shares})`)
       continue
     }
     const buyAmount = shares * price
@@ -462,11 +444,9 @@ export function recommendPortfolio(
     remainingDeployBudget -= buyAmount
     if (market === 'KOSDAQ') kosdaqUsed += buyAmount
     if (market === 'KOSPI') kospiUsed += buyAmount
-    console.log(`  ✓ ${x.code}: ${shares}주 × ${price.toLocaleString('ko-KR')} = ${buyAmount.toLocaleString('ko-KR')} 원`)
     result.push({ ...x, amount: buyAmount, shares, buyPrice: price })
   }
   // 현금 보유 항목 추가 (1만원 이상 남으면)
-  console.log(`[recommendPortfolio] 최종 결과: ${result.length}개 종목 + 현금 ${remain.toLocaleString('ko-KR')} 원`)
   if (remain > 10000) {
     result.push({
       id: 'cash',
