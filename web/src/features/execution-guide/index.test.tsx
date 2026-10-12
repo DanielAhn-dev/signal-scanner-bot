@@ -8,6 +8,7 @@ const calls: Call[] = []
 const toasts: string[] = []
 const shareSpy = { createShare: vi.fn(), loadList: vi.fn(), setOpen: vi.fn() }
 let seedCapital: number | null = null
+let seedLoaded = true
 let stockLatestFail: string | null = null
 
 const advisor = (entryLow: number, entryHigh: number, stop: number, t1: number, t2: number) => ({
@@ -45,7 +46,10 @@ vi.mock('../../lib/api', () => ({
   getAuthHeaders: vi.fn(async () => ({})),
   invalidateCache: vi.fn(),
 }))
-vi.mock('../../lib/useSeedCapital', () => ({ useSeedCapital: () => seedCapital }))
+vi.mock('../../lib/useSeedCapital', () => ({
+  useSeedCapital: () => seedCapital,
+  useSeedCapitalState: () => ({ seed: seedCapital, loaded: seedLoaded }),
+}))
 vi.mock('../../lib/userState', () => ({ userScopedKey: (k: string) => k }))
 vi.mock('../../stores/profileStore', () => ({ useCurrentChatId: () => '123', getCurrentClientIdFromStore: () => 'client-1' }))
 vi.mock('../../stores/viewModeStore', () => ({ useDetailed: () => true }))
@@ -72,6 +76,7 @@ describe('실행 가이드', () => {
     toasts.length = 0
     shareSpy.createShare.mockReset()
     seedCapital = null
+    seedLoaded = true
     stockLatestFail = null
     window.history.replaceState({}, '', '/')
     try { sessionStorage.clear(); localStorage.clear() } catch { /* ignore */ }
@@ -156,6 +161,31 @@ describe('실행 가이드', () => {
     expect(sessionStorage.getItem('execution_guide_pending_v1')).toBeNull()
     await new Promise((r) => setTimeout(r, 50))
     expect(callsTo('/api/ui/stock-latest')).toHaveLength(3)
+  })
+
+  it('이어받은 종목 자동 생성은 시드 조회가 끝나 투자금에 반영된 뒤에 한다', async () => {
+    seedLoaded = false
+    sessionStorage.setItem('execution_guide_pending_v1', JSON.stringify({ codes: ['005930', '000660', '035420'], source: 'backtest' }))
+    const { rerender } = render(<ExecutionGuidePage />)
+    await new Promise((r) => setTimeout(r, 50))
+    // 시드 조회 전에는 1천만원 기본값으로 만들지 않는다
+    expect(callsTo('/api/ui/stock-latest')).toHaveLength(0)
+    seedCapital = 2_000_000
+    seedLoaded = true
+    rerender(<ExecutionGuidePage />)
+    expect(await screen.findByText('삼성전자 (005930)')).toBeTruthy()
+    expect(callsTo('/api/ui/stock-latest')).toHaveLength(3)
+    // 투자금 200만원, 종목당 최대 25% → 50만원 예산, 진입 기준가 50,000원 → 10주
+    await waitFor(() => expect(pageText()).toContain('10주'))
+    expect(pageText()).not.toContain('50주')
+  })
+
+  it('다른 화면이 종목을 넘겨도 시뮬레이터 계획의 투자금을 쓴다', async () => {
+    seedCapital = 3_000_000
+    localStorage.setItem('highlight_simulation_plan', JSON.stringify({ createdAt: 1, totalCapital: 6_000_000, notes: '', items: [] }))
+    sessionStorage.setItem('execution_guide_pending_v1', JSON.stringify({ codes: ['005930'], source: 'backtest' }))
+    render(<ExecutionGuidePage />)
+    await waitFor(() => expect(screen.getByDisplayValue('6000000')).toBeTruthy())
   })
 
   it('넘겨받은 종목이 없으면 시뮬레이터 계획의 종목·투자금을 이어받는다', async () => {

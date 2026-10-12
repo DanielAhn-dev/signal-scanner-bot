@@ -26,7 +26,7 @@ export default function ExecutionGuidePage() {
   const {
     codesText, setCodesText, capital, setCapital, maxWeightPct, setMaxWeightPct, splitCount, setSplitCount,
     riskMode, setRiskMode, sourceLabel, setSourceLabel, includeNews, setIncludeNews,
-    hydratedByPending, setHydratedByPending, codeList, totalCapital,
+    hydratedByPending, setHydratedByPending, codeList, totalCapital, capitalReady,
   } = useGuideInputs()
   const {
     autoCandidates, setAutoCandidates, autoLoading, autoError, candidateMode, setCandidateMode,
@@ -38,7 +38,7 @@ export default function ExecutionGuidePage() {
     persistGuideSnapshot, buildGuide, totalPlanned,
   } = useGuideBuild({
     chatId, codeList, setCodesText, capital, maxWeightPct, splitCount, riskMode, includeNews, sourceLabel, setSourceLabel,
-    hydratedByPending, setHydratedByPending, autoCandidates, setAutoCandidates, visibleAutoCandidates, fetchAutoCandidates,
+    hydratedByPending, capitalReady, setHydratedByPending, autoCandidates, setAutoCandidates, visibleAutoCandidates, fetchAutoCandidates,
     candidateMode, scoreVersion, setError,
   })
   const { shareManager, pdfLoading, openExecutionGuideShare, openExecutionGuideShareManager, downloadExecutionGuidePdf } = useGuideShare({

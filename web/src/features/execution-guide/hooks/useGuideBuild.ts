@@ -19,6 +19,7 @@ export function useGuideBuild(input: {
   sourceLabel: string
   setSourceLabel: React.Dispatch<React.SetStateAction<string>>
   hydratedByPending: boolean
+  capitalReady: boolean
   setHydratedByPending: React.Dispatch<React.SetStateAction<boolean>>
   autoCandidates: AutoCandidate[]
   setAutoCandidates: React.Dispatch<React.SetStateAction<AutoCandidate[]>>
@@ -30,7 +31,7 @@ export function useGuideBuild(input: {
 }) {
   const {
     chatId, codeList, setCodesText, capital, maxWeightPct, splitCount, riskMode, includeNews, sourceLabel, setSourceLabel,
-    hydratedByPending, setHydratedByPending, autoCandidates, setAutoCandidates, visibleAutoCandidates, fetchAutoCandidates,
+    hydratedByPending, capitalReady, setHydratedByPending, autoCandidates, setAutoCandidates, visibleAutoCandidates, fetchAutoCandidates,
     candidateMode, scoreVersion, setError,
   } = input
   const [loading, setLoading] = useState(false)
@@ -158,12 +159,13 @@ export function useGuideBuild(input: {
 
   useEffect(() => {
     if (!hydratedByPending) return
+    if (!capitalReady) return
     if (loading) return
     if (rows.length > 0) return
     if (codeList.length === 0) return
     void buildGuide()
     setHydratedByPending(false)
-  }, [hydratedByPending, loading, rows.length, codeList.length])
+  }, [hydratedByPending, capitalReady, loading, rows.length, codeList.length])
 
   return {
     loading, rows, generatedAt, setGeneratedAt, snapshotReady, setSnapshotReady, lastSnapshotAt, setLastSnapshotAt,
