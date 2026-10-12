@@ -8,190 +8,28 @@ import Checkbox from '../../components/ui/Checkbox'
 import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import ForwardTestPanel from './ForwardTestPanel'
-
-type DecisionRow = {
-  id?: number
-  code?: string
-  stock_name?: string
-  action?: string
-  created_at?: string
-  strategy_version?: string | null
-  market_regime?: string | null
-  reason_summary?: string
-  trigger_label?: string
-  detail_lines?: string[]
-  is_auto?: boolean
-}
-
-type AutoTradeSettings = {
-  is_enabled?: boolean
-  selected_strategy?: string | null
-  monday_buy_slots?: number
-  max_positions?: number
-  min_buy_score?: number
-  take_profit_pct?: number
-  stop_loss_pct?: number
-  long_term_ratio?: number
-}
-
-type ActivityRow = {
-  id: string
-  code: string
-  stock_name?: string | null
-  side: 'BUY' | 'SELL' | 'ADJUST'
-  pnl_amount?: number | null
-  created_at: string
-  memo?: string | null
-}
-
-type AdaptiveFactorStat = {
-  key: string
-  factor: string
-  label: string
-  sampleCount: number
-  winRatePct: number
-  avgForwardReturnPct: number
-  weight: number
-}
-
-type AdaptiveInsights = {
-  latestTradeDate: string | null
-  horizonBars: number
-  sampleCount: number
-  baseHitRatePct: number
-  baseAvgReturnPct: number
-  strengthScore: number
-  todayBiasSummary: string
-  topPositiveFactors: AdaptiveFactorStat[]
-  topNegativeFactors: AdaptiveFactorStat[]
-}
-
-type PreRallyPattern = {
-  name: string
-  samples: number
-  winRatePct: number
-  liftVsBasePct: number
-  avgForwardReturnPct: number
-  avgMaxDrawdownPct: number
-}
-
-type PreRallyReport = {
-  generatedAt?: string
-  fileName?: string
-  config?: {
-    horizonBars?: number
-    rallyThresholdPct?: number
-  }
-  dataset?: {
-    labeledRows?: number
-  }
-  baseline?: {
-    trainWinRatePct?: number
-    testWinRatePct?: number
-  }
-  stablePatterns?: PreRallyPattern[]
-  notes?: string[]
-}
-
-type PreRallySortKey = 'lift' | 'win' | 'ret' | 'samples'
-
-const STRATEGY_OPTIONS = [
-  {
-    id: 'HOLD_SAFE',
-    label: '안전 포지션',
-    desc: '보수 운용 · 최대 2종목 제한 진입',
-    color: 'var(--color-brand)',
-  },
-  {
-    id: 'REDUCE_TIGHT',
-    label: '타이트 손절',
-    desc: '방어 성향 · 종목별 손절선은 변동성에 따라 넓어짐(기본폭의 최대 2.5배)',
-    color: 'var(--color-warning)',
-  },
-  {
-    id: 'WAIT_AND_DIP_BUY',
-    label: '저가 매수 대기',
-    desc: '현금 보유 · 눌림목 진입 기회 대기',
-    color: 'var(--color-success)',
-  },
-] as const
-
-const COLOR_POSITIVE = 'var(--color-success)'
-const COLOR_NEGATIVE = 'var(--color-error)'
-const COLOR_WARNING = 'var(--color-warning)'
-const COLOR_POSITIVE_BG = 'var(--color-success-bg)'
-const COLOR_NEGATIVE_BG = 'var(--color-error-bg)'
-
-const TRIGGER_LABEL_MAP: Record<string, string> = {
-  'add-on-buy': '추가 매수',
-  'rebalance-buy': '리밸런싱 매수',
-  'take-profit-partial': '분할 익절',
-  'monday-score-candidate': '월요일 점수 후보 진입',
-  'stop-loss': '손절 매도',
-  'take-profit-final': '최종 익절',
-  'take-profit': '익절 매도',
-  'loss-trim': '손실 축소',
-  'sector-rotation-sell': '섹터 약세 정리',
-  'overweight-trim': '비중 초과 축소',
-  'new-buy': '신규 매수',
-  'rebalance-sell': '리밸런싱 매도',
-  rebalance: '리밸런싱',
-  manual: '수동 거래',
-}
-
-const MARKET_REGIME_LABEL_MAP: Record<string, string> = {
-  bull: '상승장',
-  bear: '하락장',
-  bearish: '하락장',
-  sideways: '횡보장',
-  neutral: '중립',
-  risk_off: '리스크 오프',
-  risk_on: '리스크 온',
-}
-
-type Tab = 'overview' | 'settings' | 'growth'
-
-function formatTriggerLabel(value: string): string {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (!normalized) return '-'
-  return TRIGGER_LABEL_MAP[normalized] || normalized.replace(/-/g, ' ')
-}
-
-function formatMarketRegimeLabel(value: string): string {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (!normalized) return '-'
-  return MARKET_REGIME_LABEL_MAP[normalized] || value
-}
-
-function formatKrwShort(value: number): string {
-  const sign = value < 0 ? '-' : ''
-  const abs = Math.abs(value)
-  if (abs >= 100_000_000) return `${sign}${(abs / 100_000_000).toFixed(1)}억`
-  if (abs >= 10_000) return `${sign}${Math.round(abs / 10_000).toLocaleString('ko-KR')}만`
-  return `${sign}${Math.round(abs).toLocaleString('ko-KR')}원`
-}
-
-function buildLinePath(points: Array<{ x: number; y: number }>): string {
-  if (points.length === 0) return ''
-  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-}
-
-function calculateMovingAverage(values: number[], window: number): number[] {
-  const result: number[] = []
-  for (let i = 0; i < values.length; i++) {
-    const start = Math.max(0, i - window + 1)
-    const subset = values.slice(start, i + 1)
-    const avg = subset.reduce((a, b) => a + b, 0) / subset.length
-    result.push(avg)
-  }
-  return result
-}
-
-function getPreRallyBadge(input: { lift: number; win: number; mdd: number }): { label: string; color: string } {
-  if (input.lift >= 5 && input.win >= 45) return { label: '추천', color: 'var(--color-success)' }
-  if (input.mdd <= -15 || input.lift < 0) return { label: '주의', color: 'var(--color-warning)' }
-  return { label: '관찰', color: 'var(--color-brand)' }
-}
+import {
+  COLOR_NEGATIVE,
+  COLOR_NEGATIVE_BG,
+  COLOR_POSITIVE,
+  COLOR_POSITIVE_BG,
+  COLOR_WARNING,
+  STRATEGY_OPTIONS,
+} from './constants'
+import type {
+  ActivityRow,
+  AdaptiveFactorStat,
+  AdaptiveInsights,
+  AutoTradeSettings,
+  DecisionRow,
+  PreRallyPattern,
+  PreRallyReport,
+  PreRallySortKey,
+  Tab,
+} from './types'
+import { buildLinePath, calculateMovingAverage, formatKrwShort } from './lib/chartMath'
+import { formatMarketRegimeLabel, formatTriggerLabel } from './lib/labels'
+import { getPreRallyBadge } from './lib/preRally'
 
 export default function StrategyPage() {
   const [tab, setTab] = useState<Tab>('overview')
