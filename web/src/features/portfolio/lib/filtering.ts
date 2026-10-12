@@ -1,13 +1,14 @@
 import { buildAccountKey, isVirtualPositionRow } from './accountKey'
+import type { HoldingRow } from '../types'
 
 /** 계좌 탭 선택값('all' | 'virtual' | 계좌 키)에 맞는 보유 행만 남긴다 */
-export function selectAccountRows(rows: any[], accountKey: string): any[] {
+export function selectAccountRows(rows: HoldingRow[], accountKey: string): HoldingRow[] {
   if (accountKey === 'all') return rows
   if (accountKey === 'virtual') return rows.filter((r) => isVirtualPositionRow(r))
   return rows.filter((r) => buildAccountKey(r?.broker_name, r?.account_name) === accountKey)
 }
 
-export function extractSectors(rows: any[]): Array<{ id: string; name: string }> {
+export function extractSectors(rows: HoldingRow[]): Array<{ id: string; name: string }> {
   const seen = new Map<string, { id: string; name: string }>()
   for (const r of rows) {
     const s = r.stock?.sector
@@ -27,11 +28,11 @@ export type HoldingFilterCriteria = {
 }
 
 export function filterHoldings(
-  rows: any[],
+  rows: HoldingRow[],
   criteria: HoldingFilterCriteria,
-  getState: (row: any) => 'hold' | 'add' | 'partial',
-  getGrade: (row: any) => 'A' | 'B' | 'C',
-): any[] {
+  getState: (row: HoldingRow) => 'hold' | 'add' | 'partial',
+  getGrade: (row: HoldingRow) => 'A' | 'B' | 'C',
+): HoldingRow[] {
   let result = selectAccountRows(rows, criteria.accountKey)
   if (criteria.sectorId) result = result.filter((r) => String(r.stock?.sector_id ?? '') === criteria.sectorId)
   if (criteria.search) {

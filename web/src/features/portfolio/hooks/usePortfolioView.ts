@@ -8,9 +8,10 @@ import { buildAllocationRows, buildDonutGradient } from '../lib/allocation'
 import type { MacroRisk } from '../lib/macroRisk'
 import { applyMacroToRules, resolveAdvisoryThresholds, type RuleSettings } from '../lib/thresholds'
 import { evaluateHoldingState as evaluateHoldingStateFor, getPerformanceGrade as getPerformanceGradeFor, type HoldingStateContext, type HoldingStateKind } from '../lib/holdingState'
+import type { HoldingRow } from '../types'
 
 type PortfolioViewInput = {
-  allRows: any[]
+  allRows: HoldingRow[]
   accountFolders: AccountFolder[]
   selectedAccountKey: string
   selectedSector: string | null
@@ -47,13 +48,13 @@ export function usePortfolioView(input: PortfolioViewInput) {
       policyByKey.get(buildAccountKey(row?.broker_name, row?.account_name)) ?? null,
     ),
   }
-  const evaluateHoldingState = (row: any) => evaluateHoldingStateFor(row, holdingStateCtx)
-  const getHoldingState = (row: any): HoldingStateKind => evaluateHoldingState(row).state
-  const getPerformanceGrade = (row: any) => getPerformanceGradeFor(row, rules)
+  const evaluateHoldingState = (row: HoldingRow) => evaluateHoldingStateFor(row, holdingStateCtx)
+  const getHoldingState = (row: HoldingRow): HoldingStateKind => evaluateHoldingState(row).state
+  const getPerformanceGrade = (row: HoldingRow) => getPerformanceGradeFor(row, rules)
 
-  const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])
+  const holdingAll = useMemo(() => allRows.filter((r: HoldingRow) => r.position_type === 'holding'), [allRows])
   // 카드의 "이 종목 대응"이 같은 계좌 안 비중을 쓰도록 계좌별로 묶는다(불러온 행 기준)
-  const accountSummary = useMemo(() => summarizeAccounts(holdingAll.map((r: any) => ({
+  const accountSummary = useMemo(() => summarizeAccounts(holdingAll.map((r: HoldingRow) => ({
     accountKey: holdingAccountKey(r),
     code: String(r.code ?? ''),
     name: r.stock_name ?? null,

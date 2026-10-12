@@ -134,7 +134,7 @@ describe('evaluateHoldingState', () => {
     expect(evaluateHoldingState({ ...addRow, recommended_buy_qty: 0 }, makeCtx()).state).toBe('hold')
   })
   it('비중 경고가 있으면 추가매수를 막고 사유를 남긴다', () => {
-    const r = evaluateHoldingState({ ...addRow, weight_caution: { message: '과열' } }, makeCtx())
+    const r = evaluateHoldingState({ ...addRow, weight_caution: { level: 'caution', message: '과열' } }, makeCtx())
     expect(r.state).toBe('hold')
     expect(r.reasons).toContain('비중 점검: 과열')
   })

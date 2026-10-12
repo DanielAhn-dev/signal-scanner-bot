@@ -17,7 +17,7 @@ export function toWarnLabel(value?: string | null): string {
   return v
 }
 
-export const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
+export const WARN_REASON_LABELS: Array<{ key: 'warn_overheat' | 'warn_vol_spike' | 'warn_atr_spike' | 'warn_rsi_ob' | 'warn_ma_break' | 'warn_dead_cross'; label: string }> = [
   { key: 'warn_overheat', label: '이격 과열(21일선 대비 +7% 초과)' },
   { key: 'warn_vol_spike', label: '거래량 급증(20일 평균 대비 2배 초과)' },
   { key: 'warn_atr_spike', label: '변동성 급증(ATR14 > ATR20 평균 x 1.5)' },

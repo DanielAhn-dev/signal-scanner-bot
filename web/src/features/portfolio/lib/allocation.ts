@@ -1,3 +1,4 @@
+import type { HoldingRow } from '../types'
 export type AllocationRow = { code: string; name: string; value: number; ratio: number }
 
 export const ALLOCATION_COLORS = [
@@ -14,9 +15,9 @@ export const ALLOCATION_COLORS = [
 ]
 
 /** 종목별 평가금액(+현금) 비중. 평가금액 0 이하 종목은 제외하고 큰 순으로 정렬 */
-export function buildAllocationRows(rows: any[], estimatedCash: number): AllocationRow[] {
+export function buildAllocationRows(rows: HoldingRow[], estimatedCash: number): AllocationRow[] {
   const items = rows
-    .map((r: any) => {
+    .map((r: HoldingRow) => {
       const quantity = Number(r.quantity || 0)
       const avgPrice = Number(r.avg_price || 0)
       const unrealized = Number(r.unrealized_pnl || 0)

@@ -8,17 +8,18 @@ import { accountLabel, holdingAccountKey, holdingValue } from '../lib/accountKey
 import { BADGE_TOOLTIPS, toSignalLabel, toWarnLabel } from '../lib/labels'
 import { getScoreValue, type HoldingStateKind } from '../lib/holdingState'
 import { buildReasonBadges } from '../lib/reasonBadges'
+import type { HoldingRow } from '../types'
 
 type HoldingCardProps = {
-  r: any
+  r: HoldingRow
   stateEvaluation: { state: HoldingStateKind; reasons: string[] }
   grade: 'A' | 'B' | 'C'
   accountSummary: ReturnType<typeof summarizeAccounts>
   addEntryMinScore: number
   includeCost: boolean
   tradeCostOpts: TradeCostOptions
-  openTradeModal: (row: any, side: 'buy' | 'sell') => void
-  openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: any) => void
+  openTradeModal: (row: HoldingRow, side: 'buy' | 'sell') => void
+  openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => void
 }
 
 export default function HoldingCard({
@@ -166,9 +167,9 @@ export default function HoldingCard({
       </details>
 
       {/* ── 로트 이력 ── */}
-      {r.lots?.length > 0 && (
+      {r.lots && r.lots.length > 0 && (
         <div className="caption portfolio-lots">
-          로트: {r.lots.map((l: any) => `${l.acquired_quantity}주 @${formatKrw(l.acquired_price)}`).join(' · ')}
+          로트: {r.lots.map((l) => `${l.acquired_quantity}주 @${formatKrw(l.acquired_price)}`).join(' · ')}
         </div>
       )}
 

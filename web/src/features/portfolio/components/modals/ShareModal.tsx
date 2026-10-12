@@ -5,8 +5,9 @@ import { useToast } from '../../../../components/ToastProvider'
 import type { PortfolioShareHistoryItem } from '../../types'
 import { formatSignedKrw } from '../../lib/format'
 import type { ShareState } from '../../hooks/useShare'
+import type { HoldingRow } from '../../types'
 
-export default function ShareModal({ share, holdingAll, totalInvested, totalUnrealized, totalReturnPct }: { share: ShareState; holdingAll: any[]; totalInvested: number; totalUnrealized: number; totalReturnPct: number }) {
+export default function ShareModal({ share, holdingAll, totalInvested, totalUnrealized, totalReturnPct }: { share: ShareState; holdingAll: HoldingRow[]; totalInvested: number; totalUnrealized: number; totalReturnPct: number }) {
   const {
     shareModalOpen,
     setShareModalOpen,
@@ -180,7 +181,7 @@ export default function ShareModal({ share, holdingAll, totalInvested, totalUnre
               </tr>
             </thead>
             <tbody>
-              {holdingAll.map((r: any) => {
+              {holdingAll.map((r: HoldingRow) => {
                 const pnl = Number(r.unrealized_pnl || 0)
                 const pct = Number(r.unrealized_pct || 0)
                 return (

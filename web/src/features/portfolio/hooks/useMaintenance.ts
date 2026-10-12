@@ -3,6 +3,7 @@ import { apiFetch, invalidateCache } from '../../../lib/api'
 import { useToast } from '../../../components/ToastProvider'
 import type { AccountFolder } from '../types'
 import { getTodayLocalYmd } from '../lib/dates'
+import type { HoldingRow } from '../types'
 
 export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?: boolean; force?: boolean }) => Promise<void>; accountFolders: AccountFolder[] }) {
   const toast = useToast()
@@ -22,7 +23,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
   const [maintStep, setMaintStep] = useState<1 | 2>(1)
   const [maintAccountMode, setMaintAccountMode] = useState<'select' | 'manual'>('select')
 
-  const openMaintenanceModal = (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: any) => {
+  const openMaintenanceModal = (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => {
     setMaintMode(mode)
     setMaintRow(row ?? null)
     setMaintError(null)

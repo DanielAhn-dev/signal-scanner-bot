@@ -3,6 +3,7 @@ import type { AccountPolicy } from '../types'
 import { accountLabel } from './accountKey'
 import { toSignalLabel, toWarnLabel, WARN_REASON_LABELS } from './labels'
 import type { RuleSettings } from './thresholds'
+import type { HoldingRow } from '../types'
 
 export type HoldingStateKind = 'hold' | 'add' | 'partial'
 
@@ -10,15 +11,15 @@ export type HoldingStateKind = 'hold' | 'add' | 'partial'
 export type HoldingStateContext = {
   rules: RuleSettings
   /** 종목(계좌정책 포함)별 최종 기준 */
-  thresholdsFor: (row: any) => { addEntry: number; partialTp: number; policy: AccountPolicy | null }
+  thresholdsFor: (row: HoldingRow) => { addEntry: number; partialTp: number; policy: AccountPolicy | null }
 }
 
-export function getScoreValue(row: any): number | null {
+export function getScoreValue(row: HoldingRow): number | null {
   const score = Number(row?.total_score)
   return Number.isFinite(score) ? score : null
 }
 
-export function getWarnReasonDetails(row: any): string[] {
+export function getWarnReasonDetails(row: HoldingRow): string[] {
   const details: string[] = []
   for (const item of WARN_REASON_LABELS) {
     if (row?.[item.key] === true) details.push(item.label)
@@ -26,7 +27,7 @@ export function getWarnReasonDetails(row: any): string[] {
   return details
 }
 
-export function evaluateHoldingState(row: any, ctx: HoldingStateContext): { state: HoldingStateKind; reasons: string[] } {
+export function evaluateHoldingState(row: HoldingRow, ctx: HoldingStateContext): { state: HoldingStateKind; reasons: string[] } {
   const reasons: string[] = []
   const thresholds = ctx.thresholdsFor(row)
   const safePartialWarnScoreMin = ctx.rules.partialWarnScoreMin
@@ -79,7 +80,7 @@ export function evaluateHoldingState(row: any, ctx: HoldingStateContext): { stat
   return { state: 'hold', reasons }
 }
 
-export function getPerformanceGrade(row: any, rules: RuleSettings): 'A' | 'B' | 'C' {
+export function getPerformanceGrade(row: HoldingRow, rules: RuleSettings): 'A' | 'B' | 'C' {
   const score = getScoreValue(row)
   if (score == null) return 'C'
   if (score >= rules.gradeAThreshold) return 'A'

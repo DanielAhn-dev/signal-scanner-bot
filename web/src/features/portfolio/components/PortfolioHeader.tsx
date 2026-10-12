@@ -5,6 +5,7 @@ import SheetHeaderBar from '../../../components/SheetHeaderBar'
 import { formatKrwCompact } from '../../../lib/format'
 import type { AccountFolder } from '../types'
 import { accountLabel } from '../lib/accountKey'
+import type { HoldingRow } from '../types'
 
 function AccountTab({ active, onClick, title, children }: { active: boolean; onClick: () => void; title?: string; children: React.ReactNode }) {
   return (
@@ -24,8 +25,8 @@ type PortfolioHeaderProps = {
   onNavigateToCalendar: () => void
   loading: boolean
   refreshing: boolean
-  allRows: any[]
-  holdingAll: any[]
+  allRows: HoldingRow[]
+  holdingAll: HoldingRow[]
   onRefresh: () => void
   onOpenShare: () => void
   onOpenMaintenance: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete') => void

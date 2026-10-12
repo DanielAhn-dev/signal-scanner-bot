@@ -5,19 +5,20 @@ import type { summarizeAccounts } from '../../../lib/holdingAction'
 import type { TradeCostOptions } from '../lib/summary'
 import type { HoldingStateKind } from '../lib/holdingState'
 import HoldingCard from './HoldingCard'
+import type { HoldingRow } from '../types'
 
 type HoldingListProps = {
   loading: boolean
   error: string | null
-  rows: any[]
-  evaluateHoldingState: (row: any) => { state: HoldingStateKind; reasons: string[] }
-  getPerformanceGrade: (row: any) => 'A' | 'B' | 'C'
+  rows: HoldingRow[]
+  evaluateHoldingState: (row: HoldingRow) => { state: HoldingStateKind; reasons: string[] }
+  getPerformanceGrade: (row: HoldingRow) => 'A' | 'B' | 'C'
   accountSummary: ReturnType<typeof summarizeAccounts>
   addEntryMinScore: number
   includeCost: boolean
   tradeCostOpts: TradeCostOptions
-  openTradeModal: (row: any, side: 'buy' | 'sell') => void
-  openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: any) => void
+  openTradeModal: (row: HoldingRow, side: 'buy' | 'sell') => void
+  openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => void
 }
 
 export default function HoldingList({
@@ -51,7 +52,7 @@ export default function HoldingList({
         </>
       )}
 
-      {!error && rows.map((r: any) => (
+      {!error && rows.map((r: HoldingRow) => (
         <HoldingCard
           key={r.id}
           r={r}

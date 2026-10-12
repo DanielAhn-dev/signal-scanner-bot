@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, invalidateCache } from '../../../lib/api'
 import type { AccountFolder } from '../types'
 import { buildAccountKey } from '../lib/accountKey'
+import type { HoldingRow } from '../types'
 
 export function usePositions() {
-  const [allRows, setAllRows] = useState<any[]>([])
+  const [allRows, setAllRows] = useState<HoldingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, invalidateCache } from '../../../lib/api'
 import { useToast } from '../../../components/ToastProvider'
 import { getTodayLocalYmd } from '../lib/dates'
+import type { HoldingRow } from '../types'
 
 export function useTradeModal({ load }: { load: (opts?: { soft?: boolean; force?: boolean }) => Promise<void> }) {
   const toast = useToast()
   const [modalOpen, setModalOpen] = useState(false)
-  const [modalRow, setModalRow] = useState<any | null>(null)
+  const [modalRow, setModalRow] = useState<HoldingRow | null>(null)
   const [modalSide, setModalSide] = useState<'buy' | 'sell'>('buy')
   const [tradeQty, setTradeQty] = useState(1)
   const [tradePrice, setTradePrice] = useState<number | ''>('')
@@ -14,7 +15,7 @@ export function useTradeModal({ load }: { load: (opts?: { soft?: boolean; force?
   const [tradeLoading, setTradeLoading] = useState(false)
   const [tradeError, setTradeError] = useState<string | null>(null)
 
-  const openTradeModal = (row: any, side: 'buy' | 'sell') => {
+  const openTradeModal = (row: HoldingRow, side: 'buy' | 'sell') => {
     setModalRow(row)
     setModalSide(side)
     setTradeQty(side === 'buy' ? (row.recommended_buy_qty || 1) : (row.quantity || 1))

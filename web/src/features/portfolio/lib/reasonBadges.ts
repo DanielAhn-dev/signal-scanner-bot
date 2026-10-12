@@ -1,12 +1,13 @@
 import { formatNumber } from '../../../lib/format'
 import { WEIGHT_CAUTION_SOURCE_NOTE } from './labels'
 import type { HoldingStateKind } from './holdingState'
+import type { HoldingRow } from '../types'
 
 export type ReasonBadge = { label: string; type: 'partial' | 'add' | 'warn' | 'ok' | 'neutral'; title?: string }
 
 /** 보유 카드의 판정근거 배지. 상태(holdingState)와 행의 신호·등급에서 순수하게 계산한다 */
 export function buildReasonBadges(
-  r: any,
+  r: HoldingRow,
   holdingState: HoldingStateKind,
   score: number | null,
   addEntryMinScore: number,

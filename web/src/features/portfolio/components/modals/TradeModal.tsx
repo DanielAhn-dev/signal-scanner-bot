@@ -38,10 +38,10 @@ export default function TradeModal({ trade }: { trade: TradeModalState }) {
             <span className="caption"> ({modalRow.code})</span>
           </div>
 
-          {modalSide === 'buy' && modalRow?.lots?.length > 0 && (
+          {modalSide === 'buy' && modalRow.lots && modalRow.lots.length > 0 && (
             <div className="portfolio-modal-lots">
               <div className="portfolio-modal-lots-title">기존 매수 내역</div>
-              {modalRow.lots.map((l: any, i: number) => (
+              {modalRow.lots.map((l, i) => (
                 <div key={i} className="portfolio-modal-lots-row">
                   {l.acquired_quantity}주 @ {formatKrw(l.acquired_price)}
                   {toKstYmd(l.acquired_at) ? <span className="muted"> · {toKstYmd(l.acquired_at)}</span> : null}

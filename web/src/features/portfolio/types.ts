@@ -1,3 +1,5 @@
+import type { EtfKey } from '../../lib/holdingAction'
+
 export type PortfolioShareHistoryItem = {
   shareId: string
   url: string
@@ -44,3 +46,42 @@ export type AdvisorPerformanceData = {
     trade?: { pnl_amount?: number | null } | null
   }>
 } | null
+
+/** 서버 positions 응답의 보유 행. 화면이 읽는 필드만 적었다(전부 선택값) */
+export type HoldingRow = {
+  id?: string | number
+  position_type?: string
+  account_kind?: string | null
+  code?: string
+  ticker?: string
+  symbol?: string
+  stock_name?: string | null
+  broker_name?: string | null
+  account_name?: string | null
+  quantity?: number
+  avg_price?: number
+  buy_price?: number
+  buy_date?: string | null
+  hold_days?: number | null
+  unrealized_pnl?: number | null
+  unrealized_pct?: number | null
+  total_score?: number | null
+  score_signal?: string | null
+  entry_grade?: string | null
+  trend_grade?: string | null
+  warn_grade?: string | null
+  warn_score?: number | null
+  warn_overheat?: boolean
+  warn_vol_spike?: boolean
+  warn_atr_spike?: boolean
+  warn_rsi_ob?: boolean
+  warn_ma_break?: boolean
+  warn_dead_cross?: boolean
+  recommended_buy_qty?: number | null
+  etf_key?: EtfKey | null
+  weight_caution?: { level: 'caution' | 'strong'; message: string | null } | null
+  entry_guard?: { label?: string; message?: string } | null
+  entry_price_guide?: { verdict: 'ok' | 'caution' | 'stale'; gapPct: number; message: string } | null
+  stock?: { close?: number | null; sector_id?: string | number | null; sector?: { id?: string | number; name?: string } | null } | null
+  lots?: Array<{ acquired_quantity: number; acquired_price: number; acquired_at?: string | null }>
+}

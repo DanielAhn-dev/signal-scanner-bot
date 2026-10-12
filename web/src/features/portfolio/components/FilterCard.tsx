@@ -133,7 +133,7 @@ export default function FilterCard({
               className={`tag${!selectedSector ? ' active' : ''}`}
               onClick={() => onSectorChange(null)}
             >전체</button>
-            {(showAllSectors ? sectors : sectors.slice(0, 8)).map((s: any) => (
+            {(showAllSectors ? sectors : sectors.slice(0, 8)).map((s) => (
               <button
                 key={s.id}
                 className={`tag${selectedSector === s.id ? ' active' : ''}`}
