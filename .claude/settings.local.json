@@ -27,7 +27,23 @@
       "Bash(cd /d/Work/dev && sed -n 495,515p scratch_daily_1006.log | cut -c1-260; echo ----; sed -n 700,730p scratch_daily_1006.log | cut -c1-260; echo ----; grep -n -E \"Step|단계|\\\\[truncation|잘림|holiday|휴장|Elapsed|총 소요|duration|BATCH\" scratch_daily_1006.log | cut -c1-220 | head -60)",
       "Bash(grep -v -E \"^\\\\s*$\")",
       "Bash(pnpm -s tsx scripts/ops/_tmp_dup_check.ts)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "PowerShell(pnpm -s tsx scripts/check_data_sync_health.ts 2>&1)",
+      "PowerShell(pnpm -s tsx scripts/ops/report_autotrade_skip_reasons.ts 2>&1)",
+      "PowerShell(pnpm -s tsx scripts/ops/report_bot_vs_index.ts 2>&1)",
+      "PowerShell(pnpm -s test 2>&1)",
+      "PowerShell(pnpm build 2>&1)",
+      "PowerShell(gh run list --limit 25 --created \">=2026-10-09T10:00:00Z\")",
+      "PowerShell(git add src/services/virtualAutoTradeObservability.ts handlers/ui/operations.ts scripts/ops/report_autotrade_skip_reasons.ts tests/virtualAutoTradeObservability.test.ts)",
+      "PowerShell(git reflog show --date=iso origin/main | Select-Object -First 4; git merge-base --is-ancestor 353a78a 36646d7; \"ancestor=$LASTEXITCODE\")",
+      "PowerShell(git reflog show --date=iso origin/main | ForEach-Object { $h = \\($_ -split ' '\\)[0]; git merge-base --is-ancestor 353a78a $h; if \\($LASTEXITCODE -eq 0\\) { $_ } } | Select-Object -Last 1)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\daeyo\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Work-dev-github-signal-scanner-bot\\\\7fad72ef-0d29-4b78-898a-ec7be13cd877\\\\scratchpad\\\\q.ts\" scripts\\\\ops\\\\_tmp_q.ts)",
+      "PowerShell(pnpm -s tsx scripts/ops/_tmp_q.ts 2>&1)",
+      "PowerShell($p = \"C:\\\\Users\\\\daeyo\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Work-dev-github-signal-scanner-bot\\\\7fad72ef-0d29-4b78-898a-ec7be13cd877\\\\scratchpad\\\\q.ts\"; $c = Get-Content $p -Raw -Encoding utf8; $c = $c -replace 'const \\\\{ data, error \\\\} = await', '\\(async \\(\\) => { const { data, error } = await'; $c = $c.TrimEnd\\(\\) + \"`n}\\)\\(\\);`n\"; Set-Content scripts\\\\ops\\\\_tmp_q.ts $c -Encoding utf8; pnpm -s tsx scripts/ops/_tmp_q.ts 2>&1 | Select-Object -First 60; Remove-Item scripts\\\\ops\\\\_tmp_q.ts)",
+      "Bash(pnpm -s tsx /tmp/check_labels.ts)",
+      "Bash(pnpm -s tsx scripts/ops/_tmp_check_labels.ts)",
+      "Bash(pnpm test *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
