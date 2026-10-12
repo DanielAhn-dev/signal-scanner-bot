@@ -1,30 +1,15 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
-
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function kstNow(): Date {
-  const now = new Date();
-  return new Date(now.getTime() + 9 * 60 * 60 * 1000);
-}
+import { countKrxTradingDaysBetween, toKstDateKey } from "../src/lib/krxCalendar";
 
 function kstYmdNow(): string {
-  return ymd(kstNow());
+  return toKstDateKey();
 }
 
+// KRX 거래일 캘린더 기준 (from, to] 구간의 거래일 수 — 휴장일을 영업일로 잘못 세지 않는다.
 function businessDaysDiff(fromYmd: string, toYmd: string): number {
-  const from = new Date(`${fromYmd}T00:00:00.000Z`);
-  const to = new Date(`${toYmd}T00:00:00.000Z`);
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 999;
-  if (from > to) return 0;
-  let diff = 0;
-  for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
-    const w = d.getUTCDay();
-    if (w !== 0 && w !== 6) diff += 1;
-  }
-  return Math.max(0, diff - 1);
+  if (fromYmd >= toYmd) return 0;
+  return countKrxTradingDaysBetween(fromYmd, toYmd);
 }
 
 async function maxDate(supabase: any, table: string, column: string): Promise<string | null> {
