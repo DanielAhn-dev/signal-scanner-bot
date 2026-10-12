@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { stockCapFor } from '../../lib/planGuide'
 import { recordSwitch } from '../../lib/switchHistory'
+import { useCurrentChatId } from '../../stores/profileStore'
 import './my-plan.css'
 
 /**
@@ -28,6 +29,7 @@ function summary(plan: Plan): string {
 
 export default function MyPlanCard() {
   const navigate = useNavigate()
+  const chatId = useCurrentChatId()
   const [plan, setPlan] = useState<Plan | null>(null)
   const [deposit, setDeposit] = useState<DepositInfo | null>(null)
   const [loadError, setLoadError] = useState(false)
@@ -43,13 +45,16 @@ export default function MyPlanCard() {
     setDeposit({ next_deposit_date: data.next_deposit_date ?? null, total_deposited: data.total_deposited ?? null, deposit_log: Array.isArray(data.deposit_log) ? data.deposit_log : [] })
   }
 
+  // 프로필 스토어 hydration 전에 부르면 chat_id 없이 빈 응답이 온다 — chatId가 생긴 뒤에 읽는다 (useGoalTracker와 같은 방식)
   useEffect(() => {
+    if (!chatId) return
     let active = true
+    setLoadError(false)
     apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 1 })
       .then((res) => { if (active) apply(res?.data) })
       .catch(() => { if (active) setLoadError(true) })
     return () => { active = false }
-  }, [])
+  }, [chatId])
 
   const openEdit = () => {
     if (!plan) return
