@@ -47,13 +47,14 @@ def update_sector_data(supabase: Client, trading_date: str):
 
         print(f"  Change window: {prev_date} -> {latest}")
 
-        today_res = supabase.table("stock_daily") \
-            .select("ticker, close").eq("date", latest).execute()
-        prev_day_res = supabase.table("stock_daily") \
-            .select("ticker, close").eq("date", prev_date).execute()
+        # 하루치 종가도 1000행을 넘을 수 있다 — 한 번에 받으면 잘려 섹터 일부가 빈 표본(0%)이나 소수 종목 평균이 된다
+        today_rows = select_all(lambda: supabase.table("stock_daily")
+            .select("ticker, close").eq("date", latest).order("ticker"))
+        prev_day_rows = select_all(lambda: supabase.table("stock_daily")
+            .select("ticker, close").eq("date", prev_date).order("ticker"))
 
-        today_map = {r["ticker"]: safe_float(r["close"]) for r in (today_res.data or [])}
-        prev_map = {r["ticker"]: safe_float(r["close"]) for r in (prev_day_res.data or [])}
+        today_map = {r["ticker"]: safe_float(r["close"]) for r in today_rows}
+        prev_map = {r["ticker"]: safe_float(r["close"]) for r in prev_day_rows}
 
         sector_changes: Dict[str, List[float]] = {}
         for ticker in today_map:
