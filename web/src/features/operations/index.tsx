@@ -20,6 +20,8 @@ import { getTimelineMeta, normalizeJobState, normalizeStep, progressFill, render
 import {
   decisionTone,
   estimateMissingReason,
+  filterLatestCompareRows,
+  filterRunCompareRows,
   normalizeDecisionFilter,
   reasonCategoryFromText,
   runStatusLabel,
@@ -933,15 +935,11 @@ export default function OperationsPage() {
                     </div>
 
                     {(() => {
-                      const filteredRows = autocycleInsights.latest.compare_rows.filter((row) => {
-                        if (latestCompareDecisionFilter !== 'ALL' && row.decision !== latestCompareDecisionFilter) {
-                          return false
-                        }
-                        if (latestReasonCategoryFilter !== 'ALL') {
-                          return reasonCategoryFromText(row.reason) === latestReasonCategoryFilter
-                        }
-                        return true
-                      })
+                      const filteredRows = filterLatestCompareRows(
+                        autocycleInsights.latest.compare_rows,
+                        latestCompareDecisionFilter,
+                        latestReasonCategoryFilter,
+                      )
 
                       if (filteredRows.length <= 0) {
                         return <div className="caption muted">현재 필터 조건에 맞는 비교 행이 없습니다.</div>
@@ -1080,9 +1078,7 @@ export default function OperationsPage() {
 
                           {(() => {
                             const decisionFilter = normalizeDecisionFilter(runCompareDecisionFilterById[run.id])
-                            const filteredRows = decisionFilter === 'ALL'
-                              ? run.compare_rows
-                              : run.compare_rows.filter((row) => row.decision === decisionFilter)
+                            const filteredRows = filterRunCompareRows(run.compare_rows, decisionFilter)
 
                             if (filteredRows.length <= 0) {
                               return <div className="caption muted">해당 필터의 액션 행이 없습니다.</div>

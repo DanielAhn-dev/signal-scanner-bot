@@ -5,6 +5,8 @@ import { getTimelineMeta, normalizeJobState, normalizeStep, progressFill, render
 import {
   decisionTone,
   estimateMissingReason,
+  filterLatestCompareRows,
+  filterRunCompareRows,
   normalizeDecisionFilter,
   reasonCategoryFromText,
   runStatusLabel,
@@ -137,5 +139,21 @@ describe('badges', () => {
     expect(render(sideBadge('BUY')).container.textContent).toBe('매수')
     expect(render(sideBadge('SELL')).container.textContent).toBe('매도')
     expect(render(sideBadge('ADJUST')).container.textContent).toBe('조정')
+  })
+})
+
+describe('비교 행 필터', () => {
+  const rows = [
+    { code: 'A', decision: 'BUY', reason: '현금 부족', score: 1, trust_score: null, min_trust_score: null },
+    { code: 'B', decision: 'SKIP', reason: '신뢰도 부족', score: 1, trust_score: null, min_trust_score: null },
+    { code: 'C', decision: 'SKIP', reason: '현금 부족', score: 1, trust_score: null, min_trust_score: null },
+  ] as AutoCycleInsightRun['compare_rows']
+  it('최신 실행은 판정과 사유 분류를 함께, 과거 실행은 판정만', () => {
+    expect(filterLatestCompareRows(rows, 'ALL', 'ALL')).toHaveLength(3)
+    expect(filterLatestCompareRows(rows, 'SKIP', 'ALL').map((r) => r.code)).toEqual(['B', 'C'])
+    expect(filterLatestCompareRows(rows, 'SKIP', '자금/현금').map((r) => r.code)).toEqual(['C'])
+    expect(filterLatestCompareRows(rows, 'ALL', '기술관문').map((r) => r.code)).toEqual(['B'])
+    expect(filterRunCompareRows(rows, 'ALL')).toBe(rows)
+    expect(filterRunCompareRows(rows, 'BUY').map((r) => r.code)).toEqual(['A'])
   })
 })

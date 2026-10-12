@@ -59,3 +59,24 @@ export function estimateMissingReason(input: {
 
   return '상위 후보 우선순위 밀림 또는 보유/중복 제외'
 }
+
+type CompareRow = AutoCycleInsightRun['compare_rows'][number]
+type DecisionFilter = 'ALL' | CompareRow['decision']
+
+/** 최신 실행의 비교 행: 판정 필터와 사유 분류 필터를 함께 적용 */
+export function filterLatestCompareRows(rows: CompareRow[], decisionFilter: DecisionFilter, reasonCategoryFilter: string): CompareRow[] {
+  return rows.filter((row) => {
+    if (decisionFilter !== 'ALL' && row.decision !== decisionFilter) {
+      return false
+    }
+    if (reasonCategoryFilter !== 'ALL') {
+      return reasonCategoryFromText(row.reason) === reasonCategoryFilter
+    }
+    return true
+  })
+}
+
+/** 과거 실행의 비교 행: 판정 필터만 적용 */
+export function filterRunCompareRows(rows: CompareRow[], decisionFilter: DecisionFilter): CompareRow[] {
+  return decisionFilter === 'ALL' ? rows : rows.filter((row) => row.decision === decisionFilter)
+}
