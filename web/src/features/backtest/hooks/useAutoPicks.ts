@@ -66,14 +66,6 @@ export function useAutoPicks(input: {
           return
         }
 
-        // 스캔 후보 신호/점수 분포 확인
-        const signalStats: Record<string, number> = {}
-        const scoreBySignal: Record<string, number[]> = {}
-        candidates.slice(0, 36).forEach((c) => {
-          const sig = String(c.name || 'unknown')
-          signalStats[sig] = (signalStats[sig] || 0) + 1
-        })
-
         let evaluatedCount = 0
         let ruleFilteredCount = 0
         let returnFilteredCount = 0

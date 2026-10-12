@@ -11,7 +11,6 @@ import type { bucketAutoPicks } from '../lib/autoPick'
 
 export type CheckTabProps = {
   horizon: Horizon
-  loading: boolean
   data: BacktestResponse
   checkSearch: string
   setCheckSearch: React.Dispatch<React.SetStateAction<string>>
@@ -55,7 +54,6 @@ export type CheckTabProps = {
 
 export default function CheckTab({
   horizon,
-  loading,
   data,
   checkSearch,
   setCheckSearch,

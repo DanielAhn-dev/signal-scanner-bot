@@ -1,11 +1,10 @@
 import React from 'react'
 import { pct } from '../lib/format'
 import { signalCls } from '../lib/signal'
-import type { BacktestResponse, BacktestRiser } from '../types'
+import type { BacktestRiser } from '../types'
 import type { SortKey } from '../lib/backtestView'
 
 export type SamplesTabProps = {
-  data: BacktestResponse
   selectStock: (stock: { code: string; name: string }) => void
   sorted: BacktestRiser[]
   toggleSort: (key: SortKey) => void
@@ -13,7 +12,6 @@ export type SamplesTabProps = {
 }
 
 export default function SamplesTab({
-  data,
   selectStock,
   sorted,
   toggleSort,

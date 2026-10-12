@@ -245,7 +245,6 @@ export default function BacktestPage() {
           {activeTab === 'check' && (
             <CheckTab
               horizon={horizon}
-              loading={loading}
               data={data}
               checkSearch={checkSearch}
               setCheckSearch={setCheckSearch}
@@ -290,7 +289,6 @@ export default function BacktestPage() {
 
           {activeTab === 'samples' && (
             <SamplesTab
-              data={data}
               selectStock={selectStock}
               sorted={sorted}
               toggleSort={toggleSort}
