@@ -67,6 +67,16 @@ test("buildHoldingQuoteMaps: 종가 0인 종목은 종가 맵에서 빼고 나�
   assert.equal(maps.sectorIdByCode.get("000660"), "semis");
 });
 
+test("evaluateQuoteStaleness: 한글날 휴장+주말 뒤 월요일 아침(2026-10-12)은 정상이다", () => {
+  const now = Date.parse("2026-10-12T00:29:02Z");
+  const rows = [{ updated_at: "2026-10-08T07:30:00Z" }];
+  assert.ok(now - Date.parse(rows[0].updated_at) > STALE_PRICE_GUARD_MS);
+  assert.deepEqual(evaluateQuoteStaleness({ rows, hasHoldings: true, now }), { stale: false });
+  // 거래일이 4일 넘게 비면(10/8 갱신 → 10/15) 여전히 멈춘다
+  const later = Date.parse("2026-10-15T00:29:02Z");
+  assert.equal(evaluateQuoteStaleness({ rows, hasHoldings: true, now: later }).stale, true);
+});
+
 test("evaluateQuoteStaleness: 보유가 있고 최신화가 3일을 넘으면 멈춘다", () => {
   const now = Date.parse("2026-10-01T06:00:00Z");
   const fresh = [{ updated_at: new Date(now - 60_000).toISOString() }];

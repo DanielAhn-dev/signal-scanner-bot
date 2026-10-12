@@ -3,6 +3,8 @@
  * 조회(stocks·실시간가)와 알림·로그는 호출측(runDailyReviewForUser)이 맡는다.
  */
 
+import { countKrxTradingDaysBetween, toKstDateKey } from "../lib/krxCalendar";
+
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -43,6 +45,8 @@ export function buildHoldingQuoteMaps(rows: Array<Record<string, unknown>>): Hol
 
 /** 시세 최신화가 이만큼 지나면 계정 전체 매매 판단을 멈춘다 (배치 정지 사고 방지) */
 export const STALE_PRICE_GUARD_MS = 3 * 24 * 60 * 60 * 1000;
+/** 달력 시간이 지났어도 갱신일 이후 거래일이 이 수 이하면 정체로 보지 않는다 (휴장일 연휴 오탐 방지) */
+export const STALE_PRICE_GUARD_TRADING_DAYS = 3;
 
 /**
  * 보유 종목 시세가 오래됐는지 (계정 단위). 보유가 없으면 판단하지 않는다.
@@ -60,6 +64,15 @@ export function evaluateQuoteStaleness(input: {
     .filter((ts) => Number.isFinite(ts));
   const freshestUpdatedAt = updatedAts.length ? Math.max(...updatedAts) : null;
   if (freshestUpdatedAt !== null && now - freshestUpdatedAt <= STALE_PRICE_GUARD_MS) return { stale: false };
+  // 달력 시간만 보면 연휴·주말 뒤 첫 장(예: 10/9 한글날 휴장 + 주말 → 10/12 월요일 아침 약 3.7일)이 정상인데도 걸린다.
+  // 갱신일 이후 거래일이 3일 이하면 배치가 멈춘 게 아니라 쉬는 날이 길었던 것이다.
+  if (
+    freshestUpdatedAt !== null &&
+    countKrxTradingDaysBetween(toKstDateKey(new Date(freshestUpdatedAt)), toKstDateKey(new Date(now))) <=
+      STALE_PRICE_GUARD_TRADING_DAYS
+  ) {
+    return { stale: false };
+  }
   return {
     stale: true,
     staleDays: freshestUpdatedAt !== null ? Math.floor((now - freshestUpdatedAt) / (24 * 60 * 60 * 1000)) : null,
