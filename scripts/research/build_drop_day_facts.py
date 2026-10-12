@@ -1,0 +1,79 @@
+# -*- coding: utf-8 -*-
+"""
+하락일 설명 카드용 기초 수치 (2026-10-12). 예측이 아니라 '설명·빈도' 수치다. 매매 규칙에 쓰지 않는다.
+
+1) 빈도: 코스피 하루 하락폭별 연평균 발생 횟수 (전체 1997~, 최근 10년 2016~)
+2) 간밤 미국 영향: 코스피 당일 수익률 = a + b × (직전 미국 거래일 S&P500 수익률). 구간별 b·R²
+   — R²가 '하루 등락 중 간밤 미국으로 설명되는 비율'의 근사치
+3) 큰 하락 뒤: 하락일 종가에서 20·60·250거래일 뒤 수익률 중앙값과 플러스 비율 (독립 사건 = 20거래일 간격)
+
+실행: python scripts/research/build_drop_day_facts.py
+"""
+import sys, json
+import numpy as np
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+C = ".research-cache/"
+END = "20260930"  # 월말 고정(재실행 시 같은 숫자)
+
+
+def load_pairs(path, col=1):
+    raw = json.load(open(path, encoding="utf-8"))
+    rows = raw.items() if isinstance(raw, dict) else raw
+    return {r[0]: r[col] for r in rows} if not isinstance(raw, dict) else dict(rows)
+
+
+kospi = load_pairs(C + "kospi.json")
+spx = {r[0]: r[2] for r in json.load(open(C + "allweather/us__GSPC.json", encoding="utf-8"))}
+kd = sorted(d for d in kospi if d <= END)
+K = np.array([kospi[d] for d in kd], float)
+kr = K[1:] / K[:-1] - 1
+kr_dates = kd[1:]
+
+# 1) 빈도
+print("[1] 코스피 하루 하락 빈도 (연평균 횟수)")
+for label, start in (("1997~", "19970101"), ("2016~", "20160101")):
+    sel = np.array([d >= start for d in kr_dates])
+    years = sel.sum() / 250
+    parts = [f"≤{t}%: {((kr[sel] <= t / 100).sum() / years):.1f}회" for t in (-1, -1.5, -2, -3, -5)]
+    print(f"  {label} ({years:.1f}년): " + ", ".join(parts))
+
+# 2) 간밤 미국 영향 (KR 날짜 d에 대해 d보다 이른 마지막 미국 거래일의 수익률)
+sd = sorted(spx)
+S = np.array([spx[d] for d in sd], float)
+sr = dict(zip(sd[1:], S[1:] / S[:-1] - 1))
+sd_ret = sd[1:]
+j, xs, ys, ds = 0, [], [], []
+for d, r in zip(kr_dates, kr):
+    while j + 1 < len(sd_ret) and sd_ret[j + 1] < d:
+        j += 1
+    if sd_ret[j] < d:
+        xs.append(sr[sd_ret[j]]); ys.append(r); ds.append(d)
+xs, ys = np.array(xs), np.array(ys)
+print("\n[2] 코스피 당일 = a + b × 간밤 S&P500")
+for label, lo, hi in (("2006~2015", "20060101", "20160101"), ("2016~2026-09", "20160101", "20991231"), ("2021~2026-09", "20210101", "20991231")):
+    m = np.array([lo <= d < hi for d in ds])
+    x, y = xs[m], ys[m]
+    b, a = np.polyfit(x, y, 1)
+    r2 = np.corrcoef(x, y)[0, 1] ** 2
+    big = y <= -0.02
+    share = np.median(np.clip(b * x[big] / y[big], -1, 2)) if big.any() else np.nan
+    print(f"  {label}: b={b:.2f}, R²={r2:.2f}, 표본 {m.sum()}일 | 코스피 −2% 이하인 날 {big.sum()}일, 그날 간밤 미국 몫 중앙 {share*100:.0f}%")
+
+# 3) 큰 하락 뒤
+print("\n[3] 큰 하락일 뒤 코스피 (독립 사건, 20거래일 간격)")
+for label, start in (("1997~", "19970101"), ("2016~", "20160101")):
+    for t in (-2, -3, -5):
+        ev, last = [], -999
+        for i, (d, r) in enumerate(zip(kr_dates, kr)):
+            if d >= start and r <= t / 100:
+                if i - last > 20:
+                    ev.append(i + 1)  # K 인덱스(하락일 종가)
+                last = i
+        out = []
+        for h in (20, 60, 250):
+            v = np.array([K[e + h] / K[e] - 1 for e in ev if e + h < len(K)])
+            out.append(f"{h}일 뒤 중앙 {np.median(v)*100:+.1f}%·플러스 {(v>0).mean()*100:.0f}%({len(v)})")
+        print(f"  {label} ≤{t}%: 사건 {len(ev)}건 | " + " | ".join(out))
