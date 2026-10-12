@@ -11,6 +11,7 @@ import { FLOW_STEPS } from '../../navigation'
 import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
 import GoalSummaryStrip from '../goal-tracker/GoalSummaryStrip'
+import MyPlanCard from '../my-plan/MyPlanCard'
 import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { useJourney } from '../../lib/journey'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
@@ -292,6 +293,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
   return (
     <div className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
+      <MyPlanCard />
       <GoalSummaryStrip />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>{colWidths.map((width, index) => (

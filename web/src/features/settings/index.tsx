@@ -8,7 +8,7 @@ import { formatKrwCompact } from '../../lib/format'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useCurrentChatId, useIsTelegramLinked } from '../../stores/profileStore'
-import { recordSwitch } from '../../lib/switchHistory'
+import { useNavigate } from 'react-router-dom'
 
 /** 종목 매매 봇을 권하지 않는 시드 기준 — 2026-09-29 시드 크기 검증: 100만 -9.3%p, 300만 -1.9%p, 1천만 이상 차이 0.2%p 이내 */
 const SMALL_SEED_LIMIT = 10_000_000
@@ -30,6 +30,7 @@ export default function Settings(){
   const [status, setStatus] = useState<string|undefined>()
   const [loading, setLoading] = useState(false)
 
+  const navigate = useNavigate()
   const [settings, setSettings] = useState<any | null>(null)
   const [seedCapital, setSeedCapital] = useState<string>('')
   const [virtualCash, setVirtualCash] = useState<number | null>(null)
@@ -37,15 +38,9 @@ export default function Settings(){
   const [savingSeed, setSavingSeed] = useState(false)
   const [strategyMode, setStrategyMode] = useState<'stock' | 'index_hold' | null>(null)
   const [deposit, setDeposit] = useState<DepositInfo | null>(null)
-  const [depositMan, setDepositMan] = useState<string>('')
-  const [depositDay, setDepositDay] = useState<string>('')
-  const [savingDeposit, setSavingDeposit] = useState(false)
-  const [depositStatus, setDepositStatus] = useState<string | undefined>()
   const [notifyChannel, setNotifyChannel] = useState<'telegram' | 'push' | null>(null)
   const [savingChannel, setSavingChannel] = useState(false)
   const [channelStatus, setChannelStatus] = useState<string | undefined>()
-  const [savingMode, setSavingMode] = useState(false)
-  const [modeStatus, setModeStatus] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
   const [resettingAutoOnly, setResettingAutoOnly] = useState(false)
   const [runningDryRun, setRunningDryRun] = useState(false)
@@ -199,8 +194,6 @@ export default function Settings(){
       deposit_log: Array.isArray(data.deposit_log) ? data.deposit_log : [],
     }
     setDeposit(info)
-    setDepositMan(info.monthly_deposit > 0 ? String(info.monthly_deposit / 10_000) : '0')
-    setDepositDay(String(info.deposit_day))
   }
 
   const saveNotifyChannel = async (next: 'telegram' | 'push') => {
@@ -220,35 +213,6 @@ export default function Settings(){
       setChannelStatus(String(e?.message || e))
     } finally {
       setSavingChannel(false)
-    }
-  }
-
-  const saveDeposit = async () => {
-    const man = Number(depositMan.replace(/,/g, '').trim())
-    const day = Number(depositDay.trim())
-    if (!Number.isFinite(man) || man < 0 || (man > 0 && man < 1)) {
-      setDepositStatus('월 입금액은 0(적립 안 함) 또는 1만원 이상으로 입력하세요')
-      return
-    }
-    if (!Number.isInteger(day) || day < 1 || day > 28) {
-      setDepositStatus('입금일은 1~28일 중에서 고르세요')
-      return
-    }
-    setSavingDeposit(true)
-    setDepositStatus(undefined)
-    try {
-      const json = await apiFetch('/api/ui/investment-prefs', {
-        method: 'POST',
-        cacheMs: 0,
-        timeoutMs: 10_000,
-        body: JSON.stringify({ plan: { monthly: Math.round(man * 10_000), depositDay: day } }),
-      })
-      applyDepositInfo(json?.data)
-      setDepositStatus(man > 0 ? '저장 완료' : '저장 완료 — 월 적립을 하지 않습니다')
-    } catch (e: any) {
-      setDepositStatus(String(e?.message || e))
-    } finally {
-      setSavingDeposit(false)
     }
   }
 
@@ -274,42 +238,6 @@ export default function Settings(){
       setSeedCapitalStatus(String(e?.message || e))
     } finally {
       setSavingSeed(false)
-    }
-  }
-
-  const saveStrategyMode = async (next: 'stock' | 'index_hold') => {
-    if (next === strategyMode) return
-    const confirmed = window.confirm(
-      next === 'index_hold'
-        ? [
-            '지수 보유 모드로 바꿉니다.',
-            '다음 자동매매 실행 때 종목 봇이 산 보유 종목을 모두 팔고 KODEX 200으로 옮깁니다. 이후 새로 들어온 돈도 KODEX 200을 삽니다.',
-            '계속할까요?',
-          ].join(String.fromCharCode(10))
-        : [
-            '종목 매매 봇으로 되돌립니다.',
-            '다음 실행 때 KODEX 200은 지수 몫으로 그대로 두고, 종목 봇은 시드의 10% 안에서만 개별주를 삽니다. 지수는 개별주 자금으로 팔지 않습니다.',
-            '계속할까요?',
-          ].join(String.fromCharCode(10))
-    )
-    if (!confirmed) return
-    setSavingMode(true)
-    setModeStatus(undefined)
-    try {
-      // 바꾸기 직전 보유를 남겨 둔다 — 나중에 "안 바꿨다면"과 비교하는 출발점 (내 선택 돌아보기)
-      await recordSwitch(strategyMode ?? 'stock', next)
-      const json = await apiFetch('/api/ui/investment-prefs', {
-        method: 'POST',
-        cacheMs: 0,
-        timeoutMs: 10_000,
-        body: JSON.stringify({ plan: { satellitePct: next === 'index_hold' ? 0 : 10 } }),
-      })
-      setStrategyMode(json?.data?.strategy_mode === 'index_hold' ? 'index_hold' : 'stock')
-      setModeStatus('저장 완료 — 다음 자동매매 실행부터 적용됩니다')
-    } catch (e: any) {
-      setModeStatus(`저장 실패: ${String(e?.message || e)}`)
-    } finally {
-      setSavingMode(false)
     }
   }
 
@@ -536,32 +464,10 @@ export default function Settings(){
             </td>
           </tr>
           <tr className="xls-row">
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>월 자동 입금</td>
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>내 계획 (실험 계좌)</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
               <div className="muted" style={{ whiteSpace: 'normal', wordBreak: 'keep-all' }}>
-                실제로 매달 자동이체할 금액을 정하면, 가상 계좌에도 입금일에 같은 금액이 들어옵니다 (주말·휴일이면 다음 거래일). 입금은 수익률에 섞이지 않습니다.
-              </div>
-              <div className="mt-2 grid-two">
-                <Input
-                  label="월 입금액 (만원, 0이면 적립 안 함)"
-                  type="number"
-                  value={depositMan}
-                  onChange={(e: any) => setDepositMan(String(e?.target?.value || ''))}
-                  placeholder="예: 30"
-                />
-                <Input
-                  label="입금일 (1~28일)"
-                  type="number"
-                  value={depositDay}
-                  onChange={(e: any) => setDepositDay(String(e?.target?.value || ''))}
-                  placeholder="예: 25"
-                />
-              </div>
-              <div className="mt-2" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                <Button onClick={() => void saveDeposit()} disabled={savingDeposit} variant="primary">
-                  {savingDeposit ? '저장중…' : '입금 설정 저장'}
-                </Button>
-                {depositStatus && <div className="muted">{depositStatus}</div>}
+                매달 투자할 돈·넣는 날·개별주 몫은 대시보드의 &lsquo;내 계획&rsquo; 한 곳에서 바꿉니다. 실험 계좌가 그 계획을 그대로 따라 하고, 내가 직접 매매하는 계좌에는 입금·자동매매가 걸리지 않습니다.
               </div>
               {deposit && (
                 <div className="text-xs mt-2" style={{ lineHeight: 1.6 }}>
@@ -571,6 +477,7 @@ export default function Settings(){
                     {deposit.monthly_deposit > 0
                       ? <>매월 {deposit.deposit_day}일 {deposit.monthly_deposit.toLocaleString('ko-KR')}원 · 다음 입금 {deposit.next_deposit_date ?? '-'}</>
                       : '월 적립 안 함'}
+                    {strategyMode && <> · {strategyMode === 'index_hold' ? '지수만' : '개별주 시드 10%까지'}</>}
                   </div>
                   {deposit.deposit_log.length > 0 && (
                     <div className="mt-1 muted">
@@ -580,45 +487,18 @@ export default function Settings(){
                   )}
                 </div>
               )}
-            </td>
-          </tr>
-          <tr className="xls-row">
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>자동매매 방식</td>
-            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                <Button
-                  variant={strategyMode === 'stock' ? 'primary' : 'secondary'}
-                  disabled={savingMode || strategyMode == null}
-                  onClick={() => void saveStrategyMode('stock')}
-                >
-                  종목 매매 봇 (기본)
-                </Button>
-                <Button
-                  variant={strategyMode === 'index_hold' ? 'primary' : 'secondary'}
-                  disabled={savingMode || strategyMode == null}
-                  onClick={() => void saveStrategyMode('index_hold')}
-                >
-                  지수 보유 (초보자)
-                </Button>
-                {modeStatus && <div className="muted">{modeStatus}</div>}
+              <div className="mt-2">
+                <Button variant="secondary" onClick={() => navigate('/dashboard')}>내 계획 바꾸러 가기</Button>
               </div>
-              <div className="text-xs muted mt-2">
-                지수 보유: KODEX 200을 계속 들고, 월 자동 입금으로 들어온 돈도 KODEX 200을 삽니다. 파는 조건이 없어 내가 정한 시드 + 월 적립으로 그대로 따라 하기 쉽습니다.
-              </div>
-              <Detail>
-              <div className="text-xs muted mt-1">
-                검증(100만 + 월 50만 × 10년, 2002~2026 모든 시작 시점): 나쁜 경우 10%도 계속 보유 7,768만 vs 50일선 매매 6,610만 (원금 6,100만). 대신 도중에 원금의 73%까지 내려가는 구간을 견뎌야 합니다 (50일선은 91%). 떨어질 때 팔지 않고 적립을 이어가는 것이 전제입니다.
-              </div>
-              </Detail>
               {strategyMode === 'stock' && Number(seedCapital) > 0 && Number(seedCapital) < SMALL_SEED_LIMIT && (
                 <div className="text-xs mt-1" style={{ color: '#c0392b', whiteSpace: 'normal', wordBreak: 'keep-all' }}>
                   ⚠ 시드 {Number(seedCapital).toLocaleString('ko-KR')}원으로는 종목 매매 봇이 불리합니다. 과거 검증(2017~2026, 1주 단위 체결)에서 같은 20종목 전략이
-                  시드 100만원이면 연 9.3%p, 300만원이면 1.9%p 손해였습니다 (한 칸 예산으로 살 수 있는 싼 종목만 골라짐). 1천만원 미만이면 지수 보유를 권합니다.
+                  시드 100만원이면 연 9.3%p, 300만원이면 1.9%p 손해였습니다 (한 칸 예산으로 살 수 있는 싼 종목만 골라짐). 1천만원 미만이면 개별주 몫을 &lsquo;안 함&rsquo;으로 두기를 권합니다.
                 </div>
               )}
               {strategyMode === 'index_hold' && (
                 <div className="text-xs mt-1" style={{ color: 'var(--color-brand)' }}>
-                  이 계정은 지수 보유 모드입니다 — 아래 종목 봇 설정(슬롯·점수·익절·손절)은 쓰이지 않고, "활성화"와 실행 버튼만 적용됩니다.
+                  지금은 지수만 둡니다 — 아래 종목 봇 설정(슬롯·점수·익절·손절)은 쓰이지 않고, &ldquo;활성화&rdquo;와 실행 버튼만 적용됩니다.
                 </div>
               )}
             </td>
@@ -631,7 +511,7 @@ export default function Settings(){
                 <Checkbox label="활성화" checked={!!settings?.is_enabled} onChange={(v) => setSettings({...settings, is_enabled: v})} />
               </div>
               <div className="text-xs muted mt-1">
-                순서: ① 시드 자본금 저장 → ② 월 자동 입금 설정(선택) → ③ 활성화 후 저장. 시드를 정하기 전에는 켤 수 없습니다.
+                순서: ① 시드 자본금 저장 → ② 대시보드 &lsquo;내 계획&rsquo;에서 매달 투자할 돈 정하기(선택) → ③ 활성화 후 저장. 시드를 정하기 전에는 켤 수 없습니다.
               </div>
               <Detail>
               <div className="mt-2 grid-two">
