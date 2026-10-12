@@ -496,7 +496,7 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
       text: [
         "운영 가이드 PDF 전송에 실패했습니다.",
         `원인: ${detail}`,
-        "운영팀은 `pnpm docs:guide:pdf` 실행 후 다시 시도해주세요.",
+        "운영팀은 GitHub main에 docs/generated/user-operating-guide.pdf가 올라가 있는지(GUIDE_PDF_BASE_URL 설정 시 그 주소) 확인 후 다시 시도해주세요.",
       ].join("\n"),
     });
   }
@@ -547,7 +547,7 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
         text: [
           "자동매매 명령어 가이드 PDF 전송에 실패했습니다.",
           `원인: ${detail}`,
-          "운영팀은 `npx tsx scripts/export_markdown_pdf.ts --input docs/automate-trade-command-guide.md --output docs/generated/automate-trade-command-guide.pdf` 실행 후 다시 시도해주세요.",
+          "운영팀은 GitHub main에 docs/generated/automate-trade-command-guide.pdf가 올라가 있는지(GUIDE_PDF_BASE_URL 설정 시 그 주소) 확인 후 다시 시도해주세요.",
         ].join("\n"),
       });
     }
