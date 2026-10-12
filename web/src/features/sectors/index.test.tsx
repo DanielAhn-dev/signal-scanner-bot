@@ -8,6 +8,7 @@ const calls: Call[] = []
 let sectorsError: string | null = null
 let overview: unknown = { economicPhase: { phase: 'normal', label: '정상' }, tradingSignal: {} }
 let overviewFails = false
+let leadersFail = false
 
 const SECTORS = [
   { id: 'S1', name: '건설', score: 80, change_rate: 1.5, updated_at: '2026-10-09T01:00:00Z', metrics: { core_count: 5, stock_count: 20, flow_inst_5d: 200_000_000, flow_foreign_5d: 100_000_000 } },
@@ -31,6 +32,7 @@ vi.mock('../../lib/api', () => ({
       return overviewFails ? Promise.reject(new Error('overview down')) : Promise.resolve({ data: overview })
     }
     if (u.startsWith('/api/ui/sector-leaders')) {
+      if (leadersFail) return Promise.reject(new Error('leaders down'))
       const ids = decodeURIComponent(/sectorIds=([^&]+)/.exec(u)?.[1] ?? '').split(',')
       const data: Record<string, unknown[]> = {}
       for (const id of ids) data[id] = LEADERS[id] ?? []
@@ -52,6 +54,7 @@ describe('섹터', () => {
     calls.length = 0
     sectorsError = null
     overviewFails = false
+    leadersFail = false
     overview = { economicPhase: { phase: 'normal', label: '정상' }, tradingSignal: {} }
     try { localStorage.clear(); sessionStorage.clear() } catch { /* ignore */ }
   })
@@ -118,6 +121,19 @@ describe('섹터', () => {
     await waitFor(() => expect(callsTo('/api/ui/sector-leaders')).toHaveLength(2))
     expect(decodeURIComponent(callsTo('/api/ui/sector-leaders')[1].url)).toContain('sectorIds=S3')
     expect(decodeURIComponent(callsTo('/api/ui/sector-leaders')[1].url)).not.toContain('S1')
+  })
+
+  it('대장주 자동 조회가 실패하면 다시 자동 조회하지 않고, 상세를 누를 때만 재시도한다', async () => {
+    leadersFail = true
+    render(<SectorsPage />)
+    await waitFor(() => expect(callsTo('/api/ui/sector-leaders')).toHaveLength(1))
+    // 실패 후 렌더가 여러 번 돌아도 자동 재조회가 반복되지 않아야 한다
+    await new Promise((r) => setTimeout(r, 50))
+    expect(callsTo('/api/ui/sector-leaders')).toHaveLength(1)
+    leadersFail = false
+    fireEvent.click(screen.getAllByRole('button', { name: '상세' })[0])
+    await waitFor(() => expect(callsTo('/api/ui/sector-leaders')).toHaveLength(2))
+    expect(decodeURIComponent(callsTo('/api/ui/sector-leaders')[1].url)).toContain('sectorIds=S1')
   })
 
   it('상세를 누르면 펼쳐 대장주를 보여주고, 대장주를 누르면 분석 화면으로 넘긴다', async () => {

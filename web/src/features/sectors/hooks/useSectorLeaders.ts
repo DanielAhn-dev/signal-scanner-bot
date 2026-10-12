@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { apiFetch } from "../../../lib/api"
 import { DEFAULT_LEADERS_CRITERIA, SECTORS_TTL } from "../constants"
 import type { Sector, SectorLeader, Tab } from "../types"
@@ -6,6 +6,8 @@ import type { Sector, SectorLeader, Tab } from "../types"
 /**
  * 섹터별 대장주 지연 조회와 카드 펼침. 상위/다음 탭에서는 보이는 상위 20개 섹터를 한 번에 조회하고,
  * 이미 받은 섹터나 조회 중일 때는 다시 부르지 않는다(`displayed`는 렌더마다 새 배열이라 이 가드에 의존한다).
+ * 자동 조회가 실패한 섹터는 자동으로 다시 부르지 않는다 — 예전엔 실패 → 렌더 → 재조회가 끝없이 반복됐다.
+ * 카드를 직접 누르면 다시 시도한다.
  */
 export function useSectorLeaders(input: { tab: Tab; displayed: Sector[] }) {
   const { tab, displayed } = input
@@ -14,10 +16,13 @@ export function useSectorLeaders(input: { tab: Tab; displayed: Sector[] }) {
   const [leadersLoading, setLeadersLoading] = useState(false)
   const [leadersError, setLeadersError] = useState<string | null>(null)
   const [leadersCriteria, setLeadersCriteria] = useState<string>(DEFAULT_LEADERS_CRITERIA)
+  const failedIdsRef = useRef<Set<string>>(new Set())
 
-  const loadSectorLeaders = useCallback(async (sectorIds: string[], force = false) => {
+  const loadSectorLeaders = useCallback(async (sectorIds: string[], force = false, retryFailed = false) => {
     const normalized = Array.from(new Set(sectorIds.map((id) => id.trim()).filter(Boolean))).slice(0, 30)
-    const target = force ? normalized : normalized.filter((id) => !sectorLeaders[id])
+    const target = force
+      ? normalized
+      : normalized.filter((id) => !sectorLeaders[id] && (retryFailed || !failedIdsRef.current.has(id)))
     if (target.length === 0 || leadersLoading) return
     setLeadersLoading(true)
     setLeadersError(null)
@@ -28,11 +33,13 @@ export function useSectorLeaders(input: { tab: Tab; displayed: Sector[] }) {
         timeoutMs: 15_000,
       })
       const rows = (res?.data ?? {}) as Record<string, SectorLeader[]>
+      for (const id of target) failedIdsRef.current.delete(id)
       setSectorLeaders((prev) => ({ ...prev, ...rows }))
       if (typeof res?.criteria === "string" && res.criteria.trim()) {
         setLeadersCriteria(res.criteria.trim())
       }
     } catch (e: any) {
+      for (const id of target) failedIdsRef.current.add(id)
       setLeadersError(e?.message || String(e))
     } finally {
       setLeadersLoading(false)
@@ -42,7 +49,7 @@ export function useSectorLeaders(input: { tab: Tab; displayed: Sector[] }) {
   const onSectorCardClick = useCallback((sectorId: string) => {
     setExpandedSectorId((prev) => prev === sectorId ? null : sectorId)
     if (!sectorLeaders[sectorId]) {
-      void loadSectorLeaders([sectorId])
+      void loadSectorLeaders([sectorId], false, true)
     }
   }, [loadSectorLeaders, sectorLeaders])
 
