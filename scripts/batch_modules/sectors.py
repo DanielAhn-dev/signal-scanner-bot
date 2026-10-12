@@ -80,6 +80,8 @@ def update_sector_data(supabase: Client, trading_date: str):
 
             new_metrics = dict(old_metrics)
             new_metrics["stock_count"] = len([t for t, s in stock_sector_map.items() if s == sid])
+            # 등락률 계산에 실제 들어간 종목 수 — 0이면 change_rate 0.0은 '보합'이 아니라 '자료 없음'(화면은 —로 표시)
+            new_metrics["change_sample"] = len(changes)
 
             sector_updates.append({
                 "id": sid,
