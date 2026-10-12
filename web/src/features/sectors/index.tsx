@@ -29,268 +29,12 @@ import {
   type SectorNature,
   type EconomicPhase,
 } from "./sectorMeta"
-
-const SECTORS_TTL = 60_000
-const LS_KEY = "ls_sectors_page"
-
-function readLS<T>(key: string, ttl: number): T | null {
-  try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return null
-    const p = JSON.parse(raw)
-    if (p?.ts && Date.now() - p.ts < ttl) return p.data as T
-  } catch { /* ignore */ }
-  return null
-}
-function writeLS(key: string, data: unknown) {
-  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })) } catch { /* ignore */ }
-}
-
-type Sector = {
-  id: string
-  name: string
-  score: number | null
-  change_rate: number | null
-  updated_at?: string | null
-  metrics?: Record<string, any>
-}
-
-type SectorLeader = {
-  code: string
-  name: string
-  market: string | null
-  market_cap: number | null
-  liquidity: number | null
-  is_sector_leader: boolean | null
-}
-
-type Tab = "promising" | "next" | "all" | "guide"
-
-const ANALYZE_PENDING_CODE_KEY = "analyze_pending_code"
-
-type MacroPhase = "normal" | "high_inflation" | "deflation" | "stagflation" | "unknown"
-
-type SectorMarketOverviewSnapshot = {
-  economicPhase?: {
-    phase?: MacroPhase
-    label?: string
-    severity?: number
-    indicators?: {
-      cpiYoy?: number | null
-      us10y?: number | null
-    }
-  }
-  tradingSignal?: {
-    confidence?: number | null
-  }
-  diagnosis?: {
-    riskScore?: number | null
-  }
-  fetchedAt?: string
-}
-
-type PhaseDetectionResult = {
-  phase: EconomicPhase | null
-  confidence: number
-  confidenceLabel: "높음" | "보통" | "낮음"
-  basisLabel: string
-  reason: string
-}
-
-const PHASE_CONFIDENCE_THRESHOLD = {
-  high: 80,
-  medium: 60,
-  weakGapRatio: 0.12,
-} as const
-
-function clampNum(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v))
-}
-
-function confidenceLabel(v: number): "높음" | "보통" | "낮음" {
-  if (v >= PHASE_CONFIDENCE_THRESHOLD.high) return "높음"
-  if (v >= PHASE_CONFIDENCE_THRESHOLD.medium) return "보통"
-  return "낮음"
-}
-
-function mapMacroPhaseToRotation(phase?: MacroPhase): EconomicPhase | null {
-  if (!phase || phase === "unknown") return null
-  if (phase === "normal") return "expansion"
-  if (phase === "high_inflation") return "slowdown"
-  return "recession"
-}
-
-// 현재 경기 국면 자동 추정 — WICS 대분류별 평균 점수로 가장 강한 로테이션 단계 판정
-function detectCurrentPhase(all: Sector[], marketOverview?: SectorMarketOverviewSnapshot | null): PhaseDetectionResult {
-  if (all.length === 0) {
-    return {
-      phase: null,
-      confidence: 0,
-      confidenceLabel: "낮음",
-      basisLabel: "데이터 부족",
-      reason: "섹터 점수 데이터가 없어 국면을 판단할 수 없습니다.",
-    }
-  }
-  const catScores: Record<string, number[]> = {}
-  let usableScoreCount = 0
-  for (const s of all) {
-    const meta = getSectorMeta(s.name)
-    if (!meta || s.score == null) continue
-    usableScoreCount += 1
-    if (!catScores[meta.wicsCategory]) catScores[meta.wicsCategory] = []
-    catScores[meta.wicsCategory].push(s.score)
-  }
-  const avg = (cats: string[]): number => {
-    const scores = cats.flatMap((c) => catScores[c] ?? [])
-    if (scores.length === 0) return 0
-    return scores.reduce((a, b) => a + b, 0) / scores.length
-  }
-  const ranked = ROTATION_CYCLE.map((p) => ({ phase: p.phase, score: avg(p.sectorCategories) }))
-    .sort((a, b) => b.score - a.score)
-  if (ranked.length === 0 || ranked[0].score <= 0) {
-    return {
-      phase: null,
-      confidence: 0,
-      confidenceLabel: "낮음",
-      basisLabel: "데이터 부족",
-      reason: "유효한 섹터 점수가 부족해 국면을 산출하지 못했습니다.",
-    }
-  }
-
-  const top = ranked[0]
-  const second = ranked[1] ?? { phase: top.phase, score: 0 }
-  const gap = Math.max(0, top.score - second.score)
-  const gapRatio = top.score > 0 ? gap / top.score : 0
-  const coverage = clampNum(usableScoreCount / 12, 0, 1)
-
-  const sectorConfidence = clampNum(Math.round(30 + gapRatio * 42 + coverage * 18), 15, 90)
-  const macroPhase = mapMacroPhaseToRotation(marketOverview?.economicPhase?.phase)
-  const macroLabel = marketOverview?.economicPhase?.label
-  const macroSignalConfidence = Number(marketOverview?.tradingSignal?.confidence)
-
-  let finalConfidence = sectorConfidence
-  let basisLabel = "섹터 점수 기반"
-  let reason = `1위-2위 격차 ${gap.toFixed(1)}점 · 유효 섹터 ${usableScoreCount}개`
-
-  if (macroPhase) {
-    const macroWeight = Number.isFinite(macroSignalConfidence)
-      ? clampNum(Math.round(macroSignalConfidence * 0.2), 8, 20)
-      : 12
-    const agree = macroPhase === top.phase
-    finalConfidence = clampNum(finalConfidence + (agree ? macroWeight : -macroWeight), 15, 95)
-    basisLabel = "섹터+거시 혼합"
-    reason = `${reason} · 거시 국면 ${macroLabel ?? "참고"} ${agree ? "정합" : "불일치"}`
-  }
-
-  const weakDistinction = gapRatio < PHASE_CONFIDENCE_THRESHOLD.weakGapRatio && !macroPhase
-  if (weakDistinction) {
-    return {
-      phase: null,
-      confidence: clampNum(Math.min(finalConfidence, 45), 15, 45),
-      confidenceLabel: "낮음",
-      basisLabel,
-      reason: `${reason} · 상위 국면 간 점수 차가 작아 판단 보류`,
-    }
-  }
-
-  return {
-    phase: top.phase,
-    confidence: finalConfidence,
-    confidenceLabel: confidenceLabel(finalConfidence),
-    basisLabel,
-    reason,
-  }
-}
-
-function toNum(v: unknown): number | null {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
-}
-
-function formatKoreanMoney(v: number): string {
-  const sign = v < 0 ? "-" : ""
-  const abs = Math.abs(v)
-  const units = [
-    { value: 1_0000_0000_0000, label: "조" },
-    { value: 1_0000_0000, label: "억" },
-    { value: 1_0000, label: "만" },
-  ]
-  for (const u of units) {
-    if (abs >= u.value) {
-      const q = abs / u.value
-      const digits = q >= 100 ? 0 : q >= 10 ? 1 : 2
-      return `${sign}${q.toFixed(digits)}${u.label}`
-    }
-  }
-  return `${sign}${Math.round(abs).toLocaleString()}`
-}
-
-function buildMetricsSummary(s: Sector): string | null {
-  const core = toNum(s.metrics?.core_count)
-  const stock = toNum(s.metrics?.stock_count)
-  const inst5d = toNum(s.metrics?.flow_inst_5d)
-  const parts: string[] = []
-  if (core != null) parts.push(`핵심 ${Math.round(core)}종목`)
-  if (stock != null) parts.push(`전체 ${Math.round(stock)}종목`)
-  if (inst5d != null) {
-    const dir = inst5d > 0 ? "기관↑" : inst5d < 0 ? "기관↓" : "기관-"
-    parts.push(`${dir} ${formatKoreanMoney(inst5d)}원`)
-  }
-  return parts.length > 0 ? parts.join(" · ") : null
-}
-
-function buildSectorReason(s: Sector, tab: Tab): string {
-  const score = s.score ?? 0
-  const change = s.change_rate ?? 0
-  const inst5d = toNum(s.metrics?.flow_inst_5d)
-  const scoreText = score >= 75
-    ? "점수 상위권으로 주도 강도가 높은 구간입니다"
-    : score >= 55
-      ? "점수가 기준선(55점) 이상이라 추세가 유지되는 구간입니다"
-      : "점수는 낮지만 단기 모멘텀을 체크할 구간입니다"
-
-  const changeText = change > 0
-    ? `단기 등락률이 +${change.toFixed(2)}%로 우상향 흐름입니다`
-    : change < 0
-      ? `단기 등락률이 ${change.toFixed(2)}%로 변동성 확인이 필요합니다`
-      : "단기 등락률은 보합권입니다"
-
-  const flowText = inst5d == null
-    ? "수급 데이터는 제한적으로 제공됩니다"
-    : inst5d > 0
-      ? `기관 수급이 최근 5일 ${formatKoreanMoney(inst5d)}원 순유입입니다`
-      : inst5d < 0
-        ? `기관 수급이 최근 5일 ${formatKoreanMoney(Math.abs(inst5d))}원 순유출입니다`
-        : "기관 수급이 최근 5일 중립입니다"
-
-  if (tab === "promising") return `${scoreText}. ${flowText}.`
-  return `${changeText}. ${flowText}.`
-}
-
-function formatKoDateTime(value?: string | null): string {
-  if (!value) return "—"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return "—"
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)
-}
-
-function formatKoDateTimeLong(value?: string | null): string {
-  if (!value) return "—"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return "—"
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date)
-}
+import { ANALYZE_PENDING_CODE_KEY, DEFAULT_LEADERS_CRITERIA, LS_KEY, NATURE_BG, NATURE_COLORS, PHASE_BG, PHASE_COLORS, SECTORS_TTL } from "./constants"
+import type { PhaseDetectionResult, Sector, SectorLeader, SectorMarketOverviewSnapshot, Tab } from "./types"
+import { readLS, writeLS } from "./lib/cache"
+import { detectCurrentPhase } from "./lib/phase"
+import { formatKoDateTimeLong, formatKoreanMoney, toNum } from "./lib/format"
+import { buildMetricsSummary, buildSectorReason } from "./lib/sectorText"
 
 // ── 공통 컴포넌트 ─────────────────────────────────────────────────────────
 
@@ -311,38 +55,12 @@ function ChangeRate({ val }: { val: number | null }) {
   return <span className={cls}>{val > 0 ? "+" : ""}{val.toFixed(2)}%</span>
 }
 
-const NATURE_COLORS: Record<SectorNature, string> = {
-  cyclical:           "var(--color-orange-500)",
-  defensive:          "var(--color-green-500)",
-  interest_sensitive: "var(--color-brand)",
-  growth:             "#9B59B6",
-}
-const NATURE_BG: Record<SectorNature, string> = {
-  cyclical:           "rgba(255,107,53,0.1)",
-  defensive:          "rgba(0,180,147,0.1)",
-  interest_sensitive: "rgba(0,96,255,0.1)",
-  growth:             "rgba(155,89,182,0.1)",
-}
-
 function NatureBadge({ nature }: { nature: SectorNature }) {
   return (
     <span className="sector-nature-badge" style={{ color: NATURE_COLORS[nature], background: NATURE_BG[nature] }}>
       {NATURE_LABELS[nature]}
     </span>
   )
-}
-
-const PHASE_COLORS: Record<EconomicPhase, string> = {
-  recovery:  "var(--color-green-500)",
-  expansion: "var(--color-brand)",
-  slowdown:  "var(--color-orange-500)",
-  recession: "var(--color-red-500, #F04452)",
-}
-const PHASE_BG: Record<EconomicPhase, string> = {
-  recovery:  "rgba(0,180,147,0.08)",
-  expansion: "rgba(0,96,255,0.08)",
-  slowdown:  "rgba(255,107,53,0.08)",
-  recession: "rgba(240,68,82,0.08)",
 }
 
 function PhaseIcon({ phase, size = 18 }: { phase: EconomicPhase; size?: number }) {
@@ -958,7 +676,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   const [sectorLeaders, setSectorLeaders] = useState<Record<string, SectorLeader[]>>({})
   const [leadersLoading, setLeadersLoading] = useState(false)
   const [leadersError, setLeadersError] = useState<string | null>(null)
-  const [leadersCriteria, setLeadersCriteria] = useState<string>("is_sector_leader desc, market_cap desc, liquidity desc")
+  const [leadersCriteria, setLeadersCriteria] = useState<string>(DEFAULT_LEADERS_CRITERIA)
   const [marketOverview, setMarketOverview] = useState<SectorMarketOverviewSnapshot | null>(null)
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(initAll.length > 0 ? new Date().toISOString() : null)
   const detected = useMemo(() => detectCurrentPhase(all, marketOverview), [all, marketOverview])
