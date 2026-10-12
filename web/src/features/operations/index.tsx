@@ -1,17 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
-import type {
-  AutoCycleInsights,
-  JobSnapshot,
-  OperationsKpi,
-  OpStatus,
-  SellCandidate,
-  TradeRow,
-} from './types'
-import { normalizeJobState, normalizeStep, renderRunSummary } from './lib/jobs'
+import { useAutoRuns } from './hooks/useAutoRuns'
+import { useJobWatcher } from './hooks/useJobWatcher'
+import { useOperationsData } from './hooks/useOperationsData'
 import TradeNowCard from './components/TradeNowCard'
 import DryRunBanner from './components/DryRunBanner'
 import KpiCards from './components/KpiCards'
@@ -26,31 +19,7 @@ import DryRunModal from './components/DryRunModal'
 export default function OperationsPage() {
   const toast = useToast()
 
-  const [activity, setActivity] = useState<TradeRow[]>([])
-  const [activityLoading, setActivityLoading] = useState(true)
-
-  const [sellCandidates, setSellCandidates] = useState<SellCandidate[]>([])
-  const [sellLoading, setSellLoading] = useState(false)
-  const [sellFetched, setSellFetched] = useState(false)
-
-  const [autocycleStatus, setAutocycleStatus] = useState<OpStatus>('idle')
-  const [autocycleResult, setAutocycleResult] = useState<string | null>(null)
-  const [pendingDryRunApproval, setPendingDryRunApproval] = useState<{ jobId: string; summary: string } | null>(null)
-  const [bannerDismissedForJobId, setBannerDismissedForJobId] = useState<string | null>(null)
-
-  const [autotriggerStatus, setAutotriggerStatus] = useState<OpStatus>('idle')
-  const [autotriggerStep, setAutotriggerStep] = useState<'intraday' | 'ready'>('intraday')
-  const [autotriggerResult, setAutotriggerResult] = useState<string | null>(null)
-
-  const [liveJobs, setLiveJobs] = useState<Record<string, JobSnapshot>>({})
-  const [watchingJobIds, setWatchingJobIds] = useState<string[]>([])
-  const [selectedDryRunJobId, setSelectedDryRunJobId] = useState<string | null>(null)
-  const [expandedJobIds, setExpandedJobIds] = useState<string[]>([])
-
-  const [dashboardKpi, setDashboardKpi] = useState<OperationsKpi | null>(null)
-  const [dashboardLoading, setDashboardLoading] = useState(true)
-  const [autocycleInsights, setAutocycleInsights] = useState<AutoCycleInsights | null>(null)
-  const [autocycleInsightsLoading, setAutocycleInsightsLoading] = useState(true)
+  // 화면 안에서만 쓰는 상태(인사이트 탭·필터·고급 진단 토글)
   const [insightTab, setInsightTab] = useState<'summary' | 'details'>('summary')
   const [expandedInsightRunIds, setExpandedInsightRunIds] = useState<number[]>([])
   const [latestCompareDecisionFilter, setLatestCompareDecisionFilter] = useState<'ALL' | 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR'>('ALL')
@@ -58,209 +27,21 @@ export default function OperationsPage() {
   const [runCompareDecisionFilterById, setRunCompareDecisionFilterById] = useState<Record<number, 'ALL' | 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR'>>({})
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  const loadActivity = useCallback(async () => {
-    setActivityLoading(true)
-    try {
-      const json = await apiFetch('/api/ui/operations?view=activity', { cacheMs: 0, timeoutMs: 15_000 })
-      setActivity(Array.isArray(json?.data) ? json.data : [])
-    } catch (e: any) {
-      toast.show('이력 조회 실패: ' + String(e?.message || e))
-    } finally {
-      setActivityLoading(false)
-    }
-  }, [toast])
-
-  useEffect(() => { loadActivity() }, [loadActivity])
-
-  const loadDashboard = useCallback(async () => {
-    setDashboardLoading(true)
-    try {
-      const json = await apiFetch('/api/ui/operations?view=dashboard', { cacheMs: 0, timeoutMs: 15_000 })
-      setDashboardKpi((json?.data || null) as OperationsKpi | null)
-    } catch (e: any) {
-      toast.show('운영 KPI 조회 실패: ' + String(e?.message || e))
-    } finally {
-      setDashboardLoading(false)
-    }
-  }, [toast])
-
-  useEffect(() => { loadDashboard() }, [loadDashboard])
-
-  const loadAutoCycleInsights = useCallback(async () => {
-    setAutocycleInsightsLoading(true)
-    try {
-      const json = await apiFetch('/api/ui/operations?view=autocycle_insights', { cacheMs: 0, timeoutMs: 15_000 })
-      setAutocycleInsights((json?.data || null) as AutoCycleInsights | null)
-    } catch (e: any) {
-      toast.show('자동매매 인사이트 조회 실패: ' + String(e?.message || e))
-    } finally {
-      setAutocycleInsightsLoading(false)
-    }
-  }, [toast])
-
-  useEffect(() => { void loadAutoCycleInsights() }, [loadAutoCycleInsights])
-
-  const addWatchingJob = useCallback((jobId: string) => {
-    setWatchingJobIds(prev => (prev.includes(jobId) ? prev : [...prev, jobId]))
-  }, [])
-
-  const refreshJobSnapshot = useCallback(async (jobId: string, silent = false) => {
-    try {
-      const json = await apiFetch(`/api/ui/operations?view=job&job_id=${encodeURIComponent(jobId)}`, {
-        cacheMs: 0,
-        timeoutMs: 15_000,
-      })
-      const snapshot = (json?.data || null) as JobSnapshot | null
-      if (!snapshot?.job) return
-
-      setLiveJobs(prev => ({ ...prev, [jobId]: snapshot }))
-
-      const state = normalizeJobState(snapshot.job.status)
-      if (state === 'done' || state === 'failed') {
-        setWatchingJobIds(prev => prev.filter(id => id !== jobId))
-        setTimeout(loadActivity, 500)
-        setTimeout(loadDashboard, 600)
-        setTimeout(loadAutoCycleInsights, 700)
-
-        if (state === 'failed' && !silent) {
-          toast.show(`작업 실패: ${snapshot.job.error || '원인 미상'}`)
-        }
-
-        const payload = snapshot.job.payload || {}
-        const isAutocycleDryRun = String(payload.task || '') === 'virtualAutoTrade' && payload.dry_run !== false
-        if (state === 'done' && isAutocycleDryRun) {
-          setPendingDryRunApproval(prev => {
-            if (prev?.jobId === jobId) return prev
-            return { jobId, summary: renderRunSummary(snapshot.latest_run) }
-          })
-        }
-      }
-    } catch (e: any) {
-      if (!silent) {
-        toast.show('실시간 상태 조회 실패: ' + String(e?.message || e))
-      }
-    }
-  }, [loadActivity, loadAutoCycleInsights, loadDashboard, toast])
-
-  useEffect(() => {
-    if (watchingJobIds.length === 0) return
-    const timer = window.setInterval(() => {
-      for (const jobId of watchingJobIds) {
-        void refreshJobSnapshot(jobId, true)
-      }
-    }, 2000)
-    return () => window.clearInterval(timer)
-  }, [refreshJobSnapshot, watchingJobIds])
-
-  const fetchSellCandidates = async () => {
-    setSellLoading(true)
-    setSellFetched(false)
-    try {
-      const json = await apiFetch('/api/ui/operations?view=autosellcheck', { cacheMs: 0, timeoutMs: 15_000 })
-      setSellCandidates(Array.isArray(json?.data) ? json.data : [])
-      setSellFetched(true)
-    } catch (e: any) {
-      toast.show('자동매도 점검 실패: ' + String(e?.message || e))
-    } finally {
-      setSellLoading(false)
-    }
-  }
-
-  const runAutocycle = async (dryRun: boolean, learning = false) => {
-    setAutocycleStatus('loading')
-    setAutocycleResult(null)
-    try {
-      const json = await apiFetch('/api/ui/operations', {
-        method: 'POST',
-        cacheMs: 0,
-        timeoutMs: 60_000,
-        body: JSON.stringify({
-          mode: 'autocycle',
-          dry_run: dryRun,
-          trigger_mode: learning ? 'learning' : 'auto',
-        }),
-      })
-      if (json?.error) throw new Error(String(json.error))
-      const jobId = String(json?.job_id || '').trim()
-      if (!jobId) throw new Error('job_id가 비어 있습니다.')
-      const label = `${learning ? '학습 ' : ''}${dryRun ? '점검(dry-run)' : '실행'}`
-      if (json?.execution_error) {
-        setAutocycleResult(`자동사이클 ${label} 실행 실패 - ${String(json.execution_error)}`)
-        setAutocycleStatus('error')
-      } else {
-        setAutocycleResult(`자동사이클 ${label} 요청 등록 완료 - job_id: ${jobId}`)
-        setAutocycleStatus('done')
-      }
-      if (!dryRun) setPendingDryRunApproval(null)
-      if (dryRun && !learning) setBannerDismissedForJobId(null)
-      addWatchingJob(jobId)
-      void refreshJobSnapshot(jobId, false)
-      toast.show(`자동사이클 ${label} 등록 완료`)
-    } catch (e: any) {
-      setAutocycleResult(String(e?.message || e))
-      setAutocycleStatus('error')
-    }
-  }
-
-  const runAutotrigger = async (stepOverride?: 'intraday' | 'ready') => {
-    const stepToRun = stepOverride || autotriggerStep
-    setAutotriggerStatus('loading')
-    setAutotriggerResult(null)
-    try {
-      const json = await apiFetch('/api/ui/operations', {
-        method: 'POST',
-        cacheMs: 0,
-        timeoutMs: 60_000,
-        body: JSON.stringify({ mode: 'autotrigger', step: stepToRun, dry_run: true }),
-      })
-      if (json?.error) throw new Error(String(json.error))
-      const jobId = String(json?.job_id || '').trim()
-      if (!jobId) throw new Error('job_id가 비어 있습니다.')
-      if (json?.execution_error) {
-        setAutotriggerResult(`순차트리거(${stepToRun}) 실행 실패 - ${String(json.execution_error)}`)
-        setAutotriggerStatus('error')
-      } else {
-        setAutotriggerResult(`순차트리거(${stepToRun}) 요청 등록 완료 - job_id: ${jobId}`)
-        setAutotriggerStatus('done')
-      }
-      addWatchingJob(jobId)
-      void refreshJobSnapshot(jobId, false)
-      toast.show('순차트리거 등록 완료')
-    } catch (e: any) {
-      setAutotriggerResult(String(e?.message || e))
-      setAutotriggerStatus('error')
-    }
-  }
-
-  const liveJobItems = useMemo(() => {
-    return Object.values(liveJobs).sort((a, b) => {
-      const left = Date.parse(String(a?.job?.created_at || '')) || 0
-      const right = Date.parse(String(b?.job?.created_at || '')) || 0
-      return right - left
-    })
-  }, [liveJobs])
-
-  const selectedDryRunSnapshot = useMemo(() => {
-    if (!selectedDryRunJobId) return null
-    return liveJobs[selectedDryRunJobId] || null
-  }, [liveJobs, selectedDryRunJobId])
-
-  const retryJob = useCallback(async (snapshot: JobSnapshot) => {
-    const payload = snapshot.job.payload || {}
-    const task = String(payload.task || '')
-    if (task === 'virtualAutoTrade') {
-      const dryRun = payload.dry_run !== false
-      await runAutocycle(dryRun, String(payload.trigger_mode || '').toLowerCase() === 'learning')
-      return
-    }
-    if (task === 'virtualAutoTradeIntraday') {
-      const step = normalizeStep(payload.step)
-      setAutotriggerStep(step)
-      await runAutotrigger(step)
-      return
-    }
-    toast.show('재시도를 지원하지 않는 작업입니다.')
-  }, [toast])
+  // 훅 호출 순서 = 효과 실행 순서: 조회 3종(마운트) → 작업 감시(폴링)
+  const {
+    activity, activityLoading, loadActivity, dashboardKpi, dashboardLoading, loadDashboard,
+    autocycleInsights, autocycleInsightsLoading, loadAutoCycleInsights,
+    sellCandidates, sellLoading, sellFetched, fetchSellCandidates,
+  } = useOperationsData(toast)
+  const {
+    pendingDryRunApproval, setPendingDryRunApproval, bannerDismissedForJobId, setBannerDismissedForJobId,
+    watchingJobIds, addWatchingJob, refreshJobSnapshot, liveJobItems,
+    setSelectedDryRunJobId, selectedDryRunSnapshot, expandedJobIds, setExpandedJobIds,
+  } = useJobWatcher({ loadActivity, loadDashboard, loadAutoCycleInsights, toast })
+  const {
+    autocycleStatus, autotriggerStatus, autotriggerStep, setAutotriggerStep, autotriggerResult,
+    runAutocycle, runAutotrigger, retryJob,
+  } = useAutoRuns({ toast, addWatchingJob, refreshJobSnapshot, setPendingDryRunApproval, setBannerDismissedForJobId })
 
   const showStickyDryRunBanner = Boolean(
     pendingDryRunApproval
