@@ -28,6 +28,7 @@ import {
   type Goal,
   type SimResult,
 } from '../../lib/accumulate'
+import SplitPlanCard from './SplitPlanCard'
 import './accumulate.css'
 
 const man = formatKrwMan
@@ -316,6 +317,8 @@ export default function AccumulatePage() {
           )}
         <p className="acc-note">이 안내는 수익을 올리는 규칙이 아닙니다. 과거 검증에서 "내리면 더 넣고 오르면 줄이기"가 꾸준히 넣는 것보다 나았다는 근거는 없었습니다. 흔들려서 멈추거나 몰아 넣는 실수를 막는 용도입니다.</p>
       </section>
+
+      <SplitPlanCard />
 
       <section className="acc-card" aria-labelledby="acc-rec">
         <h2 id="acc-rec">내 기록</h2>

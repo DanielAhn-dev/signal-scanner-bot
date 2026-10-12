@@ -74,3 +74,4 @@
 .acc-link { align-self: flex-start; border: 0; background: none; color: var(--color-text-secondary); font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
 .acc summary { cursor: pointer; color: var(--color-text-secondary); }
 @media (max-width: 420px) { .acc-seg button { flex-basis: 100%; } }
+.acc-table tr.is-picked td { background: var(--color-bg-sunken); font-weight: 700; }
