@@ -16,6 +16,7 @@ import { toKstDateKey } from '../../src/lib/krxCalendar'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { ETF_BENCHMARK_CODE, fetchEtfKeyIndicators, type EtfKeyIndicator } from '../../src/services/etfKeyIndicator'
 import { selectPaged } from '../../src/services/supabasePaging'
+import { computePeakSinceBuy, type PeakSinceBuy } from '../../src/lib/peakGiveback'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
 const POSITIONS_LOTS_TIMEOUT_MS = Math.max(120, Number(process.env.UI_POSITIONS_LOTS_TIMEOUT_MS || 300))
@@ -213,6 +214,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ])
       : Promise.resolve(new Map())
 
+    // 실계좌 개별주의 매수일(기록일) 뒤 최고 종가 — 보유 카드 '고점 대비 내준 폭' (src/lib/peakGiveback.ts). 늦으면 없이 응답
+    const peakTargets = (data ?? []).filter((r: any) =>
+      r.code && String(r.account_name || r.broker_name || '').trim() && Number(r.quantity) > 0
+      && normalizeDateKey(r.buy_date || r.created_at) && !isExchangeTradedProduct(String(r.code), r.stock?.name))
+    const peakSeriesPromise: Promise<Map<string, Array<{ date: string; close: number }>>> = peakTargets.length > 0
+      ? Promise.race([
+          (async () => {
+            const peakCodes = Array.from(new Set(peakTargets.map((r: any) => String(r.code).trim())))
+            const since = peakTargets.map((r: any) => normalizeDateKey(r.buy_date || r.created_at) as string).sort()[0]
+            const rows = await selectPaged<{ code: string; trade_date: string; close: number }>(
+              async (from, to) =>
+                await supabase
+                  .from('daily_indicators')
+                  .select('code, trade_date, close')
+                  .in('code', peakCodes)
+                  .gte('trade_date', since)
+                  .order('code')
+                  .order('trade_date', { ascending: true })
+                  .range(from, to),
+              { logLabel: 'ui.positions.peak_since_buy' }
+            )
+            const out = new Map<string, Array<{ date: string; close: number }>>()
+            for (const r of rows) {
+              const d = normalizeDateKey(r.trade_date)
+              const c = Number(r.close)
+              if (!d || !(c > 0)) continue
+              const list = out.get(String(r.code)) ?? []
+              list.push({ date: d, close: c })
+              out.set(String(r.code), list)
+            }
+            return out
+          })().catch(() => new Map<string, Array<{ date: string; close: number }>>()),
+          new Promise<Map<string, Array<{ date: string; close: number }>>>((resolve) =>
+            setTimeout(() => resolve(new Map()), POSITIONS_CAUTION_TIMEOUT_MS)),
+        ])
+      : Promise.resolve(new Map())
+
     const scoreByCode = new Map<string, { totalScore: number | null; signal: string | null }>()
     if (codes.length > 0) {
       const { data: latestScoreRows } = await supabase
@@ -371,6 +409,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const weightCautionByCode = await weightCautionPromise
     const entryGuardByCode = await entryGuardPromise
     const etfKeyByCode = await etfKeyPromise
+    const peakSeriesByCode = await peakSeriesPromise
+    const todayKey = toKstDateKey()
     const benchmarkReturn1y = etfKeyByCode.get(ETF_BENCHMARK_CODE)?.return1y ?? null
     let fallbackToCloseCount = 0
     const mapped = (data ?? []).map((row: any) => {
@@ -477,6 +517,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         recommended_buy_qty,
         recommended_buy_amount,
         entry_price_guide: entryPriceGuide,
+        peak_since_buy: ((): PeakSinceBuy | null => {
+          const series = peakSeriesByCode.get(code)
+          if (!series || !addedDateKey) return null
+          return computePeakSinceBuy(series, addedDateKey, close, todayKey)
+        })(),
       }
     })
 

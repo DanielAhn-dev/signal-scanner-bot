@@ -60,6 +60,7 @@ export type HoldingRow = {
   account_name?: string | null
   quantity?: number
   avg_price?: number
+  current_price?: number | null
   buy_price?: number
   buy_date?: string | null
   hold_days?: number | null
@@ -82,6 +83,8 @@ export type HoldingRow = {
   weight_caution?: { level: 'caution' | 'strong'; message: string | null } | null
   entry_guard?: { label?: string; message?: string } | null
   entry_price_guide?: { verdict: 'ok' | 'caution' | 'stale'; gapPct: number; message: string } | null
+  /** 실계좌 개별주: 매수일(기록일) 뒤 최고 종가 — src/lib/peakGiveback.ts */
+  peak_since_buy?: { price: number; date: string } | null
   stock?: { close?: number | null; sector_id?: string | number | null; sector?: { id?: string | number; name?: string } | null } | null
   lots?: Array<{ acquired_quantity: number; acquired_price: number; acquired_at?: string | null }>
 }

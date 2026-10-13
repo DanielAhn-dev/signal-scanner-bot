@@ -2241,6 +2241,12 @@ a:focus-visible {
   color: var(--color-text-secondary); font-size: var(--font-size-xs);
 }
 .portfolio-action-link:hover { color: var(--color-text-primary); }
+.portfolio-peak-giveback {
+  margin-top: var(--space-1); display: flex; align-items: flex-start; gap: 4px;
+  color: var(--color-text-secondary); font-size: var(--font-size-xs); line-height: 1.5; word-break: keep-all;
+}
+.portfolio-peak-giveback svg { flex: none; margin-top: 3px; }
+.portfolio-peak-giveback--alert { color: var(--color-error); }
 .portfolio-position-card { scroll-margin-top: 80px; }
 .portfolio-action-lines { margin: var(--space-2) 0 0; display: grid; gap: var(--space-1); }
 .portfolio-action-lines > div { display: grid; grid-template-columns: 6.5em 1fr; gap: var(--space-2); }
