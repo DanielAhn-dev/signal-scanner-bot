@@ -113,7 +113,7 @@ function pnlLine(pnlPct: number | null, calm: string): string {
   return pnlPct < 0 ? `평단보다 ${pct(pnlPct)} — ${calm}` : `평단보다 ${pct(pnlPct)}예요.`
 }
 
-const REBALANCE_RULE = `돈이 필요할 때, 또는 계좌 목표 비중에서 ${REBALANCE_BAND_PP}%p 넘게 벗어났을 때만 일부 옮겨요. 새로 넣는 돈으로 먼저 맞추고, 확인은 월 1회면 충분해요.`
+const REBALANCE_RULE = `매달 새로 넣는 돈을 모자란 쪽에 넣어 맞추고, 비중 점검은 1년에 한 번이면 돼요. 팔아서 옮기는 건 돈이 필요할 때나 목표에서 ${REBALANCE_BAND_PP}%p 넘게 벗어났을 때만이에요.`
 const rebalanceWhen = (weight: number | null) => (weight != null ? `지금 이 계좌의 ${weight.toFixed(0)}%예요. ` : '') + REBALANCE_RULE
 
 export function lookupHistory(code: string): EtfHistoryFact | null {
