@@ -15,6 +15,7 @@
   실행: python validate_trim_rebuy.py [1250|2500|universe]
 데이터: px.pkl(개별주 2014~, 수정주가), px_069500.json(KODEX200 2002~, 분배금 반영 수정주가), kospi.json(가격지수 1996~).
 """
+import datetime
 import json
 import pickle
 import sys
@@ -157,6 +158,21 @@ def universe():
         print(f"  {lab} {sel.sum()}종목: A vs 보유 {np.median(R[sel,2])*100:+.1f}%, B vs 보유 {np.median(R[sel,0])*100:+.1f}% (이긴 {np.mean(R[sel,0]>0)*100:.0f}%), B vs A {np.median(R[sel,4])*100:+.1f}%")
     ok = np.mean(R[:, 0] > 0) >= 0.6 and np.median(R[:, 0]) >= 0.03 and np.median(R[:, 1]) >= 0.03
     print("B 판정:", "사전 기준 통과" if ok else "기각")
+    # 보유 카드(web/src/lib/holdingAction.ts)가 쓰는 숫자 — 손으로 옮기지 않는다
+    first = min(r[0][0] for r in px.values() if r)
+    last = max(r[-1][0] for r in px.values() if r)
+    big = R[:, 9] >= 2
+    facts = dict(
+        period=f"{first[:4]}~{last[:4]}", stocks=int(len(R)), years=H // 250, triggerPct=20,
+        vsHoldMedPct=round(float(np.median(R[:, 0]) * 100), 1), vsHoldWinPct=round(float(np.mean(R[:, 0] > 0) * 100)),
+        mddImprovePp=round(float(np.median(R[:, 1]) * 100), 1),
+        bigWinnerVsHoldPct=round(float(np.median(R[big, 0]) * 100), 1), bigWinnerStocks=int(big.sum()),
+        vsIndexMedPct=round(float(np.median(R[:, 7]) * 100), 1),
+        generatedAt=datetime.date.today().isoformat(),
+    )
+    out = ("// 생성 파일 — 손으로 고치지 않는다. scripts/research/validate_trim_rebuy.py universe (C54)\n"
+           "export const TRIM_TO_INDEX_FACTS = " + json.dumps(facts, ensure_ascii=False) + " as const\n")
+    open(__file__.rsplit("scripts", 1)[0] + "web/src/data/trimToIndexFacts.ts", "w", encoding="utf-8").write(out)
 
 
 if ARG == "universe":
