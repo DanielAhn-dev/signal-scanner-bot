@@ -64,6 +64,17 @@ type MarketCacheEntry = {
 
 const marketCache = new Map<string, MarketCacheEntry>()
 
+function withFallbackTimeout<T>(task: Promise<T>, ms: number, fallback: T, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[market-overview] ${label} (${ms}ms) — fallback used`)
+      resolve(fallback)
+    }, ms)
+  })
+  return Promise.race([task, timeout]).finally(() => clearTimeout(timer))
+}
+
 async function resolveMarketFlowCaution(): Promise<MarketOverviewResponse['marketFlowCaution']> {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -162,12 +173,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           setTimeout(() => reject(new Error('Market data fetch timeout')), MARKET_QUERY_TIMEOUT_MS)
         ),
       ]),
-      Promise.race([
+      // 섹터 순위는 부가 정보라 늦으면 빈 목록으로 두고 지수·진단은 그대로 보낸다
+      withFallbackTimeout(
         scoreSectors(todayStr).catch(() => [] as SectorScore[]),
-        new Promise<SectorScore[]>((_, reject) =>
-          setTimeout(() => reject(new Error('Sector scoring timeout')), MARKET_QUERY_TIMEOUT_MS)
-        ),
-      ]),
+        MARKET_QUERY_TIMEOUT_MS,
+        [] as SectorScore[],
+        'Sector scoring timeout',
+      ),
     ])
 
     const diagnosis = diagnoseMarket(marketData)
@@ -201,11 +213,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchedAt: new Date().toISOString(),
     }
 
-    // 캐시 저장
-    marketCache.set(cacheKey, {
-      expiresAt: Date.now() + MARKET_CACHE_TTL_MS,
-      payload,
-    })
+    // 캐시 저장 (섹터가 시간 초과로 비었으면 다음 요청에서 다시 계산하도록 저장하지 않는다)
+    if (sectorScores.length > 0) {
+      marketCache.set(cacheKey, {
+        expiresAt: Date.now() + MARKET_CACHE_TTL_MS,
+        payload,
+      })
+    }
 
     return res.status(200).json({ data: payload, cached: false })
   } catch (error: any) {

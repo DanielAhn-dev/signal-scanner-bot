@@ -81,36 +81,80 @@ function sma(values: number[], period: number): (number | undefined)[] {
 
 // --- 데이터 소스 어댑터: Supabase 기반 구현 ---
 
+type SectorDailyRow = { sector_id: string; date: string; close: number; value: number };
+
+const SECTOR_DAILY_PAGE_CONCURRENCY = 4;
+const sectorDailyInFlight = new Map<string, Promise<SectorDailyRow[]>>();
+
+/**
+ * sector_daily 를 (전년 1월 1일 ~ today) 범위로 한 번만 읽는다.
+ * 가격·거래대금 두 함수가 같은 시점에 부르면 진행 중인 조회를 공유한다(예전엔 같은 행을 두 번, 순차 페이지로 읽어 15초를 넘었다).
+ * 건수를 먼저 세고 페이지를 몇 개씩 동시에 받는다. 정렬에 sector_id 를 넣어 페이지 경계에서 행이 겹치거나 빠지지 않게 한다.
+ */
+function fetchSectorDailyRows(today: string): Promise<SectorDailyRow[]> {
+  const existing = sectorDailyInFlight.get(today);
+  if (existing) return existing;
+  const job = loadSectorDailyRows(today).finally(() => {
+    sectorDailyInFlight.delete(today);
+  });
+  sectorDailyInFlight.set(today, job);
+  return job;
+}
+
+async function loadSectorDailyRows(today: string): Promise<SectorDailyRow[]> {
+  const client = supa();
+  // 약 1년간의 데이터 조회
+  const from = `${new Date(today).getFullYear() - 1}-01-01`;
+
+  const { count, error: countError } = await client
+    .from("sector_daily")
+    .select("sector_id", { count: "exact", head: true })
+    .gte("date", from)
+    .lte("date", today);
+  if (countError || count == null) {
+    console.error("fetchSectorDailyRows count error:", countError);
+    return [];
+  }
+
+  const offsets: number[] = [];
+  for (let offset = 0; offset < count; offset += PAGE_SIZE) offsets.push(offset);
+
+  const pages: SectorDailyRow[][] = new Array(offsets.length);
+  for (const group of chunkArray(offsets.map((offset, i) => ({ offset, i })), SECTOR_DAILY_PAGE_CONCURRENCY)) {
+    const results = await Promise.all(
+      group.map(({ offset }) =>
+        client
+          .from("sector_daily")
+          .select("sector_id, date, close, value")
+          .gte("date", from)
+          .lte("date", today)
+          .order("date", { ascending: true })
+          .order("sector_id", { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1)
+      )
+    );
+    for (let k = 0; k < group.length; k++) {
+      const { data, error } = results[k];
+      if (error) {
+        // 일부만 읽은 시계열로 점수를 내면 수익률이 틀어지므로 전부 버린다.
+        console.error("fetchSectorDailyRows error:", error);
+        return [];
+      }
+      pages[group[k].i] = (data ?? []) as SectorDailyRow[];
+    }
+  }
+  return pages.flat();
+}
+
 export async function fetchSectorPriceSeries(
   today: string
 ): Promise<SectorSeries[]> {
   const client = supa();
-  const { data: sectors } = await client
-    .from("sectors")
-    .select("id, name, metrics");
+  const [{ data: sectors }, rows] = await Promise.all([
+    client.from("sectors").select("id, name, metrics"),
+    fetchSectorDailyRows(today),
+  ]);
   if (!sectors?.length) return [];
-
-  // 약 1년간의 데이터 조회
-  const from = `${new Date(today).getFullYear() - 1}-01-01`;
-
-  const rows: Array<{ sector_id: string; date: string; close: number }> = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await client
-      .from("sector_daily")
-      .select("sector_id, date, close")
-      .gte("date", from)
-      .lte("date", today)
-      .order("date", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) {
-      console.error("fetchSectorPriceSeries error:", error);
-      break;
-    }
-    const page = (data ?? []) as Array<{ sector_id: string; date: string; close: number }>;
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) break;
-  }
-
   if (!rows.length) return [];
 
   const bySector: Record<string, { date: string; close: number }[]> = {};
@@ -146,25 +190,7 @@ export async function fetchSectorPriceSeries(
 export async function fetchSectorVolumeSeries(
   today: string
 ): Promise<Record<string, VolumeRow[]>> {
-  const client = supa();
-  const from = `${new Date(today).getFullYear() - 1}-01-01`;
-  const rows: Array<{ sector_id: string; date: string; value: number }> = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await client
-      .from("sector_daily")
-      .select("sector_id, date, value")
-      .gte("date", from)
-      .lte("date", today)
-      .order("date", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) {
-      console.error("fetchSectorVolumeSeries error:", error);
-      break;
-    }
-    const page = (data ?? []) as Array<{ sector_id: string; date: string; value: number }>;
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) break;
-  }
+  const rows = await fetchSectorDailyRows(today);
 
   const out: Record<string, VolumeRow[]> = {};
   for (const r of rows) {
