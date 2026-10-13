@@ -119,9 +119,9 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 4, ...faint }}>
-          {income.source === 'actual' ? '내가 넣은 실제 입금액 기준입니다.' : '상품 유형별 분배율로 낸 추정입니다. 최근 몇 달 실제 입금액을 넣으면 그 값으로 계산합니다.'}
+          {income.source === 'actual' ? '내가 적은 실제 분배금 기준입니다.' : '상품 유형별 분배율로 낸 추정입니다. 최근 몇 달 실제로 받은 분배금을 적으면 그 값으로 계산합니다.'}
           <span>
-            실제 월 입금액(세후)
+            실제로 받은 월 분배금(세후)
             <input
               style={{ ...smallInput, marginLeft: 4 }}
               inputMode="numeric"
@@ -131,7 +131,7 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
             />
             만원
           </span>
-          <Button size="sm" variant="secondary" onClick={() => void save({ actualMonthlyNet: toWon(actualMan) }, '실제 입금액으로 다시 계산했습니다.')}>
+          <Button size="sm" variant="secondary" onClick={() => void save({ actualMonthlyNet: toWon(actualMan) }, '실제 분배금으로 다시 계산했습니다.')}>
             반영
           </Button>
         </div>
@@ -141,18 +141,19 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
       <div style={card}>
         <span style={stepTitle}>① 새 돈은 한 곳으로</span>
         <div>
-          매달 새로 넣는 돈과 목표({man(income.floor)})를 넘게 들어온 분배금은{' '}
+          내 계좌에 새로 넣는 돈과 목표({man(income.floor)})를 넘게 들어온 분배금은{' '}
           <strong>{buyTarget ? buyTarget.name : '성장 지수 ETF'}</strong>만 삽니다. 인컴 ETF는 더 사지 않습니다.
         </div>
         <div style={faint}>{plan.buyHint}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-          매달 넣는 돈
+          내 계좌에 직접 넣는 돈 (매달)
           <input style={smallInput} inputMode="numeric" placeholder="만원" value={contribMan} onChange={(e) => setContribMan(e.target.value)} />
           만원
-          <Button size="sm" variant="secondary" onClick={() => void save({ monthlyContribution: toWon(contribMan) }, '매달 넣는 돈을 저장했습니다.')}>
+          <Button size="sm" variant="secondary" onClick={() => void save({ monthlyContribution: toWon(contribMan) }, '내 계좌에 넣는 돈을 저장했습니다.')}>
             저장
           </Button>
         </div>
+        <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다. 봇 실험 계좌의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div>
         {growth.needByNewMoney > 0 ? (
           <div style={{ marginTop: 6 }}>
             새 돈만으로 목표 {growth.targetPct.toFixed(0)}%까지 약 <strong>{man(growth.needByNewMoney)}</strong>
@@ -162,7 +163,7 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
                 {buyTarget && growth.monthlyInflow >= buyTarget.price ? ` (한 달에 ${buyTarget.name} ${Math.floor(growth.monthlyInflow / buyTarget.price)}주 안팎)` : ''}
               </>
             ) : (
-              ' — 매달 넣는 돈을 적으면 몇 달 걸리는지 보여 드립니다.'
+              ' — 내 계좌에 매달 넣는 돈을 적으면 몇 달 걸리는지 보여 드립니다.'
             )}
           </div>
         ) : (
