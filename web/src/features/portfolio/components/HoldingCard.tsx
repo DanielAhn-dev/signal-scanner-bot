@@ -1,4 +1,5 @@
-import { Building2, PlusCircle } from 'lucide-react'
+import { Building2, ChevronRight, PlusCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Detail from '../../../components/ui/Detail'
 import { formatKrw, formatNumber } from '../../../lib/format'
@@ -33,6 +34,7 @@ export default function HoldingCard({
   openTradeModal,
   openMaintenanceModal,
 }: HoldingCardProps) {
+  const navigate = useNavigate()
   const pnl = r.unrealized_pnl
   const holdingState = stateEvaluation.state
   const score = getScoreValue(r)
@@ -73,7 +75,7 @@ export default function HoldingCard({
   )
 
   return (
-    <div className="card card-lg portfolio-position-card">
+    <div className="card card-lg portfolio-position-card" data-holding-code={r.code ?? undefined}>
 
       {/* ── 헤더: 종목명 + 손익 ── */}
       <div className="portfolio-card-header">
@@ -126,19 +128,9 @@ export default function HoldingCard({
           <span className="caption muted">{action.role}</span>
         </div>
         <div className="portfolio-action-todo">{action.todo}</div>
-        <details className="portfolio-action-more" open={action.tone !== 'keep'}>
-          <summary>{action.facts.length ? '이 종목 숫자 · 언제 움직이나' : '언제 움직이나'}</summary>
-          {action.facts.length > 0 && (
-            <ul className="portfolio-action-facts">
-              {action.facts.map((f) => <li key={f}>{f}</li>)}
-            </ul>
-          )}
-          <dl className="portfolio-action-lines">
-            <div><dt>지금 상태</dt><dd>{action.now}</dd></div>
-            <div><dt>언제 움직이나</dt><dd>{action.when}</dd></div>
-          </dl>
-          {action.source && <div className="caption muted portfolio-action-source">{action.source}</div>}
-        </details>
+        <button type="button" className="portfolio-action-link" onClick={() => navigate('/income-guide')}>
+          자세히 · 리밸런싱 <ChevronRight size={12} aria-hidden />
+        </button>
       </div>
 
       <Detail>

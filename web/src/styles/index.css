@@ -2088,7 +2088,13 @@ a:focus-visible {
   border-radius: var(--radius-sm);
   background: #ffffff;
   padding: 6px 10px;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
+.portfolio-allocation-item:disabled { cursor: default; }
 
 .portfolio-allocation-item-name {
   @apply flex items-center;
@@ -2225,7 +2231,17 @@ a:focus-visible {
 .portfolio-action--act { border-left-color: var(--color-error); background: var(--color-error-bg); }
 .portfolio-action-head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
 .portfolio-action-verdict { font-weight: 700; font-size: var(--font-size-md, 15px); color: var(--color-text-primary); }
-.portfolio-action-todo { margin-top: var(--space-1); color: var(--color-text-primary); line-height: 1.5; }
+.portfolio-action-todo {
+  margin-top: var(--space-1); color: var(--color-text-primary); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.portfolio-action-link {
+  margin-top: var(--space-1); padding: 0; border: 0; background: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 2px;
+  color: var(--color-text-secondary); font-size: var(--font-size-xs);
+}
+.portfolio-action-link:hover { color: var(--color-text-primary); }
+.portfolio-position-card { scroll-margin-top: 80px; }
 .portfolio-action-lines { margin: var(--space-2) 0 0; display: grid; gap: var(--space-1); }
 .portfolio-action-lines > div { display: grid; grid-template-columns: 6.5em 1fr; gap: var(--space-2); }
 .portfolio-action-lines dt { color: var(--color-text-tertiary); font-size: var(--font-size-xs); padding-top: 1px; }

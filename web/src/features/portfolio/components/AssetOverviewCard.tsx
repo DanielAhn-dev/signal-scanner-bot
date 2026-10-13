@@ -16,6 +16,12 @@ type AssetOverviewCardProps = {
   dbSeedCapital: number | null
 }
 
+/** 비중 목록에서 누른 종목의 보유 카드로 스크롤 (다른 페이지에 있어 카드가 없으면 아무 일도 하지 않는다) */
+function scrollToHolding(code: string) {
+  const el = document.querySelector(`[data-holding-code="${CSS.escape(code)}"]`)
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export default function AssetOverviewCard({
   selectedAccountKey,
   accountFolders,
@@ -92,7 +98,13 @@ export default function AssetOverviewCard({
                 <div className="caption muted">비중을 계산할 데이터가 없습니다.</div>
               ) : (
                 allocationRows.map((row, idx) => (
-                  <div key={`${row.code}-${idx}`} className="portfolio-allocation-item">
+                  <button
+                    type="button"
+                    key={`${row.code}-${idx}`}
+                    className="portfolio-allocation-item"
+                    disabled={row.code === 'CASH'}
+                    onClick={() => scrollToHolding(row.code)}
+                  >
                     <div className="portfolio-allocation-item-name">
                       <span className="portfolio-allocation-dot" style={{ background: ALLOCATION_COLORS[idx % ALLOCATION_COLORS.length] }} />
                       <span>{row.name}</span>
@@ -101,7 +113,7 @@ export default function AssetOverviewCard({
                       <span>{formatNumber(row.ratio, 1)}%</span>
                       <span className="muted">{formatKrwCompact(row.value)}</span>
                     </div>
-                  </div>
+                  </button>
                 ))
               )}
             </div>
