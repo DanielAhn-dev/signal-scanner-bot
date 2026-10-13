@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAutoTradeSellStep, sellReasonSummary, type HoldingRow } from "../src/services/virtualAutoTradeSellStep";
+import { createAutoTradeSellStep, partialSellNoteTag, sellReasonSummary, type HoldingRow } from "../src/services/virtualAutoTradeSellStep";
 import { createHarness } from "./helpers/cashSweepHarness";
 
 // 종목 매도는 실현손익(prefs)·포지션·거래기록·FIFO 로트를 따로 쓴다. 현금은 실행 끝에
@@ -162,4 +162,12 @@ test("sellReasonSummary: 익절만 익절로 적고, 섹터 정리·비중 축�
   assert.equal(sellReasonSummary("overweight-trim", false), "비중 초과 축소 매도");
   assert.equal(sellReasonSummary("loss-trim", false), "자동 손실 축소");
   assert.equal(sellReasonSummary("stop-loss", true), "자동 손절");
+});
+test("partialSellNoteTag: 일부 매도 메모는 사유대로 익절·손절·매도를 구분한다", () => {
+  // 2026-10-13 삼성SDI −7.37% 절반 손절이 "[실행 부분익절]"로 알림에 나갔다
+  assert.equal(partialSellNoteTag("stop-loss"), "부분손절");
+  assert.equal(partialSellNoteTag("take-profit-partial"), "부분익절");
+  assert.equal(partialSellNoteTag("take-profit-final"), "부분익절");
+  assert.equal(partialSellNoteTag("loss-trim"), "부분매도");
+  assert.equal(partialSellNoteTag("overweight-trim"), "부분매도");
 });

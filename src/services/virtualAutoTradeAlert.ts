@@ -5,11 +5,11 @@ import {
 } from "../bot/messages/layout";
 import type { InlineButton } from "../telegram/keyboards";
 
-const EXECUTION_NOTE_PATTERN = /\[(?:실행 매수|실행 추가매수)\]\s+[^()]+\(([0-9A-Z]+)\)|\[(?:실행 매도|실행 부분익절)\]\s+([0-9A-Z]+)/;
+const EXECUTION_NOTE_PATTERN = /\[(?:실행 매수|실행 추가매수)\]\s+[^()]+\(([0-9A-Z]+)\)|\[(?:실행 매도|실행 부분(?:익절|손절|매도))\]\s+([0-9A-Z]+)/;
 
 export function pickExecutionLines(notes: string[]): string[] {
   return notes
-    .filter((note) => /^\[(실행 매수|실행 추가매수|실행 매도|실행 부분익절)\]/.test(note))
+    .filter((note) => /^\[(실행 매수|실행 추가매수|실행 매도|실행 부분(?:익절|손절|매도))\]/.test(note))
     .slice(0, 5);
 }
 

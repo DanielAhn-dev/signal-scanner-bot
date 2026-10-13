@@ -162,7 +162,7 @@ function buildActionResponseCards(notes: string[]): string[] {
   };
 
   const buyNotes = notes.filter((note) => /\[(실행|테스트) 매수안?\]|\[(실행|테스트) 추가매수안?\]/.test(note));
-  const sellNotes = notes.filter((note) => /\[(실행|테스트) 매도안?\]|\[(실행|테스트) 부분익절안?\]/.test(note));
+  const sellNotes = notes.filter((note) => /\[(실행|테스트) 매도안?\]|\[(실행|테스트) 부분(?:익절|손절|매도)안?\]/.test(note));
   const holdNotes = notes.filter((note) => /보유 현황|보유 종목 .* 유지|일일판단 요약/.test(note));
   const sizingNotes = notes.filter((note) => /사이징 기준|매수가 기준/.test(note));
   const responseGuides = notes

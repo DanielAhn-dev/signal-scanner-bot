@@ -81,3 +81,12 @@ test("buildAutoTradeCycleHoldAlert: 체결 또는 오류가 있으면 기존 알
     null
   );
 });
+test("pickExecutionLines·extractExecutionTargets: 부분손절·부분매도 메모도 실행으로 본다", () => {
+  const notes = [
+    "[실행 부분손절] 006400 2주 · 잔여 1주 · 전략 스윙 · 매도가 527,972원",
+    "[실행 부분매도] 000660 1주 · 잔여 1주 · 전략 스윙 · 매도가 180,000원",
+    "[실행 부분익절] 005930 1주 · 잔여 1주 · 전략 스윙 · 매도가 70,000원",
+  ];
+  assert.equal(pickExecutionLines(notes).length, 3);
+  assert.deepEqual(extractExecutionTargets(notes).map((t) => t.code), ["006400", "000660", "005930"]);
+});

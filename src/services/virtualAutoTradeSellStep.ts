@@ -50,6 +50,16 @@ export function sellReasonSummary(reason: AutoTradeSellReason, isFullExit: boole
   }
 }
 
+/**
+ * 일부만 판 매도의 실행 메모 머리말. 예전에는 사유와 상관없이 "[실행 부분익절]"이라
+ * 손실 구간 절반 손절(2026-10-13 삼성SDI −7.37%)이 텔레그램에 익절로 보였다.
+ */
+export function partialSellNoteTag(reason: AutoTradeSellReason): "부분익절" | "부분손절" | "부분매도" {
+  if (reason === "take-profit-partial" || reason === "take-profit-final") return "부분익절";
+  if (reason === "stop-loss") return "부분손절";
+  return "부분매도";
+}
+
 export type HoldingRow = {
   id: number;
   code: string;
@@ -307,7 +317,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
         realizedPnlDelta: pnl,
         note: isFullExit
           ? `[테스트 매도안] ${payload.holding.code} ${sellQty}주 전량매도 · 전략 ${payload.profileLabel} · 손익률 ${(((executionPrice - payload.buyPrice) / payload.buyPrice) * 100).toFixed(2)}%`
-          : `[테스트 부분익절안] ${payload.holding.code} ${sellQty}주 매도 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel}`,
+          : `[테스트 ${partialSellNoteTag(payload.reason)}안] ${payload.holding.code} ${sellQty}주 매도 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel}`,
       };
     }
 
@@ -466,7 +476,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
       realizedPnlDelta: pnl,
       note: isFullExit
         ? `[실행 매도] ${payload.holding.code} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`
-        : `[실행 부분익절] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`,
+        : `[실행 ${partialSellNoteTag(payload.reason)}] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`,
     };
   }
 
