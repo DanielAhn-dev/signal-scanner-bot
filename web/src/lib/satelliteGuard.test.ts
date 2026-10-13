@@ -17,9 +17,18 @@ describe('satelliteStatus', () => {
     expect(s.trimAmount).toBe(0)
   })
 
-  it('비중이 넘으면 상한까지 줄일 금액을 낸다', () => {
+  it('10~20%는 팔지 않는다 — 추가매수만 멈추고 새 돈은 지수로', () => {
+    const s = satelliteStatus([etf(800), stock(200, 200)])!
+    expect(s.weightPct).toBeCloseTo(20)
+    expect(s.overWeight).toBe(true)
+    expect(s.overSellBand).toBe(false)
+    expect(s.trimAmount).toBe(0)
+  })
+
+  it('20%를 넘으면 목표 10%까지 줄일 금액을 낸다', () => {
     const s = satelliteStatus([etf(700), stock(300, 300)])!
     expect(s.overWeight).toBe(true)
+    expect(s.overSellBand).toBe(true)
     // 300 - x = 0.1 × (1000 - x) → x = 222
     expect(s.trimAmount).toBe(222)
   })

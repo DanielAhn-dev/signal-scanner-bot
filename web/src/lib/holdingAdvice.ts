@@ -2,7 +2,10 @@
  * 실계좌 보유 종목 대응 — 사용자가 직접 산 개별 종목을 막을 순 없으니, 샀다면 그 종목마다 할 일을 한 줄로 알려준다.
  * 종목이 오를지는 판단하지 않는다(종목 선별에는 우위가 없었다). 비중·손익·세금 비용만 근거로 삼는다.
  * 단일 종목 비중 한도(안전형 5% · 균형형 10%)는 검증값이 아니라 보수적 가정이다.
+ * 한도를 넘어도 바로 팔라고 하지 않는다: 한도 +10%p(REBALANCE_BAND_PP)까지는 추가매수만 멈추고 새 돈을 지수로 넣어
+ * 자연스럽게 비중을 낮춘다. 그 선을 넘을 때만 한도까지 줄이라고 안내한다(적립 우선 + 10%p 넘을 때만 매도, C14).
  */
+import { REBALANCE_BAND_PP } from '../../../src/lib/incomeGuide'
 import { INDEX_ETF_CODES } from './indexEtf'
 
 export type Holding = { code: string; name: string; quantity: number; avgPrice: number; currentPrice: number }
@@ -38,7 +41,7 @@ export function adviseHoldings(input: {
     if (INDEX_ETF_CODES.includes(h.code)) {
       return { ...base, action: 'keep', headline: '그대로 보유', detail: '지수 ETF는 팔지 않고 계속 들고 갑니다. 이번 달 적립도 여기에 넣으세요.' }
     }
-    if (weightPct > limit) {
+    if (weightPct > limit + REBALANCE_BAND_PP) {
       const trimAmount = Math.round(((weightPct - limit) / 100) * total)
       const cost = trimAmount * (input.sellCostPct(h.code) / 100)
       const gain = pnlPct >= GAIN_REVIEW_PCT ? ` 평단보다 ${pnlPct.toFixed(0)}% 오른 구간이라 비싸게 들고 있는 셈입니다.` : ''
@@ -46,6 +49,13 @@ export function adviseHoldings(input: {
         ...base, action: 'trim', trimAmount,
         headline: `${won(trimAmount)}어치 줄여 KODEX 200으로`,
         detail: `한 종목이 계좌의 ${weightPct.toFixed(0)}%라 한도(${limit}%)를 넘습니다.${gain} 팔 때 비용은 약 ${won(cost)}으로 추정합니다.`,
+      }
+    }
+    if (weightPct > limit) {
+      return {
+        ...base, action: 'redirect',
+        headline: '팔지 말고 추가 매수만 멈추기',
+        detail: `한 종목이 계좌의 ${weightPct.toFixed(0)}%로 한도(${limit}%)를 넘었습니다. 새로 넣는 돈을 KODEX 200에 넣으면 비중이 자연스럽게 내려갑니다. ${limit + REBALANCE_BAND_PP}%를 넘으면 그때 일부 줄이세요.`,
       }
     }
     if (pnlPct <= LOSS_REDIRECT_PCT) {

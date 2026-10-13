@@ -434,12 +434,22 @@ export function resolveHoldingAction(input: HoldingActionInput): HoldingAction {
       const role = bucket === 'stock' ? '개별주' : '테마 ETF'
       const facts = bucket === 'stock' ? [] : compact([liveLine(etf, false), tr3yLine(h), drawdownLine(h)])
       const src = withSource(facts)
-      if (weight != null && weight > STOCK_LIMIT_PCT) {
+      // 한도 +10%p까지는 팔지 않고 새 돈으로 비중을 낮춘다(적립 우선, C14). 그 선을 넘을 때만 줄인다.
+      if (weight != null && weight > STOCK_LIMIT_PCT + REBALANCE_BAND_PP) {
         return {
           bucket, role, tone: 'act', verdict: '일부 줄이기',
           todo: `한 종목이 계좌의 ${weight.toFixed(0)}%예요. ${STOCK_LIMIT_PCT}% 안으로 줄여 지수로 옮기세요.`,
           now: pnlLine(pnl, '손실 중이면 한 번에 말고 나눠서 줄여도 돼요.'),
           when: '비중이 한도 안으로 들어오면 그다음은 보유만 합니다.',
+          ...src,
+        }
+      }
+      if (weight != null && weight > STOCK_LIMIT_PCT) {
+        return {
+          bucket, role, tone: 'watch', verdict: '추가매수 멈춤',
+          todo: `한 종목이 계좌의 ${weight.toFixed(0)}%로 한도(${STOCK_LIMIT_PCT}%)를 넘었어요. 팔 필요는 없고, 더 사지 말고 새 돈은 지수로 넣으세요.`,
+          now: pnlLine(pnl, '종목 하나의 흔들림은 지수보다 커요.'),
+          when: `새 돈이 쌓이면 비중이 자연스럽게 내려가요. ${STOCK_LIMIT_PCT + REBALANCE_BAND_PP}%를 넘으면 그때 일부 줄이라고 안내해요.`,
           ...src,
         }
       }

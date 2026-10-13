@@ -27,6 +27,9 @@ describe('resolveHoldingAction', () => {
   })
   it('개별주는 비중 초과 → 줄이기, 과열 → 추가 멈춤, 큰 손실 → 추가 멈춤, 그 외 보유', () => {
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', accountWeightPct: 25 }).verdict).toBe('일부 줄이기')
+    // 한도 10% ~ 20%는 팔지 않고 추가매수만 멈춘다
+    expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', accountWeightPct: 15 }).verdict).toBe('추가매수 멈춤')
+    expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', accountWeightPct: 15 }).tone).toBe('watch')
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', weightCaution: { level: 'caution', message: '과열' } }).verdict).toBe('추가매수 멈춤')
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', pnlPct: -20 }).verdict).toBe('추가매수 멈춤')
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자' }).verdict).toBe('보유 · 추가는 지수로')

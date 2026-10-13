@@ -15,7 +15,7 @@ import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { useJourney } from '../../lib/journey'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 import { adviseHoldings, type Holding } from '../../lib/holdingAdvice'
-import { satelliteStatus, SATELLITE_LOSS_LIMIT_PCT, SATELLITE_MAX_WEIGHT_PCT } from '../../lib/satelliteGuard'
+import { satelliteStatus, SATELLITE_LOSS_LIMIT_PCT, SATELLITE_MAX_WEIGHT_PCT, SATELLITE_SELL_WEIGHT_PCT } from '../../lib/satelliteGuard'
 import { formatKrw } from '../../lib/format'
 import { readUserState } from '../../lib/userState'
 import { personalSetup, type InvestorProfile } from '../../lib/startPlan'
@@ -416,9 +416,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                   )}
                   {satellite && (satellite.overWeight || satellite.overLoss) && (
                     <span style={{ display: 'block', color: 'var(--color-brand)' }}>
-                      {satellite.overWeight
-                        ? `개별주가 전체의 ${SATELLITE_MAX_WEIGHT_PCT}%를 넘었어요 (약 ${formatKrw(satellite.trimAmount)} 줄이면 돌아와요)`
-                        : `개별주 묶음이 ${SATELLITE_LOSS_LIMIT_PCT}% 손실 한도에 닿았어요 — 이번 분기엔 새로 사지 않기`}
+                      {satellite.overSellBand
+                        ? `개별주가 전체의 ${satellite.weightPct.toFixed(0)}% — ${SATELLITE_SELL_WEIGHT_PCT}%를 넘어 약 ${formatKrw(satellite.trimAmount)} 정리하면 ${SATELLITE_MAX_WEIGHT_PCT}%로 돌아와요`
+                        : satellite.overWeight
+                          ? `개별주가 전체의 ${satellite.weightPct.toFixed(0)}% — 팔 필요는 없어요. 더 사지 말고 새로 넣는 돈은 지수로 (${SATELLITE_SELL_WEIGHT_PCT}% 넘으면 그때 정리)`
+                          : `개별주 묶음이 ${SATELLITE_LOSS_LIMIT_PCT}% 손실 한도에 닿았어요 — 이번 분기엔 새로 사지 않기`}
                     </span>
                   )}
                 </>

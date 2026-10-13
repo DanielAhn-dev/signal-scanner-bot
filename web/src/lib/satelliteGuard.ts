@@ -9,9 +9,15 @@
  * 한계: 비중의 분모는 이 앱에 입력한 실계좌 보유 평가액뿐이다(예금·현금·입력 안 한 계좌는 빠짐).
  * 손실은 지금 들고 있는 개별주의 평가손익만 본다 — 이미 팔아 확정한 손실은 들어가지 않는다.
  */
+import { REBALANCE_BAND_PP } from '../../../src/lib/incomeGuide'
 import { isExchangeTradedProduct } from './tradeCost'
 
 export const SATELLITE_MAX_WEIGHT_PCT = 10
+/**
+ * 개별주를 실제로 팔아 줄이라고 안내하는 선 = 목표 10% + 리밸런싱 밴드 10%p = 20%.
+ * 그 아래(10~20%)는 팔지 않고 새 돈을 지수로 넣어 자연스럽게 비중을 낮춘다 — 적립 우선 + 10%p 넘을 때만 매도(C14, H14).
+ */
+export const SATELLITE_SELL_WEIGHT_PCT = SATELLITE_MAX_WEIGHT_PCT + REBALANCE_BAND_PP
 export const SATELLITE_LOSS_LIMIT_PCT = -15
 
 export type SatelliteHolding = { code: string; name: string; quantity: number; avgPrice: number; currentPrice: number }
@@ -22,8 +28,12 @@ export type SatelliteStatus = {
   stockValue: number
   totalValue: number
   stockCount: number
+  /** 목표(10%) 초과 — 추가매수 멈추고 새 돈은 지수로 */
   overWeight: boolean
+  /** 매도 선(20%) 초과 — 목표까지 일부 정리 */
+  overSellBand: boolean
   overLoss: boolean
+  /** overSellBand일 때 목표(10%)로 되돌리는 데 줄일 금액, 아니면 0 */
   trimAmount: number
 }
 
@@ -45,9 +55,10 @@ export function satelliteStatus(holdings: SatelliteHolding[]): SatelliteStatus |
   if (!(totalValue > 0) || stockCount === 0) return null
   const weightPct = (stockValue / totalValue) * 100
   const pnlPct = stockCost > 0 ? (stockValue / stockCost - 1) * 100 : 0
-  // 비중을 상한까지 낮추려면 줄일 금액: (s - x) / (T - x) = m  →  x = (s - mT) / (1 - m)
+  // 매도 선을 넘었을 때 목표 비중까지 낮추려면 줄일 금액: (s - x) / (T - x) = m  →  x = (s - mT) / (1 - m)
   const m = SATELLITE_MAX_WEIGHT_PCT / 100
-  const trimAmount = Math.max(0, Math.round((stockValue - m * totalValue) / (1 - m)))
+  const overSellBand = weightPct > SATELLITE_SELL_WEIGHT_PCT
+  const trimAmount = overSellBand ? Math.max(0, Math.round((stockValue - m * totalValue) / (1 - m))) : 0
   return {
     weightPct,
     pnlPct,
@@ -55,6 +66,7 @@ export function satelliteStatus(holdings: SatelliteHolding[]): SatelliteStatus |
     totalValue,
     stockCount,
     overWeight: weightPct > SATELLITE_MAX_WEIGHT_PCT,
+    overSellBand,
     overLoss: pnlPct <= SATELLITE_LOSS_LIMIT_PCT,
     trimAmount,
   }
