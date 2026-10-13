@@ -103,7 +103,8 @@ export default function HoldingCard({
                 </div>
                 <div className="caption muted">
                   {displayPct != null ? `${formatNumber(displayPct, 2)}%` : '—'}
-                  {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
+                  {/* 나눠 산 종목(lot 2건 이상)은 산 날마다 기간이 달라 보유 일수 하나가 의미 없다 */}
+                  {r.hold_days != null && (r.lots?.length ?? 0) < 2 ? ` · ${r.hold_days}일` : ''}
                 </div>
               </>
             )
