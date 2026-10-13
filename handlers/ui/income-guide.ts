@@ -21,6 +21,7 @@ import {
   toHistoryEntry,
   withMonthlyEntry,
 } from '../../src/lib/incomeGuide'
+import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
@@ -89,7 +90,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ctx = { settings: file.settings, today, priceOf: (code: string) => prices.get(code) }
     return res.status(200).json({
       ok: true,
-      data: { ...view, priceFallbacks, history, comparison: compareWithHistory(view, history, ctx), health: healthTrend(view, history, ctx) },
+      data: {
+        ...view,
+        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings }),
+        priceFallbacks,
+        history, comparison: compareWithHistory(view, history, ctx), health: healthTrend(view, history, ctx) },
     })
   } catch (e: any) {
     return res.status(500).json({ error: String(e?.message || e) })

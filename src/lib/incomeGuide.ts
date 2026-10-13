@@ -170,6 +170,12 @@ export type IncomeGuideSettings = {
   financialIncomeCap: number;
   /** 나이대(선택). 있으면 모으기·전환 단계의 현금성 목표 비중에 나이대별 하한을 둔다 */
   ageBand?: AgeBand;
+  /** 최근 실제로 들어온 월 분배금(원, 세후). 있으면 상품 유형별 분배율 추정 대신 쓴다 (rebalancePlan.ts) */
+  actualMonthlyNet?: number;
+  /** 매달 새로 넣는 돈(원). 성장 목표까지 몇 달 걸리는지 계산용 */
+  monthlyContribution?: number;
+  /** 종목별 총보수(연 %) — 겹치는 종목을 합칠 때 싼 쪽을 남긴다. 없으면 보유금액이 큰 쪽 */
+  feePctByCode?: Record<string, number>;
 };
 
 export const DEFAULT_INCOME_GUIDE_SETTINGS: IncomeGuideSettings = {
@@ -229,7 +235,29 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
   let cash = pick("cash");
   if (income != null && cash != null && income + cash > 100) cash = 100 - income;
   const customTargets = income != null || cash != null ? { ...(income != null ? { income } : {}), ...(cash != null ? { cash } : {}) } : undefined;
+  // 선택 금액: 키가 없으면 그대로, ""·null·0 이하면 지운다
+  const optionalWon = (key: "actualMonthlyNet" | "monthlyContribution"): number | undefined => {
+    if (!(key in input)) return current[key];
+    const n = Number(input[key]);
+    return input[key] != null && input[key] !== ("" as unknown) && Number.isFinite(n) && n > 0 ? Math.min(1e9, n) : undefined;
+  };
+  // 총보수: 보낸 종목만 고친다(부분 patch). ""·null이면 그 종목을 지운다
+  const fees: Record<string, number> = { ...(current.feePctByCode ?? {}) };
+  const feeIn = input.feePctByCode as Record<string, unknown> | undefined;
+  if (feeIn && typeof feeIn === "object") {
+    for (const [code, v] of Object.entries(feeIn)) {
+      if (!/^[0-9A-Z]{6}$/.test(code)) continue;
+      const n = Number(v);
+      if (v == null || v === "" || !Number.isFinite(n) || n < 0) delete fees[code];
+      else fees[code] = Math.min(3, Math.round(n * 10_000) / 10_000);
+    }
+  }
+  const actualMonthlyNet = optionalWon("actualMonthlyNet");
+  const monthlyContribution = optionalWon("monthlyContribution");
   return {
+    ...(actualMonthlyNet != null ? { actualMonthlyNet } : {}),
+    ...(monthlyContribution != null ? { monthlyContribution } : {}),
+    ...(Object.keys(fees).length ? { feePctByCode: fees } : {}),
     customTargets,
     monthlyNeed: num(input.monthlyNeed, current.monthlyNeed, 0, 1e9),
     incomeStart:
