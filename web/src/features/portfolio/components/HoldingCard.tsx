@@ -123,33 +123,35 @@ export default function HoldingCard({
         )}
       </div>
 
-      {/* ── 이 종목 대응: 결론·할 일만 먼저, 상태·조건은 접어 둔다 (주의·조치 단계면 펼친 채로) ── */}
-      <div className={`portfolio-action portfolio-action--${action.tone}`} role="note" aria-label="이 종목 대응">
-        <div className="portfolio-action-head">
-          <span className="portfolio-action-verdict">{action.verdict}</span>
-          <span className="caption muted">{action.role}</span>
+      {/* ── 이 종목 대응: 결론·할 일 두 줄 요약 + 리밸런싱 링크. 봇 가상 계좌는 할 일이 없어 숨긴다 ── */}
+      {rowAccountKey !== '|||' && (
+        <div className={`portfolio-action portfolio-action--${action.tone}`} role="note" aria-label="이 종목 대응">
+          <div className="portfolio-action-head">
+            <span className="portfolio-action-verdict">{action.verdict}</span>
+            <span className="caption muted">{action.role}</span>
+          </div>
+          <div className="portfolio-action-todo">{action.todo}</div>
+          {(() => {
+            // 실계좌 개별주: 기록 뒤 고점에서 얼마나 내줬는지 (−5%부터 보이고, −15% 넘으면 경고)
+            const g = evaluatePeakGiveback({ avgPrice: r.avg_price, currentPrice: r.current_price, peakPrice: r.peak_since_buy?.price })
+            if (!g || g.fromPeakPct > -5) return null
+            const ev = PEAK_GIVEBACK_EVIDENCE
+            return (
+              <div className={`portfolio-peak-giveback${g.alert ? ' portfolio-peak-giveback--alert' : ''}`}>
+                {g.alert && <AlertTriangle size={12} aria-hidden />}
+                <span>
+                  기록 뒤 최고 {g.peakGainPct >= 0 ? '+' : ''}{formatNumber(g.peakGainPct, 1)}% → 지금 {g.nowGainPct >= 0 ? '+' : ''}{formatNumber(g.nowGainPct, 1)}%
+                  {' '}(고점 대비 {formatNumber(g.fromPeakPct, 1)}%)
+                  {g.alert && ` — 정한 선(${PEAK_GIVEBACK_ALERT_PCT}%)을 넘었어요. 과거엔 이 선에서 판 쪽이 큰 손실을 ${ev.tailImprovementPp[0]}~${ev.tailImprovementPp[1]}%p 줄였어요(평균 수익은 비슷, ${ev.period}).`}
+                </span>
+              </div>
+            )
+          })()}
+          <button type="button" className="portfolio-action-link" onClick={() => navigate('/income-guide')}>
+            자세히 · 리밸런싱 <ChevronRight size={12} aria-hidden />
+          </button>
         </div>
-        <div className="portfolio-action-todo">{action.todo}</div>
-        {(() => {
-          // 실계좌 개별주: 기록 뒤 고점에서 얼마나 내줬는지 (−5%부터 보이고, −15% 넘으면 경고)
-          const g = evaluatePeakGiveback({ avgPrice: r.avg_price, currentPrice: r.current_price, peakPrice: r.peak_since_buy?.price })
-          if (!g || g.fromPeakPct > -5) return null
-          const ev = PEAK_GIVEBACK_EVIDENCE
-          return (
-            <div className={`portfolio-peak-giveback${g.alert ? ' portfolio-peak-giveback--alert' : ''}`}>
-              {g.alert && <AlertTriangle size={12} aria-hidden />}
-              <span>
-                기록 뒤 최고 {g.peakGainPct >= 0 ? '+' : ''}{formatNumber(g.peakGainPct, 1)}% → 지금 {g.nowGainPct >= 0 ? '+' : ''}{formatNumber(g.nowGainPct, 1)}%
-                {' '}(고점 대비 {formatNumber(g.fromPeakPct, 1)}%)
-                {g.alert && ` — 정한 선(${PEAK_GIVEBACK_ALERT_PCT}%)을 넘었어요. 과거엔 이 선에서 판 쪽이 큰 손실을 ${ev.tailImprovementPp[0]}~${ev.tailImprovementPp[1]}%p 줄였어요(평균 수익은 비슷, ${ev.period}).`}
-              </span>
-            </div>
-          )
-        })()}
-        <button type="button" className="portfolio-action-link" onClick={() => navigate('/income-guide')}>
-          자세히 · 리밸런싱 <ChevronRight size={12} aria-hidden />
-        </button>
-      </div>
+      )}
 
       <Detail>
       {/* ── 봇 판정값 (검증용): 한 줄 요약만 보이고 칩·배지·근거는 펼쳐서 본다 ── */}
