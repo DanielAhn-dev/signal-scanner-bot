@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import { useCurrentChatId } from '../../stores/profileStore'
+import Collapsible from '../../components/ui/Collapsible'
+import PlanSteps, { type RebalancePlan } from './PlanSteps'
 
 type Group = 'growth' | 'income' | 'satellite' | 'cash'
 type Warning = { level: 'info' | 'warn' | 'alert'; title: string; text: string }
@@ -31,7 +33,12 @@ type View = {
     customTargets?: { income?: number; cash?: number }
     financialIncomeCap: number
     ageBand?: string
+    actualMonthlyNet?: number
+    monthlyContribution?: number
+    feePctByCode?: Record<string, number>
   }
+  /** 첫 화면 "할 일" (src/lib/rebalancePlan.ts). 보유가 없으면 null */
+  plan?: RebalancePlan | null
   targetSource: 'stage' | 'custom'
   age: { band: string; label: string; safePct: number; applied: boolean; lines: string[] } | null
   distributions: {
@@ -243,8 +250,9 @@ export default function IncomeGuidePage() {
 
   const inputStyle: React.CSSProperties = { width: 90, marginRight: 8 }
 
-  return (
-    <div style={{ paddingBottom: 24 }}>
+  const saveSettings = (patch: Record<string, unknown>) => load({ method: 'POST', body: JSON.stringify(patch) }, appliedContrib)
+
+  const settingsBox = (
       <div style={box}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 14 }}>
@@ -315,7 +323,10 @@ export default function IncomeGuidePage() {
           <div style={{ color: 'var(--color-text-tertiary)' }}>실시간가를 못 받은 {view.priceFallbacks}개는 종가나 매수가로 평가했습니다.</div>
         ) : null}
       </div>
+  )
 
+  return (
+    <div style={{ paddingBottom: 24 }}>
       {view.holdingCount === 0 ? (
         <div style={box}>
           아직 입력한 실계좌 보유가 없습니다. 포트폴리오의 <strong>계좌/보유 추가</strong>에서 증권사·계좌명과 보유 종목을 넣으면, 계좌마다 어떤 바구니에
@@ -328,6 +339,21 @@ export default function IncomeGuidePage() {
         </div>
       ) : (
         <>
+          {view.plan && <PlanSteps key={JSON.stringify(view.settings)} plan={view.plan} settings={view.settings} saveSettings={saveSettings} />}
+
+          <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>증권사에서 옮기기 전에 한 번, 옮기고 보유를 고친 뒤에 한 번 기록하면 전후가 비교됩니다.</span>
+            <input style={{ width: 200 }} placeholder="메모 (예: 겹치는 커버드콜 정리)" value={note} onChange={(e) => setNote(e.target.value)} />
+            <Button size="sm" disabled={busy} onClick={() => void record()}>
+              오늘 비중 기록
+            </Button>
+            {recordMsg && <span style={{ color: 'var(--color-text-secondary)' }}>{recordMsg}</span>}
+          </div>
+
+          <Collapsible
+            title="자세히 보기"
+            hint={`바구니별 비중 · 목표 비중 주문안 · 분배금 · 기록${view.warnings.length ? ` · 확인할 것 ${view.warnings.length}건` : ''}`}
+          >
           <div style={box}>
             <strong>바구니별 비중 — 목표 대비</strong>
             <div style={{ overflowX: 'auto' }}>
@@ -381,7 +407,10 @@ export default function IncomeGuidePage() {
           </div>
 
           <div style={{ ...box, borderColor: view.rebalance.needed ? 'var(--color-error)' : 'var(--color-border-default)' }}>
-            <strong>{view.rebalance.needed ? '지금 옮기는 것이 좋습니다' : '정기 점검 때 맞추면 됩니다'}</strong>
+            <strong>목표 비중만 맞출 때의 주문안 {view.rebalance.needed ? '(±10%p 넘음)' : '(정기 점검 때)'}</strong>
+            <div style={{ color: 'var(--color-text-tertiary)' }}>
+              바구니 비중만 보고 낸 계산이라 월 인컴 목표는 따지지 않습니다. 실제로 할 일은 맨 위 ①~③을 따르세요.
+            </div>
             <div>{view.rebalance.reason}</div>
             {view.rebalance.moves.length > 0 && (
               <ul style={{ margin: '6px 0', paddingLeft: 18 }}>
@@ -537,16 +566,8 @@ export default function IncomeGuidePage() {
 
           <div style={box}>
             <strong>점검 기록</strong>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-              메모
-              <input style={{ width: 220 }} placeholder="예: 연 1회 점검, 위성 300만 정리" value={note} onChange={(e) => setNote(e.target.value)} />
-              <Button size="sm" disabled={busy} onClick={() => void record()}>
-                오늘 비중 기록
-              </Button>
-              {recordMsg && <span style={{ color: 'var(--color-text-secondary)' }}>{recordMsg}</span>}
-            </div>
             <div style={{ color: 'var(--color-text-tertiary)' }}>
-              매달 한 번은 자동으로 기록됩니다. 리밸런싱할 때는 증권사에서 옮기기 전에 한 번, 옮기고 보유를 고친 뒤에 한 번 누르면 위에 전후 비교가 나옵니다.
+              매달 한 번은 자동으로 기록됩니다. 위 "오늘 비중 기록"으로 남긴 기록도 여기에 쌓입니다.
             </div>
             {view.history && view.history.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
@@ -667,8 +688,13 @@ export default function IncomeGuidePage() {
               분류는 종목 이름으로 정합니다(예: "커버드콜"·"프리미엄" → 커버드콜, "배당" → 배당, S&amp;P500·나스닥100 → 해외 지수). 다르게 잡힌 종목이 있으면 알려 주세요.
             </div>
           </div>
+          </Collapsible>
         </>
       )}
+
+      <Collapsible title="설정" hint={`단계: ${view.stage.title} · 월 목표 인컴 ${man(view.settings.monthlyNeed)} · 목표 비중`} defaultOpen={view.holdingCount === 0}>
+        {settingsBox}
+      </Collapsible>
 
       <div style={{ ...box, color: 'var(--color-text-tertiary)' }}>
         근거(2026-10-01 검증, 10-06 보정): 코스피와 S&amp;P500(원화)은 2003~2026 연수익이 같았고(12.0%), 반반 매년 리밸런싱이 5년 최악을 가장 줄였습니다.
