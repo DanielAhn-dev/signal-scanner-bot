@@ -307,7 +307,7 @@ def main():
     # Step 1: OHLCV collection (skip if auto-backfill already done or --skip-ohlcv)
     if skip_ohlcv or auto_backfill_done:
         if auto_backfill_done:
-            print("\n[1/7] OHLCV collection skipped (auto-backfill completed)")
+            print("\n[1/7] OHLCV collection skipped (auto-backfill covered trading date)")
         else:
             print("\n[1/7] OHLCV collection skipped (--skip-ohlcv flag)")
         market_ok = True

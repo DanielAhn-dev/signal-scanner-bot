@@ -296,13 +296,19 @@ def repair_unadjusted_price_history(supabase: Client, trading_date: str) -> bool
 
 
 def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
-    """Auto-backfill forward/history gaps for stock_daily and indicators."""
+    """Auto-backfill forward/history gaps for stock_daily and indicators.
+
+    반환값은 "이번 호출이 trading_date 당일 시세까지 받아 왔는가"다. 호출 측은 이 값이 참일 때만
+    당일 OHLCV 수집을 건너뛴다. 구멍 복구·수정주가 복구·과거 채우기는 trading_date 전날까지만 받으므로
+    참으로 만들면 안 된다(2026-10-13: 당일 행 2개가 미리 들어가 있어 앞으로 채우기를 건너뛰었는데,
+    4종목 구멍 복구가 참을 돌려 당일 수집 전체가 생략돼 OHLCV 2행만 남았다).
+    """
     latest_date = get_latest_stock_daily_date(supabase)
     if not latest_date:
         print("  Could not determine latest stock_daily date; skip auto-backfill.")
         return False
 
-    backfilled = False
+    covered_trading_date = False
     latest_dt = datetime.strptime(latest_date, "%Y-%m-%d").date()
     trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
 
@@ -336,18 +342,16 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
         if not ok_indicators:
             return False
 
-        backfilled = True
+        covered_trading_date = True
         latest_dt = trading_dt
     else:
         print(f"   stock_daily is already up to date. ({latest_date} >= {trading_date})")
 
     # 1.5) 내부 구멍 복구: 종목 단위 누락을 하루 할당량만큼만 천천히 메운다 (heal_stock_daily_gaps 참고)
-    if heal_stock_daily_gaps(supabase, trading_date):
-        backfilled = True
+    heal_stock_daily_gaps(supabase, trading_date)
 
     # 1.6) 수정주가 불일치 복구: 가격제한폭을 넘는 가짜 점프가 있는 종목의 전체 이력을 다시 받는다
-    if repair_unadjusted_price_history(supabase, trading_date):
-        backfilled = True
+    repair_unadjusted_price_history(supabase, trading_date)
 
     # 2) Historical fill for retention window
     # 과거 백필 깊이는 보존 기간과 분리한다. 보존 기간을 늘려도(cleanup.RETENTION_DAYS) 몇 년치를
@@ -363,7 +367,7 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
     earliest_date = get_earliest_stock_daily_date(supabase)
     if not earliest_date:
         print("  Could not determine earliest stock_daily date; skip historical fill.")
-        return backfilled
+        return covered_trading_date
 
     earliest_dt = datetime.strptime(earliest_date, "%Y-%m-%d").date()
     if earliest_dt > target_start_dt + timedelta(days=HIST_TOLERANCE_DAYS):
@@ -381,7 +385,7 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
             "stock_daily historical backfill",
         )
         if not ok_stock_hist:
-            return backfilled
+            return covered_trading_date
 
         ok_indicators_hist = run_python_script(
             "scripts/backfill_daily_indicators.py",
@@ -389,14 +393,12 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
             "daily_indicators historical backfill",
         )
         if not ok_indicators_hist:
-            return backfilled
-
-        backfilled = True
+            return covered_trading_date
     else:
         print(
             f"   Historical coverage OK: earliest {earliest_date}, required start <= {target_start_dt.isoformat()}"
         )
 
-    return backfilled
+    return covered_trading_date
 
 
