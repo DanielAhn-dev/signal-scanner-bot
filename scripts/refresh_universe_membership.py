@@ -457,6 +457,52 @@ def apply_inactive_updates(supabase: Client, codes: List[str]) -> int:
     return updated
 
 
+def plan_protected_restore(
+    protected_codes: set[str], listed_codes: set[str], existing: Dict[str, dict]
+) -> Tuple[List[str], List[str]]:
+    """시장 목록(frame)에 안 잡힌 보호 종목 중 수집 대상에서 빠진 것을 찾는다.
+
+    아래 루프는 frame에 있는 종목만 보호 승격을 하는데, pykrx가 막혀 DB 폴백을 쓰면 frame은
+    is_active=True 행뿐이다. 그래서 비활성·tail인 보유 ETF(신규 상장 자동 등록분 포함)는 영영 승격되지 않아
+    일봉이 쌓이지 않았다(2026-10-13 정합성 검산: 102110·472150 시세 누락).
+    반환: (extended·활성으로 되돌릴 코드, stocks에 아예 없는 코드)
+    """
+    restore: List[str] = []
+    unknown: List[str] = []
+    for code in sorted(protected_codes):
+        if code in listed_codes:
+            continue
+        prev = existing.get(code)
+        if prev is None:
+            unknown.append(code)
+            continue
+        active = bool(prev.get("is_active"))
+        level = str(prev.get("universe_level") or "")
+        if not active or level not in ("core", "extended"):
+            restore.append(code)
+    return restore, unknown
+
+
+def apply_protected_restore(supabase: Client, codes: List[str]) -> int:
+    if not codes:
+        return 0
+    updated = 0
+    for i in range(0, len(codes), 200):
+        chunk = codes[i : i + 200]
+        try:
+            supabase.table("stocks").update(
+                {
+                    "is_active": True,
+                    "universe_level": "extended",
+                    "updated_at": datetime.now().astimezone().isoformat(),
+                }
+            ).in_("code", chunk).execute()
+            updated += len(chunk)
+        except Exception as e:
+            print(f"[WARN] protected restore failed: {e}")
+    return updated
+
+
 def apply_membership_snapshot(supabase: Client, trade_date: str, rows: List[dict]) -> int:
     """Persist the point-in-time listed universe used by this refresh run."""
     if not rows:
@@ -676,6 +722,9 @@ def main() -> int:
                     continue
                 if code in listed_codes:
                     continue
+                # 보유·스윕 종목은 frame에 안 잡혀도 비활성으로 내리지 않는다 (내리면 DB 폴백 frame에서 영영 빠진다)
+                if code in protected_codes:
+                    continue
                 prev_info = missing_tracker.get(code, {}) if isinstance(missing_tracker.get(code, {}), dict) else {}
                 miss_count = int(prev_info.get("missing_runs", 0)) + 1
                 next_tracker[code] = {
@@ -691,6 +740,12 @@ def main() -> int:
         membership_snapshot = len(upserts) if args.dry_run else apply_membership_snapshot(supabase, trading_date, upserts)
         share_float_snapshot = len(upserts) if args.dry_run else apply_share_float_snapshot(supabase, trading_date, upserts)
         inactivated = len(missing_active_codes) if args.dry_run else apply_inactive_updates(supabase, missing_active_codes)
+        restore_codes, unknown_protected = plan_protected_restore(protected_codes, listed_codes, existing)
+        restored = len(restore_codes) if args.dry_run else apply_protected_restore(supabase, restore_codes)
+        promoted_to_extended += restored
+        promoted_samples.extend(restore_codes[: max(0, 8 - len(promoted_samples))])
+        if unknown_protected:
+            print(f"[WARN] protected codes missing from stocks: {','.join(unknown_protected[:10])}")
         if not args.dry_run:
             save_missing_tracker(next_tracker)
 
@@ -701,6 +756,8 @@ def main() -> int:
             "membership_snapshot": membership_snapshot,
             "share_float_snapshot": share_float_snapshot,
             "inactivated_missing": inactivated,
+            "protected_restored": restore_codes,
+            "protected_missing_from_stocks": unknown_protected,
             "promoted_to_core": promoted_to_core,
             "promoted_to_extended": promoted_to_extended,
             "demoted_to_tail": demoted_to_tail,
