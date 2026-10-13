@@ -12,7 +12,9 @@
  */
 import {
   BUCKET_YIELD_PCT,
+  REBALANCE_BAND_PP,
   isTaxAdvantagedAccount,
+  type IncomeGuideView,
   type AssetBucket,
   type BucketGroup,
   type GroupRow,
@@ -126,6 +128,25 @@ export type RebalancePlan = {
   merges: PlanMerge[];
   kinds: { before: number; after: number };
   mergeIncomeDelta: number;
+  /** 인컴을 분배금으로만 줄여 가는 중인지 (settings.incomeMode "hold") */
+  hold: boolean;
+  /**
+   * 현금 목표 (hold일 때만). 처음엔 분배금·새 돈으로만 채우고(filling), 한 번 닿은 뒤에는 목표 ±band를 벗어날 때만
+   * 지수를 팔아 채우거나(take-profit, 규칙형 익절) 넘는 현금으로 지수를 산다(buy-index). C14 "새 돈 먼저 + 밴드 밖에서만 매매".
+   */
+  cash: {
+    value: number;
+    actualPct: number;
+    targetPct: number;
+    bandPp: number;
+    state: "filling" | "ok" | "take-profit" | "buy-index";
+    /** filling: 목표까지 남은 금액, take-profit: 팔 금액, buy-index: 살 금액 */
+    amount: number;
+    /** filling일 때 분배금·새 돈으로 목표까지 걸리는 달 수 */
+    months: number | null;
+    /** take-profit일 때 팔 지수 종목 */
+    sellFrom: { code: string; name: string; accountLabel: string; price: number; shares: number } | null;
+  } | null;
   /** ③ 팔아서 더 빨리 옮길 때: 하한을 지키는 최대 매도 */
   trim: {
     code: string;
@@ -147,15 +168,17 @@ export function buildRebalancePlan(input: {
   total: number;
   groups: GroupRow[];
   settings: IncomeGuideSettings;
+  cashPlan?: IncomeGuideView["cashPlan"];
 }): RebalancePlan | null {
   const { holdings, total, groups, settings } = input;
+  const hold = settings.incomeMode === "hold";
   if (total <= 0 || holdings.length === 0) return null;
   const fees = settings.feePctByCode ?? {};
   const keep = (h: PlanHolding) => (isTaxAdvantagedAccount(h.accountLabel) ? 1 : 1 - DISTRIBUTION_TAX);
   const rawNet = (h: PlanHolding, value = h.value) => (value * holdingYieldPct(h.bucket, h.name)) / 100 / 12 * keep(h);
 
   // 인컴: 추정 → 실제 입금액이 있으면 그 비율로 보정
-  const estimateNet = holdings.reduce((s, h) => s + rawNet(h), 0);
+  const estimateNet = holdings.reduce((s, h) => s + (h.code === "CASH" ? 0 : rawNet(h)), 0);
   const actual = settings.actualMonthlyNet && settings.actualMonthlyNet > 0 ? settings.actualMonthlyNet : null;
   const scale = actual && estimateNet > 0 ? actual / estimateNet : 1;
   const netOf = (h: PlanHolding, value = h.value) => rawNet(h, value) * scale;
@@ -244,7 +267,7 @@ export function buildRebalancePlan(input: {
     .sort((a, b) => holdingYieldPct(a.bucket, a.name) - holdingYieldPct(b.bucket, b.name) || b.value - a.value);
   const c = candidates[0];
   let trim: RebalancePlan["trim"] = null;
-  if (c && needByNewMoney > 0) {
+  if (c && needByNewMoney > 0 && !hold) {
     const perWon = netOf(c, 1);
     const room = surplus + mergeIncomeDelta;
     const gap = Math.max(0, t * total - growthValue); // 팔아서 옮기면 총액은 그대로
@@ -268,11 +291,56 @@ export function buildRebalancePlan(input: {
     };
   }
 
+  // 현금 목표 (hold일 때만)
+  let cash: RebalancePlan["cash"] = null;
+  const cp = input.cashPlan;
+  if (hold && cp && cp.targetPct > 0) {
+    const bandPp = Math.min(REBALANCE_BAND_PP, Math.max(2, cp.targetPct / 2));
+    const targetValue = (cp.targetPct / 100) * total;
+    const inflow = Math.max(0, monthlyNet) + Math.max(0, settings.monthlyContribution ?? 0);
+    let state: NonNullable<RebalancePlan["cash"]>["state"] = "ok";
+    let amount = 0;
+    let sellFrom: NonNullable<RebalancePlan["cash"]>["sellFrom"] = null;
+    if (!cp.reached) {
+      state = "filling";
+      amount = Math.max(0, Math.round(targetValue - cp.value));
+    } else if (cp.actualPct < cp.targetPct - bandPp) {
+      // 지수가 올라 현금 비중이 밴드 아래로 — 목표까지 지수 일부를 판다 (판단이 아니라 비중 규칙)
+      const idx = holdings.filter((h) => h.bucket === "kr_index" || h.bucket === "global_index").sort((a, b) => b.value - a.value)[0];
+      const want = Math.max(0, targetValue - cp.value);
+      if (idx && want >= 10_000) {
+        const shares = Math.min(idx.quantity, Math.ceil(want / idx.price));
+        state = "take-profit";
+        amount = Math.round(shares * idx.price);
+        sellFrom = { code: idx.code, name: idx.name, accountLabel: idx.accountLabel, price: idx.price, shares };
+      }
+    } else if (cp.actualPct > cp.targetPct + bandPp) {
+      state = "buy-index";
+      amount = Math.max(0, Math.round(cp.value - targetValue));
+    }
+    cash = {
+      value: Math.round(cp.value),
+      actualPct: cp.actualPct,
+      targetPct: cp.targetPct,
+      bandPp,
+      state,
+      amount,
+      months: state === "filling" && amount > 0 && inflow > 0 ? Math.ceil(amount / inflow) : null,
+      sellFrom,
+    };
+  }
+
   // 맨 위 한 줄
   const parts: string[] = [];
-  if (surplus < 0) parts.push(`월 인컴이 목표보다 ${man(-surplus)} 적습니다 — 지금은 인컴 유지가 먼저입니다`);
+  if (hold) {
+    parts.push("커버드콜·배당은 더 사지 않고 분배금으로 줄여 가는 중");
+    if (cash?.state === "filling") parts.push(`현금 ${cash.actualPct.toFixed(0)}% → 목표 ${cash.targetPct.toFixed(0)}%: 분배금은 현금으로`);
+    else if (cash?.state === "take-profit") parts.push(`현금이 ${cash.actualPct.toFixed(0)}%로 줄었습니다 — 지수 ${man(cash.amount)}어치를 팔아 채울 때`);
+    else if (cash?.state === "buy-index") parts.push(`현금이 ${cash.actualPct.toFixed(0)}%로 많습니다 — ${man(cash.amount)}으로 지수를 살 때`);
+    else parts.push("분배금·새 돈은 지수로");
+  } else if (surplus < 0) parts.push(`월 인컴이 목표보다 ${man(-surplus)} 적습니다 — 지금은 인컴 유지가 먼저입니다`);
   if (merges.length > 0) parts.push(`겹치는 종목 ${merges.length}개를 합치면 ${codes.size}종 → ${remainingCodes.size}종`);
-  if (needByNewMoney > 0) parts.push(`성장 ${actualPct.toFixed(0)}% → 목표 ${targetPct.toFixed(0)}%`);
+  if (needByNewMoney > 0 && !hold) parts.push(`성장 ${actualPct.toFixed(0)}% → 목표 ${targetPct.toFixed(0)}%`);
   const headline = parts.length ? parts.join(" · ") : "지금은 바꿀 것이 없습니다. 새 돈은 계속 성장 ETF 한 곳으로 넣으세요.";
 
   return {
@@ -284,6 +352,8 @@ export function buildRebalancePlan(input: {
     merges,
     kinds: { before: codes.size, after: remainingCodes.size },
     mergeIncomeDelta: Math.round(mergeIncomeDelta),
+    hold,
+    cash,
     trim,
   };
 }

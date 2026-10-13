@@ -133,3 +133,60 @@ test("sanitize: 실제 인컴·적립액·총보수는 선택값이고 보수는
   assert.equal(s.actualMonthlyNet, undefined);
   assert.deepEqual(s.feePctByCode, { "0167B0": 0.25 });
 });
+
+// 2026-10-13 사용자: 근무 중이라 분배금은 쓰지 않고 지수로, 커버드콜은 팔지 않고 분배금으로 줄여 감, 현금 목표 10%는 분배금으로 천천히
+function holdPlan(settings: Partial<IncomeGuideSettings>, pastCashPcts: number[] = []) {
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, incomeMode: "hold" as const, overseasPct: 0, customTargets: { income: 70, cash: 10 }, ...settings };
+  const view = buildIncomeGuideView({ holdings: PORTFOLIO, settings: s, today: "2026-10-13", pastCashPcts });
+  return { view, plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan })! };
+}
+
+test("hold: 인컴은 지금 비중이 목표, 현금을 처음 채우는 동안은 지수·커버드콜을 팔지 않는다", () => {
+  const { view, plan } = holdPlan({});
+  const income = view.groups.find((g) => g.group === "income")!;
+  assert.ok(Math.abs(income.actualPct - income.targetPct) < 1e-9);
+  assert.equal(view.rebalance.orders.filter((o) => o.side === "sell").length, 0);
+  assert.equal(plan.trim, null);
+  assert.equal(plan.cash?.state, "filling");
+  assert.ok(Math.abs(plan.cash!.amount - view.total * 0.1) < 2);
+  assert.doesNotMatch(plan.headline, /인컴 유지가 먼저/);
+});
+
+test("hold: 예수금은 현금에 들어가고 주문·분배금 추정·계좌 배치에서는 빠진다", () => {
+  const base = holdPlan({}).view;
+  const { view, plan } = holdPlan({ cashBalance: 10_000_000 });
+  assert.equal(view.total, base.total + 10_000_000);
+  assert.equal(view.cashPlan.balance, 10_000_000);
+  assert.equal(view.holdingCount, base.holdingCount);
+  assert.equal(view.distribution.monthlyNet, base.distribution.monthlyNet);
+  assert.ok(view.accounts.every((a) => a.key !== "__cash"));
+  assert.ok(view.rebalance.orders.every((o) => o.code !== "CASH"));
+  assert.equal(plan.income.estimateNet, holdPlan({}).plan.income.estimateNet);
+  // 1천만 / 총액 > 15% → 넘는 몫으로 지수를 산다
+  assert.equal(plan.cash?.state, "buy-index");
+});
+
+test("hold: 목표에 한 번 닿은 뒤 현금이 밴드 아래로 줄면 지수 일부를 팔아 채운다(규칙형 익절), 밴드 안이면 그대로", () => {
+  const low = holdPlan({ cashBalance: 1_000_000 }, [10.2]).plan;
+  assert.equal(low.cash?.state, "take-profit");
+  assert.equal(low.cash?.sellFrom?.code, "069500");
+  const ok = holdPlan({ cashBalance: 6_000_000 }, [10.2]).plan;
+  assert.equal(ok.cash?.state, "ok");
+  // 지난 기록이 목표에 못 닿았으면 아직 채우는 중
+  assert.equal(holdPlan({ cashBalance: 1_000_000 }, [3]).plan.cash?.state, "filling");
+});
+
+test("sanitize: 예수금·줄이는 방식은 보낸 키만 바꾸고 빈 값이면 지운다", () => {
+  const cur = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashBalance: 5_000_000, incomeMode: "hold" as const };
+  assert.equal(sanitizeIncomeGuideSettings({ monthlyNeed: 400_000 }, cur).cashBalance, 5_000_000);
+  assert.equal(sanitizeIncomeGuideSettings({ monthlyNeed: 400_000 }, cur).incomeMode, "hold");
+  assert.equal(sanitizeIncomeGuideSettings({ cashBalance: "" as unknown as number }, cur).cashBalance, undefined);
+  assert.equal(sanitizeIncomeGuideSettings({ incomeMode: "" as unknown as "hold" }, cur).incomeMode, undefined);
+  assert.equal(sanitizeIncomeGuideSettings({ incomeMode: "weird" as unknown as "hold" }, { ...DEFAULT_INCOME_GUIDE_SETTINGS }).incomeMode, undefined);
+});
+
+test("hold가 아니면 기존 동작 그대로 (현금 단계 없음)", () => {
+  const { plan } = planFor({});
+  assert.equal(plan.hold, false);
+  assert.equal(plan.cash, null);
+});

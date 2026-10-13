@@ -176,7 +176,18 @@ export type IncomeGuideSettings = {
   monthlyContribution?: number;
   /** 종목별 총보수(연 %) — 겹치는 종목을 합칠 때 싼 쪽을 남긴다. 없으면 보유금액이 큰 쪽 */
   feePctByCode?: Record<string, number>;
+  /** 증권 계좌 예수금(원). 보유 종목만으로는 현금을 알 수 없어서 따로 받아 현금성 바구니에 더한다 */
+  cashBalance?: number;
+  /**
+   * "hold"면 인컴(커버드콜·배당·리츠)을 사지도 팔지도 않고, 분배금을 지수·현금으로 보내 비중을 저절로 줄여 간다.
+   * 인컴 목표 비중 대신 지금 비중을 목표로 두고, 현금 목표는 처음 채울 때까지 분배금·새 돈으로만 채운다(팔지 않음).
+   * 2026-10-13 사용자: 근무 중이라 분배금을 쓰지 않고 지수로 옮기며, 궁극 목표는 시드 증가.
+   */
+  incomeMode?: "hold";
 };
+
+/** 예수금을 보유 행처럼 다룰 때 쓰는 코드 — 주문·세금·분배금 추정·계좌 배치에서는 뺀다 */
+export const CASH_BALANCE_CODE = "CASH";
 
 export const DEFAULT_INCOME_GUIDE_SETTINGS: IncomeGuideSettings = {
   monthlyNeed: 500_000,
@@ -236,7 +247,7 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
   if (income != null && cash != null && income + cash > 100) cash = 100 - income;
   const customTargets = income != null || cash != null ? { ...(income != null ? { income } : {}), ...(cash != null ? { cash } : {}) } : undefined;
   // 선택 금액: 키가 없으면 그대로, ""·null·0 이하면 지운다
-  const optionalWon = (key: "actualMonthlyNet" | "monthlyContribution"): number | undefined => {
+  const optionalWon = (key: "actualMonthlyNet" | "monthlyContribution" | "cashBalance"): number | undefined => {
     if (!(key in input)) return current[key];
     const n = Number(input[key]);
     return input[key] != null && input[key] !== ("" as unknown) && Number.isFinite(n) && n > 0 ? Math.min(1e9, n) : undefined;
@@ -254,9 +265,13 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
   }
   const actualMonthlyNet = optionalWon("actualMonthlyNet");
   const monthlyContribution = optionalWon("monthlyContribution");
+  const cashBalance = optionalWon("cashBalance");
+  const incomeMode = "incomeMode" in input ? (input.incomeMode === "hold" ? "hold" : undefined) : current.incomeMode;
   return {
     ...(actualMonthlyNet != null ? { actualMonthlyNet } : {}),
     ...(monthlyContribution != null ? { monthlyContribution } : {}),
+    ...(cashBalance != null ? { cashBalance } : {}),
+    ...(incomeMode ? { incomeMode } : {}),
     ...(Object.keys(fees).length ? { feePctByCode: fees } : {}),
     customTargets,
     monthlyNeed: num(input.monthlyNeed, current.monthlyNeed, 0, 1e9),
@@ -365,6 +380,11 @@ export type IncomeGuideView = {
   } | null;
   /** 목표 비중이 단계 기본값인지, 직접 정한 값인지 */
   targetSource: "stage" | "custom";
+  /**
+   * 현금성 바구니 (예수금 포함). targetPct는 정한 목표, reached는 지금이나 지난 기록에서 목표에 한 번이라도 닿았는지.
+   * incomeMode "hold"에서 아직 못 닿았으면 groups의 현금 목표는 지금 비중으로 두어 지수를 팔아 채우지 않는다.
+   */
+  cashPlan: { value: number; balance: number; actualPct: number; targetPct: number; reached: boolean; hold: boolean };
   /** 나이대 설정이 있을 때: 현금성 하한과 매매 방법 안내. 설정 없으면 null */
   age: { band: AgeBand; label: string; safePct: number; applied: boolean; lines: string[] } | null;
   /**
@@ -582,7 +602,8 @@ export function splitChange(
     if (!(price > 0)) return null;
     holdings.push({ code: h.code, name: h.name, quantity: h.quantity, price, accountKey: "held", accountLabel: "그때 보유" });
   }
-  const held = buildIncomeGuideView({ holdings, settings: ctx.settings, today: ctx.today });
+  // 지금 예수금은 "그때 보유"에 없던 돈이다 — 가만히 뒀다면 계산에서는 뺀다
+  const held = buildIncomeGuideView({ holdings, settings: { ...ctx.settings, cashBalance: undefined }, today: ctx.today });
   if (held.total <= 0) return null;
   const baseD = distanceFromTarget(base.groups);
   const heldD = distanceFromTarget(held.groups);
@@ -700,7 +721,7 @@ function toOrders(rows: PlanRow[], deltas: Record<PlanKey, number>): { orders: G
   for (const key of Object.keys(deltas) as PlanKey[]) {
     const delta = deltas[key];
     if (Math.abs(delta) < 10_000) continue;
-    const members = rows.filter((r) => planKeyOf(r.bucket) === key);
+    const members = rows.filter((r) => planKeyOf(r.bucket) === key && r.code !== CASH_BALANCE_CODE);
     if (delta < 0) {
       let remaining = -delta;
       // 같은 우선순위 안에서는 평단보다 올라 있는(이익·본전) 종목부터 판다 — "인컴은 계속 들어오니 굳이
@@ -763,14 +784,32 @@ export function buildIncomeGuideView(input: {
   today: string;
   /** 이번에 새로 넣을 돈 — 모자란 바구니부터 채우는 안을 만든다 */
   contribution?: number;
+  /** 지난 점검 기록의 현금성 비중들 — 현금 목표에 한 번이라도 닿았는지 판단용 */
+  pastCashPcts?: number[];
 }): IncomeGuideView {
   const { settings, today } = input;
   const rows = input.holdings
-    .filter((h) => h.quantity > 0 && h.price > 0)
+    .filter((h) => h.quantity > 0 && h.price > 0 && h.code !== CASH_BALANCE_CODE)
     .map((h) => {
       const bucket = classifyHolding(h.code, h.name);
       return { ...h, value: Math.round(h.quantity * h.price), bucket, group: BUCKET_GROUP[bucket] };
     });
+  // 투자 종목만 — 분배금 추정·세금·계좌 배치는 예수금을 빼고 본다
+  const investRows = [...rows];
+  const cashBalance = Math.max(0, Math.round(settings.cashBalance ?? 0));
+  if (cashBalance > 0) {
+    rows.push({
+      code: CASH_BALANCE_CODE,
+      name: "예수금",
+      quantity: 1,
+      price: cashBalance,
+      accountKey: "__cash",
+      accountLabel: "예수금",
+      value: cashBalance,
+      bucket: "bond_cash",
+      group: "cash",
+    });
+  }
   const total = rows.reduce((s, r) => s + r.value, 0);
   const pct = (v: number) => (total > 0 ? (v / total) * 100 : 0);
 
@@ -786,10 +825,16 @@ export function buildIncomeGuideView(input: {
   const stageTargets = resolveStageTargets({ settings, total, today });
   const custom = settings.customTargets;
   const targetSource: IncomeGuideView["targetSource"] = custom && (custom.income != null || custom.cash != null) ? "custom" : "stage";
+  const hold = settings.incomeMode === "hold";
+  const cashTargetPct = custom?.cash ?? stageTargets.cashPct;
+  const cashActualPct = pct(gv("cash"));
+  const cashReached =
+    cashTargetPct <= 0 || cashActualPct >= cashTargetPct - 0.05 || (input.pastCashPcts ?? []).some((p) => p >= cashTargetPct - 0.05);
   const targets = {
     ...stageTargets,
-    incomePct: custom?.income ?? stageTargets.incomePct,
-    cashPct: custom?.cash ?? stageTargets.cashPct,
+    // 줄여 가는 중: 인컴은 지금 비중 그대로(사지도 팔지도 않음), 현금은 처음 채울 때까지 지금 비중(지수를 팔아 채우지 않음)
+    incomePct: hold ? pct(gv("income")) : custom?.income ?? stageTargets.incomePct,
+    cashPct: hold && !cashReached ? cashActualPct : cashTargetPct,
   };
   const satelliteActualPct = pct(gv("satellite"));
   // 위성은 상한일 뿐 채워 넣을 목표가 아니다 — 상한 아래면 지금 비중을 그대로 목표로 둔다
@@ -950,7 +995,7 @@ export function buildIncomeGuideView(input: {
       text: `분배율 ${DISTRIBUTION_YIELD_PCT}% 기준으로 필요한 분배형 원금이 자산의 ${MAX_INCOME_PCT}%를 넘습니다. 남은 성장형까지 분배형으로 옮기면 위기 때 완충이 사라집니다.`,
     });
   }
-  for (const r of rows) {
+  for (const r of investRows) {
     const p = pct(r.value);
     if (r.bucket === "stock" && p > 20) {
       warnings.push({
@@ -998,7 +1043,7 @@ export function buildIncomeGuideView(input: {
   }
   // 계좌 배치: 일반 계좌의 해외·분배형 ETF
   const accountsMap = new Map<string, { key: string; label: string; taxAdvantaged: boolean; total: number; byGroup: Record<BucketGroup, number> }>();
-  for (const r of rows) {
+  for (const r of investRows) {
     const a = accountsMap.get(r.accountKey) ?? {
       key: r.accountKey,
       label: r.accountLabel,
@@ -1011,7 +1056,7 @@ export function buildIncomeGuideView(input: {
     accountsMap.set(r.accountKey, a);
   }
   const accounts = [...accountsMap.values()].sort((a, b) => b.total - a.total);
-  const taxableTaxedEtf = rows.filter(
+  const taxableTaxedEtf = investRows.filter(
     (r) =>
       !isTaxAdvantagedAccount(r.accountLabel) &&
       isExchangeTradedProduct(r.code, r.name) &&
@@ -1029,7 +1074,7 @@ export function buildIncomeGuideView(input: {
   let taxableAnnual = 0;
   let shelteredAnnual = 0;
   let taxableFromCoveredCall = 0;
-  for (const r of rows) {
+  for (const r of investRows) {
     const d = (r.value * BUCKET_YIELD_PCT[r.bucket]) / 100;
     if (isTaxAdvantagedAccount(r.accountLabel)) shelteredAnnual += d;
     else {
@@ -1069,7 +1114,7 @@ export function buildIncomeGuideView(input: {
     today,
     settings,
     total,
-    holdingCount: rows.length,
+    holdingCount: investRows.length,
     stage: { key: targets.stage, title: st.title, text: st.text, yearsToIncome: targets.yearsToIncome },
     need: {
       annual,
@@ -1080,7 +1125,9 @@ export function buildIncomeGuideView(input: {
     },
     groups,
     growthSplit: { krValue, globalValue, globalPct, targetGlobalPct: settings.overseasPct },
-    distribution: estimateDistribution(byBucket),
+    distribution: estimateDistribution(
+      investRows.reduce((m, r) => m.set(r.bucket, (m.get(r.bucket) ?? 0) + r.value), new Map<AssetBucket, number>()),
+    ),
     buckets: [...byBucket.entries()]
       .map(([bucket, value]) => ({ bucket, label: BUCKET_LABEL[bucket], value, pct: pct(value) }))
       .sort((a, b) => b.value - a.value),
@@ -1096,7 +1143,8 @@ export function buildIncomeGuideView(input: {
     },
     contribution,
     targetSource,
-    age: settings.ageBand && AGE_BANDS[settings.ageBand] ? buildAgeGuide(settings.ageBand, targets.stage, targets.cashPct, custom?.cash != null) : null,
+    cashPlan: { value: gv("cash"), balance: cashBalance, actualPct: cashActualPct, targetPct: cashTargetPct, reached: cashReached, hold },
+    age: settings.ageBand && AGE_BANDS[settings.ageBand] ? buildAgeGuide(settings.ageBand, targets.stage, cashTargetPct, custom?.cash != null) : null,
     distributions,
     npsReference: buildNpsReference(byBucket, total),
     warnings,

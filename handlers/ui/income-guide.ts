@@ -75,7 +75,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const today = kstDateKey()
     const contribution = Number((req.query?.contribution as string) ?? body.contribution ?? 0)
-    const view = buildIncomeGuideView({ holdings, settings: file.settings, today, contribution })
+    const pastCashPcts = (file.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
+    const view = buildIncomeGuideView({ holdings, settings: file.settings, today, contribution, pastCashPcts })
     let history = file.history ?? []
     if (isRecord) {
       if (view.total <= 0) return res.status(400).json({ error: '기록할 계좌 보유가 없습니다.' })
@@ -92,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ok: true,
       data: {
         ...view,
-        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings }),
+        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan }),
         priceFallbacks,
         history, comparison: compareWithHistory(view, history, ctx), health: healthTrend(view, history, ctx) },
     })
