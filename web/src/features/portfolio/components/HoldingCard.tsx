@@ -102,7 +102,11 @@ export default function HoldingCard({
         <div className="portfolio-card-title-group">
           <span className="title-lg">{r.stock_name ?? r.ticker ?? r.symbol}</span>
           <span className="caption muted portfolio-stock-code">{r.code}</span>
+          {action.tone !== 'keep' && rowAccountKey !== '|||' && (
+            <span className={`portfolio-action-chip portfolio-action-chip--${action.tone}`}>{action.verdict}</span>
+          )}
         </div>
+        <div className="portfolio-card-right">
         <div className="text-right portfolio-position-pnl">
           {(() => {
             const rawPnl = pnl != null ? Number(pnl) : null
@@ -129,11 +133,13 @@ export default function HoldingCard({
             )
           })()}
         </div>
+        <ChevronDown size={16} aria-hidden className={`portfolio-card-chevron${open ? ' open' : ''}`} />
+        </div>
       </div>
 
       {/* ── 보유 정보: 수량 · 평균매수가 · 매수일 · 계좌 ── */}
       <div className="caption muted portfolio-position-meta">
-        {r.quantity}주 · 평균가 {formatKrw(r.avg_price)}{r.buy_date ? ` · ${r.buy_date}` : ''}
+        {r.quantity}주 · 평균가 {formatKrw(r.avg_price)}{open && r.buy_date ? ` · ${r.buy_date}` : ''}
         {rowAccountKey !== '|||' && (
           <span className="portfolio-meta-account">
             <Building2 size={11} />
@@ -141,12 +147,6 @@ export default function HoldingCard({
           </span>
         )}
       </div>
-        <div className="portfolio-card-toggle-foot">
-          {action.tone !== 'keep' && rowAccountKey !== '|||' && (
-            <span className={`portfolio-action-chip portfolio-action-chip--${action.tone}`}>{action.verdict}</span>
-          )}
-          <ChevronDown size={14} aria-hidden className={`portfolio-card-chevron${open ? ' open' : ''}`} />
-        </div>
       </div>
 
       {open && (
