@@ -5,7 +5,7 @@ type Props = React.InputHTMLAttributes<HTMLInputElement> & {
   textarea?: boolean
 }
 
-export default function Input({ label, textarea, className = '', type, onKeyDown, ...rest }: Props) {
+export default function Input({ label, textarea, className = '', type, onKeyDown, onFocus, ...rest }: Props) {
   const base = 'ui-input '
   
   // 숫자 입력 필드에서 키 이벤트 처리
@@ -21,7 +21,16 @@ export default function Input({ label, textarea, className = '', type, onKeyDown
       {textarea ? (
         <textarea className={base + 'ui-textarea'} {...rest as any} />
       ) : (
-        <input className={base + 'ui-text'} type={type} onKeyDown={handleKeyDown} {...rest} />
+        <input
+          className={base + 'ui-text'}
+          type={type}
+          // iOS가 연락처 자동완성 막대를 띄워 입력칸을 가리지 않게, 숫자칸은 숫자 키패드로
+          autoComplete="off"
+          inputMode={type === 'number' ? 'decimal' : undefined}
+          onFocus={type === 'number' ? (e) => { e.currentTarget.select(); onFocus?.(e) } : onFocus}
+          onKeyDown={handleKeyDown}
+          {...rest}
+        />
       )}
     </div>
   )

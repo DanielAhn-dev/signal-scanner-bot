@@ -70,8 +70,8 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
             <Input 
               label="보유 수량" 
               type="number" 
-              value={String(maintQty)} 
-              onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
+              value={maintQty === '' ? '' : String(maintQty)} 
+              onChange={(e: any) => setMaintQty(e?.target?.value === '' ? '' : Math.max(0, Math.floor(Number(e.target.value))))}
               onMouseDown={(e) => e.stopPropagation()}
             />
           </div>
@@ -235,8 +235,8 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
             <Input
               label="보유 수량"
               type="number"
-              value={String(maintQty)}
-              onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
+              value={maintQty === '' ? '' : String(maintQty)}
+              onChange={(e: any) => setMaintQty(e?.target?.value === '' ? '' : Math.max(0, Math.floor(Number(e.target.value))))}
             />
           </div>
           <Input

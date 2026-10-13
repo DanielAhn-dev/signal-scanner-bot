@@ -15,7 +15,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
   const [maintCode, setMaintCode] = useState('')
   const [maintBuyPrice, setMaintBuyPrice] = useState<number | ''>('')
   const [maintBuyDate, setMaintBuyDate] = useState<string>(getTodayLocalYmd())
-  const [maintQty, setMaintQty] = useState<number>(1)
+  const [maintQty, setMaintQty] = useState<number | ''>(1)
   const [maintBrokerName, setMaintBrokerName] = useState('')
   const [maintAccountName, setMaintAccountName] = useState('')
   const [maintLoading, setMaintLoading] = useState(false)
@@ -57,6 +57,10 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
   }
 
   const runMaintenance = async () => {
+    if ((maintMode === 'holdingedit' || maintMode === 'holdingrestore') && !(Number(maintQty) >= 1)) {
+      setMaintError('보유 수량을 1주 이상으로 입력해 주세요')
+      return
+    }
     setMaintLoading(true)
     setMaintError(null)
     try {
@@ -65,7 +69,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
         body.code = maintCode
         body.buy_price = maintBuyPrice
         body.buy_date = maintBuyDate
-        body.quantity = maintQty
+        body.quantity = Number(maintQty)
         body.broker_name = String(maintBrokerName || '').trim()
         body.account_name = String(maintAccountName || '').trim()
       }
