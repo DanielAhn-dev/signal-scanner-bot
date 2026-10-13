@@ -167,6 +167,46 @@ export function computeEntryGuardKinds(bars: DailyBar[]): EntryGuardKind[] {
   return kinds;
 }
 
+/**
+ * 당일 추격(C34): 장중 가격이 전일 종가보다 +8% 이상이면 그 자리에서 사지 않는다. 위 세 규칙은 '완료된 일봉'으로 보고,
+ * 이건 체결하려는 순간의 실시간가로 본다. 2026-10-13 사용자 결정으로 11/23 관문보다 먼저 넣었다(손실 차단형).
+ * 근거: validate_intraday_chase.py (H28 → C34, 사전 기준 두 구간 평균 음수·t < −3).
+ */
+export const INTRADAY_CHASE_MIN_GAIN = 0.08;
+
+export const INTRADAY_CHASE_EVIDENCE = {
+  period: "2015~2026",
+  generatedAt: "2026-10-07",
+  universe: "전날까지 20일 거래대금 상위 300종목(상장폐지 포함)",
+  events: 75021,
+  excess20d: -0.0439,
+  excess20dBefore2022: -0.0351,
+  excess20dSince2022: -0.0569,
+} as const;
+
+/**
+ * 실시간가와 전일 대비 변동액으로 오늘 상승률을 구한다. 전일 종가를 알 수 없으면 null(막지 않음).
+ * change는 네이버 실시간 시세의 전일 대비(원)다.
+ */
+export function intradayGainFromQuote(price: number, change: number): number | null {
+  if (!Number.isFinite(price) || !Number.isFinite(change) || price <= 0) return null;
+  const prevClose = price - change;
+  if (!(prevClose > 0)) return null;
+  return price / prevClose - 1;
+}
+
+export function isIntradayChase(gain: number | null | undefined): boolean {
+  return gain != null && Number.isFinite(gain) && gain >= INTRADAY_CHASE_MIN_GAIN;
+}
+
+export function intradayChaseMessage(gain: number): string {
+  const ev = INTRADAY_CHASE_EVIDENCE;
+  return (
+    `오늘 전일 대비 +${(gain * 100).toFixed(1)}% — 과거 장중 +8% 넘게 오른 가격에 사면 20일 뒤 코스피보다 ` +
+    `${(ev.excess20dBefore2022 * 100).toFixed(1)}%(~2021)·${(ev.excess20dSince2022 * 100).toFixed(1)}%(2022~). 당일 추격하지 않습니다.`
+  );
+}
+
 export function entryGuardLabel(kind: EntryGuardKind): string {
   return kind === "chase" ? "급등 추격" : kind === "wick" ? "긴 윗꼬리" : "한 달 급락";
 }

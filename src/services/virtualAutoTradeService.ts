@@ -82,7 +82,15 @@ import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securiti
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
-import { entryGuardLabel, fetchChaseEntries, type ChaseEntryResult } from "./chaseEntrySignal";
+import {
+  entryGuardLabel,
+  fetchChaseEntries,
+  intradayChaseMessage,
+  intradayGainFromQuote,
+  isIntradayChase,
+  type ChaseEntryResult,
+} from "./chaseEntrySignal";
+import { fetchQuarterLossGuard, QUARTER_STOCK_LOSS_LIMIT_PCT, type QuarterLossGuard } from "./virtualAutoTradeQuarterLossGuard";
 import { fetchQualityMetrics, rankQualityPreference, type QualityMetrics } from "./qualityPreferenceSignal";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
 import {
@@ -192,7 +200,8 @@ type AutoTradeSettingRow = {
 type BuyPriceSource = "realtime" | "close";
 
 type BuyPriceResolution = {
-  priceByCode: Map<string, { price: number; source: BuyPriceSource }>;
+  /** intradayGain: 장중 실시간가의 전일 대비 상승률(당일 추격 C34 판정용). 종가 기준이거나 모르면 null */
+  priceByCode: Map<string, { price: number; source: BuyPriceSource; intradayGain: number | null }>;
   marketPhase: "intraday" | "after-close";
   realtimeAppliedCount: number;
   realtimeSkippedByBudget: boolean;
@@ -1627,7 +1636,7 @@ async function resolveBuyExecutionPrices(
   candidates: RankedCandidate[],
   options?: { apiBudget?: ApiBudget }
 ): Promise<BuyPriceResolution> {
-  const priceByCode = new Map<string, { price: number; source: BuyPriceSource }>();
+  const priceByCode = new Map<string, { price: number; source: BuyPriceSource; intradayGain: number | null }>();
   for (const candidate of candidates) {
     if (candidate.close > 0) {
       priceByCode.set(candidate.code, {
@@ -1636,6 +1645,7 @@ async function resolveBuyExecutionPrices(
           side: "BUY",
         }).executionPrice,
         source: "close",
+        intradayGain: null,
       });
     }
   }
@@ -1674,6 +1684,7 @@ async function resolveBuyExecutionPrices(
           side: "BUY",
         }).executionPrice,
         source: "realtime",
+        intradayGain: intradayGainFromQuote(realtimePrice, Number(realtimeByCode[candidate.code]?.change ?? NaN)),
       });
       realtimeAppliedCount += 1;
     }
@@ -2627,6 +2638,51 @@ async function getDailyRealizedPnl(payload: {
   return (data ?? []).reduce((sum: number, row: Record<string, unknown>) => {
     return sum + toNumber(row.pnl_amount, 0);
   }, 0);
+}
+
+/**
+ * 분기 개별주 손실 한도(virtualAutoTradeQuarterLossGuard). 막히면 메모·행동 기록을 남기고 true.
+ * 조회 실패도 막는다(손익을 모르면 한도 안으로 보지 않음) — 다음 회차에 다시 본다.
+ */
+async function checkQuarterLossBlock(payload: {
+  supabase: SupabaseClientAny;
+  runId: number | null;
+  chatId: number;
+  seedCapital: number;
+  prefs: Record<string, unknown>;
+  notes: string[];
+}): Promise<{ blocked: boolean; guard: QuarterLossGuard | null }> {
+  const guard = await fetchQuarterLossGuard({
+    supabase: payload.supabase,
+    chatId: payload.chatId,
+    seedCapital: payload.seedCapital,
+    capPct: readSatelliteCapPct(payload.prefs),
+  }).catch(() => null);
+  if (guard && !guard.blocked) return { blocked: false, guard };
+  payload.notes.push(
+    guard
+      ? `개별주 신규·추가 매수 중단: 이번 분기(${guard.quarterStart}~) 개별주 손익 ${fmtKrw(guard.realizedPnl + guard.unrealizedPnl)}` +
+          ` = 개별주 몫 ${fmtKrw(guard.sleeveAmount)}의 ${guard.pnlPct.toFixed(1)}% (한도 ${QUARTER_STOCK_LOSS_LIMIT_PCT}%)`
+      : "개별주 신규·추가 매수 보류: 분기 손익 조회 실패 — 다음 회차에 다시 봅니다"
+  );
+  await writeActionLog({
+    supabase: payload.supabase,
+    runId: payload.runId,
+    chatId: payload.chatId,
+    actionType: "SKIP",
+    reason: guard ? "quarter-stock-loss-limit" : "quarter-stock-loss-unknown",
+    detail: guard
+      ? {
+          quarterStart: guard.quarterStart,
+          realizedPnl: Math.round(guard.realizedPnl),
+          unrealizedPnl: Math.round(guard.unrealizedPnl),
+          sleeveAmount: Math.round(guard.sleeveAmount),
+          pnlPct: Math.round(guard.pnlPct * 10) / 10,
+          limitPct: QUARTER_STOCK_LOSS_LIMIT_PCT,
+        }
+      : {},
+  });
+  return { blocked: true, guard };
 }
 
 async function getLatestScoreAsof(
@@ -3749,6 +3805,18 @@ async function runMondayBuyForUser(payload: {
     });
     return summary;
   }
+  const mondayQuarterLoss = await checkQuarterLossBlock({
+    supabase: payload.supabase,
+    runId: payload.runId,
+    chatId,
+    seedCapital,
+    prefs,
+    notes: summary.notes,
+  });
+  if (mondayQuarterLoss.blocked) {
+    summary.skipped += 1;
+    return summary;
+  }
   if (dailyRiskBudget.scale < 1) {
     summary.notes.push(
       `위험예산 축소: 일손실 사용 ${fmtKrw(-dailyRiskBudget.lossUsedAmount)} / 한도 ${fmtKrw(-dailyRiskBudget.lossCapAmount)} -> 매수예산 ${(dailyRiskBudget.scale * 100).toFixed(0)}% 적용`
@@ -4088,6 +4156,23 @@ async function runMondayBuyForUser(payload: {
       if (!executionEntry) {
         // 장중 실시간가가 없으면 사지 않는다 (전날 종가 체결은 따라 할 수 없다) — 다음 회차에 다시 본다
         summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 매수 보류: 실시간가 없음`);
+        continue;
+      }
+      if (isIntradayChase(executionEntry.intradayGain)) {
+        // 당일 추격(C34): 전일 종가 +8% 이상 오른 장중 가격에는 사지 않는다
+        summary.skipped += 1;
+        summary.notes.push(
+          `${candidate.name || candidate.code}(${candidate.code}) 매수 보류: ${intradayChaseMessage(executionEntry.intradayGain!)}`
+        );
+        await writeActionLog({
+          supabase: payload.supabase,
+          runId: payload.runId,
+          chatId,
+          code: candidate.code,
+          actionType: "SKIP",
+          reason: "intraday-chase",
+          detail: { intradayGainPct: Math.round(executionEntry.intradayGain! * 1000) / 10 },
+        });
         continue;
       }
       const executionPrice = executionEntry.price;
@@ -5573,6 +5658,22 @@ async function runDailyReviewForUser(payload: {
       });
     }
 
+    // 분기 개별주 손실 한도(−15%): 닿으면 이번 분기 개별주 신규·추가 매수를 멈춘다. 매도는 그대로 한다.
+    // 다른 이유로 이미 막혀 있으면 조회하지 않는다.
+    const quarterLossBlockDaily =
+      !dailyBuyBlocked && !recoveryModeActive && !regimeDefenseBlockDaily && !eventRiskBlockDaily
+        ? (
+            await checkQuarterLossBlock({
+              supabase: payload.supabase,
+              runId: payload.runId,
+              chatId,
+              seedCapital,
+              prefs,
+              notes: summary.notes,
+            })
+          ).blocked
+        : false;
+
     // 추가매수·신규 진입 판단(virtualAutoTradeBuyDecision.ts)에 공통으로 넘기는 계좌 조건
     const profileBase: ProfileBase = {
       accountStrategy: payload.setting.selected_strategy,
@@ -5621,13 +5722,13 @@ async function runDailyReviewForUser(payload: {
 
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
-      requestedSlots: recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily ? 0 : persistedGuard.requestedSlots,
+      requestedSlots: recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily || quarterLossBlockDaily ? 0 : persistedGuard.requestedSlots,
       baseMinBuyScore: persistedGuard.baseMinBuyScore,
       activeCount: currentCount,
       maxPositions,
     });
 
-    if (!dailyBuyBlocked && !regimeDefenseBlockDaily && !eventRiskBlockDaily && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
+    if (!dailyBuyBlocked && !regimeDefenseBlockDaily && !eventRiskBlockDaily && !quarterLossBlockDaily && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
       const addOnSelectionRaw = await selectDailyAddOnCandidates({
         supabase: payload.supabase,
         holdings: activeHoldings,
@@ -5756,6 +5857,23 @@ async function runDailyReviewForUser(payload: {
           });
           continue;
         }
+        if (isIntradayChase(executionEntry.intradayGain)) {
+          // 당일 추격(C34): 전일 종가 +8% 이상 오른 장중 가격에는 사지 않는다
+          summary.skipped += 1;
+          summary.notes.push(
+            `${candidate.name || candidate.code}(${candidate.code}) 추가매수 보류: ${intradayChaseMessage(executionEntry.intradayGain!)}`
+          );
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "add-on-intraday-chase",
+            detail: { intradayGainPct: Math.round(executionEntry.intradayGain! * 1000) / 10 },
+          });
+          continue;
+        }
         const executionPrice = executionEntry.price;
         const executionSource = executionEntry.source;
         const plan = planAddOnBuy({
@@ -5876,7 +5994,7 @@ async function runDailyReviewForUser(payload: {
       payload.manualLearning ? 3 : 0
     );
     // 복구 모드 또는 대형주 방어 모드 시 신규 매수 슬롯을 0으로 강제
-    const rawBuySlots = recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily ? 0 : Math.min(room, maxNewBuysPerRun);
+    const rawBuySlots = recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily || quarterLossBlockDaily ? 0 : Math.min(room, maxNewBuysPerRun);
     const perfAdjustedRebalance = applyPerformanceBuyGuard({
       requestedSlots: rawBuySlots,
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
@@ -6079,6 +6197,23 @@ async function runDailyReviewForUser(payload: {
         if (!executionEntry) {
           // 장중 실시간가가 없으면 사지 않는다 (전날 종가 체결은 따라 할 수 없다) — 다음 회차에 다시 본다
           summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 매수 보류: 실시간가 없음`);
+          continue;
+        }
+        if (isIntradayChase(executionEntry.intradayGain)) {
+          // 당일 추격(C34): 전일 종가 +8% 이상 오른 장중 가격에는 사지 않는다
+          summary.skipped += 1;
+          summary.notes.push(
+            `${candidate.name || candidate.code}(${candidate.code}) 매수 보류: ${intradayChaseMessage(executionEntry.intradayGain!)}`
+          );
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "rebalance-intraday-chase",
+            detail: { intradayGainPct: Math.round(executionEntry.intradayGain! * 1000) / 10 },
+          });
           continue;
         }
         const executionPrice = executionEntry.price;

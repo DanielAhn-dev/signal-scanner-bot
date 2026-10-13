@@ -24,6 +24,8 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   add_on_anti_pyramiding: "추가매수 제한(물타기·불타기 방지)",
   add_on_weight_caution: "추가매수 보류(과열·고점 변동성)",
   add_on_entry_guard: "추가매수 보류(급등 추격·윗꼬리·한 달 급락)",
+  intraday_chase: "매수 보류(당일 +8% 추격)",
+  quarter_stock_loss_limit: "분기 개별주 손실 한도 도달",
   rebalance_signal_gate_reject: "리밸런싱 신호 관문 탈락",
   other: "기타",
 };
@@ -50,6 +52,10 @@ export function resolveAutoTradeSkipReasonCode(note: string): string | null {
     /추가매수 보류: (?:급등 추격|긴 윗꼬리|한 달 급락)/.test(value)
   ) {
     return "add_on_entry_guard";
+  }
+  if (/^(?:add-on-|rebalance-)?intraday-chase$/.test(value) || value.includes("당일 추격하지 않습니다")) return "intraday_chase";
+  if (value === "quarter-stock-loss-limit" || value.includes("분기 손익 조회 실패") || value === "quarter-stock-loss-unknown" || value.startsWith("개별주 신규·추가 매수 중단: 이번 분기")) {
+    return "quarter_stock_loss_limit";
   }
   if (value === "rebalance-signal-gate-reject") return "rebalance_signal_gate_reject";
   if (value === "insufficient-cash") return "insufficient_cash";
