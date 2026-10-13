@@ -438,6 +438,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fee_amount: 0,
         tax_amount: 0,
         memo: `web-restore:v1;buy=${buyPrice};qty=${quantity}`,
+        // 실계좌 복원 기록이 봇 가상매매(둘 다 NULL)로 섞이지 않게 계좌를 같이 남긴다
+        broker_name: brokerName,
+        account_name: accountName,
         created_at: nowIso,
       }])
 
