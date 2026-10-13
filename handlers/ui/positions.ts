@@ -17,6 +17,7 @@ import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { ETF_BENCHMARK_CODE, fetchEtfKeyIndicators, type EtfKeyIndicator } from '../../src/services/etfKeyIndicator'
 import { selectPaged } from '../../src/services/supabasePaging'
 import { computePeakSinceBuy, type PeakSinceBuy } from '../../src/lib/peakGiveback'
+import { trimmedSinceLastBuy, type TrimTradeRow } from '../../src/lib/trimSinceBuy'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
 const POSITIONS_LOTS_TIMEOUT_MS = Math.max(120, Number(process.env.UI_POSITIONS_LOTS_TIMEOUT_MS || 300))
@@ -251,6 +252,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ])
       : Promise.resolve(new Map())
 
+    // 실계좌 개별주를 마지막 매수 뒤에 판 적이 있는가 — 보유 카드 '+20%면 절반을 지수로'(C54)를 따른 뒤 반복 안내 방지.
+    // 조회 실패·시간 초과는 null(모름)이고, 화면은 '안 팔았음'으로 단정하지 않는다.
+    const tradeKey = (code: unknown, broker: unknown, account: unknown) =>
+      `${String(code || '').trim().toUpperCase()}|${String(broker || '').trim()}|${String(account || '').trim()}`
+    const trimTradesPromise: Promise<Map<string, TrimTradeRow[]> | null> = peakTargets.length > 0
+      ? Promise.race([
+          (async () => {
+            const trimCodes = Array.from(new Set(peakTargets.map((r: any) => String(r.code).trim().toUpperCase())))
+            const rows = await selectPaged<TrimTradeRow & { code: string; broker_name: string | null; account_name: string | null }>(
+              async (from, to) =>
+                await supabase
+                  .from('virtual_trades')
+                  .select('code, side, traded_at, created_at, memo, broker_name, account_name')
+                  .eq(filterColumn, filterValue)
+                  .in('code', trimCodes)
+                  .in('side', ['BUY', 'SELL', 'ADJUST'])
+                  .order('id', { ascending: true })
+                  .range(from, to),
+              { logLabel: 'ui.positions.trim_since_buy' }
+            )
+            const out = new Map<string, TrimTradeRow[]>()
+            for (const r of rows) {
+              const key = tradeKey(r.code, r.broker_name, r.account_name)
+              const list = out.get(key) ?? []
+              list.push(r)
+              out.set(key, list)
+            }
+            return out
+          })().catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), POSITIONS_CAUTION_TIMEOUT_MS)),
+        ])
+      : Promise.resolve(null)
+
     const scoreByCode = new Map<string, { totalScore: number | null; signal: string | null }>()
     if (codes.length > 0) {
       const { data: latestScoreRows } = await supabase
@@ -410,6 +444,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const entryGuardByCode = await entryGuardPromise
     const etfKeyByCode = await etfKeyPromise
     const peakSeriesByCode = await peakSeriesPromise
+    const trimTradesByKey = await trimTradesPromise
+    const peakTargetIds = new Set(peakTargets.map((r: any) => String(r.id)))
     const todayKey = toKstDateKey()
     const benchmarkReturn1y = etfKeyByCode.get(ETF_BENCHMARK_CODE)?.return1y ?? null
     let fallbackToCloseCount = 0
@@ -521,6 +557,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const series = peakSeriesByCode.get(code)
           if (!series || !addedDateKey) return null
           return computePeakSinceBuy(series, addedDateKey, close, todayKey)
+        })(),
+        trimmed_since_buy: ((): boolean | null => {
+          if (!peakTargetIds.has(pid) || !trimTradesByKey) return null
+          return trimmedSinceLastBuy(trimTradesByKey.get(tradeKey(code, row.broker_name, row.account_name)) ?? [])
         })(),
       }
     })
