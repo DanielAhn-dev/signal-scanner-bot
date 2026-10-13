@@ -6,6 +6,8 @@ import { formatKrwCompact } from '../../../lib/format'
 import type { AccountFolder } from '../types'
 import { accountLabel } from '../lib/accountKey'
 import type { HoldingRow } from '../types'
+import { useToast } from '../../../components/ToastProvider'
+import { buildQuantityText, COPY_GROUP_OPTIONS, type CopyGroupMode } from '../lib/share'
 
 function AccountTab({ active, onClick, title, children }: { active: boolean; onClick: () => void; title?: string; children: React.ReactNode }) {
   return (
@@ -27,6 +29,7 @@ type PortfolioHeaderProps = {
   refreshing: boolean
   allRows: HoldingRow[]
   holdingAll: HoldingRow[]
+  copyRows: HoldingRow[]
   onRefresh: () => void
   onOpenShare: () => void
   onOpenMaintenance: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete') => void
@@ -51,6 +54,7 @@ export default function PortfolioHeader({
   refreshing,
   allRows,
   holdingAll,
+  copyRows,
   onRefresh,
   onOpenShare,
   onOpenMaintenance,
@@ -67,6 +71,13 @@ export default function PortfolioHeader({
   includeCost,
   totalTradeCost,
 }: PortfolioHeaderProps) {
+  const toast = useToast()
+  const [copyMode, setCopyMode] = React.useState<CopyGroupMode>(() => {
+    try {
+      const saved = localStorage.getItem('portfolio.copyMode')
+      return COPY_GROUP_OPTIONS.some((o) => o.value === saved) ? (saved as CopyGroupMode) : 'role'
+    } catch { return 'role' }
+  })
   return (
     <div className="portfolio-head-sheet">
     <table className="xls-table xls-fit" style={{ width: '100%', tableLayout: 'fixed' }}>
@@ -99,6 +110,30 @@ export default function PortfolioHeader({
                   {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
                 </span>
                 <Button variant="secondary" onClick={onOpenShare} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
+                <Button
+                  variant="secondary"
+                  disabled={loading || copyRows.length === 0}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(buildQuantityText(copyRows, copyMode))
+                      toast.show('보유 종목을 복사했습니다')
+                    } catch {
+                      toast.show('복사에 실패했습니다')
+                    }
+                  }}
+                >수량 복사</Button>
+                <select
+                  className="input"
+                  aria-label="복사할 때 묶는 기준"
+                  value={copyMode}
+                  onChange={(e) => {
+                    const v = e.target.value as CopyGroupMode
+                    setCopyMode(v)
+                    try { localStorage.setItem('portfolio.copyMode', v) } catch { /* 저장 못 해도 동작에는 영향 없음 */ }
+                  }}
+                >
+                  {COPY_GROUP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </div>
               <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업">
                 <span className="caption muted" style={{ whiteSpace: 'nowrap' }}>유지보수</span>

@@ -92,7 +92,7 @@ export default function Portfolio() {
     <section className="container-app portfolio-page">
       <PortfolioHeader
         subtitle={portfolioHeaderSubtitle} onNavigateToCalendar={() => navigate('/market')}
-        loading={loading} refreshing={refreshing} allRows={allRows} holdingAll={holdingAll}
+        loading={loading} refreshing={refreshing} allRows={allRows} holdingAll={holdingAll} copyRows={summaryRows}
         onRefresh={() => load({ force: true })} onOpenShare={() => share.setShareModalOpen(true)}
         onOpenMaintenance={openMaintenanceModal}
         selectedAccountKey={selectedAccountKey} onSelectAccount={(key) => { setSelectedAccountKey(key); setPage(1) }}
