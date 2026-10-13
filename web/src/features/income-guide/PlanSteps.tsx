@@ -18,6 +18,18 @@ export type RebalancePlan = {
   }>
   kinds: { before: number; after: number }
   mergeIncomeDelta: number
+  /** 인컴을 분배금으로만 줄여 가는 중 (가이드 설정 incomeMode 'hold') */
+  hold: boolean
+  cash: {
+    value: number
+    actualPct: number
+    targetPct: number
+    bandPp: number
+    state: 'filling' | 'ok' | 'take-profit' | 'buy-index'
+    amount: number
+    months: number | null
+    sellFrom: { code: string; name: string; accountLabel: string; price: number; shares: number } | null
+  } | null
   trim: {
     code: string
     name: string
@@ -32,7 +44,13 @@ export type RebalancePlan = {
 
 type Props = {
   plan: RebalancePlan
-  settings: { actualMonthlyNet?: number; monthlyContribution?: number; feePctByCode?: Record<string, number> }
+  settings: {
+    actualMonthlyNet?: number
+    monthlyContribution?: number
+    feePctByCode?: Record<string, number>
+    cashBalance?: number
+    incomeMode?: 'hold'
+  }
   /** 설정 일부만 저장한다 (서버가 보낸 키만 고친다). 성공하면 true */
   saveSettings: (patch: Record<string, unknown>) => Promise<boolean>
 }
@@ -65,6 +83,7 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
   const [msg, setMsg] = useState<string | null>(null)
   const [actualMan, setActualMan] = useState(settings.actualMonthlyNet ? String(Math.round(settings.actualMonthlyNet / 10_000)) : '')
   const [contribMan, setContribMan] = useState(settings.monthlyContribution ? String(Math.round(settings.monthlyContribution / 10_000)) : '')
+  const [cashMan, setCashMan] = useState(settings.cashBalance ? String(Math.round(settings.cashBalance / 10_000)) : '')
   const [fees, setFees] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(settings.feePctByCode ?? {}).map(([k, v]) => [k, String(v)])),
   )
@@ -80,9 +99,13 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
   }
   const toWon = (v: string) => (v.trim() === '' ? '' : Number(v) * 10_000)
 
-  const { income, growth, merges, trim, buyTarget } = plan
+  const { income, growth, merges, trim, buyTarget, hold, cash } = plan
   const growthBar = Math.min(100, Math.max(0, growth.actualPct))
-  const short = income.surplus < 0
+  // 줄여 가는 중이면 월 인컴 목표는 생활비 하한이 아니다 — 모자람을 경고로 보이지 않는다
+  const short = !hold && income.surplus < 0
+  const filling = cash?.state === 'filling'
+  const buyName = buyTarget ? buyTarget.name : '성장 지수 ETF'
+
   const feeCodes = [...new Set(merges.flatMap((m) => [m.from.code, m.to.code]))]
 
   return (
@@ -111,12 +134,40 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
             </div>
           </div>
         )}
+        {cash && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', ...muted }}>
+              <span>
+                현금(예수금 포함) {cash.actualPct.toFixed(1)}% · {man(cash.value)}
+              </span>
+              <span>
+                목표 {cash.targetPct.toFixed(0)}% (±{cash.bandPp.toFixed(0)}%p)
+              </span>
+            </div>
+            <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${Math.min(100, (cash.actualPct / Math.max(1, cash.targetPct * 2)) * 100)}%`,
+                  height: '100%',
+                  background: 'var(--color-brand)',
+                }}
+              />
+              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 2, background: 'var(--color-text-primary)' }} />
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 8 }}>
           월 인컴(세후) <strong>{income.source === 'actual' ? '' : '약 '}{man(income.monthlyNet)}</strong>
-          {' · '}목표 {man(income.floor)}{' '}
-          <span style={{ color: short ? 'var(--color-error)' : 'var(--color-success)', fontWeight: 600 }}>
-            {short ? `${man(-income.surplus)} 모자람` : `여유 ${man(income.surplus)}`}
-          </span>
+          {hold ? (
+            <span style={muted}> · 쓰지 않고 {filling ? '현금' : '지수'}으로 보내는 돈</span>
+          ) : (
+            <>
+              {' · '}목표 {man(income.floor)}{' '}
+              <span style={{ color: short ? 'var(--color-error)' : 'var(--color-success)', fontWeight: 600 }}>
+                {short ? `${man(-income.surplus)} 모자람` : `여유 ${man(income.surplus)}`}
+              </span>
+            </>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 4, ...faint }}>
           {income.source === 'actual' ? '내가 적은 실제 분배금 기준입니다.' : '상품 유형별 분배율로 낸 추정입니다. 최근 몇 달 실제로 받은 분배금을 적으면 그 값으로 계산합니다.'}
@@ -135,15 +186,48 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
             반영
           </Button>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+          <span>증권 계좌 예수금</span>
+          <input style={smallInput} inputMode="numeric" placeholder="만원" value={cashMan} onChange={(e) => setCashMan(e.target.value)} />
+          만원
+          <Button size="sm" variant="secondary" onClick={() => void save({ cashBalance: toWon(cashMan) }, '예수금을 현금에 넣어 다시 계산했습니다.')}>
+            반영
+          </Button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          <span>커버드콜·배당 줄이는 방식</span>
+          <Button size="sm" variant={hold ? 'primary' : 'secondary'} onClick={() => void save({ incomeMode: 'hold' }, '분배금으로만 줄이는 방식으로 바꿨습니다.')}>
+            분배금으로만 (팔지 않음)
+          </Button>
+          <Button size="sm" variant={hold ? 'secondary' : 'primary'} onClick={() => void save({ incomeMode: '' }, '목표 비중대로 맞추는 방식으로 바꿨습니다.')}>
+            목표 비중대로
+          </Button>
+        </div>
+        <div style={faint}>
+          {hold
+            ? '커버드콜·배당은 더 사지 않고, 들어오는 분배금을 현금·지수로 보내 비중을 저절로 줄입니다. 현금 목표는 처음엔 분배금으로만 채웁니다.'
+            : '인컴 목표 비중에 맞춰 모자라면 사고, 성장이 모자라면 커버드콜을 팔아 옮기는 안까지 보여 줍니다.'}
+        </div>
       </div>
 
       {/* ① 새 돈 */}
       <div style={card}>
-        <span style={stepTitle}>① 새 돈은 한 곳으로</span>
-        <div>
-          내 계좌에 새로 넣는 돈과 목표({man(income.floor)})를 넘게 들어온 분배금은{' '}
-          <strong>{buyTarget ? buyTarget.name : '성장 지수 ETF'}</strong>만 삽니다. 인컴 ETF는 더 사지 않습니다.
-        </div>
+        <span style={stepTitle}>{filling ? '① 분배금·새 돈은 현금으로 (목표까지)' : '① 새 돈은 한 곳으로'}</span>
+        {filling && cash ? (
+          <div>
+            현금 목표 {cash.targetPct.toFixed(0)}%까지 <strong>{man(cash.amount)}</strong> 남았습니다. 그때까지 분배금과 새 돈은 사지 말고 계좌에 현금으로 두고,
+            늘어난 예수금을 위에 적어 주세요.
+            {cash.months != null ? ` 지금 속도면 약 ${cash.months}개월 걸립니다.` : ''} 다 채운 뒤부터는 <strong>{buyName}</strong> 한 곳만 삽니다.
+          </div>
+        ) : hold ? (
+          <div>
+            새로 넣는 돈과 들어온 분배금은 전부 <strong>{buyName}</strong>만 삽니다. 커버드콜·배당 ETF는 더 사지 않습니다.
+          </div>
+        ) : (
+          <div>
+            내 계좌에 새로 넣는 돈과 목표({man(income.floor)})를 넘게 들어온 분배금은 <strong>{buyName}</strong>만 삽니다. 인컴 ETF는 더 사지 않습니다.
+          </div>
+        )}
         <div style={faint}>{plan.buyHint}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
           내 계좌에 직접 넣는 돈 (매달)
@@ -154,7 +238,7 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
           </Button>
         </div>
         <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다. 봇 실험 계좌의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div>
-        {growth.needByNewMoney > 0 ? (
+        {hold ? null : growth.needByNewMoney > 0 ? (
           <div style={{ marginTop: 6 }}>
             새 돈만으로 목표 {growth.targetPct.toFixed(0)}%까지 약 <strong>{man(growth.needByNewMoney)}</strong>
             {growth.months != null ? (
@@ -276,8 +360,36 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
 
       {/* ③ 팔기 */}
       <div style={card}>
-        <span style={stepTitle}>③ 파는 건 서두르지 않아도 됩니다</span>
-        {!trim ? (
+        <span style={stepTitle}>{hold ? '③ 현금 규칙 — 정해진 때만 사고팝니다' : '③ 파는 건 서두르지 않아도 됩니다'}</span>
+        {hold ? (
+          <>
+            {!cash ? (
+              <div style={muted}>현금 목표가 0%입니다. 가이드 설정의 &lsquo;현금성(%)&rsquo;에 목표를 넣으면 현금 규칙을 안내합니다.</div>
+            ) : cash.state === 'take-profit' && cash.sellFrom ? (
+              <div>
+                현금이 {cash.actualPct.toFixed(1)}%로 목표 아래 {cash.bandPp.toFixed(0)}%p를 넘게 줄었습니다. <strong>{cash.sellFrom.name}</strong>{' '}
+                <strong>
+                  {cash.sellFrom.shares.toLocaleString('ko-KR')}주 (약 {man(cash.amount)})
+                </strong>
+                를 팔아 현금으로 둡니다. 지수가 오른 만큼 덜어 두는 규칙형 익절입니다.
+              </div>
+            ) : cash.state === 'buy-index' ? (
+              <div>
+                현금이 {cash.actualPct.toFixed(1)}%로 목표보다 {cash.bandPp.toFixed(0)}%p 넘게 많습니다. 넘는 <strong>{man(cash.amount)}</strong>은{' '}
+                <strong>{buyName}</strong> 매수에 씁니다.
+              </div>
+            ) : (
+              <div style={muted}>
+                지금은 팔 것이 없습니다. 현금이 {Math.max(0, cash.targetPct - cash.bandPp).toFixed(0)}% 아래로 줄면{filling ? '(목표를 한 번 채운 뒤부터)' : ''} 지수 일부를
+                팔아 채우고, {(cash.targetPct + cash.bandPp).toFixed(0)}% 위로 늘면 지수를 삽니다.
+              </div>
+            )}
+            <div style={faint}>
+              근거: 새 돈 먼저·목표에서 벗어날 때만 매매(가설 장부 C14). &lsquo;오르면 팔고 내리면 다시 사기&rsquo;를 반복하는 건 지수에서 효과가 없었습니다(C53).
+              현금은 수익을 늘리는 장치가 아니라 하락을 버티고 살 돈입니다.
+            </div>
+          </>
+        ) : !trim ? (
           <div style={muted}>
             {growth.needByNewMoney > 0 ? '팔아서 옮길 커버드콜이 없습니다. 새 돈으로만 채우세요.' : '성장 비중이 목표 이상이라 팔 필요가 없습니다.'}
           </div>
