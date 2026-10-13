@@ -19,7 +19,10 @@ type AssetOverviewCardProps = {
 /** 비중 목록에서 누른 종목의 보유 카드로 스크롤 (다른 페이지에 있어 카드가 없으면 아무 일도 하지 않는다) */
 function scrollToHolding(code: string) {
   const el = document.querySelector(`[data-holding-code="${CSS.escape(code)}"]`)
-  el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  if (!el) return
+  el.dispatchEvent(new Event('holding-expand'))
+  // 펼쳐져 높이가 바뀐 다음 위치로 이동
+  requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
 export default function AssetOverviewCard({

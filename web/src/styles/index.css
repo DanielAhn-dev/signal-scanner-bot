@@ -8419,3 +8419,13 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 /* 실제 계좌 탭: 방향 안내 */
 .portfolio-direction-list { margin: var(--space-2) 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--font-size-sm); line-height: 1.6; word-break: keep-all; }
 .portfolio-direction-link { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; color: var(--color-brand); font: inherit; cursor: pointer; }
+
+/* 보유 카드: 접힌 한 줄 행 (눌러서 펼침) */
+.portfolio-card-toggle { cursor: pointer; display: block; }
+.portfolio-card-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
+.portfolio-card-toggle-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: 2px; color: var(--color-text-tertiary); }
+.portfolio-card-chevron { transition: transform 0.15s; }
+.portfolio-card-chevron.open { transform: rotate(180deg); }
+.portfolio-action-chip { padding: 1px 8px; border-radius: 999px; font-size: var(--font-size-xs); font-weight: 600; border: 1px solid var(--color-border-default); color: var(--color-text-primary); }
+.portfolio-action-chip--watch { background: var(--color-warning-bg); border-color: var(--color-warning); }
+.portfolio-action-chip--act { background: var(--color-error-bg); border-color: var(--color-error); }

@@ -1,4 +1,5 @@
-import { AlertTriangle, Building2, ChevronRight, PlusCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Building2, ChevronDown, ChevronRight, PlusCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Detail from '../../../components/ui/Detail'
@@ -36,6 +37,16 @@ export default function HoldingCard({
   openMaintenanceModal,
 }: HoldingCardProps) {
   const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+  // 위쪽 비중 목록에서 이 종목을 눌러 이동해 오면 펼친다
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    const expand = () => setOpen(true)
+    el.addEventListener('holding-expand', expand)
+    return () => el.removeEventListener('holding-expand', expand)
+  }, [])
   const pnl = r.unrealized_pnl
   const holdingState = stateEvaluation.state
   const score = getScoreValue(r)
@@ -76,9 +87,17 @@ export default function HoldingCard({
   )
 
   return (
-    <div className="card card-lg portfolio-position-card" data-holding-code={r.code ?? undefined}>
+    <div className="card card-lg portfolio-position-card" data-holding-code={r.code ?? undefined} ref={cardRef}>
 
       {/* ── 헤더: 종목명 + 손익 ── */}
+      <div
+        className="portfolio-card-toggle"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((v) => !v) } }}
+      >
       <div className="portfolio-card-header">
         <div className="portfolio-card-title-group">
           <span className="title-lg">{r.stock_name ?? r.ticker ?? r.symbol}</span>
@@ -122,7 +141,16 @@ export default function HoldingCard({
           </span>
         )}
       </div>
+        <div className="portfolio-card-toggle-foot">
+          {action.tone !== 'keep' && rowAccountKey !== '|||' && (
+            <span className={`portfolio-action-chip portfolio-action-chip--${action.tone}`}>{action.verdict}</span>
+          )}
+          <ChevronDown size={14} aria-hidden className={`portfolio-card-chevron${open ? ' open' : ''}`} />
+        </div>
+      </div>
 
+      {open && (
+      <>
       {/* ── 이 종목 대응: 결론·할 일 두 줄 요약 + 리밸런싱 링크. 봇 가상 계좌는 할 일이 없어 숨긴다 ── */}
       {rowAccountKey !== '|||' && (
         <div className={`portfolio-action portfolio-action--${action.tone}`} role="note" aria-label="이 종목 대응">
@@ -212,6 +240,8 @@ export default function HoldingCard({
           {actionButtons}
         </details>
       ) : actionButtons}
+      </>
+      )}
     </div>
   )
 }

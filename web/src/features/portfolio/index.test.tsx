@@ -64,12 +64,16 @@ describe('포트폴리오 화면', () => {
     await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
     fireEvent.click(screen.getByText('실험 계좌 (1)'))
     await waitFor(() => expect(cardNames(container)).toEqual(['KODEX 200']))
+    // 카드는 접힌 한 줄 행으로 시작 — 눌러 펼쳐야 버튼이 보인다
+    expect(screen.queryByText('직접 개입 (실험 기록에 남음)')).toBeNull()
+    fireEvent.click(container.querySelector('.portfolio-card-toggle')!)
     expect(screen.getByText('직접 개입 (실험 기록에 남음)')).toBeTruthy()
   })
 
   it('추가매수 버튼이 매매 모달을 연다', async () => {
     const { container } = renderPage()
     await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
+    fireEvent.click(container.querySelector('.portfolio-card-toggle')!)
     fireEvent.click(screen.getAllByText('추가매수')[0])
     expect(await screen.findByText(/현재 매수 내역: 10주/)).toBeTruthy()
     expect(screen.getByText('실행')).toBeTruthy()
