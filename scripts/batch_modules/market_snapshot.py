@@ -17,6 +17,7 @@ import gzip
 import io
 import time
 from collections import Counter
+from datetime import datetime, timezone
 
 import requests
 
@@ -70,6 +71,67 @@ def fetch_market_rows(market: str, sleep_sec: float = 0.3) -> tuple[list[dict], 
     return rows, traded_dates, status
 
 
+def build_new_listing_rows(rows: list[dict], existing_codes: set[str], now_iso: str) -> list[dict]:
+    """스냅샷에는 있고 stocks에는 없는 종목(신규 상장 ETF 등)을 검색용 행으로 만든다.
+
+    stocks를 채우는 다른 배치(KRX 상장사 목록·pykrx 종목 목록)는 ETF를 빼고 가져와서,
+    시드 이후 상장한 ETF는 웹·봇 검색에 나오지 않았다. 스캔·브리핑은 core/extended + is_active만
+    읽으므로 tail·비활성으로 넣으면 검색에만 보이고 매수 후보에는 섞이지 않는다.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for r in rows:
+        code = str(r.get("code") or "").strip()
+        name = str(r.get("name") or "").strip()
+        if not code or not name or code in existing_codes or code in seen:
+            continue
+        seen.add(code)
+        close = r.get("close")
+        out.append({
+            "code": code,
+            "name": name,
+            "market": r.get("market") or None,
+            "close": int(float(close)) if close else None,
+            "is_active": False,
+            "universe_level": "tail",
+            "updated_at": now_iso,
+        })
+    return out
+
+
+def _fetch_stock_codes(supabase) -> set[str] | None:
+    """stocks 전체 코드. 조회 실패는 None(없음으로 취급해 전부 넣지 않도록)."""
+    codes: set[str] = set()
+    offset = 0
+    while True:
+        res = supabase.table("stocks").select("code").order("code").range(offset, offset + 999).execute()
+        data = res.data or []
+        codes.update(str(row.get("code") or "") for row in data)
+        if len(data) < 1000:
+            return codes
+        offset += 1000
+
+
+def register_new_listings(supabase, rows: list[dict]) -> int:
+    """신규 상장 종목을 stocks에 등록한다. 기존 행은 건드리지 않는다. 실패해도 배치는 계속."""
+    try:
+        existing = _fetch_stock_codes(supabase)
+        if not existing or len(existing) < 1000:
+            print(f"   new listings skipped: stocks lookup looks incomplete ({len(existing or [])})")
+            return 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+        new_rows = build_new_listing_rows(rows, existing, now_iso)
+        for i in range(0, len(new_rows), 200):
+            supabase.table("stocks").upsert(new_rows[i:i + 200], on_conflict="code", ignore_duplicates=True).execute()
+        if new_rows:
+            sample = ", ".join(f"{r['name']}({r['code']})" for r in new_rows[:5])
+            print(f"   registered {len(new_rows)} new listings → stocks: {sample}")
+        return len(new_rows)
+    except Exception as e:
+        print(f"   new listings failed (non-fatal): {e}")
+        return 0
+
+
 def collect_market_snapshot(supabase) -> bool:
     """전 종목 스냅샷을 수집해 Storage에 올린다. 장중(마감 전)이면 저장하지 않는다."""
     print("\n[8/8] Collecting full-market snapshot (Naver)...")
@@ -102,6 +164,7 @@ def collect_market_snapshot(supabase) -> bool:
         path = f"{snap_date[:4]}/{snap_date}.csv.gz"
         storage.from_(BUCKET).upload(path, payload, {"content-type": "application/gzip", "upsert": "true"})
         print(f"   stored {len(all_rows)} rows → {BUCKET}/{path} ({len(payload) / 1024:.0f}KB)")
+        register_new_listings(supabase, all_rows)
         return True
     except Exception as e:
         print(f"   snapshot failed (non-fatal): {e}")
