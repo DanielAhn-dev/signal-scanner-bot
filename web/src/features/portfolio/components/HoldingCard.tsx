@@ -64,6 +64,7 @@ export default function HoldingCard({
     incomePeers: accountSummary.incomePeers(rowAccountKey),
     etf: r?.etf_key ?? null,
     weightCaution: r?.weight_caution ?? null,
+    trimmedSinceBuy: r?.trimmed_since_buy ?? null,
     isBotAccount: rowAccountKey === '|||',
   })
   const reasonBadges = buildReasonBadges(r, holdingState, score, addEntryMinScore)

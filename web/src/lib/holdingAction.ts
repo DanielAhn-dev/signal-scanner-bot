@@ -12,12 +12,14 @@
  *     (과거 수익률로 고르지 않는다. 지난 수익 차이는 앞으로를 보장하지 않는다)
  *   - 목표 비중 ±10%p 밴드 리밸런싱 (REBALANCE_BAND_PP), 새 돈 우선 (H14)
  *   - 개별주 한도 10%·손실 −15%에서 추가매수 중단 (holdingAdvice.ts, 보수적 가정)
+ *   - 개별주 평단 대비 +20%면 절반을 지수로, 다시 사지 않음 (C54, data/trimToIndexFacts.ts). 매수 뒤 이미 팔았으면 끈다
  *   - 레버리지는 세후 이득 없음
  * 안내만 하며 주문하지 않는다. 순수 함수만 둔다.
  */
 import { classifyHolding, REBALANCE_BAND_PP, type AssetBucket } from '../../../src/lib/incomeGuide'
 import { ETF_HISTORY, ETF_HISTORY_META, type EtfHistoryFact } from '../data/etfHistoryFacts'
 import { SINGLE_STOCK_LIMIT_PCT } from './holdingAdvice'
+import { TRIM_TO_INDEX_FACTS } from '../data/trimToIndexFacts'
 
 export type ActionTone = 'keep' | 'watch' | 'act'
 export type HoldingAction = {
@@ -79,6 +81,10 @@ export type HoldingActionInput = {
   history?: EtfHistoryFact | null
   /** 비중 조절 경고(개별주 과열·고점 변동성) */
   weightCaution?: { level: 'caution' | 'strong'; message?: string | null } | null
+  /** 실계좌 개별주를 마지막 매수 뒤 판 적이 있는가 (서버 trimmed_since_buy, null = 모름) */
+  trimmedSinceBuy?: boolean | null
+  /** 자료 낡음 판정 기준일 — 테스트용 주입 */
+  today?: Date
   /** 봇이 관리하는 가상 계좌 종목인가 */
   isBotAccount: boolean
 }
@@ -90,6 +96,13 @@ export const DIVIDEND_CUT_ALERT_PCT = -20
 /** 분배금이 줄어든 적 있는지 볼 수 있는 최소 이력(완결된 해) */
 const MIN_HISTORY_YEARS = 3
 const LOSS_STOP_ADD_PCT = -15
+/** 개별주가 평단 대비 이만큼 오르면 절반을 지수로 (C54) */
+export const TRIM_TO_INDEX_PCT = TRIM_TO_INDEX_FACTS.triggerPct
+/** 연구 숫자를 만든 지 180일이 넘으면 낡음 표시 (planGuide.isFactStale과 같은 기준) */
+const trimFactsStale = (today: Date) => {
+  const t = Date.parse(TRIM_TO_INDEX_FACTS.generatedAt)
+  return Number.isFinite(t) && (today.getTime() - t) / 86_400_000 > 180
+}
 const STOCK_LIMIT_PCT = SINGLE_STOCK_LIMIT_PCT.balanced
 /** 코스피200 ETF 중 가장 싼 보수 수준 — 이보다 크게 비싸면 새 돈은 저보수 상품으로 */
 const KR_INDEX_CHEAP_FEE_PCT = 0.05
@@ -442,6 +455,24 @@ export function resolveHoldingAction(input: HoldingActionInput): HoldingAction {
           now: pnlLine(pnl, '손실 중이면 한 번에 말고 나눠서 줄여도 돼요.'),
           when: '비중이 한도 안으로 들어오면 그다음은 보유만 합니다.',
           ...src,
+        }
+      }
+      // 오른 김에 절반을 지수로(C54). 개별주에서만 검증했고, 매수 뒤 이미 팔았으면 반복하지 않는다.
+      if (bucket === 'stock' && pnl != null && pnl >= TRIM_TO_INDEX_PCT && input.trimmedSinceBuy !== true) {
+        const f = TRIM_TO_INDEX_FACTS
+        return {
+          bucket, role, tone: 'act', verdict: '절반 지수로',
+          todo: `평단보다 ${pct(pnl)}예요. 절반을 팔아 지수 ETF로 옮기세요. 나머지 절반은 그대로 둡니다.`
+            + (input.trimmedSinceBuy == null ? ' 이미 덜어냈다면 그대로 두세요.' : ''),
+          now: '오른 김에 절반을 빼두면, 이후 다시 내려도 번 돈의 절반은 지수에 남아요.',
+          when: '옮긴 뒤 같은 종목을 다시 사려고 기다리지 않아요. 남은 절반은 비중·손실 안내만 따릅니다.',
+          facts: [
+            `${f.period} ${f.stocks.toLocaleString('ko-KR')}종목·${f.years}년: 그냥 보유보다 중앙 ${pct(f.vsHoldMedPct)}(이긴 종목 ${f.vsHoldWinPct}%), 최대 낙폭 ${f.mddImprovePp}%p 줄어듦`,
+            `2배 넘게 오른 ${f.bigWinnerStocks}종목에선 ${pct(f.bigWinnerVsHoldPct)} — 큰 시세는 덜 가져가요`,
+            `그래도 처음부터 지수만 산 것보다는 중앙 ${pct(f.vsIndexMedPct)}. 새 돈은 지수가 기본이에요`,
+          ],
+          source: `가설 장부 C54 · 일봉 종가·수수료·매도세 반영, 상장폐지 종목 빠졌을 수 있음 · ${f.generatedAt} 생성`
+            + (trimFactsStale(input.today ?? new Date()) ? ' (180일 지난 자료 — 다시 검증 필요)' : ''),
         }
       }
       if (weight != null && weight > STOCK_LIMIT_PCT) {

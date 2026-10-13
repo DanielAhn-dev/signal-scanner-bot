@@ -34,6 +34,24 @@ describe('resolveHoldingAction', () => {
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', pnlPct: -20 }).verdict).toBe('추가매수 멈춤')
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자' }).verdict).toBe('보유 · 추가는 지수로')
   })
+  it('개별주 +20%면 절반을 지수로(C54), 매수 뒤 이미 팔았으면 끈다', () => {
+    const up = { ...base, code: '035420', name: 'NAVER', pnlPct: 23, today: new Date('2026-10-14') }
+    const a = resolveHoldingAction(up)
+    expect(a.verdict).toBe('절반 지수로')
+    expect(a.tone).toBe('act')
+    expect(a.facts.length).toBeGreaterThan(0)
+    expect(a.source).toContain('C54')
+    expect(a.source).not.toContain('180일')
+    // 매도 여부를 모르면 안내하되 '이미 덜어냈다면' 단서를 붙인다
+    expect(a.todo).toContain('이미 덜어냈다면')
+    expect(resolveHoldingAction({ ...up, trimmedSinceBuy: false }).todo).not.toContain('이미 덜어냈다면')
+    expect(resolveHoldingAction({ ...up, trimmedSinceBuy: true }).verdict).toBe('보유 · 추가는 지수로')
+    expect(resolveHoldingAction({ ...up, pnlPct: 19.9 }).verdict).toBe('보유 · 추가는 지수로')
+    // 한도 +10%p 넘는 비중 초과가 먼저, 테마 ETF·지수에는 적용하지 않는다
+    expect(resolveHoldingAction({ ...up, accountWeightPct: 25 }).verdict).toBe('일부 줄이기')
+    expect(resolveHoldingAction({ ...up, code: '069500', name: 'KODEX 200' }).verdict).not.toBe('절반 지수로')
+    expect(resolveHoldingAction({ ...up, today: new Date('2027-06-01') }).source).toContain('180일')
+  })
   it('레버리지는 줄이기 검토', () => {
     expect(resolveHoldingAction({ ...base, code: '122630', name: 'KODEX 레버리지' }).tone).toBe('act')
   })
