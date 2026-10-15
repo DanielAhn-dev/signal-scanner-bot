@@ -497,9 +497,11 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                       onChange={(e) => setAmountByCode((prev) => ({ ...prev, [row.code]: e.target.value }))}
                     />
                   </div>
-                  <Button variant="ghost" onClick={() => goAnalyze(row.code)}>상세분석</Button>
-                  <Button variant="ghost" onClick={() => goExecutionGuide(row.code)}>실행가이드</Button>
-                  <Button variant="ghost" onClick={() => goBacktest(row.code)}>패턴 점검</Button>
+                  <div className="highlights-hero-buttons">
+                    <Button variant="primary" onClick={() => goAnalyze(row.code)}>상세분석</Button>
+                    <Button variant="secondary" onClick={() => goExecutionGuide(row.code)}>실행가이드</Button>
+                    <Button variant="secondary" onClick={() => goBacktest(row.code)}>패턴 점검</Button>
+                  </div>
                 </div>
               </div>
             )

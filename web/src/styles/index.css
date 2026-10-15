@@ -6336,6 +6336,11 @@ a:focus-visible {
   flex: 1;
 }
 
+.highlights-hero-buttons {
+  display: flex;
+  gap: var(--space-3);
+}
+
 .highlights-subtitle {
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
@@ -6446,6 +6451,16 @@ a:focus-visible {
   .highlights-hero-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .highlights-hero-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: var(--space-3);
+  }
+
+  .highlights-hero-buttons .ui-button:first-child {
+    grid-column: 1 / -1;
   }
 
   .highlights-hero-actions .ui-button,
