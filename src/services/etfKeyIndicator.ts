@@ -11,13 +11,19 @@ export type EtfKeyIndicator = {
   return1m: number | null;
   return3m: number | null;
   return1y: number | null;
+  /** 시가총액 (원) — 같은 지수 상품을 고를 때 규모 비교용 */
+  marketCap: number | null;
+  /** 괴리율 % (부호 포함, 시장가격이 NAV보다 비싸면 +) */
+  deviation: number | null;
 };
 
 /** 비교 기준(코스피200) — 카드에서 "같은 기간 코스피200"으로 쓴다 */
 export const ETF_BENCHMARK_CODE = "069500";
 
 const num = (v: unknown): number | null => {
-  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/[,%+]/g, ""));
+  // 빈 값은 null — Number("")가 0이 되어 "보수 0%"처럼 보이면 안 된다
+  if (v == null || String(v).trim() === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/[,%+]/g, ""));
   return Number.isFinite(n) ? n : null;
 };
 
@@ -30,6 +36,11 @@ export function parseEtfKeyIndicator(json: unknown): EtfKeyIndicator | null {
     return1m: num(k.returnRate1m),
     return3m: num(k.returnRate3m),
     return1y: num(k.returnRate1y),
+    marketCap: num(k.marketValueRaw),
+    deviation: (() => {
+      const r = num(k.deviationRate);
+      return r == null ? null : String(k.deviationSign ?? "").includes("-") ? -Math.abs(r) : r;
+    })(),
   };
 }
 
