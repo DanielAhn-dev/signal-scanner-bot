@@ -199,16 +199,13 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
 
   // 가장 최근에 기록한 달(이번 달 포함)의 지출로 채운다 — 매달 적지 않아도 마지막 기록이 기준
   const recordedMonth = [...entries.map((e) => e.date.slice(0, 7)), ...totals.map((t) => t.month)].sort().pop() ?? null
-  const recordedRows = useMemo(() => {
-    if (!recordedMonth) return null
+  const recordedRows = useMemo(() => (recordedMonth ? rowsFromEntries(entries.filter((e) => e.date.startsWith(recordedMonth))) : null), [entries, recordedMonth])
+  // 월 합계를 적은 달이면 세부 기록과의 차액(세부 안 적음). 세부 기록은 합계 안의 일부라 빼고 센다
+  const recordedGap = useMemo(() => {
+    if (!recordedMonth) return { cash: 0, point: 0 }
     const monthEntries = entries.filter((e) => e.date.startsWith(recordedMonth))
-    const rows = rowsFromEntries(monthEntries)
-    // 월 합계를 적은 달이면 세부 기록과의 차액을 '세부 안 적음' 한 줄로 더한다(어디에 썼는지 몰라 줄일 수 있나는 기본값)
     const gap = reconcileMonth(totals.filter((t) => t.month === recordedMonth), summarizeItems(monthEntries.map((e) => ({ categoryId: e.categoryId, amount: e.amount, payment: e.payment }))))
-    const label = categoryById(UNRECORDED_CATEGORY_ID)!.label
-    if (gap.unrecordedCash > 0) rows.variable.push({ key: newKey(), categoryId: UNRECORDED_CATEGORY_ID, label, amount: gap.unrecordedCash, payment: 'cash' })
-    if (gap.unrecordedPoint > 0) rows.variable.push({ key: newKey(), categoryId: UNRECORDED_CATEGORY_ID, label, amount: gap.unrecordedPoint, payment: 'point_regular' })
-    return rows
+    return { cash: gap.unrecordedCash, point: gap.unrecordedPoint }
   }, [entries, totals, recordedMonth])
   // 고정지출은 기준(평소 금액)이라 한 달 실제로 덮지 않는다. 공과금처럼 달마다 조금씩 다른 건 옆에 기록 금액만 보여 준다
   const fixedActual: Actual | undefined = recordedMonth && recordedRows ? { month: recordedMonth, byKey: new Map(recordedRows.fixed.map((r) => [rowKey(r), r.amount])) } : undefined
@@ -216,11 +213,27 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     if (!recordedMonth || !recordedRows) return
     const rows = recordedRows
     const merge = <T extends { categoryId: string; payment?: Payment }>(cur: T[], add: T[]) => [...cur.filter((r) => !add.some((a) => rowKey(a) === rowKey(r))), ...add]
-    setVariable((cur) => merge(cur, rows.variable))
+    // 고정지출 기준 중 이 달 세부 기록이 없는 것(관리비 등)은 카드 합계 안에 이미 들어 있다고 본다 — 세부 안 적음에서 빼야 두 번 세지 않는다
+    const hasMonthTotals = totals.some((t) => t.month === recordedMonth)
+    const recordedFixed = new Set(rows.fixed.map(rowKey))
+    const inBaseline = fixed.filter((r) => (r.payment ?? 'cash') === 'cash' && !recordedFixed.has(rowKey(r))).reduce((sum, r) => sum + r.amount, 0)
+    const gapCash = Math.max(0, recordedGap.cash - inBaseline)
+    const label = categoryById(UNRECORDED_CATEGORY_ID)!.label
+    const gapRows: Row[] = [
+      ...(gapCash > 0 ? [{ key: newKey(), categoryId: UNRECORDED_CATEGORY_ID, label, amount: gapCash, payment: 'cash' as Payment }] : []),
+      ...(recordedGap.point > 0 ? [{ key: newKey(), categoryId: UNRECORDED_CATEGORY_ID, label, amount: recordedGap.point, payment: 'point_regular' as Payment }] : []),
+    ]
+    // 합계를 적은 달은 카드 합계가 전부라, 지난 점검의 변동 기준을 남기면 차액과 겹친다 → 그 달 세부 + 나머지로 통째로 바꾼다.
+    // 합계가 없는 달은 예전처럼 기록한 분류만 바꾼다
+    if (hasMonthTotals) setVariable([...rows.variable, ...gapRows])
+    else setVariable((cur) => merge(cur.filter((r) => r.categoryId !== UNRECORDED_CATEGORY_ID), rows.variable))
     setIrregular((cur) => merge(cur, rows.irregular))
     // 고정지출은 아직 없는 분류만 더한다
     setFixed((cur) => [...cur, ...rows.fixed.filter((a) => !cur.some((r) => rowKey(r) === rowKey(a)))])
-    setNotice(`${recordedMonth.replace('-', '년 ')}월 기록으로 채웠습니다. 변동·비정기는 기록 금액으로 바꿨고, 고정지출은 평소 기준을 그대로 두고 기록 금액을 옆에 보여 줍니다(없던 분류만 추가).`)
+    const month = recordedMonth.replace('-', '년 ')
+    setNotice(hasMonthTotals
+      ? `${month}월 합계로 채웠습니다. 고정지출 ${krw(fixed.reduce((sum, r) => sum + ((r.payment ?? 'cash') === 'cash' ? r.amount : 0), 0))}도 카드 합계 안에 있다고 보고, 합계에서 고정지출과 세부 기록을 뺀 나머지를 "세부 안 적음"(변동 지출)으로 넣었습니다. 변동지출은 이 달 기록으로 바꿨습니다.`
+      : `${month}월 기록으로 채웠습니다. 변동·비정기는 기록 금액으로 바꿨고, 고정지출은 평소 기준을 그대로 두고 기록 금액을 옆에 보여 줍니다(없던 분류만 추가).`)
   }
 
   const input: FlowCheckInput = useMemo(() => ({

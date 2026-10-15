@@ -160,4 +160,20 @@ describe('월 합계와 점검', () => {
     expect((screen.getByLabelText('배달 월 금액') as HTMLInputElement).value).toBe('30000')
     expect((screen.getByLabelText('세부 안 적음 월 금액') as HTMLInputElement).value).toBe('770000')
   })
+
+  it('고정지출도 카드 합계 안에 있으니 빼고, 지난 변동 기준은 남기지 않아 두 번 세지 않는다', async () => {
+    // 고정: 월세 900,000 + 넷플릭스 17,000(이 달 세부 기록 없음). 지난 변동 기준: 기본 식재료 400,000·배달 150,000
+    apiFetchMock.mockResolvedValue({
+      rules: [], checks: [{ id: 'c1', date: '2026-09-30', label: '', input: savedInput }],
+      entries: [{ id: 'c', date: `${month}-05`, amount: 30_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }],
+      totals: [{ month, label: 'A카드', kind: 'cash', amount: 1_500_000, mine: true }],
+    })
+    renderCheck()
+    fireEvent.click(await screen.findByRole('button', { name: /기록으로 채우기/ }))
+    // 1,500,000 − 고정 917,000 − 세부 30,000 = 553,000
+    expect((screen.getByLabelText('세부 안 적음 월 금액') as HTMLInputElement).value).toBe('553000')
+    expect((screen.getByLabelText('배달 월 금액') as HTMLInputElement).value).toBe('30000')
+    expect(screen.queryByLabelText('기본 식재료 월 금액')).toBeNull()
+    expect((screen.getByLabelText('월세 월 금액') as HTMLInputElement).value).toBe('900000')
+  })
 })
