@@ -100,6 +100,10 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
             <select aria-label={`${name} 결제 수단`} value={r.payment ?? 'cash'} onChange={(e) => update(r.key, { payment: e.target.value as Payment })}>
               {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
+            {/* 대출 원리금처럼 통장에서 바로 나가는 고정비 — 카드 합계에 없으니 그달 지출에 자동으로 더한다 */}
+            {kind === 'fixed' && (r.payment ?? 'cash') === 'cash' && (
+              <label className="mf-cash-check"><input type="checkbox" aria-label={`${name} 카드 밖`} checked={!!r.outsideCard} onChange={(e) => update(r.key, { outsideCard: e.target.checked || undefined })} />카드 밖(계좌 자동이체)</label>
+            )}
             {kids && (
               <select aria-label={`${name} 누구 몫`} value={r.childId && kids.list.some((c) => c.id === r.childId) ? r.childId : ''} onChange={(e) => {
                 if (e.target.value === '__add') { setAdding(r.key); return }
@@ -218,7 +222,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     // 고정지출 기준 중 이 달 세부 기록이 없는 것(관리비 등)은 카드 합계 안에 이미 들어 있다고 본다 — 세부 안 적음에서 빼야 두 번 세지 않는다
     const hasMonthTotals = totals.some((t) => t.month === recordedMonth)
     const recordedFixed = new Set(rows.fixed.map(rowKey))
-    const inBaseline = fixed.filter((r) => (r.payment ?? 'cash') === 'cash' && !recordedFixed.has(rowKey(r))).reduce((sum, r) => sum + r.amount, 0)
+    // 카드 밖(계좌 자동이체) 고정비는 카드 합계에 없으니 빼지 않는다
+    const inBaseline = fixed.filter((r) => (r.payment ?? 'cash') === 'cash' && !r.outsideCard && !recordedFixed.has(rowKey(r))).reduce((sum, r) => sum + r.amount, 0)
     // 1년 예산 비정기 중 이 달 몫인데 실제 기록이 없는 것도 카드 합계 안에 있다고 본다(기록이 있으면 세부라 이미 빠졌다)
     const monthRecords = entries.filter((e) => e.date.startsWith(recordedMonth)).map((e) => ({ ...e, memo: e.memo ?? '' }))
     const plannedIrregular = stripKeys(irregular).filter((r) => r.yearlyAmount > 0)
@@ -331,7 +336,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
 
       <section className="acc-card">
         <h2>고정지출</h2>
-        <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다. 공과금처럼 달마다 조금씩 다른 건 평소 금액(높은 쪽)을 적으세요. 기록이 있으면 옆에 실제 금액이 보이고, 바꿀지는 직접 고릅니다.</p>
+        <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다. 공과금처럼 달마다 조금씩 다른 건 평소 금액(높은 쪽)을 적으세요. 기록이 있으면 옆에 실제 금액이 보이고, 바꿀지는 직접 고릅니다. 대출 원리금처럼 카드가 아니라 통장에서 바로 나가는 건 "카드 밖(계좌 자동이체)"을 체크하면 매달 따로 적지 않아도 그달 지출에 더해집니다.</p>
         <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} kids={kids} />
       </section>
 

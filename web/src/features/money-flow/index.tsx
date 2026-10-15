@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, irregularForMonth, classifyMemo, compareSummaries, detectPayment, isRefund, monthSpending, needsItemName, parseQuickLines, splitCashWord, splitPartnerWord, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, fixedOutsideCardOf, irregularForMonth, classifyMemo, compareSummaries, detectPayment, isRefund, monthSpending, needsItemName, parseQuickLines, splitCashWord, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
@@ -437,11 +437,12 @@ function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], 
     const e = allEntries.filter((x) => x.date.startsWith(m))
     if (t.length === 0 && e.length === 0) return []
     const split = splitSummaries(e)
-    const spending = monthSpending(t, split.card, split.cash)
+    const check = checkForMonth(checks, m)
+    // 카드 밖 고정비(대출 자동이체 등)는 카드 합계에 없으니 점검 기준으로 더한다
+    const spending = monthSpending(t, split.card, split.cash, fixedOutsideCardOf(check?.input))
     const cash = spending.cash
     // 칸별 금액(카드 이름별). 배우자 칸은 이름 뒤에 표시해 내 칸과 섞이지 않게 한다
     const slots = Object.fromEntries(t.map((x) => [slotName(x), x.amount]))
-    const check = checkForMonth(checks, m)
     const fixed = check ? fixedCashOf(check.input) : null
     // 비정기: 실제 낸 기록(예산 항목과 이름이 같은 세부 기록)이 있으면 실제, 없으면 1년 예산 중 이 달 몫. 예산에 없는 비정기 기록도 뺀다
     const irregular = check ? irregularForMonth(check.input, Number(m.slice(5)), e).total : null
@@ -505,7 +506,7 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
   const monthTotals = totals.filter((t) => t.month === month)
   const hasTotals = monthTotals.length > 0
   const split = useMemo(() => splitSummaries(entries), [entries])
-  const rec = monthSpending(monthTotals, split.card, split.cash)
+  const rec = monthSpending(monthTotals, split.card, split.cash, fixedOutsideCardOf(checkForMonth(checks, month)?.input))
   const unrecorded = rec.unrecordedCash + rec.unrecordedPoint
   const refunds = summary.refundRegular + summary.refundOnce
   const trend = trendRows(month, allEntries, totals, checks)

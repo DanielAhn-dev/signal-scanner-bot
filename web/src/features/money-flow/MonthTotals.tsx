@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
-import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, irregularKey, monthSpending, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
+import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, fixedOutsideCardOf, irregularKey, monthSpending, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
 
 /** 서버가 주는 월 합계 한 칸. mine = 내가 적은 칸(배우자 칸은 읽기만) */
 export type MonthTotalRow = { month: string; label: string; kind: TotalKind; amount: number; mine: boolean }
@@ -51,7 +51,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
   const preview = monthSpending([
     ...entered.map((s) => ({ label: s.label, kind: s.kind, amount: Math.max(0, Math.round(Number(s.amount) || 0)) })),
     ...partnerTotals,
-  ], cardDetail, cashDetail)
+  ], cardDetail, cashDetail, fixedOutsideCardOf(plan))
   const savedMonth = mine.some((t) => t.month === month)
   const update = (key: string, patch: Partial<Slot>) => setSlots((list) => list.map((s) => (s.key === key ? { ...s, ...patch } : s)))
 
@@ -154,6 +154,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
             <div><dt>카드 세부 기록</dt><dd>{krw(detailTotal)}{total > 0 && ` (${Math.round((Math.min(detailTotal, total) / total) * 100)}%)`}</dd></div>
             <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd></div>
             <div><dt>현금으로 낸 돈</dt><dd>{krw(preview.cashPaid)}{cashRecords.length > 0 && ` (${cashRecords.length}건)`}</dd></div>
+            {preview.outsideCard > 0 && <div><dt>카드 밖 고정비</dt><dd>{krw(preview.outsideCard)}</dd></div>}
             <div><dt>이 달 지출</dt><dd>{krw(preview.cash)}</dd></div>
             {rest !== null && <div><dt>고정 · 비정기</dt><dd>{krw(fixed!)} · {krw(irregularPreview)}</dd></div>}
             {rest !== null && <div><dt>나머지(변동)</dt><dd>{krw(rest)}</dd></div>}
