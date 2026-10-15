@@ -853,3 +853,12 @@ export function seedPlanFromFlow(args: {
     expected: fixed + variableTotal + fund,
   };
 }
+
+/**
+ * 한 달 투자 가능액 = 수입 − 고정비 − 변동 지출(그 달 기록) − 비정기 적립(1년 예산 ÷ 12) − 비상금 적립.
+ * 수입·고정·적립은 예산(점검), 변동은 지출 기록에서. 비정기 실제 지출은 적립해 둔 돈에서 나가므로 다시 빼지 않는다.
+ */
+export function investableOf(input: FlowCheckInput, variable: number): number {
+  const fund = input.irregular.reduce((sum, item) => sum + cashEffect({ amount: irregularMonthly(item), payment: item.payment }), 0);
+  return input.monthlyIncome - fixedCashOf(input) - variable - fund - input.reserveMonthly;
+}

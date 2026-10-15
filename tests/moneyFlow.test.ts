@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, fixedOutsideCardOf, irregularDueIn, irregularForMonth, irregularHistory, matchesIrregular, monthSpending, seedExpenseTotal, seedFromCheck, seedPlanFromFlow, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, fixedOutsideCardOf, irregularDueIn, investableOf, irregularForMonth, irregularHistory, matchesIrregular, monthSpending, seedExpenseTotal, seedFromCheck, seedPlanFromFlow, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -646,4 +646,11 @@ test('전기차 충전은 주유와 같은 변동 지출, 교통카드·휴대�
   assert.equal(classifyMemo('환경부 급속충전').categoryId, 'fuel')
   assert.equal(classifyMemo('교통카드 충전').categoryId, 'transit')
   assert.equal(categoryById('fuel')?.label, '주유·충전')
+})
+
+test('한 달 투자 가능액: 수입 − 고정 − 변동 − 비정기 적립 − 비상금 적립', () => {
+  const input = { monthlyIncome: 6_000_000, reserveMonthly: 200_000, variable: [],
+    fixed: [{ categoryId: 'maintenance', amount: 2_254_391 }],
+    irregular: [{ categoryId: 'tax', label: '자동차세', yearlyAmount: 300_000, months: [1] }, { categoryId: 'car', label: '자동차보험', yearlyAmount: 1_200_000, months: [3] }] }
+  assert.equal(investableOf(input, 1_500_000), 6_000_000 - 2_254_391 - 1_500_000 - 125_000 - 200_000)
 })
