@@ -174,6 +174,13 @@ export default function SeedBuilderPage() {
   // 예전 항목별 칸에 값이 있는 기록(지난 달)은 펼쳐 둔다
   const legacyTotal = seedExpenseTotal(Object.fromEntries([...legacyMainLabels, ...legacyIrregularLabels].map(({ key }) => [key, draft.expenses[key]])))
   const legacyOpen = legacyTotal > 0
+  // 네 줄과 예전 칸을 같이 쓰면 같은 지출(학원비·대출 등)을 두 번 센다
+  const planTotal = draft.expenses.fixedCost + draft.expenses.variableCost + draft.expenses.irregularFund + draft.expenses.emergencyRefill
+  const doubleCounted = legacyOpen && planTotal > 0
+  const clearLegacy = () => {
+    setDraft((current) => ({ ...current, expenses: { ...current.expenses, ...Object.fromEntries([...legacyMainLabels, ...legacyIrregularLabels].map(({ key }) => [key, 0])) } }))
+    setNotice('예전 칸을 비웠습니다. 저장하면 이 달은 네 줄로만 계산합니다.')
+  }
   const extraIncomeTotal = sumValues(draft.extraIncome)
   const income = monthIncome(draft)
   const paydays = [
@@ -536,6 +543,7 @@ export default function SeedBuilderPage() {
               onChange={(key: PlanKey, value) => { setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: value } })); setNotice('') }}
             />
             {/* 예전 항목별 칸(식비·주거비 등)은 그 칸에 값이 있는 지난 기록에서만 보인다 — 새 달은 위 네 줄만 쓴다 */}
+            {doubleCounted && <p className="seed-warning" role="alert">위 네 줄과 아래 예전 칸에 모두 금액이 있어 같은 지출을 두 번 세고 있을 수 있습니다(예전 칸 {krw(legacyTotal)}). 고정비에 학원비·대출 등이 이미 들어 있다면 예전 칸을 비우세요. <button type="button" className="seed-link-button" onClick={clearLegacy}>예전 칸 모두 비우기</button></p>}
             {legacyOpen && <details className="seed-legacy" open>
             <summary>예전 방식(식비·주거비 등 항목별 입력){legacyTotal > 0 ? ` · ${krw(legacyTotal)}` : ''}</summary>
             {legacyMainLabels.slice(0, showExpenses ? 8 : 4).map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}
@@ -545,7 +553,7 @@ export default function SeedBuilderPage() {
             {showExpenses && showIrregular && <div className="seed-optional-inputs">{legacyIrregularLabels.map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}{draft.expenses.irregularFund > 0
               ? <p className="seed-payday-help">비정기 적립 {krw(draft.expenses.irregularFund)}을 매달 떼어 두므로, 여기 적는 실제 낸 금액은 모아 둔 돈에서 낸 것으로 보고 지출 합계에 더하지 않습니다(기록·비교용). 1년 예산에 없던 지출이면 위 항목에 넣으세요.</p>
               : <p className="seed-payday-help">2개월치 공과금은 납부한 달에 전액 적습니다. 세금·보험에 이미 포함한 금액은 다시 넣지 마세요. 1년 예산을 매달 나눠 떼어 두려면 위 "비정기 적립" 줄을 쓰세요.</p>}</div>}
-            <p className="seed-payday-help">이 달은 예전 방식으로 저장된 기록입니다. 위 네 줄을 쓰려면 여기 칸을 0으로 비우세요(같이 적으면 두 번 셉니다).</p>
+            <p className="seed-payday-help">이 달은 예전 방식으로 저장된 기록입니다. 위 네 줄을 쓰려면 이 칸들을 비우세요(같이 적으면 두 번 셉니다). <button type="button" className="seed-link-button" onClick={clearLegacy}>예전 칸 모두 비우기</button></p>
             </details>}
             <Detail>{previousExpense !== null && <p className="seed-compare">지난달 총지출 {krw(previousExpense)} · 이번 달 {krw(Math.abs(expenseTotal - previousExpense))} {expenseTotal >= previousExpense ? '증가' : '감소'}</p>}</Detail>
           </div>

@@ -317,3 +317,20 @@ describe('예상 지출 세 줄(돈 흐름·점검)', () => {
     expect(body.breakdown.fixed.items).toEqual([{ label: '관리비', amount: 300_000 }])
   })
 })
+
+describe('예전 칸과 네 줄 이중 계산', () => {
+  it('예전 칸과 네 줄이 모두 있으면 경고하고, 예전 칸 모두 비우기로 네 줄만 남긴다', async () => {
+    const today = new Date()
+    const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    apiFetchMock.mockImplementation((path: string) => Promise.resolve(String(path).includes('money-flow') ? { checks: [] } : { data: [{
+      month: currentMonth, household: 'solo', ownIncome: 5_000_000, partnerIncome: 0, reserve: 0, plan: 0, status: 'recorded', entries: [],
+      expenses: { housing: 300_000, education: 780_000, fixedCost: 2_254_391 }, extraIncome: {},
+    }] }))
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    expect(await screen.findByRole('alert')).toHaveTextContent('두 번 세고 있을 수 있습니다(예전 칸 1,080,000원)')
+    expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('3,334,391원')
+    fireEvent.click(screen.getAllByRole('button', { name: '예전 칸 모두 비우기' })[0])
+    expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('2,254,391원')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
