@@ -338,6 +338,8 @@ export type FlowItem = {
   label?: string;
   /** 자녀 계좌(childGifts)의 자녀 id. 없으면 가족 공통 */
   childId?: string;
+  /** 고정지출 중 카드가 아니라 통장에서 바로 나가는 것(대출 원리금 자동이체 등) — 카드 합계에 없으니 그달 지출에 따로 더한다 */
+  outsideCard?: boolean;
 };
 
 export type CutSplit = { must: number; trim: number; drop: number };
@@ -489,16 +491,23 @@ export function reconcileMonth(totals: MonthTotal[], summary: FlowSummary): Mont
 export type MonthSpending = MonthReconcile & {
   /** 세부 기록에서 '현금'으로 표시한 쓴 돈(환급 빼기 전) — 칸 합계 밖이라 더한다 */
   cashPaid: number;
+  /** 카드 밖으로 나가는 고정비(대출 자동이체 등) — 점검 기준으로 더한 금액 */
+  outsideCard: number;
 };
 
 /**
  * 한 달 지출: 카드 칸 합계(명세서) + 현금으로 낸 세부 기록. 카드 세부는 카드 합계 안의 일부라 차액(세부 안 적음)만 구하고,
  * 현금 세부는 합계에 더한다. 현금 기록에 붙은 환급도 통장 기준으로 뺀다.
  */
-export function monthSpending(totals: MonthTotal[], cardSummary: FlowSummary, cashSummary: FlowSummary): MonthSpending {
+export function monthSpending(totals: MonthTotal[], cardSummary: FlowSummary, cashSummary: FlowSummary, outsideCard = 0): MonthSpending {
   const rec = reconcileMonth(totals, cardSummary);
   const cashPaid = cashSummary.cash + cashSummary.refundRegular + cashSummary.refundOnce;
-  return { ...rec, cashPaid, cash: rec.cash + cashSummary.cash, consumption: rec.consumption + cashSummary.consumption };
+  return { ...rec, cashPaid, outsideCard, cash: rec.cash + cashSummary.cash + outsideCard, consumption: rec.consumption + cashSummary.consumption + outsideCard };
+}
+
+/** 점검 고정지출 중 '카드 밖(계좌 자동이체)'으로 표시한 것 — 매달 기록하지 않아도 그달 지출에 더한다 */
+export function fixedOutsideCardOf(input: FlowCheckInput | null | undefined): number {
+  return (input?.fixed ?? []).filter((item) => item.outsideCard).reduce((sum, item) => sum + cashEffect(item), 0);
 }
 
 /** 이 달에 보여 줄 칸: 이 달에 적은 칸이 있으면 그것, 없으면 가장 최근에 적은 달의 칸 이름(금액 빈칸), 그것도 없으면 기본 칸 */
@@ -764,6 +773,8 @@ export type SeedPlan = {
     source: "flow" | "check" | "none";
     cards: SeedPlanItem[];
     cash: number;
+    /** 카드 밖 고정비(대출 자동이체 등) — 지출에 더하고 고정으로 다시 뺀다 */
+    outsideCard: number;
     spending: number;
     fixedSub: number;
     irregularSub: number;
@@ -796,7 +807,8 @@ export function seedPlanFromFlow(args: {
   const fixed = input ? fixedCashOf(input) : 0;
   const card = summarizeItems(args.records.filter((r) => r.paidWith !== "cash"));
   const cash = summarizeItems(args.records.filter((r) => r.paidWith === "cash"));
-  const spending = monthSpending(args.totals, card, cash);
+  const outsideCard = fixedOutsideCardOf(input);
+  const spending = monthSpending(args.totals, card, cash, outsideCard);
   const irregular = irregularForMonth(input, Number(args.baseMonth.slice(5)), args.records);
   const hasTotals = args.totals.some((t) => t.kind === "cash");
   const source: SeedPlan["variable"]["source"] = input && hasTotals ? "flow" : input ? "check" : "none";
@@ -822,7 +834,7 @@ export function seedPlanFromFlow(args: {
     variable: {
       total: variableTotal, source,
       cards: args.totals.filter((t) => t.kind === "cash").map((t) => ({ label: t.label, amount: t.amount })),
-      cash: spending.cashPaid, spending: spending.cash, fixedSub: fixed, irregularSub: irregular.total,
+      cash: spending.cashPaid, outsideCard, spending: spending.cash, fixedSub: fixed, irregularSub: irregular.total,
       recorded, unrecorded: spending.unrecordedCash,
     },
     irregularFund: { total: fund, items: fundItems },

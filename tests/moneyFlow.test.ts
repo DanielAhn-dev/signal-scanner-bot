@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, monthSpending, seedExpenseTotal, seedFromCheck, seedPlanFromFlow, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, fixedOutsideCardOf, irregularDueIn, irregularForMonth, irregularHistory, monthSpending, seedExpenseTotal, seedFromCheck, seedPlanFromFlow, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -612,4 +612,20 @@ test('아이 돌봄비: 고정·못 줄임, "부모님 돌봄비 송금"은 돌�
   assert.equal(classifyMemo('부모님 돌봄비 송금').categoryId, 'family_care')
   assert.equal(classifyMemo('부모님 용돈').categoryId, 'family_parents')
   assert.equal(splitCashWord('부모님 돌봄비 송금').paidCash, true)
+})
+
+test('카드 밖 고정비(대출 자동이체): 매달 기록 없이 그달 지출에 더하고, 변동 계산에서 고정으로 다시 빠진다', () => {
+  const input = { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [],
+    fixed: [{ categoryId: 'maintenance', amount: 300_000, label: '관리비' }, { categoryId: 'rent', amount: 167_596, label: '대출금', outsideCard: true }] }
+  assert.equal(fixedOutsideCardOf(input), 167_596)
+  assert.equal(fixedOutsideCardOf(null), 0)
+  const empty = summarizeItems([])
+  const s = monthSpending([{ label: 'A카드', kind: 'cash', amount: 1_000_000 }], empty, empty, 167_596)
+  assert.deepEqual([s.cash, s.outsideCard, s.unrecordedCash], [1_167_596, 167_596, 1_000_000])
+  const p = seedPlanFromFlow({ baseMonth: '2026-09', check: { date: '2026-10-01', input }, totals: [{ label: 'A카드', kind: 'cash', amount: 1_000_000 }], records: [] })
+  // 지출 1,167,596 − 고정 467,596 = 변동 700,000 (대출금이 변동을 줄이지 않는다)
+  assert.deepEqual([p.variable.spending, p.variable.outsideCard, p.variable.total], [1_167_596, 167_596, 700_000])
+  const now = new Date('2026-10-06T03:00:00Z')
+  assert.equal(normalizeFlowCheck({ input: { monthlyIncome: 0, fixed: [{ categoryId: 'rent', amount: 1, outsideCard: true }] } }, now)?.input.fixed[0].outsideCard, true)
+  assert.equal(normalizeFlowCheck({ input: { monthlyIncome: 0, fixed: [{ categoryId: 'rent', amount: 1, outsideCard: 'y' }] } }, now), null)
 })

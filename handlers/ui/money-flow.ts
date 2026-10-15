@@ -66,7 +66,10 @@ function normalizeItem(raw: any): FlowItem | null {
   if (typeof label !== 'string' || label.length > 40) return null
   const childId = raw.childId ?? undefined
   if (childId !== undefined && (typeof childId !== 'string' || childId.length === 0 || childId.length > 40)) return null
-  return { categoryId: raw.categoryId, amount: value, payment, cut, mustPart, label: label.trim(), ...(childId ? { childId } : {}) }
+  // 카드 밖(계좌 자동이체) 표시 — 고정지출에서만 의미가 있다
+  const outsideCard = raw.outsideCard ?? false
+  if (typeof outsideCard !== 'boolean') return null
+  return { categoryId: raw.categoryId, amount: value, payment, cut, mustPart, label: label.trim(), ...(childId ? { childId } : {}), ...(outsideCard ? { outsideCard: true } : {}) }
 }
 
 function normalizeIrregular(raw: any): IrregularItem | null {
