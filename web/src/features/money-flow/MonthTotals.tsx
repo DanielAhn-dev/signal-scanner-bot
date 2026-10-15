@@ -74,7 +74,7 @@ export default function MonthTotals({ month, thisMonth, setMonth, totals, detail
       </div>
       {!ready ? <p className="acc-note">합계 칸은 준비 중입니다(서버 설정 대기). 아래 세부 기록은 그대로 쓸 수 있습니다.</p> : (
         <>
-          <p className="acc-note">{Number(month.slice(5))}월에 쓴 돈을 적는 칸입니다. 다음 달 중순에 나가는 카드 결제 대금(명세서)이 대개 이 달 이용분이라, 명세서를 받으면 쓴 달 칸에 적으세요(예: 10월 13일 결제 대금 → 9월 칸). 관리비·보험·학원비처럼 계좌에서 바로 나가는 돈은 "현금" 칸에 넣어야 빠지지 않습니다. 세부는 적을 수 있을 때만 적고, 나머지는 "세부 안 적음"으로 남겨도 됩니다.</p>
+          <p className="acc-note">{Number(month.slice(5))}월에 쓴 돈을 적는 칸입니다. 다음 달 중순에 나가는 카드 결제 대금(명세서)이 대개 이 달 이용분이라, 명세서를 받으면 쓴 달 칸에 적으세요(예: 10월 13일 결제 대금 → 9월 칸). 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다. 계좌이체·현금으로 내는 돈이 있을 때만 "현금" 칸에 넣으세요. 세부는 적을 수 있을 때만 적고, 나머지는 "세부 안 적음"으로 남겨도 됩니다.</p>
           <div className="mf-slots" role="group" aria-label="합계 칸">
             {slots.map((s, i) => (
               <div key={s.key} className="mf-slot">
