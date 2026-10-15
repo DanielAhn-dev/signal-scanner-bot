@@ -2,8 +2,10 @@
 scripts/backfill_daily_indicators.py
 ====================================
 과거 데이터 기반 daily_indicators 역계산 및 적재
-- 대상: 2025-04-11 ~ 2026-02-08 (stock_daily가 있는 모든 기간)
-- 영향: daily_indicators 테이블에만 추가/갱신, 배치 영향 없음
+- 범위 미지정: 2026-02-09 이전만 역계산(최초 1회 역계산용, 기존 동작)
+- --start/--end 지정: 그 범위를 날짜 제한 없이 다시 계산해 upsert (일일 배치의 앞으로 채우기·구멍 복구가 쓴다)
+- --codes 지정: 그 종목만 계산 (구멍 복구·수정주가 복구는 소수 종목만 다시 계산)
+- 영향: daily_indicators 테이블에만 추가/갱신
 """
 from __future__ import annotations
 
@@ -90,6 +92,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="daily_indicators historical backfill")
     parser.add_argument("--start", default="", help="start date (YYYYMMDD or YYYY-MM-DD)")
     parser.add_argument("--end", default="", help="end date (YYYYMMDD or YYYY-MM-DD)")
+    parser.add_argument("--codes", default="", help="comma-separated tickers (default: all in stock_daily)")
+    parser.add_argument("--dry-run", action="store_true", help="계산만 하고 적재하지 않는다")
     return parser.parse_args()
 
 
@@ -121,21 +125,25 @@ def normalize_int(v):
 # =============================================
 # STEP 1: stock_daily 데이터 로드
 # =============================================
-def fetch_all_stock_daily() -> pd.DataFrame:
-    """stock_daily의 전체 데이터 조회 (2025-04-11 ~ 현재)"""
+def fetch_all_stock_daily(codes: Optional[list] = None) -> pd.DataFrame:
+    """stock_daily의 전체 데이터 조회 (codes가 있으면 그 종목만)"""
     print("\n[1/3] stock_daily 데이터 로드...")
-    
+
     try:
         # 전체 데이터 조회 (pagination)
         all_rows = []
         offset = 0
         page_size = 1000
-        
+
         while True:
-            res = supabase.table("stock_daily") \
-                .select("*") \
-                .range(offset, offset + page_size - 1) \
+            query = supabase.table("stock_daily").select("*")
+            if codes:
+                query = query.in_("ticker", codes)
+            # 날짜만으로 정렬하면 같은 날짜 안의 순서가 페이지마다 달라져 행이 빠지거나 겹칠 수 있다
+            res = query \
                 .order("date", desc=False) \
+                .order("ticker", desc=False) \
+                .range(offset, offset + page_size - 1) \
                 .execute()
             
             if not res.data:
@@ -250,39 +258,55 @@ def dedupe_indicator_rows(rows: list) -> list:
 # =============================================
 # STEP 3: DB에 적재
 # =============================================
-def upsert_daily_indicators(all_rows: list, batch_size: int = 100, start_date: str = "", end_date: str = ""):
-    """2026-02-09 이전 데이터만 insert (기존 데이터와 충돌 방지)"""
-    print(f"\n[3/3] daily_indicators 적재 ({len(all_rows):,}행)...")
-    
-    cutoff_date = datetime.strptime("2026-02-09", "%Y-%m-%d").date()
+LEGACY_CUTOFF = "2026-02-09"
 
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
 
-    # 2026-02-09 이전 데이터 + 선택된 범위만 필터링
+def select_rows_for_upsert(all_rows: list, start_date: str = "", end_date: str = "") -> list:
+    """
+    적재할 행 고르기. 범위를 지정하지 않으면 최초 역계산 때처럼 2026-02-09 이전만 대상으로 한다.
+    범위를 지정하면 그 범위를 그대로 쓴다. 예전엔 범위를 줘도 02-09 이후를 버려서, 일일 배치의
+    앞으로 채우기·구멍 복구·수정주가 복구의 지표 단계가 2월 이후 전부 아무것도 쓰지 않았다
+    (2026-10-13 일봉은 복구됐는데 지표는 19행에 머문 원인).
+    """
     filtered_rows = []
     for r in all_rows:
-        row_dt = datetime.strptime(r["trade_date"], "%Y-%m-%d").date()
-        if row_dt >= cutoff_date:
-            continue
-        if start_dt and row_dt < start_dt:
-            continue
-        if end_dt and row_dt > end_dt:
-            continue
+        d = r["trade_date"]
+        if not start_date and not end_date:
+            if d >= LEGACY_CUTOFF:
+                continue
+        else:
+            if start_date and d < start_date:
+                continue
+            if end_date and d > end_date:
+                continue
         filtered_rows.append(r)
+    return dedupe_indicator_rows(filtered_rows)
 
-    filtered_rows = dedupe_indicator_rows(filtered_rows)
-    
+
+def upsert_daily_indicators(all_rows: list, batch_size: int = 100, start_date: str = "", end_date: str = "", dry_run: bool = False):
+    print(f"\n[3/3] daily_indicators 적재 ({len(all_rows):,}행)...")
+
+    filtered_rows = select_rows_for_upsert(all_rows, start_date, end_date)
+
     print(f"  -> 필터링 결과: {len(filtered_rows):,}행")
     if start_date or end_date:
         print(f"  -> 범위 필터: {start_date or 'MIN'} ~ {end_date or 'MAX'}")
     else:
-        print(f"  -> 기준: 2026-02-09 이전 데이터만 대상")
-    
+        print(f"  -> 기준: {LEGACY_CUTOFF} 이전 데이터만 대상")
+
     if not filtered_rows:
-        print(f"  ⚠️ 2026-02-09 이전 데이터 없음 (역계산 대상 없음)")
+        print(f"  ⚠️ 적재 대상 없음")
         return
-    
+
+    if dry_run:
+        by_date: dict = {}
+        for r in filtered_rows:
+            by_date[r["trade_date"]] = by_date.get(r["trade_date"], 0) + 1
+        for d in sorted(by_date)[-15:]:
+            print(f"     {d}: {by_date[d]}행")
+        print("  -> dry-run: 적재하지 않음")
+        return
+
     total = len(filtered_rows)
     success = 0
     
@@ -321,8 +345,12 @@ def main():
     print("daily_indicators 역계산 및 적재")
     print("="*60)
     
+    codes = [c.strip() for c in args.codes.split(",") if c.strip()] if args.codes else None
+    if codes:
+        print(f"  대상 종목: {len(codes)}개")
+
     # STEP 1: stock_daily 로드
-    df_all = fetch_all_stock_daily()
+    df_all = fetch_all_stock_daily(codes)
     if df_all.empty:
         print("❌ 종료 (데이터 없음)")
         return
@@ -347,7 +375,7 @@ def main():
     # STEP 3: DB 적재
     start_date = normalize_date(args.start) if args.start else ""
     end_date = normalize_date(args.end) if args.end else ""
-    upsert_daily_indicators(all_rows, start_date=start_date, end_date=end_date)
+    upsert_daily_indicators(all_rows, start_date=start_date, end_date=end_date, dry_run=args.dry_run)
     
     print("\n" + "="*60)
     print("✅ 완료!")
