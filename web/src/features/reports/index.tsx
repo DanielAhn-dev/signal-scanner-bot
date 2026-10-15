@@ -10,6 +10,7 @@ import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../s
 import { formatKrw, formatKrwCompact, formatKstDateTime } from '../../lib/format'
 import { useShareManager } from '../../hooks/useShareManager'
 import { useCurrentChatId, useCurrentClientId } from '../../stores/profileStore'
+import RebalanceReportStrip from './RebalanceReportStrip'
 
 type ReportAction = {
   key: string
@@ -319,8 +320,9 @@ export default function ReportsPage() {
       a.remove()
       URL.revokeObjectURL(downloadUrl)
 
-      setStates(s => ({ ...s, [key]: { loading: false, msg: 'PDF 다운로드 완료' } }))
-      toast.show('PDF 다운로드 완료')
+      const doneMsg = fileName.endsWith('.html') ? '파일 저장 완료' : 'PDF 다운로드 완료'
+      setStates(s => ({ ...s, [key]: { loading: false, msg: doneMsg } }))
+      toast.show(doneMsg)
     } catch (e: any) {
       setStates(s => ({ ...s, [key]: { loading: false, msg: e?.message || String(e) } }))
     }
@@ -347,16 +349,26 @@ export default function ReportsPage() {
       toast.show('미리보기를 지원하지 않는 항목입니다.')
       return
     }
+    await openHtmlPreview(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`, title)
+  }
+
+  /** HTML 리포트를 받아 미리보기 모달로 연다 (리포트 웹 보기·리밸런싱 가이드 공용) */
+  const openHtmlPreview = async (htmlEndpoint: string, title: string) => {
     // 생성에 수 초가 걸리므로 모달을 먼저 띄워 로딩을 보여주고, 이전 요청은 취소한다.
     previewAbortRef.current?.abort()
     const controller = new AbortController()
     previewAbortRef.current = controller
     setPreview({ open: true, title, url: '' })
     try {
-      const request = await buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`)
+      const request = await buildUiRequest(htmlEndpoint)
       // iframe은 Authorization 헤더를 보낼 수 없어, 인증 헤더로 받아온 HTML을 blob URL로 연다.
       const res = await fetch(request.url, { headers: request.headers, signal: controller.signal })
-      if (!res.ok) throw new Error(`미리보기 실패 (${res.status})`)
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        let detail = ''
+        try { detail = String(JSON.parse(text)?.error || '') } catch { /* HTML·빈 응답 */ }
+        throw new Error(detail || `미리보기 실패 (${res.status})`)
+      }
       const html = await res.text()
       if (controller.signal.aborted) return
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
@@ -421,6 +433,13 @@ export default function ReportsPage() {
           )}
         </tbody>
       </table>
+
+      <RebalanceReportStrip
+        onPreview={(account, label) => openHtmlPreview(`/api/ui/rebalance-report?account=${encodeURIComponent(account)}`, `리밸런싱 가이드 · ${label}`)}
+        onDownload={(account) => runDownload('rebalance-report', `/api/ui/rebalance-report?account=${encodeURIComponent(account)}`, 'rebalance_guide.html')}
+        downloading={!!states['rebalance-report']?.loading}
+        status={states['rebalance-report']?.msg}
+      />
 
       <table className="xls-table reports-sheet__list" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
