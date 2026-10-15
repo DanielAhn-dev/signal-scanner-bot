@@ -123,14 +123,20 @@ def plan_stock_daily_gap_heal(
     present: dict[str, set[str]],
     max_tickers: int,
     rotation_seed: int,
+    priority_codes: Optional[set[str]] = None,
+    recent_days: int = 20,
+    stale_days: int = 5,
 ) -> dict:
     """
     복구 계획을 세운다(순수 함수).
     - 종목별 누락일 = 거래일 중 그 종목의 기간 내 첫 기록일 이후인데 행이 없는 날 (상장 전 구간은 제외)
-    - 누락 종목을 코드순으로 줄 세운 뒤 날짜 기반 오프셋으로 회전해 max_tickers개만 고른다.
-      상태 저장 없이도 며칠에 걸쳐 전 종목이 한 번씩 돌아오고, 거래정지 종목(영구 누락)이
-      매번 할당량을 독차지하지 않는다.
+    - 하루 max_tickers개만 고르고 나머지는 다음 실행이 이어서 메운다. 고르는 순서(매매 판단에 가까운 것부터):
+      1) priority_codes(보유·스윕·지수모드 종목) — 가격이 비면 손절/익절·리밸런싱 판단이 틀어진다
+      2) 최근 recent_days 거래일 안에 구멍이 있는 종목 — 이동평균·신호에 바로 쓰인다(최근 구멍부터)
+      3) 오래된 구멍만 있는 종목 — 코드순을 날짜 기반 오프셋으로 회전(상태 저장 없이 며칠에 걸쳐 한 바퀴)
+      4) 최근 stale_days 거래일 내내 행이 없는 종목(거래정지 추정) — 영구 누락이 할당량을 독차지하지 않게 맨 뒤
     """
+    priority_codes = priority_codes or set()
     missing_by_code: dict[str, list[str]] = {}
     for code, dates in present.items():
         if not dates:
@@ -140,21 +146,77 @@ def plan_stock_daily_gap_heal(
         if missing:
             missing_by_code[code] = missing
 
-    candidates = sorted(missing_by_code)
-    picked: list[str] = []
-    if candidates and max_tickers > 0:
-        offset = (rotation_seed * max_tickers) % len(candidates)
-        rotated = candidates[offset:] + candidates[:offset]
-        picked = rotated[:max_tickers]
+    recent_cut = trading_calendar[-recent_days] if len(trading_calendar) >= recent_days else (trading_calendar[0] if trading_calendar else "")
+    stale_cut = trading_calendar[-stale_days] if len(trading_calendar) >= stale_days else ""
+
+    def rotate(codes: list[str]) -> list[str]:
+        if not codes:
+            return []
+        offset = (rotation_seed * max(1, max_tickers)) % len(codes)
+        return codes[offset:] + codes[:offset]
+
+    tier_priority, tier_recent, tier_old, tier_stale = [], [], [], []
+    for code in sorted(missing_by_code):
+        latest_missing = missing_by_code[code][-1]
+        is_stale = bool(stale_cut) and max(present[code]) < stale_cut
+        if code in priority_codes:
+            tier_priority.append(code)
+        elif is_stale:
+            tier_stale.append(code)
+        elif latest_missing >= recent_cut:
+            tier_recent.append(code)
+        else:
+            tier_old.append(code)
+    by_recent_gap = lambda c: (missing_by_code[c][-1], c)
+    tier_priority.sort(key=by_recent_gap, reverse=True)
+    tier_recent.sort(key=by_recent_gap, reverse=True)
+
+    ordered = tier_priority + tier_recent + rotate(tier_old) + rotate(tier_stale)
+    picked: list[str] = ordered[:max_tickers] if max_tickers > 0 else []
 
     picked_dates = [d for code in picked for d in missing_by_code[code]]
     return {
         "missing_tickers": len(missing_by_code),
         "missing_pairs": sum(len(v) for v in missing_by_code.values()),
         "codes": picked,
+        "priority_picked": [c for c in picked if c in priority_codes],
+        "remaining_tickers": max(0, len(ordered) - len(picked)),
         "start": min(picked_dates) if picked_dates else None,
         "end": max(picked_dates) if picked_dates else None,
     }
+
+
+def fetch_priority_codes(supabase: Client) -> set[str]:
+    """보유 중인 종목 + 스윕·국면 프록시·지수모드 종목. 실패하면 있는 만큼만(복구 순서에만 쓰인다)."""
+    codes: set[str] = set()
+    try:
+        from refresh_universe_membership import (
+            CASH_SWEEP_WHITELIST_CODES,
+            REGIME_PROXY_WHITELIST_CODES,
+            INDEX_MODE_WHITELIST_CODES,
+        )
+        codes |= set(CASH_SWEEP_WHITELIST_CODES) | set(REGIME_PROXY_WHITELIST_CODES) | set(INDEX_MODE_WHITELIST_CODES)
+    except Exception as e:
+        print(f"   Priority whitelist import failed (skip): {str(e)[:80]}")
+    offset = 0
+    try:
+        while True:
+            rows = (
+                supabase.table("virtual_positions")
+                .select("code")
+                .eq("status", "holding")
+                .range(offset, offset + 999)
+                .execute()
+                .data
+                or []
+            )
+            codes.update(str(r.get("code") or "").strip() for r in rows if r.get("code"))
+            if len(rows) < 1000:
+                break
+            offset += 1000
+    except Exception as e:
+        print(f"   Held codes lookup failed (skip): {str(e)[:80]}")
+    return codes
 
 
 def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
@@ -187,7 +249,9 @@ def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
         print("   Gap heal skipped: empty universe")
         return False
     present = fetch_present_pairs(supabase, codes, start_dt.isoformat(), trading_dt.isoformat())
-    plan = plan_stock_daily_gap_heal(calendar, present, max_tickers, trading_dt.toordinal())
+    plan = plan_stock_daily_gap_heal(
+        calendar, present, max_tickers, trading_dt.toordinal(), priority_codes=fetch_priority_codes(supabase)
+    )
 
     if not plan["codes"]:
         print(f"   Gap heal: no missing (ticker,date) in last {window_days}d across {len(codes)} tickers")
@@ -196,6 +260,7 @@ def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
     print(
         f"   Gap heal: {plan['missing_pairs']} missing (ticker,date) across {plan['missing_tickers']} tickers "
         f"in last {window_days}d → healing {len(plan['codes'])} tickers today ({plan['start']} ~ {plan['end']})"
+        f" · priority {len(plan['priority_picked'])} · 다음 실행으로 이월 {plan['remaining_tickers']}"
     )
     ok_stock = run_python_script(
         "scripts/backfill_stock_daily_universe.py",
@@ -212,10 +277,123 @@ def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
         return False
     ok_indicators = run_python_script(
         "scripts/backfill_daily_indicators.py",
-        ["--start", plan["start"], "--end", plan["end"]],
+        ["--start", plan["start"], "--end", plan["end"], "--codes", ",".join(plan["codes"])],
         "daily_indicators gap heal",
     )
     return bool(ok_indicators)
+
+
+def _fetch_pairs_by_date(supabase: Client, table: str, code_col: str, date_col: str, start_iso: str, end_iso: str) -> dict[str, set[str]]:
+    """날짜(YYYY-MM-DD) → 그 날 행이 있는 종목 집합. 1000행 상한 때문에 끝까지 페이지 조회한다."""
+    out: dict[str, set[str]] = {}
+    offset = 0
+    while True:
+        rows = (
+            supabase.table(table)
+            .select(f"{code_col},{date_col}")
+            .gte(date_col, start_iso)
+            .lte(date_col, end_iso)
+            .order(date_col)
+            .order(code_col)
+            .range(offset, offset + 999)
+            .execute()
+            .data
+            or []
+        )
+        for row in rows:
+            d = str(row.get(date_col) or "")[:10]
+            code = str(row.get(code_col) or "")
+            if len(d) == 10 and code:
+                out.setdefault(d, set()).add(code)
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    return out
+
+
+def plan_indicator_gap_heal(
+    daily_by_date: dict[str, set[str]],
+    indicators_by_date: dict[str, set[str]],
+    max_codes: int = 50,
+) -> dict:
+    """
+    일봉은 있는데 지표가 없는 (종목, 날짜). 지표는 이력 20일 이상이어야 만들어지므로(상장 직후 등은 원래 없음),
+    그 날짜까지 기간 안 일봉이 20일 이상이거나 더 이른 날짜에 지표가 있던 종목만 대상으로 본다.
+    만들 수 없는 조합을 매번 재시도하며 진도가 막히지 않게 하기 위함이다.
+    매매 판단에 쓰이는 최근 날짜부터 고르고, 고른 날짜들의 종목 합이 max_codes를 넘기 직전까지만 이번에 메운다
+    (최소 1개 날짜). 나머지는 다음 실행이 이어서 메운다.
+    """
+    MIN_ROWS = 20
+    rows_so_far: dict[str, int] = {}
+    had_indicator: set[str] = set()
+    missing: dict[str, set[str]] = {}
+    for d in sorted(set(daily_by_date) | set(indicators_by_date)):
+        day_codes = daily_by_date.get(d, set())
+        day_ind = indicators_by_date.get(d, set())
+        for code in day_codes:
+            rows_so_far[code] = rows_so_far.get(code, 0) + 1
+        gap = {
+            code for code in day_codes - day_ind
+            if rows_so_far[code] >= MIN_ROWS or code in had_indicator
+        }
+        if gap:
+            missing[d] = gap
+        # 일봉 없이 지표만 남은 행(유니버스에서 빠진 종목 등)은 이력 근거로 치지 않는다
+        had_indicator |= day_ind & day_codes
+
+    picked_dates: list[str] = []
+    picked_codes: set[str] = set()
+    for d in sorted(missing, reverse=True):
+        merged = picked_codes | missing[d]
+        if picked_dates and len(merged) > max_codes:
+            break
+        picked_dates.append(d)
+        picked_codes = merged
+    picked_dates.sort()
+    return {
+        "dates": picked_dates,
+        "codes": sorted(picked_codes),
+        "missing_pairs": sum(len(v) for v in missing.values()),
+        "missing_dates": len(missing),
+        "picked_pairs": sum(len(missing[d]) for d in picked_dates),
+        "start": picked_dates[0] if picked_dates else None,
+        "end": picked_dates[-1] if picked_dates else None,
+    }
+
+
+def heal_indicator_gaps(supabase: Client, trading_date: str) -> bool:
+    """
+    daily_indicators 날짜별 구멍 복구. 일일 지표 계산은 기준일 하루만 계산하므로, 일봉이 나중에 채워진 날
+    (앞으로 채우기·구멍 복구·부분 수집 재수집)의 지표는 따로 메우지 않으면 영영 비었다(2026-10-13: 일봉 232행 복구,
+    지표 19행). 최근 AUTO_INDICATOR_HEAL_WINDOW_DAYS(기본 120일)를 보고 최근 날짜부터 나눠 메운다. KRX 호출 없음.
+    """
+    window_days = max(7, min(400, safe_int(os.environ.get("AUTO_INDICATOR_HEAL_WINDOW_DAYS", 120), 120)))
+    max_codes = max(1, safe_int(os.environ.get("AUTO_INDICATOR_HEAL_MAX_CODES", 50), 50))
+    trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
+    start_iso = (trading_dt - timedelta(days=window_days)).isoformat()
+    end_iso = trading_dt.isoformat()
+    try:
+        daily = _fetch_pairs_by_date(supabase, "stock_daily", "ticker", "date", start_iso, end_iso)
+        indicators = _fetch_pairs_by_date(supabase, "daily_indicators", "code", "trade_date", start_iso, end_iso)
+    except Exception as e:
+        print(f"   Indicator gap heal skipped: lookup failed ({str(e)[:120]})")
+        return False
+
+    plan = plan_indicator_gap_heal(daily, indicators, max_codes)
+    if not plan["codes"]:
+        print(f"   Indicator gap heal: no missing (code,date) in last {window_days}d")
+        return False
+
+    print(
+        f"   Indicator gap heal: {plan['missing_pairs']} missing (code,date) on {plan['missing_dates']} dates "
+        f"→ healing {plan['picked_pairs']} on {len(plan['dates'])} dates ({plan['start']} ~ {plan['end']}), "
+        f"{len(plan['codes'])} codes · 다음 실행으로 이월 {plan['missing_pairs'] - plan['picked_pairs']}"
+    )
+    args = ["--start", plan["start"], "--end", plan["end"]]
+    # 한 날짜 전체가 빠진 경우처럼 종목이 많으면 URL이 커지므로 종목 제한 없이 범위만 준다(범위 밖은 쓰지 않는다)
+    if len(plan["codes"]) <= max_codes:
+        args += ["--codes", ",".join(plan["codes"])]
+    return bool(run_python_script("scripts/backfill_daily_indicators.py", args, "daily_indicators gap heal (by date)"))
 
 
 # KRX 일일 가격제한폭은 ±30%라 연속 거래일 사이에 이보다 크게 움직였다면 액면분할·무상증자 등으로
@@ -290,7 +468,7 @@ def repair_unadjusted_price_history(supabase: Client, trading_date: str) -> bool
         return False
     return bool(run_python_script(
         "scripts/backfill_daily_indicators.py",
-        ["--start", start, "--end", trading_date],
+        ["--start", start, "--end", trading_date, "--codes", ",".join(targets)],
         "daily_indicators adjusted-price repair",
     ))
 

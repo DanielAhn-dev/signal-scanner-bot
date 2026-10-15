@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from batch_modules.utils import load_env_file, get_last_trading_date
 from batch_modules.holiday_guard import should_skip_holiday_rerun
 from batch_modules import truncation_guard
-from batch_modules.backfill import auto_backfill_missing_dates
+from batch_modules.backfill import auto_backfill_missing_dates, heal_indicator_gaps
 from batch_modules.ohlcv import fetch_ohlcv_per_ticker
 from batch_modules.indicators import calculate_indicators
 from batch_modules.investor import fetch_investor_data
@@ -326,6 +326,8 @@ def main():
         print("\n[2/7] Calculating indicators...")
         step_start = time.time()
         calculate_indicators(supabase, trading_date)
+        # 일봉이 나중에 채워진 날의 지표 구멍(기준일 하루만 계산하는 위 단계가 못 메우는 것)
+        heal_indicator_gaps(supabase, trading_date)
         stage_times["Indicators"] = time.time() - step_start
         print(f"   Completed in {stage_times['Indicators']:.1f}s")
         mark_stage("Indicators", True, stage_times["Indicators"])
