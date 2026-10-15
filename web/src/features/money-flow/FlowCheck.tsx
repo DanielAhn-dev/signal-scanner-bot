@@ -7,12 +7,12 @@ import { MAX_CHILDREN, sanitizeChildState, type Child, type ChildGiftState } fro
 import { useUserState } from '../../lib/userState'
 import { EMPTY_HOUSEHOLD_INCOME, HOUSEHOLDS, householdTotal, useHouseholdIncome, withHousehold, type HouseholdIncome } from '../../lib/householdIncome'
 import {
-  FLOW_CATEGORIES, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, fixedHistory, reconcileMonth, summarizeItems, toSeedExpenses,
+  FLOW_CATEGORIES, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, fixedHistory, irregularForMonth, irregularHistory, reconcileMonth, summarizeItems, toSeedExpenses,
   type CutLevel, type MonthTotal as MonthTotalBase, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
 } from '../../../../src/lib/moneyFlow'
 
 export type SavedCheck = { id: string; date: string; label: string; input: FlowCheckInput }
-type Entry = { date: string; amount: number; categoryId: string; payment: Payment; cut: CutLevel | null; mustPart: number | null }
+type Entry = { date: string; amount: number; categoryId: string; payment: Payment; cut: CutLevel | null; mustPart: number | null; memo?: string }
 type MonthTotal = MonthTotalBase & { month: string }
 type Row = FlowItem & { key: string }
 type IrrRow = IrregularItem & { key: string }
@@ -217,7 +217,12 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     const hasMonthTotals = totals.some((t) => t.month === recordedMonth)
     const recordedFixed = new Set(rows.fixed.map(rowKey))
     const inBaseline = fixed.filter((r) => (r.payment ?? 'cash') === 'cash' && !recordedFixed.has(rowKey(r))).reduce((sum, r) => sum + r.amount, 0)
-    const gapCash = Math.max(0, recordedGap.cash - inBaseline)
+    // 1년 예산 비정기 중 이 달 몫인데 실제 기록이 없는 것도 카드 합계 안에 있다고 본다(기록이 있으면 세부라 이미 빠졌다)
+    const monthRecords = entries.filter((e) => e.date.startsWith(recordedMonth)).map((e) => ({ ...e, memo: e.memo ?? '' }))
+    const plannedIrregular = stripKeys(irregular).filter((r) => r.yearlyAmount > 0)
+    const dueNotRecorded = irregularForMonth({ monthlyIncome: 0, reserveMonthly: 0, fixed: [], variable: [], irregular: plannedIrregular }, Number(recordedMonth.slice(5)), monthRecords)
+      .rows.filter((r) => r.actual === null).reduce((sum, r) => sum + r.expected, 0)
+    const gapCash = Math.max(0, recordedGap.cash - inBaseline - dueNotRecorded)
     const label = categoryById(UNRECORDED_CATEGORY_ID)!.label
     const gapRows: Row[] = [
       ...(gapCash > 0 ? [{ key: newKey(), categoryId: UNRECORDED_CATEGORY_ID, label, amount: gapCash, payment: 'cash' as Payment }] : []),
@@ -227,13 +232,14 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     // 합계가 없는 달은 예전처럼 기록한 분류만 바꾼다
     if (hasMonthTotals) setVariable([...rows.variable, ...gapRows])
     else setVariable((cur) => merge(cur.filter((r) => r.categoryId !== UNRECORDED_CATEGORY_ID), rows.variable))
-    setIrregular((cur) => merge(cur, rows.irregular))
+    // 비정기는 1년 예산이라 한 달 실제 기록으로 덮지 않는다(실제는 비정기 실제 기록 표에서 비교). 예산에 없던 분류만 더한다
+    setIrregular((cur) => [...cur, ...rows.irregular.filter((a) => !cur.some((r) => r.categoryId === a.categoryId))])
     // 고정지출은 아직 없는 분류만 더한다
     setFixed((cur) => [...cur, ...rows.fixed.filter((a) => !cur.some((r) => rowKey(r) === rowKey(a)))])
     const month = recordedMonth.replace('-', '년 ')
     setNotice(hasMonthTotals
-      ? `${month}월 합계로 채웠습니다. 고정지출 ${krw(fixed.reduce((sum, r) => sum + ((r.payment ?? 'cash') === 'cash' ? r.amount : 0), 0))}도 카드 합계 안에 있다고 보고, 합계에서 고정지출과 세부 기록을 뺀 나머지를 "세부 안 적음"(변동 지출)으로 넣었습니다. 변동지출은 이 달 기록으로 바꿨습니다.`
-      : `${month}월 기록으로 채웠습니다. 변동·비정기는 기록 금액으로 바꿨고, 고정지출은 평소 기준을 그대로 두고 기록 금액을 옆에 보여 줍니다(없던 분류만 추가).`)
+      ? `${month}월 합계로 채웠습니다. 고정지출 ${krw(fixed.reduce((sum, r) => sum + ((r.payment ?? 'cash') === 'cash' ? r.amount : 0), 0))}도 카드 합계 안에 있다고 보고, 합계에서 고정지출·이 달 비정기·세부 기록을 뺀 나머지를 "세부 안 적음"(변동 지출)으로 넣었습니다. 변동지출은 이 달 기록으로 바꿨고, 비정기는 1년 예산을 그대로 둡니다.`
+      : `${month}월 기록으로 채웠습니다. 변동지출은 기록 금액으로 바꿨고, 고정지출은 평소 기준을 그대로 두고 기록 금액을 옆에 보여 줍니다(없던 분류만 추가). 비정기는 1년 예산이라 그대로 둡니다(예산에 없던 분류만 추가).`)
   }
 
   const input: FlowCheckInput = useMemo(() => ({
@@ -244,6 +250,12 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
   const result = useMemo(() => evaluateFlowCheck(input), [input])
   const prev = latest && saved ? checks[1] ?? null : latest
   const history = useMemo(() => fixedHistory(checks), [checks])
+  const thisYear = kstMonth().slice(0, 4)
+  const lastYear = String(Number(thisYear) - 1)
+  const irregularYears = useMemo(
+    () => irregularHistory({ monthlyIncome: 0, reserveMonthly: 0, fixed: [], variable: [], irregular: stripKeys(irregular).filter((r) => r.yearlyAmount > 0) }, entries.map((e) => ({ ...e, memo: e.memo ?? '' }))),
+    [irregular, entries],
+  )
   const prevResult = useMemo(() => (prev ? evaluateFlowCheck(prev.input) : null), [prev])
   const changes = prevResult ? compareSummaries(prevResult.summary, result.summary).filter((c) => c.difference !== 0).slice(0, 5) : []
   const perChild = childState.children
@@ -353,6 +365,31 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
         <p className="acc-note">1년에 몇 번 나가는 돈(재산세·자동차보험·명절·여행 등). 1년 합계와 나가는 달을 고르면 평소 매달 떼어 둘 금액을 계산합니다.</p>
         <IrregularRows rows={irregular} setRows={setIrregular} />
       </section>
+
+      {irregularYears.some((r) => Object.keys(r.byYear).length > 0) && (
+        <section className="acc-card">
+          <h2>비정기 실제 기록</h2>
+          <div className="mf-trend-wrap">
+            <table className="mf-trend" aria-label="비정기 실제 기록">
+              <thead><tr><th scope="col">항목</th><th scope="col">1년 예산</th><th scope="col">{lastYear}년</th><th scope="col">{thisYear}년(지금까지)</th></tr></thead>
+              <tbody>
+                {irregularYears.map((r) => {
+                  const now = r.byYear[thisYear]
+                  return (
+                    <tr key={r.label}>
+                      <th scope="row">{r.label}</th>
+                      <td className="mf-trend-muted">{krw(r.budget)}</td>
+                      <td>{r.byYear[lastYear] === undefined ? <span className="mf-trend-muted">—</span> : krw(r.byYear[lastYear])}</td>
+                      <td>{now === undefined ? <span className="mf-trend-muted">—</span> : <>{krw(now)}{now !== r.budget && <small className={now > r.budget ? 'is-up' : 'is-down'}>예산 {now > r.budget ? '+' : '−'}{krw(Math.abs(now - r.budget))}</small>}</>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="acc-note">돈 흐름 합계 칸의 "이번 달 비정기"나 세부 기록에 항목 이름 그대로 적은 금액을 모읍니다. 실제가 예산과 계속 다르면 위 1년 예산을 고쳐 저장하세요. 올해 열은 아직 안 낸 달이 있으면 예산보다 적게 보입니다.</p>
+        </section>
+      )}
 
       {notice && <p className="acc-note mf-notice" role="status">{notice}</p>}
 

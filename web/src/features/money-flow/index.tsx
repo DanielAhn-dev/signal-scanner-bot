@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, irregularDueIn, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, irregularForMonth, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
@@ -92,8 +92,8 @@ export default function MoneyFlowPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      // 매달 적을 필요는 없다. 비교 기준(마지막으로 기록한 달)을 찾으려고 12개월 전부터 가져온다
-      const res = await apiFetch(`/api/ui/money-flow?from=${shiftMonth(month, -12)}-01&to=${monthEnd(month)}`, { cacheMs: 0, retries: 0 })
+      // 매달 적을 필요는 없다. 비교 기준(마지막으로 기록한 달)과 비정기 작년 대비를 보려고 24개월 전부터 가져온다
+      const res = await apiFetch(`/api/ui/money-flow?from=${shiftMonth(month, -24)}-01&to=${monthEnd(month)}`, { cacheMs: 0, retries: 0 })
       setEntries(Array.isArray(res?.entries) ? res.entries : [])
       setDeleted(Array.isArray(res?.deleted) ? res.deleted : [])
       setRules(Array.isArray(res?.rules) ? res.rules : [])
@@ -290,7 +290,7 @@ export default function MoneyFlowPage() {
 
       {tab === 'record' && (
         <>
-          <MonthTotals month={month} thisMonth={thisMonth} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} detail={monthDetail} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
+          <MonthTotals month={month} thisMonth={thisMonth} today={today} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} detail={monthDetail} records={monthEntries} plan={checkForMonth(checks, month)?.input ?? null} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
 
           <details className="acc-card mf-detail">
             <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">어디에 썼는지까지 보고 싶을 때만. 한 결제를 품목까지 나눌 필요는 없어요.</span></summary>
@@ -426,7 +426,8 @@ function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], 
     const cash = reconcileMonth(t, summarizeItems(e.map(toItem))).cash
     const check = checkForMonth(checks, m)
     const fixed = check ? fixedCashOf(check.input) : null
-    const irregular = check ? irregularDueIn(check.input, Number(m.slice(5))) : null
+    // 비정기: 실제 낸 기록(예산 항목과 이름이 같은 세부 기록)이 있으면 실제, 없으면 1년 예산 중 이 달 몫. 예산에 없는 비정기 기록도 뺀다
+    const irregular = check ? irregularForMonth(check.input, Number(m.slice(5)), e).total : null
     return [{ month: m, cash, fromTotals: t.length > 0, fixed, irregular, rest: t.length > 0 && fixed !== null ? cash - fixed - (irregular ?? 0) : null }]
   })
 }
@@ -467,7 +468,7 @@ function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month
       </div>
       <p className="acc-note">
         {anyRest
-          ? '나머지 = 카드 합계 − 고정비 − 그 달에 나가는 비정기(그 달까지 저장한 지금 상태 점검 기준). 재산세·자동차세처럼 그 달에만 나간 돈을 빼고, 장보기·물건·간식 같은 지출이 줄었는지 봅니다. '
+          ? '나머지 = 카드 합계 − 고정비 − 그 달 비정기(실제 낸 금액, 안 적었으면 1년 예산 중 이 달 몫). 재산세·자동차세처럼 그 달에만 나간 돈을 빼고, 장보기·물건·간식 같은 지출이 줄었는지 봅니다. '
           : '지금 상태 점검을 저장하면 고정비를 뺀 나머지(변동 지출)도 달마다 보여 줍니다. '}
         합계를 안 적은 달은 세부 기록만 더한 값이라("세부 합") 나머지를 계산하지 않습니다. 환급은 뺀 금액입니다.
       </p>

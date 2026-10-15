@@ -324,3 +324,52 @@ describe('지출 추이', () => {
     ])
   })
 })
+
+describe('이번 달 나가는 비정기', () => {
+  const month = today.slice(0, 7)
+  const m = Number(month.slice(5))
+  const plan = { monthlyIncome: 0, reserveMonthly: 0, variable: [], fixed: [{ categoryId: 'maintenance', amount: 300_000, label: '' }],
+    irregular: [{ categoryId: 'tax', label: '재산세', yearlyAmount: 600_000, months: [m] }, { categoryId: 'car', label: '자동차보험', yearlyAmount: 900_000, months: [m === 12 ? 1 : m + 1] }] }
+  const mock = (entries: unknown[]) => apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true }) : Promise.resolve({
+    entries, rules: [], checks: [{ id: 'c1', date: `${month}-01`, label: '', input: plan }],
+    totals: [{ month, label: 'A카드', kind: 'cash', amount: 1_500_000, mine: true }],
+  }))
+
+  it('이 달 몫만 예상과 함께 보여 주고, 실제를 적으면 그 이름으로 세부 기록에 더하며 나머지(변동)를 계산한다', async () => {
+    mock([])
+    renderPage()
+    const input = await screen.findByLabelText('재산세 실제')
+    expect(screen.queryByLabelText('자동차보험 실제')).toBeNull()
+    expect(screen.getByText('예상 600,000원')).toBeTruthy()
+    const facts = screen.getByLabelText('합계와 세부 기록')
+    // 1,500,000 − 고정 300,000 − 비정기(예상) 600,000
+    expect(facts.textContent).toContain('나머지(변동)600,000원')
+    fireEvent.change(input, { target: { value: '612000' } })
+    expect(facts.textContent).toContain('나머지(변동)588,000원')
+    fireEvent.click(screen.getByRole('button', { name: '합계 저장' }))
+    await waitFor(() => expect(postBodies().some((b) => b.action === 'add-entries')).toBe(true))
+    expect(postBodies().find((b) => b.action === 'add-entries').entries).toEqual([{ date: today, amount: 612_000, memo: '재산세', categoryId: 'tax', payment: 'cash', forWhom: 'shared', learn: false }])
+  })
+
+  it('이미 실제 기록이 있으면 금액만 고친다', async () => {
+    mock([{ id: 'e1', date: `${month}-02`, amount: 610_000, memo: '재산세', categoryId: 'tax', cut: null, mustPart: null, payment: 'cash' }])
+    renderPage()
+    const input = await screen.findByLabelText('재산세 실제') as HTMLInputElement
+    await waitFor(() => expect(input.value).toBe('610000'))
+    fireEvent.change(input, { target: { value: '612000' } })
+    fireEvent.click(screen.getByRole('button', { name: '합계 저장' }))
+    await waitFor(() => expect(postBodies().some((b) => b.action === 'update-entry')).toBe(true))
+    expect(postBodies().find((b) => b.action === 'update-entry')).toMatchObject({ id: 'e1', amount: 612_000, memo: '재산세', date: `${month}-02` })
+    expect(postBodies().some((b) => b.action === 'add-entries')).toBe(false)
+  })
+
+  it('아래 빠른 기록에 타이핑해도 저장 전 합계 입력이 지워지지 않는다', async () => {
+    mock([])
+    renderPage()
+    const a = await screen.findByLabelText('A카드 금액') as HTMLInputElement
+    await waitFor(() => expect(a.value).toBe('1500000'))
+    fireEvent.change(a, { target: { value: '1600000' } })
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '우유 3000원' } })
+    expect((screen.getByLabelText('A카드 금액') as HTMLInputElement).value).toBe('1600000')
+  })
+})

@@ -191,3 +191,26 @@ describe('고정비 바뀐 기록', () => {
     expect(row.textContent).toBe('전기·가스·수도123,000원90,000원−33,000원')
   })
 })
+
+describe('비정기 1년 예산', () => {
+  it('합계 달로 채워도 1년 예산은 덮지 않고, 이 달 예산 몫은 세부 안 적음에서 빼며, 연도별 실제를 보여 준다', async () => {
+    const m = Number(month.slice(5))
+    const input = { ...savedInput, irregular: [{ categoryId: 'tax', label: '재산세', yearlyAmount: 600_000, months: [m] }, { categoryId: 'car', label: '자동차보험', yearlyAmount: 900_000, months: [m] }] }
+    const lastYear = String(Number(month.slice(0, 4)) - 1)
+    apiFetchMock.mockResolvedValue({
+      rules: [], checks: [{ id: 'c1', date: '2026-01-01', label: '', input }],
+      entries: [
+        { id: 'a', date: `${month}-05`, amount: 612_000, memo: '재산세', categoryId: 'tax', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', date: `${lastYear}-${month.slice(5)}-05`, amount: 590_000, memo: '재산세', categoryId: 'tax', cut: null, mustPart: null, payment: 'cash' },
+      ],
+      totals: [{ month, label: 'A카드', kind: 'cash', amount: 3_000_000, mine: true }],
+    })
+    renderCheck()
+    fireEvent.click(await screen.findByRole('button', { name: /기록으로 채우기/ }))
+    // 3,000,000 − 고정 917,000 − 세부(재산세 실제) 612,000 − 자동차보험 예산 몫 900,000 = 571,000
+    expect((screen.getByLabelText('세부 안 적음 월 금액') as HTMLInputElement).value).toBe('571000')
+    expect((screen.getByLabelText('재산세 1년 금액') as HTMLInputElement).value).toBe('600000')
+    const row = [...screen.getByLabelText('비정기 실제 기록').querySelectorAll('tbody tr')].find((tr) => tr.textContent?.startsWith('재산세'))!
+    expect(row.textContent).toBe('재산세600,000원590,000원612,000원예산 +12,000원')
+  })
+})

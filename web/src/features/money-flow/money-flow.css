@@ -115,3 +115,10 @@
 .mf-trend-track { display: inline-block; width: 64px; height: 10px; }
 .mf-trend-bar { display: block; height: 100%; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--color-brand); opacity: .55; }
 .mf-trend tr.is-current .mf-trend-bar { opacity: 1; }
+/* 이번 달 나가는 비정기 */
+.mf-irregular { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--color-border-default); }
+.mf-irregular h3 { font-size: 14px; margin: 0; }
+.mf-irregular h3 small { margin-left: 4px; color: var(--color-text-tertiary); font-weight: 400; font-size: 12px; }
+.mf-irregular-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 9em); gap: 8px; align-items: center; word-break: keep-all; }
+.mf-irregular-row small { color: var(--color-text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mf-irregular-row input { min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; text-align: right; }
