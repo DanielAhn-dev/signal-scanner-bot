@@ -635,8 +635,8 @@ export function checkForMonth<T extends DatedCheck>(checks: T[], month: string):
 }
 
 export type FixedHistory = {
-  /** 오래된 것 → 최근 */
-  dates: string[];
+  /** YYYY-MM, 오래된 것 → 최근. 한 달에 여러 번 저장했으면 그 달 마지막 저장(checkForMonth와 같은 것)만 */
+  months: string[];
   /**
    * amounts는 dates 순서, 그 점검에 없던 항목은 null.
    * 내가 붙인 이름이 있으면 이름별로(소분류가 같아도 '손주 돌봄비'·'본인 용돈'처럼 따로), 이름이 없으면 소분류 단위로 합친다.
@@ -645,9 +645,10 @@ export type FixedHistory = {
   rows: Array<{ categoryId: string; name: string; amounts: Array<number | null>; change: number | null }>;
 };
 
-/** 저장한 점검들의 고정지출을 소분류별로 나란히 놓는다. change = 마지막 점검 − 그 직전 점검(둘 다 있을 때) */
+/** 저장한 예산의 고정지출을 달마다 나란히 놓는다. change = 마지막 달 − 그 직전 달(둘 다 있을 때) */
 export function fixedHistory(checks: DatedCheck[], limit = 4): FixedHistory {
-  const recent = [...checks].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(-limit);
+  const months = [...new Set(checks.map((c) => c.date.slice(0, 7)))].sort().slice(-limit);
+  const recent = months.map((m) => checkForMonth(checks, m)!);
   const keys: Array<{ key: string; categoryId: string; name: string }> = [];
   const byCheck = recent.map((check) => {
     const map = new Map<string, number>();
@@ -665,7 +666,7 @@ export function fixedHistory(checks: DatedCheck[], limit = 4): FixedHistory {
     const before = amounts[amounts.length - 2];
     return { categoryId, name, amounts, change: last != null && before != null ? last - before : null };
   });
-  return { dates: recent.map((c) => c.date), rows };
+  return { months, rows };
 }
 
 /** 그 달(1~12)에 실제로 나가는 비정기 지출(현금). 1년 총액을 고른 달 수로 나눈 몫 — evaluateFlowCheck.irregularDueByMonth와 같은 나눔 */

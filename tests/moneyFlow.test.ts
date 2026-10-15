@@ -479,7 +479,7 @@ test('고정비 바뀐 기록: 소분류별로 나란히, 없던 항목은 빈�
     mk('2026-08-31', [{ categoryId: 'utilities', amount: 81_000 }]),
     mk('2026-10-31', [{ categoryId: 'utilities', amount: 50_000 }, { categoryId: 'utilities', amount: 40_000 }, { categoryId: 'maintenance', amount: 295_000 }, { categoryId: 'phone', amount: 110_000 }]),
   ])
-  assert.deepEqual(h.dates, ['2026-08-31', '2026-09-30', '2026-10-31'])
+  assert.deepEqual(h.months, ['2026-08', '2026-09', '2026-10'])
   assert.deepEqual(h.rows.find((r) => r.categoryId === 'utilities'), { categoryId: 'utilities', name: '전기·가스·수도', amounts: [81_000, 123_000, 90_000], change: -33_000 })
   assert.deepEqual(h.rows.find((r) => r.categoryId === 'maintenance'), { categoryId: 'maintenance', name: '관리비', amounts: [null, 280_000, 295_000], change: 15_000 })
   assert.deepEqual(h.rows.find((r) => r.categoryId === 'phone')?.change, null)
@@ -488,7 +488,16 @@ test('고정비 바뀐 기록: 소분류별로 나란히, 없던 항목은 빈�
     { date: '2026-10-01', input: { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [], fixed: [{ categoryId: 'family_parents', amount: 1_000_000, label: '손주 돌봄비' }, { categoryId: 'family_parents', amount: 300_000 }] } },
   ])
   assert.deepEqual(named.rows.map((r) => [r.name, r.amounts[0]]), [['손주 돌봄비', 1_000_000], ['부모님 용돈', 300_000]])
-  assert.equal(fixedHistory([mk('2026-01-31', []), mk('2026-02-28', []), mk('2026-03-31', []), mk('2026-04-30', []), mk('2026-05-31', [])]).dates[0], '2026-02-28')
+  assert.equal(fixedHistory([mk('2026-01-31', []), mk('2026-02-28', []), mk('2026-03-31', []), mk('2026-04-30', []), mk('2026-05-31', [])]).months[0], '2026-02')
+  // 같은 달에 여러 번 저장하면 그 달 마지막 저장만(같은 날이면 목록 앞쪽 = 서버가 준 최신)
+  const same = fixedHistory([
+    mk('2026-10-15', [{ categoryId: 'rent', amount: 167_596 }]),
+    mk('2026-10-15', [{ categoryId: 'rent', amount: 367_596 }]),
+    mk('2026-10-06', [{ categoryId: 'rent', amount: 100_000 }]),
+    mk('2026-09-30', [{ categoryId: 'rent', amount: 150_000 }]),
+  ])
+  assert.deepEqual(same.months, ['2026-09', '2026-10'])
+  assert.deepEqual(same.rows[0].amounts, [150_000, 167_596])
 })
 
 test('그 달 비정기: 고른 달에만, 여러 달이면 나눠서(나머지는 첫 달), 포인트는 제외', () => {

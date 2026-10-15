@@ -344,24 +344,24 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
         <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} kids={kids} />
       </section>
 
-      {history.dates.length >= 2 && (
+      {history.months.length >= 2 && (
         <section className="acc-card">
           <h2>고정비 바뀐 기록</h2>
           <div className="mf-trend-wrap">
             <table className="mf-trend" aria-label="고정비 바뀐 기록">
-              <thead><tr><th scope="col">항목</th>{history.dates.map((d) => <th key={d} scope="col">{Number(d.slice(5, 7))}/{Number(d.slice(8))}</th>)}<th scope="col">지난번 대비</th></tr></thead>
+              <thead><tr><th scope="col">항목</th>{history.months.map((m) => <th key={m} scope="col">{m.slice(0, 4) !== history.months[history.months.length - 1].slice(0, 4) ? `${m.slice(2, 4)}년 ` : ''}{Number(m.slice(5))}월</th>)}<th scope="col">지난달 대비</th></tr></thead>
               <tbody>
                 {history.rows.map((r) => (
                   <tr key={`${r.categoryId}|${r.name}`}>
                     <th scope="row">{r.name}</th>
-                    {r.amounts.map((a, i) => <td key={history.dates[i]} className={a === null ? 'mf-trend-muted' : ''}>{a === null ? '—' : krw(a)}</td>)}
+                    {r.amounts.map((a, i) => <td key={history.months[i]} className={a === null ? 'mf-trend-muted' : ''}>{a === null ? '—' : krw(a)}</td>)}
                     <td>{r.change === null ? <span className="mf-trend-muted">—</span> : r.change === 0 ? '0' : <small className={r.change > 0 ? 'is-up' : 'is-down'}>{r.change > 0 ? '+' : '−'}{krw(Math.abs(r.change))}</small>}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="acc-note">저장한 점검마다의 고정지출(최근 {history.dates.length}번)입니다. 공과금이 바뀌면 위 금액을 고치고 점검을 저장하면 여기에 쌓입니다. 포인트로 낸 건 빼고, 환급은 뺀 금액입니다.</p>
+          <p className="acc-note">달마다의 고정지출(최근 {history.months.length}달)입니다. 한 달에 여러 번 저장하면 그 달 마지막 저장만 봅니다. 공과금이 바뀌면 위 금액을 고쳐 저장하면 됩니다. 포인트로 낸 건 빼고, 환급은 뺀 금액입니다.</p>
         </section>
       )}
 
