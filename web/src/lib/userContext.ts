@@ -168,7 +168,8 @@ export async function loadProfileFromServer(): Promise<StoredProfile | null> {
   const base = getApiBase() || ''
   const url = base ? `${base.replace(/\/$/, '')}/api/ui/profile?client_id=${encodeURIComponent(clientId)}` : `/api/ui/profile?client_id=${encodeURIComponent(clientId)}`
   const headers = buildProfileHeaders(identity.accessToken)
-  const resp = await fetch(url, { method: 'GET', headers })
+  // 로그인 직후 이 응답을 기다리는 동안 '인증 확인 중'이 유지되므로 끝없이 매달리지 않게 끊는다(실패해도 로그인은 된다)
+  const resp = await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout?.(20_000) })
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')

@@ -87,6 +87,9 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         markAuthReady()
         return
       }
+      // 세션은 있다 — 프로필을 불러오는 동안 '확인 중'을 유지한다. 5초 안전 타이머가 먼저 터지면
+      // 로그인 버튼 화면이 잠깐 떠서(로컬 vercel dev는 요청마다 5초 넘게 걸린다) 다시 누르면 로그인이 되풀이된다
+      if (sessionCheckTimer !== undefined) clearTimeout(sessionCheckTimer)
       const metadata = (user.user_metadata ?? {}) as Record<string, unknown>
       const name = String(metadata.full_name || metadata.name || metadata.preferred_username || '').trim()
       const email = String(user.email || '').trim()
