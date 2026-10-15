@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, fixedOutsideCardOf, irregularDueIn, irregularForMonth, irregularHistory, monthSpending, seedExpenseTotal, seedFromCheck, seedPlanFromFlow, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, fixedOutsideCardOf, irregularDueIn, irregularForMonth, irregularHistory, matchesIrregular, monthSpending, seedExpenseTotal, seedFromCheck, seedPlanFromFlow, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -596,7 +596,7 @@ test('시드 계획: 고정·변동·비정기 적립을 항목 내역과 함께
   assert.equal(p.variable.total, 1_118_000)
   assert.deepEqual(p.variable.cards, [{ label: 'A카드', amount: 1_500_000 }, { label: 'B카드', amount: 300_000 }])
   assert.equal(p.variable.cash, 140_000)
-  assert.deepEqual(p.variable.recorded, [{ label: '주유', amount: 180_000 }, { label: '장보기(마트)', amount: 40_000 }])
+  assert.deepEqual(p.variable.recorded, [{ label: '주유·충전', amount: 180_000 }, { label: '장보기(마트)', amount: 40_000 }])
   assert.equal(p.variable.unrecorded, 1_800_000 - 180_000 - 312_000)
   assert.deepEqual(p.irregularFund.items.map((i) => [i.label, i.amount, i.months]), [['재산세', 50_000, [7, 9]], ['차량 소모품', 17_500, [4, 10]]])
   assert.equal(p.irregularFund.total, 67_500)
@@ -628,4 +628,22 @@ test('카드 밖 고정비(대출 자동이체): 매달 기록 없이 그달 지
   const now = new Date('2026-10-06T03:00:00Z')
   assert.equal(normalizeFlowCheck({ input: { monthlyIncome: 0, fixed: [{ categoryId: 'rent', amount: 1, outsideCard: true }] } }, now)?.input.fixed[0].outsideCard, true)
   assert.equal(normalizeFlowCheck({ input: { monthlyIncome: 0, fixed: [{ categoryId: 'rent', amount: 1, outsideCard: 'y' }] } }, now), null)
+})
+
+test('비정기 예산 이름 연결: 괄호 설명을 뺀 이름이 메모에 있으면 같은 항목', () => {
+  assert.equal(matchesIrregular('엔진오일 교체', '엔진오일(하이브리드)'), true)
+  assert.equal(matchesIrregular('재산 세', '재산세'), true)
+  assert.equal(matchesIrregular('자동차 보험료 갱신', '자동차보험'), true)
+  assert.equal(matchesIrregular('주유', '엔진오일(하이브리드)'), false)
+  assert.equal(matchesIrregular('세탁기', '세(기타)'), false)
+  const input = { monthlyIncome: 0, reserveMonthly: 0, fixed: [], variable: [], irregular: [{ categoryId: 'car', label: '엔진오일(하이브리드)', yearlyAmount: 240_000, months: [4, 10] }] }
+  assert.deepEqual(irregularHistory(input, [{ date: '2026-04-11', categoryId: 'car', amount: 89_000, memo: '엔진오일 교체' }])[0].byYear, { '2026': 89_000 })
+  assert.equal(irregularForMonth(input, 4, [{ categoryId: 'car', amount: 89_000, memo: '엔진오일 교체' }]).rows[0].actual, 89_000)
+})
+
+test('전기차 충전은 주유와 같은 변동 지출, 교통카드·휴대폰 충전과는 구분', () => {
+  assert.equal(classifyMemo('전기차 충전 23000원').categoryId, 'fuel')
+  assert.equal(classifyMemo('환경부 급속충전').categoryId, 'fuel')
+  assert.equal(classifyMemo('교통카드 충전').categoryId, 'transit')
+  assert.equal(categoryById('fuel')?.label, '주유·충전')
 })

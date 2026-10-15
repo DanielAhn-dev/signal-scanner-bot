@@ -53,7 +53,7 @@ export const FLOW_CATEGORIES: FlowCategory[] = [
   ...c("variable", "식재료", "food", [["grocery_mart", "장보기(마트)", "trim"], ["grocery_basic", "기본 식재료", "must"], ["grocery_ready", "간편식·냉동", "trim"], ["grocery_snack", "과자·음료", "drop"], ["grocery_drink", "생수·커피", "trim"]]),
   ...c("variable", "사 먹기", "food", [["eat_out", "외식", "trim"], ["delivery", "배달", "drop"], ["cafe", "카페", "drop"], ["snack_out", "간식", "drop"], ["convenience", "편의점", "drop"]]),
   ...c("variable", "생활용품", "other", [["hygiene", "세제·위생", "must"], ["kitchen", "주방·소모품", "trim"], ["gadget", "소형 가전·도구", "trim"]]),
-  ...c("variable", "교통", "vehicle", [["transit", "대중교통", "must"], ["fuel", "주유", "trim"], ["taxi", "택시", "drop"], ["parking", "주차·통행료", "trim"]]),
+  ...c("variable", "교통", "vehicle", [["transit", "대중교통", "must"], ["fuel", "주유·충전", "trim"], ["taxi", "택시", "drop"], ["parking", "주차·통행료", "trim"]]),
   ...c("variable", "의료", "other", [["medical", "병원·약", "must"], ["supplement", "영양제", "trim"]]),
   ...c("variable", "꾸밈", "other", [["clothes", "옷·신발", "trim"], ["beauty", "미용", "trim"], ["cosmetics", "화장품", "trim"]]),
   ...c("variable", "여가", "other", [["hobby", "취미·운동", "trim"], ["culture", "문화·공연", "drop"], ["game", "게임·앱 결제", "drop"]]),
@@ -112,7 +112,8 @@ const DICTIONARY: Record<string, string[]> = {
   kitchen: ["수세미", "지퍼백", "키친타올", "주방"],
   gadget: ["체중계", "충전기", "케이블", "전구", "건전지", "멀티탭"],
   transit: ["버스", "지하철", "교통카드", "교통요금", "교통비", "티머니", "ktx", "srt", "모두의카드", "k패스", "k-패스", "케이패스", "기후동행"],
-  fuel: ["주유", "주유소", "기름값"],
+  // 전기차 충전도 기름값과 같은 변동 지출. "충전"만으로는 교통카드·휴대폰 충전과 헷갈려 넣지 않는다
+  fuel: ["주유", "주유소", "기름값", "전기차충전", "전기차 충전", "충전소", "급속충전", "완속충전", "ev충전"],
   taxi: ["택시", "카카오t"],
   parking: ["주차", "하이패스", "통행료"],
   medical: ["병원", "약국", "치과", "의원", "한의원"],
@@ -672,6 +673,16 @@ export function irregularDueIn(input: FlowCheckInput, month: number): number {
 
 /** 비정기 실제 기록과 예산 항목을 잇는 열쇠: 띄어쓰기·대소문자 무시한 이름 */
 export const irregularKey = (label: string) => label.replace(/\s+/g, "").toLowerCase();
+/**
+ * 기록 메모가 예산 항목인지: 이름이 같거나, 괄호 설명을 뺀 예산 이름이 메모에 들어 있으면 같은 항목
+ * ("엔진오일(하이브리드)" 예산 ↔ "엔진오일 교체" 기록). 두 글자 미만 이름은 오매칭을 막으려고 정확히 같을 때만.
+ */
+export function matchesIrregular(memo: string, label: string): boolean {
+  const memoKey = irregularKey(memo);
+  if (memoKey === irregularKey(label)) return true;
+  const base = irregularKey(label.replace(/\([^)]*\)/g, ""));
+  return base.length >= 2 && memoKey.includes(base);
+}
 /** 예산 항목 이름(없으면 소분류 이름) */
 export const irregularLabel = (item: { label?: string; categoryId: string }) => (item.label ?? "").trim() || categoryById(item.categoryId)?.label || item.categoryId;
 
@@ -703,7 +714,7 @@ export function irregularForMonth(input: FlowCheckInput | null, month: number, r
     const amount = cashEffect({ amount: item.yearlyAmount, payment: item.payment });
     const base = Math.trunc(amount / months.length);
     const label = irregularLabel(item);
-    const matched = records.filter((r) => !used.has(r) && irregularKey(r.memo) === irregularKey(label));
+    const matched = records.filter((r) => !used.has(r) && matchesIrregular(r.memo, label));
     matched.forEach((r) => used.add(r));
     rows.push({ label, categoryId: item.categoryId, expected: base + (months[0] === month ? amount - base * months.length : 0), actual: matched.length > 0 ? matched.reduce((s, r) => s + cashEffect(r), 0) : null });
   }
@@ -722,7 +733,7 @@ export function irregularHistory(input: FlowCheckInput | null, records: Array<Re
     const label = irregularLabel(item);
     const byYear: Record<string, number> = {};
     for (const r of records) {
-      if (irregularKey(r.memo) !== irregularKey(label)) continue;
+      if (!matchesIrregular(r.memo, label)) continue;
       const year = r.date.slice(0, 4);
       byYear[year] = (byYear[year] ?? 0) + cashEffect(r);
     }

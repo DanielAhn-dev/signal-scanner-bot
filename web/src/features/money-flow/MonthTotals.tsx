@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
-import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, fixedOutsideCardOf, irregularKey, monthSpending, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
+import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, fixedOutsideCardOf, matchesIrregular, monthSpending, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
 
 /** 서버가 주는 월 합계 한 칸. mine = 내가 적은 칸(배우자 칸은 읽기만) */
 export type MonthTotalRow = { month: string; label: string; kind: TotalKind; amount: number; mine: boolean }
@@ -63,7 +63,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
     if (entered.some((s) => !Number.isSafeInteger(Number(s.amount)) || Number(s.amount) < 0)) { setNotice('금액은 0원 이상 정수로 적어 주세요.'); return }
     if (changedIrregular.some((r) => !Number.isSafeInteger(Number(actual[r.label])) || Number(actual[r.label]) < 1)) { setNotice('비정기 실제 금액은 1원 이상 정수로 적어 주세요.'); return }
     // 같은 이름 기록이 여러 건이면 어느 것을 고칠지 알 수 없다 — 세부 기록에서 고치게 한다
-    const ambiguous = changedIrregular.filter((r) => records.filter((x) => irregularKey(x.memo) === irregularKey(r.label)).length > 1)
+    const ambiguous = changedIrregular.filter((r) => records.filter((x) => matchesIrregular(x.memo, r.label)).length > 1)
     if (ambiguous.length > 0) { setNotice(`${ambiguous.map((r) => r.label).join(', ')}은(는) 이 달 기록이 여러 건이라 아래 세부 기록에서 고쳐 주세요.`); return }
     savingRef.current = true
     setSaving(true)
@@ -80,7 +80,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
       const adds = []
       for (const r of changedIrregular) {
         const value = Number(actual[r.label])
-        const existing = records.find((x) => irregularKey(x.memo) === irregularKey(r.label))
+        const existing = records.find((x) => matchesIrregular(x.memo, r.label))
         if (existing) {
           await apiFetch('/api/ui/money-flow', { method: 'POST', cacheMs: 0, body: JSON.stringify({ action: 'update-entry', id: existing.id, date: existing.date, amount: value, memo: existing.memo, categoryId: existing.categoryId, payment: existing.payment, forWhom: existing.forWhom ?? 'shared', paidWith: existing.paidWith ?? 'card', cut: existing.cut, mustPart: existing.mustPart !== null && existing.mustPart <= value ? existing.mustPart : null, learn: false }) })
         } else {
