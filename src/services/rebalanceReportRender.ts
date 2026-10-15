@@ -6,6 +6,7 @@ import { escapeHtml, renderLayout } from './reportWebRenderService'
 
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
 const man = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원`
+const money = (v: number) => (Math.abs(v) < 100_000 ? won(v) : man(v))
 const pct = (v: number | null, d = 1) => (v == null ? '-' : `${v > 0 ? '+' : ''}${v.toFixed(d)}%`)
 const tone = (v: number | null) => (v == null || v === 0 ? '' : v > 0 ? ' rb-up' : ' rb-down')
 const e = escapeHtml
@@ -46,6 +47,17 @@ function bandCell(diffPp: number, outOfBand: boolean): string {
   return outOfBand ? `${d} <span class="rb-chip rb-sell">조정 필요</span>` : `${d} <span class="rb-chip rb-hold">범위 안</span>`
 }
 
+/** 같은 지수 상품 총보수 비교 — 자료가 둘 이상일 때만 */
+function feeTable(r: RebalanceReport): string {
+  if (r.feeCompare.length < 2) return ''
+  const rows = r.feeCompare
+    .map((c) => `<tr><td class="rb-l">${c.chosen ? '<b>' : ''}${e(c.name)}${c.chosen ? '</b>' : ''}</td><td>${c.fee}%</td><td>${c.held ? '보유 중' : '-'}</td><td>${c.chosen ? '<span class="rb-chip rb-buy">새 돈은 여기로</span>' : ''}</td></tr>`)
+    .join('')
+  return `<p class="rb-muted" style="margin-top:10px">같은 지수 상품 총보수 비교 (연, 낮은 순)</p>
+    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>상품</th><th>총보수</th><th>이 계좌</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="rb-muted">총보수만 비교했습니다. 기타비용·매매비용을 더한 실부담비용, 거래량(호가 차이)도 다를 수 있습니다. 같은 지수끼리 갈아타려고 기존 보유를 팔 필요는 없습니다.</p>`
+}
+
 function section(title: string, body: string): string {
   return `<section class="report-section"><h2>${e(title)}</h2>${body}</section>`
 }
@@ -65,7 +77,7 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
   if (r.market) {
     const m = r.market
     const text = m.drawdown
-      ? `코스피 ${e(m.asOf)} 기준 최근 60거래일 고점 대비 <b>${pct(m.fromHighPct)}</b>(전일 대비 ${pct(m.changePct)}). 하락 구간에서 손실 종목을 팔면 손실이 확정되고 반등을 놓칩니다. 이 리포트의 매도는 <b>평단 이상(수익 구간) 종목만</b>이고, 나머지는 가격 조건부로 미룹니다.`
+      ? `코스피 ${e(m.asOf)} 기준 최근 60거래일 고점 대비 <b>${pct(m.fromHighPct)}</b>(전일 대비 ${pct(m.changePct)}). 하락 구간에서 손실 종목을 팔면 손실이 확정되고 반등을 놓칩니다. 이 리포트의 매도는 <b>평단 이상(수익 구간) 종목만</b>입니다.${r.conditionals.length ? ' 손실 구간이라 미룬 종목은 5번 가격 조건부 목록에 있습니다.' : ''}`
       : `코스피 ${e(m.asOf)} 기준 최근 60거래일 고점 대비 ${pct(m.fromHighPct)}(전일 대비 ${pct(m.changePct)}). 매도는 평단 이상(수익 구간) 종목만 다룹니다.`
     parts.push(`<div class="${m.drawdown ? 'rb-alert' : 'rb-headline'}">${text}</div>`)
   }
@@ -94,7 +106,7 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
     const rows = r.sells
       .map((s) => `<tr>
         <td class="rb-l"><b>${e(s.name)}</b><br><span class="rb-muted">${e(s.code)}</span></td>
-        <td>${s.shares.toLocaleString('ko-KR')}주</td><td>${won(s.price)}</td><td>${man(s.amount)}</td>
+        <td>${s.shares.toLocaleString('ko-KR')}주</td><td>${won(s.price)}</td><td>${money(s.amount)}</td>
         <td class="${tone(s.realizedGain)}">${won(s.realizedGain)}</td><td>${won(s.cost)}</td>
         <td class="${tone(s.monthlyIncomeDelta)}">${won(s.monthlyIncomeDelta)}</td>
         <td class="rb-l">${s.to ? e(s.to.name) : '-'}</td>
@@ -103,21 +115,22 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
     const total = r.sells.reduce((s, x) => s + x.net, 0)
     parts.push(section('3. 지금 팔 것 (수익 구간만)', `
       <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>현재가</th><th>금액</th><th>확정 손익</th><th>비용</th><th>월 분배금 변화</th><th>옮길 곳</th><th>이유</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="rb-muted">비용을 뺀 매도 대금 합계 약 ${man(total)}. 분배락일 직전이면 분배금을 받은 뒤 팝니다.</p>`))
+      <p class="rb-muted">비용을 뺀 매도 대금 합계 약 ${money(total)}.${r.sells.some((s) => s.paysDistribution) ? ' 분배금이 나오는 종목은 분배락일 직전이면 분배금을 받은 뒤 팝니다.' : ''}</p>`))
   } else {
-    parts.push(section('3. 지금 팔 것 (수익 구간만)', '<p>지금 수익 구간에서 정리할 종목은 없습니다. 손실 종목은 팔지 않고, 새 돈과 분배금 방향만 바꿉니다.</p>'))
+    parts.push(section('3. 지금 팔 것 (수익 구간만)', `<p>지금 수익 구간에서 정리할 종목은 없습니다.${r.rows.some((x) => x.pnlPct != null && x.pnlPct < 0) ? ' 손실 종목은 팔지 않고,' : ''} 새 돈과 분배금 방향만 바꿉니다.</p>`))
   }
 
   // 4. 살 것
   const b = r.buy
   parts.push(section('4. 살 것 · 분배금 보낼 곳', `
-    <p><b>${b.target ? e(b.target.name) : '지수 ETF (새로 정하기)'}</b> — ${e(b.hint)}</p>
+    <p><b>${b.target ? e(b.target.name) : '지수 ETF (새로 정하기)'}</b> — ${e(r.feeSwitch ? r.feeSwitch.text : b.hint)}</p>
     <ul class="rb-list">
-      ${b.fromSells > 0 && b.target ? `<li>매도 대금 약 ${man(b.fromSells)} → 약 ${b.shares.toLocaleString('ko-KR')}주 (현재가 ${won(b.target.price)}), 판 날 바로 삽니다.</li>` : ''}
-      <li>분배금 월 약 ${man(b.monthlyDistribution)}(세후 추정) → 들어오는 대로 ${b.target ? e(b.target.name) : '지수 ETF'}로.</li>
+      ${b.fromSells > 0 && b.target ? `<li>${b.shares > 0 ? `매도 대금 약 ${money(b.fromSells)} → 약 ${b.shares.toLocaleString('ko-KR')}주 (현재가 ${won(b.target.price)}), 판 날 바로 삽니다.` : `매도 대금 약 ${money(b.fromSells)}은 1주 값(${won(b.target.price)})보다 작아, 다음 분배금과 합쳐 삽니다.`}</li>` : ''}
+      ${b.monthlyDistribution >= 1_000 ? `<li>분배금 월 약 ${money(b.monthlyDistribution)}(세후 추정) → 들어오는 대로 ${b.target ? e(b.target.name) : '지수 ETF'}로.</li>` : ''}
       ${b.monthlyContribution > 0 ? `<li>새 돈 월 ${man(b.monthlyContribution)} → 같은 곳으로.</li>` : ''}
       ${r.growth && r.growth.needByNewMoney > 0 ? `<li>전체 성장 비중 ${r.growth.actualPct.toFixed(0)}% → 목표 ${r.growth.targetPct.toFixed(0)}%: 새 돈만으로 약 ${man(r.growth.needByNewMoney)} 필요${r.growth.months ? `, 지금 속도면 약 ${r.growth.months}개월` : ''}.</li>` : ''}
-    </ul>`))
+    </ul>
+    ${feeTable(r)}`))
 
   // 5. 조건부
   if (r.conditionals.length) {
@@ -135,12 +148,12 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
       <td class="rb-l"><b>${e(h.name)}</b><br><span class="rb-muted">${e(h.bucketLabel)}</span></td>
       <td>${h.quantity.toLocaleString('ko-KR')}</td><td>${h.avgPrice == null ? '-' : won(h.avgPrice)}</td><td>${won(h.price)}</td>
       <td>${man(h.value)}</td><td class="${tone(h.pnlPct)}">${pct(h.pnlPct)}</td><td>${h.weightPct.toFixed(1)}%</td>
-      <td>${h.yieldPct.toFixed(1)}%${h.yieldSource === 'assumed' ? '<span class="rb-muted">*</span>' : ''}</td><td>${won(h.monthlyNet)}</td>
+      <td>${h.yieldPct.toFixed(1)}%${h.yieldSource === 'assumed' ? '<span class="rb-muted">*</span>' : ''}</td><td>${h.fee == null ? '-' : `${h.fee}%`}</td><td>${won(h.monthlyNet)}</td>
       <td class="rb-l"><span class="rb-chip rb-${h.action}">${ACTION_LABEL[h.action]}</span><br>${e(h.actionText)}</td></tr>`)
     .join('')
   parts.push(section('6. 종목별 판단', `
-    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>평단</th><th>현재가</th><th>평가</th><th>손익</th><th>비중</th><th>분배율</th><th>월 분배금</th><th>판단</th></tr></thead><tbody>${holdingRows}</tbody></table></div>
-    <p class="rb-muted">분배율: 네이버 최근 12개월. * 표시는 자료가 없어 상품 유형별 가정을 쓴 값입니다.</p>`))
+    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>평단</th><th>현재가</th><th>평가</th><th>손익</th><th>비중</th><th>분배율</th><th>총보수</th><th>월 분배금</th><th>판단</th></tr></thead><tbody>${holdingRows}</tbody></table></div>
+    <p class="rb-muted">분배율: 네이버 최근 12개월. * 표시는 자료가 없어 상품 유형별 가정을 쓴 값입니다. 총보수: 리밸런싱 가이드에 직접 넣은 값, 없으면 네이버 공시 총보수(연).</p>`))
 
   // 7. 실행 순서
   parts.push(section('7. 실행 순서', `<ol class="rb-steps">${r.steps.map((s) => `<li>${e(s)}</li>`).join('')}</ol>`))

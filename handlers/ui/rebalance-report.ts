@@ -10,7 +10,7 @@ import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView } from '../../src/lib/incomeGuide'
 import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
-import { buildRebalanceReport, type EtfYield } from '../../src/lib/rebalanceReport'
+import { buildRebalanceReport, sameIndexKey, type EtfYield } from '../../src/lib/rebalanceReport'
 import { renderRebalanceReportHtml } from '../../src/services/rebalanceReportRender'
 
 // 실계좌 리밸런싱 가이드 리포트 (계산 src/lib/rebalanceReport.ts, 렌더 src/services/rebalanceReportRender.ts)
@@ -74,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchDropDayContext(null, null).catch(() => null),
     ])
     const etf = new Map<string, EtfYield>([...etfMap.entries()].map(([code, k]) => [code, { yieldTtm: k.yieldTtm, fee: k.fee }]))
-    const report = buildRebalanceReport({
+    const baseInput = {
       view,
       plan,
       accountKey,
@@ -82,8 +82,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       market: drop ? { asOf: drop.asOf, changePct: drop.changePct, fromHighPct: drop.fromHighPct } : null,
       // 매달 넣는 돈은 계좌별로 나뉘어 있지 않아, 가장 큰 계좌에만 붙인다
       monthlyContribution: view.accounts[0]?.key === accountKey ? file.settings.monthlyContribution : 0,
-    })
+    }
+    let report = buildRebalanceReport(baseInput)
     if (!report) return res.status(404).json({ error: '이 계좌에 입력된 보유가 없습니다.' })
+
+    // 살 곳과 같은 지수의 다른 운용사 상품(예: KODEX 200TR ↔ TIGER 200TR) 총보수를 받아 더 싼 쪽이 있으면 새 돈 방향을 바꾼다.
+    // 실패하면 비교 없이 그대로 낸다.
+    const target = report.buy.target
+    const key = target ? sameIndexKey(target.name) : null
+    if (target && key) {
+      try {
+        const lastWord = target.name.trim().split(/\s+/).pop() ?? ''
+        const { data } = await supabase.from('stocks').select('code, name').ilike('name', `%${lastWord}%`).limit(60)
+        const peers = ((data ?? []) as Array<{ code: string; name: string | null }>)
+          .filter((s) => s.name && s.code !== target.code && sameIndexKey(s.name) === key && isExchangeTradedProduct(s.code, s.name))
+          .slice(0, 12)
+        if (peers.length) {
+          const codes = peers.map((p) => String(p.code))
+          const [fees, peerPrices] = await Promise.all([fetchEtfKeyIndicators(codes), fetchGuidePrices(supabase, codes)])
+          const feeAlternatives = peers.map((p) => ({
+            code: String(p.code),
+            name: String(p.name),
+            price: peerPrices.prices.get(String(p.code)) ?? 0,
+            fee: fees.get(String(p.code))?.fee ?? null,
+          }))
+          report = buildRebalanceReport({ ...baseInput, feeAlternatives }) ?? report
+        }
+      } catch {
+        // 비교 실패는 리포트를 막지 않는다
+      }
+    }
 
     const generatedAt = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false })
     res.setHeader('Content-Type', 'text/html; charset=utf-8')

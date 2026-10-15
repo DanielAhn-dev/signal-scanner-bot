@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView, type GuideHolding, type IncomeGuideSettings } from "../src/lib/incomeGuide";
 import { buildRebalancePlan } from "../src/lib/rebalancePlan";
-import { buildRebalanceReport, estimateSellCost } from "../src/lib/rebalanceReport";
+import { buildRebalanceReport, estimateSellCost, sameIndexKey } from "../src/lib/rebalanceReport";
 import { renderRebalanceReportHtml } from "../src/services/rebalanceReportRender";
 
 const H = (code: string, name: string, price: number, quantity: number, avgPrice: number | null, account = "a"): GuideHolding => ({
@@ -108,4 +108,55 @@ test("HTML 렌더: 이스케이프하고 주요 섹션을 담는다", () => {
   assert.match(html, /지금 팔 것/);
   assert.match(html, /실행 순서/);
   assert.ok(!html.includes("삼성<전자>"));
+});
+
+test("실행 순서 문구는 상황일 때만: 1주·개별주면 '나눠 팔기'·'분배락일' 없이 소액 안내", () => {
+  const r = reportFor([H("278530", "KODEX 200TR", 60_000, 300, 58_000), H("005930", "삼성전자", 55_000, 2, 44_000)]);
+  const sellStep = r.steps.find((s) => s.startsWith("수익 구간 종목부터"))!;
+  assert.ok(!sellStep.includes("나눠"), sellStep);
+  assert.ok(!sellStep.includes("분배락일"), sellStep);
+  assert.match(sellStep, /금액이 55,000원으로 작아/);
+  assert.ok(r.steps.some((s) => s.includes("1주 값")), "대금이 1주 값보다 작으면 '0주' 대신 다음 분배금과 합친다고 쓴다");
+  assert.ok(r.steps.at(-1)!.includes("인컴 (분배형) 0%(목표 65%)이 목표 ±10%p를 벗어나"), r.steps.at(-1));
+});
+
+test("분배형 종목을 팔 때만 분배락일 안내", () => {
+  const r = reportFor([
+    H("069500", "KODEX 200", 50_000, 50, 45_000),
+    H("498400", "KODEX 200타겟위클리커버드콜", 18_000, 500, 17_000),
+    H("0167B0", "SOL 200타겟위클리커버드콜", 11_000, 100, 10_500),
+  ]);
+  const sellStep = r.steps.find((s) => s.startsWith("수익 구간 종목부터"))!;
+  assert.match(sellStep, /SOL 200타겟위클리커버드콜은 분배금이 나오는 종목/);
+  assert.match(sellStep, /나눠 팔아도/);
+});
+
+test("커버드콜이 없는 계좌에는 커버드콜 문단을 넣지 않는다", () => {
+  const r = reportFor([H("069500", "KODEX 200", 50_000, 50, 45_000), H("161510", "PLUS 고배당주", 20_000, 100, 22_000)]);
+  assert.ok(!r.income.lines.some((s) => s.startsWith("커버드콜은")));
+  assert.ok(r.income.lines.some((s) => s.includes("C48")));
+});
+
+test("sameIndexKey: 운용사만 다른 같은 상품", () => {
+  assert.equal(sameIndexKey("KODEX 200TR"), sameIndexKey("TIGER 200TR"));
+  assert.notEqual(sameIndexKey("KODEX 200TR"), sameIndexKey("KODEX 200"));
+  assert.equal(sameIndexKey("KODEX"), null);
+});
+
+test("같은 지수 상품 총보수가 0.01%p 이상 낮으면 새 돈은 그쪽으로, 기존 보유는 그대로", () => {
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 65 } };
+  const holdings = [H("278530", "KODEX 200TR", 15_000, 100, 14_000), H("005930", "삼성전자", 60_000, 10, 48_000)];
+  const view = buildIncomeGuideView({ holdings, settings: s, today: "2026-10-15" });
+  const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan });
+  const etf = new Map([["278530", { yieldTtm: 0, fee: 0.05 }]]);
+  const r = buildRebalanceReport({ view, plan, accountKey: "a", etf, feeAlternatives: [{ code: "999999", name: "TIGER 200TR", price: 12_000, fee: 0.02 }] })!;
+  assert.equal(r.buy.target?.code, "999999");
+  assert.equal(r.sells[0].to?.code, "999999", "매도 대금도 싼 쪽으로");
+  assert.match(r.feeSwitch!.text, /1천만원당 연 약 3,000원/);
+  assert.equal(r.rows.find((x) => x.code === "278530")!.action, "hold");
+  assert.equal(r.feeCompare.length, 2);
+  // 차이가 기준보다 작으면 바꾸지 않는다
+  const same = buildRebalanceReport({ view, plan, accountKey: "a", etf, feeAlternatives: [{ code: "999999", name: "TIGER 200TR", price: 12_000, fee: 0.045 }] })!;
+  assert.equal(same.buy.target?.code, "278530");
+  assert.equal(same.feeSwitch, null);
 });

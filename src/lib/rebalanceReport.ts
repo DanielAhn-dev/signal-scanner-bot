@@ -30,6 +30,17 @@ export const DRAWDOWN_ALERT_PCT = -10;
 const FOREIGN = /(미국|나스닥|S&P|다우존스|글로벌|선진|중국|차이나|일본|인도|베트남|유럽)/i;
 
 export type EtfYield = { yieldTtm: number | null; fee: number | null };
+/** 살 곳과 같은 지수를 따르는 다른 운용사 상품 (handlers/ui/rebalance-report.ts가 종목 테이블에서 찾는다) */
+export type FeeAlternative = { code: string; name: string; price: number; fee: number | null };
+/** 총보수가 이만큼(%p) 이상 낮을 때만 새 돈 방향을 바꾼다 — 1천만원당 연 1천원 미만 차이는 바꿀 이유가 없다 */
+export const FEE_SWITCH_PP = 0.01;
+
+/** 운용사 이름(첫 단어)을 뗀 상품 이름 — "KODEX 200TR"과 "TIGER 200TR"을 같은 지수로 본다 */
+export function sameIndexKey(name: string): string | null {
+  const m = String(name ?? "").trim().match(/^\S+\s+(.+)$/);
+  const rest = m ? m[1].replace(/\s+/g, "") : "";
+  return rest.length >= 2 ? rest : null;
+}
 export type MarketContext = { asOf: string; changePct: number; fromHighPct: number };
 
 export type ReportAction = "sell" | "sell-later" | "buy" | "stop-add" | "hold";
@@ -49,6 +60,8 @@ export type ReportRow = {
   weightPct: number;
   yieldPct: number;
   yieldSource: "ttm" | "assumed";
+  /** 총보수 % (직접 입력 → 네이버 순, 없으면 null) */
+  fee: number | null;
   /** 월 분배금 추정 (세후, 계좌 과세 기준) */
   monthlyNet: number;
   action: ReportAction;
@@ -70,6 +83,8 @@ export type ReportSell = {
   monthlyIncomeDelta: number;
   to: { code: string; name: string } | null;
   reason: string;
+  /** 분배금이 나오는 인컴 종목 — 분배락일 직전이면 받은 뒤 판다 */
+  paysDistribution: boolean;
 };
 
 export type ReportConditional = {
@@ -121,6 +136,10 @@ export type RebalanceReport = {
   rows: ReportRow[];
   sells: ReportSell[];
   conditionals: ReportConditional[];
+  /** 살 곳과 같은 지수 상품의 총보수 비교 (자료가 둘 이상일 때만) */
+  feeCompare: Array<{ code: string; name: string; fee: number; held: boolean; chosen: boolean }>;
+  /** 더 싼 같은 지수 상품으로 새 돈 방향을 바꿨을 때 */
+  feeSwitch: { from: { code: string; name: string; fee: number }; to: { code: string; name: string; fee: number }; text: string } | null;
   buy: {
     target: { code: string; name: string; price: number } | null;
     hint: string;
@@ -137,6 +156,8 @@ export type RebalanceReport = {
 
 const won = (v: number) => `${Math.round(v).toLocaleString("ko-KR")}원`;
 const man = (v: number) => `${Math.round(v / 10_000).toLocaleString("ko-KR")}만원`;
+/** 10만원 미만은 원 단위로 — "약 0만원"·"약 1만원"처럼 뭉개지지 않게 */
+const money = (v: number) => (Math.abs(v) < 100_000 ? won(v) : man(v));
 const signedPct = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
 
 /** 매도 비용 — ETF는 거래세 없음, 개별주 0.20%. 일반 계좌의 해외 기초 ETF·기타 ETF는 매매차익 15.4% */
@@ -158,6 +179,8 @@ export function buildRebalanceReport(input: {
   market?: MarketContext | null;
   /** 이 계좌에 매달 넣는 돈 (없으면 0) */
   monthlyContribution?: number;
+  /** 살 곳과 같은 지수의 다른 상품들 — 총보수가 더 낮으면 새 돈·분배금을 그쪽으로 */
+  feeAlternatives?: FeeAlternative[];
 }): RebalanceReport | null {
   const { view, plan, accountKey } = input;
   const etf = input.etf ?? new Map<string, EtfYield>();
@@ -177,7 +200,38 @@ export function buildRebalanceReport(input: {
   // 살 곳 — 같은 계좌의 성장 ETF: 일반 계좌면 TR형 먼저, 아니면 가장 큰 것
   const growthHeld = held.filter((h) => h.group === "growth").sort((a, b) => b.value - a.value);
   const buyRow = (!taxAdvantaged ? growthHeld.find((h) => /TR/i.test(h.name)) : undefined) ?? growthHeld[0] ?? null;
-  const buyTarget = buyRow ? { code: buyRow.code, name: buyRow.name, price: buyRow.price } : null;
+  // 총보수: 리밸런싱 가이드에서 직접 넣은 값 → 네이버 → 대체 상품 조회값
+  const alts = (input.feeAlternatives ?? []).filter((a) => a.price > 0);
+  const feeOf = (code: string): number | null =>
+    view.settings.feePctByCode?.[code] ?? etf.get(code)?.fee ?? alts.find((a) => a.code === code)?.fee ?? null;
+  let buyTarget = buyRow ? { code: buyRow.code, name: buyRow.name, price: buyRow.price } : null;
+  let feeSwitch: RebalanceReport["feeSwitch"] = null;
+  let feeCompare: RebalanceReport["feeCompare"] = [];
+  if (buyRow) {
+    const key = sameIndexKey(buyRow.name);
+    const pool = [
+      { code: buyRow.code, name: buyRow.name, price: buyRow.price },
+      ...alts.filter((a) => a.code !== buyRow.code && key != null && sameIndexKey(a.name) === key),
+    ]
+      .map((c) => ({ ...c, fee: feeOf(c.code) }))
+      .filter((c): c is typeof c & { fee: number } => c.fee != null && c.fee >= 0)
+      .sort((a, b) => a.fee - b.fee || (a.code === buyRow.code ? -1 : 1));
+    const currentFee = feeOf(buyRow.code);
+    const cheapest = pool[0];
+    if (cheapest && currentFee != null && cheapest.code !== buyRow.code && currentFee - cheapest.fee >= FEE_SWITCH_PP) {
+      buyTarget = { code: cheapest.code, name: cheapest.name, price: cheapest.price };
+      const perTenMillion = Math.round(((currentFee - cheapest.fee) / 100) * 10_000_000);
+      feeSwitch = {
+        from: { code: buyRow.code, name: buyRow.name, fee: currentFee },
+        to: { code: cheapest.code, name: cheapest.name, fee: cheapest.fee },
+        text: `같은 지수인데 총보수가 ${buyRow.name} 연 ${currentFee}%, ${cheapest.name} 연 ${cheapest.fee}%라 새로 사는 돈은 ${cheapest.name}로 보냅니다(1천만원당 연 약 ${perTenMillion.toLocaleString("ko-KR")}원 차이). 이미 가진 ${buyRow.name}는 팔지 않고 둡니다.`,
+      };
+    }
+    if (pool.length >= 2) {
+      const held = new Set(view.holdings.filter((h) => h.accountKey === accountKey).map((h) => h.code));
+      feeCompare = pool.map((c) => ({ code: c.code, name: c.name, fee: c.fee, held: held.has(c.code), chosen: c.code === buyTarget!.code }));
+    }
+  }
   const buyHint = buyRow
     ? !taxAdvantaged && /TR/i.test(buyRow.name)
       ? "일반 계좌라 분배금을 자동 재투자해 과세를 미루는 TR형으로 모읍니다. 다른 지수 ETF는 팔지 않고 둡니다."
@@ -212,6 +266,7 @@ export function buildRebalanceReport(input: {
       monthlyIncomeDelta: Math.round(gained - lost),
       to: to ? { code: to.code, name: to.name } : null,
       reason,
+      paysDistribution: h.group === "income",
     });
   };
   const inProfit = (h: { price: number; avgPrice?: number | null }) => h.avgPrice == null || h.avgPrice <= 0 || h.price >= h.avgPrice;
@@ -296,6 +351,8 @@ export function buildRebalanceReport(input: {
       } else if (laterNote.has(h.code)) {
         action = "sell-later";
         actionText = laterNote.get(h.code)!;
+      } else if (feeSwitch && h.code === feeSwitch.from.code) {
+        actionText = `그대로 둡니다 — 새 돈은 총보수가 낮은 ${feeSwitch.to.name}로`;
       } else if (buyTarget && h.code === buyTarget.code) {
         action = "buy";
         actionText = "매도 대금·분배금·새 돈을 여기로";
@@ -325,6 +382,7 @@ export function buildRebalanceReport(input: {
         weightPct: total > 0 ? (h.value / total) * 100 : 0,
         yieldPct: y.pct,
         yieldSource: y.source,
+        fee: feeOf(h.code),
         monthlyNet: Math.round(monthlyOf(h.code, h.bucket, h.name, h.value)),
         action,
         actionText,
@@ -351,19 +409,30 @@ export function buildRebalanceReport(input: {
   const market = input.market ? { ...input.market, drawdown: input.market.fromHighPct <= DRAWDOWN_ALERT_PCT } : null;
 
   // 하락장 인컴 추가매수에 대한 설명 (사용자가 하락장에서 커버드콜·고배당을 더 사며 버티는 중, 2026-10-15)
+  // 문장은 이 계좌에 해당 종목이 있을 때만 넣는다
   const incomeLines: string[] = [];
   const accountIncomePct = total > 0 ? (incomeValue / total) * 100 : 0;
-  if (incomeValue > 0) {
+  const hasDividend = incomeHeld.some((h) => h.bucket === "dividend");
+  if (ccValue > 0)
     incomeLines.push(
       `커버드콜은 하락장에서 산 뒤 지수가 반등해도 상승분의 절반~3분의 2만 따라옵니다(블로그 3편, 한국·미국 1세대). 지금 커버드콜을 더 사면 분배금은 늘지만, 회복 구간의 수익을 미리 팔아 두는 것과 같습니다.`,
+    );
+  if (hasDividend)
+    incomeLines.push(
       `고배당이 하락장에서 덜 빠진다는 것도 일관되지 않았습니다(C48). 2022·2026 하락에서는 크게 방어했지만 2018~2020 구간에서는 지수보다 더 빠졌고, 2020년 반등 때 지수 +37%를 고배당은 −5~+6%로 거의 못 따라갔습니다.`,
+    );
+  if (incomeValue > 0) {
+    incomeLines.push(
       `버티는 데 필요한 것은 생활비 현금 흐름입니다. 분배금을 생활비로 쓰지 않는다면, 분배금을 받아서 지수로 보내는 것이 하락장에서 싼 지수를 사는 효과를 그대로 얻는 방법입니다.`,
     );
     if (surplus != null && floor > 0) {
+      const src = plan!.income.source === "actual" ? "실제 입금" : "추정";
       incomeLines.push(
         surplus >= 0
-          ? `전체 월 인컴 ${man(plan!.income.monthlyNet)}(${plan!.income.source === "actual" ? "실제 입금" : "추정"})이 목표 ${man(floor)}를 넘었습니다. 계획대로라면 지금이 인컴 추가매수를 멈출 때입니다.`
-          : `전체 월 인컴 ${man(plan!.income.monthlyNet)}(${plan!.income.source === "actual" ? "실제 입금" : "추정"})은 목표 ${man(floor)}보다 ${man(-surplus)} 적습니다. 인컴을 더 채운다면 커버드콜 비중(지금 ${ccShare.toFixed(0)}%)이 인컴의 1/3을 넘지 않는 범위에서 고배당 쪽으로 채우는 것이 반등을 덜 포기합니다.`,
+          ? `전체 월 인컴 ${money(plan!.income.monthlyNet)}(${src})이 목표 ${money(floor)}를 넘었습니다. 계획대로라면 지금이 인컴 추가매수를 멈출 때입니다.`
+          : ccShare > COVERED_CALL_MAX_SHARE_PCT
+            ? `전체 월 인컴 ${money(plan!.income.monthlyNet)}(${src})은 목표 ${money(floor)}보다 ${money(-surplus)} 적습니다. 다만 커버드콜이 이미 인컴의 ${ccShare.toFixed(0)}%라, 인컴을 더 채운다면 커버드콜이 아니라 고배당 쪽이 반등을 덜 포기합니다.`
+            : `전체 월 인컴 ${money(plan!.income.monthlyNet)}(${src})은 목표 ${money(floor)}보다 ${money(-surplus)} 적습니다. 인컴을 더 채운다면 커버드콜이 인컴의 1/3(지금 ${ccShare.toFixed(0)}%)을 넘지 않게 채웁니다.`,
       );
     }
   }
@@ -371,40 +440,65 @@ export function buildRebalanceReport(input: {
   const monthlyContribution = Math.max(0, Math.round(input.monthlyContribution ?? 0));
   const fromSells = sells.filter((s) => s.to && buyTarget && s.to.code === buyTarget.code).reduce((s, x) => s + x.net, 0);
   const buyShares = buyTarget && buyTarget.price > 0 ? Math.floor(fromSells / buyTarget.price) : 0;
+  const hasLoss = rows.some((r) => r.pnlPct != null && r.pnlPct < 0);
 
   // 맨 위 한 줄
   const parts: string[] = [];
-  if (market?.drawdown) parts.push(`코스피가 최근 고점 대비 ${market.fromHighPct.toFixed(1)}%인 하락 구간 — 손실 종목은 팔지 않습니다`);
+  if (market?.drawdown)
+    parts.push(`코스피가 최근 고점 대비 ${market.fromHighPct.toFixed(1)}%인 하락 구간${hasLoss ? " — 손실 종목은 팔지 않습니다" : ""}`);
   if (sells.length) parts.push(`수익 구간 ${sells.length}건 정리 → ${buyTarget ? buyTarget.name : "지수"}`);
   else parts.push("지금 팔 종목은 없습니다(수익 구간에 정리 대상 없음)");
   if (conditionals.length) parts.push(`가격 조건부 ${conditionals.length}건 대기`);
   if (stopReasons.length && incomeValue > 0) parts.push("인컴 추가매수 멈춤");
   const headline = parts.join(" · ");
 
-  // 실행 순서
+  // 실행 순서 — 덧붙이는 말은 그 상황일 때만
   const steps: string[] = [];
   if (sells.length) {
-    steps.push(`수익 구간 종목부터 팝니다: ${sells.map((s) => `${s.name} ${s.shares.toLocaleString("ko-KR")}주`).join(", ")}. 한 번에 다 팔 필요는 없고, 분배락일 직전이면 분배금을 받은 뒤 팝니다.`);
+    const sellAmount = sells.reduce((s, x) => s + x.amount, 0);
+    const extra: string[] = [];
+    const many = sells.filter((x) => x.shares >= 10);
+    if (many.length) extra.push(`${many.map((x) => x.name).join(", ")}처럼 수량이 많으면 몇 번에 나눠 팔아도 됩니다.`);
+    const dist = sells.filter((x) => x.paysDistribution);
+    if (dist.length) extra.push(`${dist.map((x) => x.name).join(", ")}은 분배금이 나오는 종목이라, 분배락일 직전이면 분배금을 받은 뒤 팝니다.`);
+    if (sellAmount < Math.max(100_000, total * 0.005)) extra.push(`금액이 ${money(sellAmount)}으로 작아 급하지 않습니다. 다음 점검 때 함께 처리해도 됩니다.`);
+    steps.push(`수익 구간 종목부터 팝니다: ${sells.map((x) => `${x.name} ${x.shares.toLocaleString("ko-KR")}주(${money(x.amount)})`).join(", ")}.${extra.length ? ` ${extra.join(" ")}` : ""}`);
     // 옮길 곳별로 묶는다 — 합치기 대금은 남길 인컴 종목으로, 나머지는 지수로
     const byDest = new Map<string, { name: string; price: number; net: number }>();
-    for (const s of sells) {
-      if (!s.to) continue;
-      const price = held.find((h) => h.code === s.to!.code)?.price ?? 0;
-      const d = byDest.get(s.to.code) ?? { name: s.to.name, price, net: 0 };
-      d.net += s.net;
-      byDest.set(s.to.code, d);
+    for (const x of sells) {
+      if (!x.to) continue;
+      const price = buyTarget && x.to.code === buyTarget.code ? buyTarget.price : held.find((h) => h.code === x.to!.code)?.price ?? 0;
+      const d = byDest.get(x.to.code) ?? { name: x.to.name, price, net: 0 };
+      d.net += x.net;
+      byDest.set(x.to.code, d);
     }
-    const buys = [...byDest.values()].filter((d) => d.price > 0).map((d) => `${d.name} 약 ${Math.floor(d.net / d.price).toLocaleString("ko-KR")}주(${man(d.net)})`);
-    if (buys.length) steps.push(`판 날 같은 계좌에서 바로 삽니다: ${buys.join(", ")}. 현금으로 들고 기다리지 않습니다.`);
+    const dests = [...byDest.values()].filter((d) => d.price > 0);
+    const buyable = dests.filter((d) => d.net >= d.price);
+    const short = dests.filter((d) => d.net < d.price);
+    if (buyable.length)
+      steps.push(`판 날 같은 계좌에서 바로 삽니다: ${buyable.map((d) => `${d.name} 약 ${Math.floor(d.net / d.price).toLocaleString("ko-KR")}주(${money(d.net)})`).join(", ")}. 현금으로 들고 기다리지 않습니다.`);
+    for (const d of short)
+      steps.push(`매도 대금 ${money(d.net)}이 ${d.name} 1주 값(${won(d.price)})보다 작습니다. 현금으로 두었다가 다음 분배금과 합쳐 ${d.name}를 삽니다.`);
   }
-  steps.push(
-    buyTarget
-      ? `이번 달부터 분배금(월 약 ${man(accountMonthlyNet)})${monthlyContribution > 0 ? `과 새 돈(월 ${man(monthlyContribution)})` : ""}이 들어오면 ${buyTarget.name}로 보냅니다.`
-      : `분배금(월 약 ${man(accountMonthlyNet)})을 모아 지수 ETF를 하나 정해 사기 시작합니다. ${buyHint}`,
-  );
+  const inflow: string[] = [];
+  if (accountMonthlyNet >= 1_000) inflow.push(`분배금(월 약 ${money(accountMonthlyNet)})`);
+  if (monthlyContribution > 0) inflow.push(`새 돈(월 ${money(monthlyContribution)})`);
+  if (inflow.length)
+    steps.push(
+      buyTarget
+        ? `이번 달부터 ${inflow.join("과 ")}이 들어오면 ${buyTarget.name}로 보냅니다.${feeSwitch ? ` ${feeSwitch.text}` : ""}`
+        : `${inflow.join("과 ")}을 모아 지수 ETF를 하나 정해 사기 시작합니다. ${buyHint}`,
+    );
+  else if (!buyTarget) steps.push(`새 돈이 생기면 지수 ETF를 하나 정해 사기 시작합니다. ${buyHint}`);
   if (stopReasons.length && incomeValue > 0) steps.push(`인컴(커버드콜·배당) 추가매수를 멈춥니다 — ${stopReasons[0]}.`);
-  if (conditionals.length) steps.push(`가격 조건부 목록은 월 1회 점검 때만 봅니다. 조건 가격에 닿은 종목만 실행하고, 매일 확인하지 않습니다.`);
-  steps.push(`다음 점검은 한 달 뒤입니다. 바구니가 목표 ±${REBALANCE_BAND_PP}%p를 넘을 때만 팔고, 그 안에서는 새 돈 방향만 바꿉니다.`);
+  if (conditionals.length)
+    steps.push(`가격 조건부 ${conditionals.length}건은 월 1회 점검 때만 봅니다. 조건 가격에 닿은 종목만 실행하고, 매일 확인하지 않습니다.`);
+  const outGroups = view.groups.filter((g) => Math.abs(g.diffPct) > REBALANCE_BAND_PP);
+  steps.push(
+    outGroups.length
+      ? `${outGroups.map((g) => `${g.label} ${g.actualPct.toFixed(0)}%(목표 ${g.targetPct.toFixed(0)}%)`).join(", ")}이 목표 ±${REBALANCE_BAND_PP}%p를 벗어나 있습니다. 새 돈·분배금으로 먼저 맞추고, 한 달 뒤 점검 때도 벗어나 있으면 수익 구간 종목부터 일부 팔아 맞춥니다.`
+      : `지금은 모든 바구니가 목표 ±${REBALANCE_BAND_PP}%p 안이라, 비중을 맞추려고 팔 것은 없습니다. 다음 점검은 한 달 뒤입니다.`,
+  );
 
   const notes = [
     "안내만 하며 주문하지 않습니다. 수익을 보장하지 않으며, 근거는 과거 자료 검증 결과입니다(판정 등록부 C48·C54, 블로그 3편).",
@@ -452,6 +546,8 @@ export function buildRebalanceReport(input: {
     rows,
     sells,
     conditionals,
+    feeCompare,
+    feeSwitch,
     buy: { target: buyTarget, hint: buyHint, fromSells, monthlyDistribution: accountMonthlyNet, monthlyContribution, shares: buyShares },
     growth: plan ? { actualPct: plan.growth.actualPct, targetPct: plan.growth.targetPct, needByNewMoney: plan.growth.needByNewMoney, months: plan.growth.months } : null,
     headline,
