@@ -5,10 +5,11 @@ import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Save, Wallet } from
 import { apiFetch } from '../../lib/api'
 import { useCurrentClientId } from '../../stores/profileStore'
 import { HOUSEHOLDS, useHouseholdIncome, type Household, type HouseholdIncome } from '../../lib/householdIncome'
-import { seedExpenseTotal, seedFromCheck, type FlowCheckInput } from '../../../../src/lib/moneyFlow'
+import { seedExpenseTotal, seedPlanFromFlow, type FlowCheckInput, type SeedPlan } from '../../../../src/lib/moneyFlow'
+import SeedPlanLines, { PLAN_LABELS, type PlanKey } from './SeedPlanLines'
 import './seed-builder.css'
 
-type ExpenseKey = 'food' | 'housing' | 'vehicle' | 'education' | 'tax' | 'subscriptions' | 'other' | 'irregularFund' | 'card' | 'water' | 'gas' | 'residentTax' | 'propertyTax' | 'vehicleTax' | 'taxAdjustment'
+type ExpenseKey = 'food' | 'housing' | 'vehicle' | 'education' | 'tax' | 'subscriptions' | 'other' | 'fixedCost' | 'variableCost' | 'irregularFund' | 'emergencyRefill' | 'card' | 'water' | 'gas' | 'residentTax' | 'propertyTax' | 'vehicleTax' | 'taxAdjustment'
 type ExtraIncomeKey = 'incentive' | 'vacation' | 'taxRefund' | 'other'
 type Entry = { id: string; date: string; amount: number; deposited: number; memo: string; cancelled: boolean }
 type MonthRecord = {
@@ -22,9 +23,12 @@ type MonthRecord = {
   extraIncome: Record<ExtraIncomeKey, number>
   reserve: number
   plan: number
+  /** 예상 지출 내역(저장 시점 고정). 예전 기록은 없음 */
+  breakdown?: SeedPlan | null
 }
 
-const expenseLabels: Array<{ key: ExpenseKey; label: string }> = [
+// 예전 방식(항목별) — 지난 기록 보기·직접 입력용. 새 달은 세 줄(돈 흐름·점검에서 가져옴)을 쓴다
+const legacyMainLabels: Array<{ key: ExpenseKey; label: string }> = [
   { key: 'food', label: '식비·생활' },
   { key: 'housing', label: '주거비' },
   { key: 'vehicle', label: '차량유지비' },
@@ -32,8 +36,9 @@ const expenseLabels: Array<{ key: ExpenseKey; label: string }> = [
   { key: 'tax', label: '세금·보험' },
   { key: 'subscriptions', label: '통신·구독' },
   { key: 'other', label: '기타' },
-  { key: 'irregularFund', label: '비정기 적립(1년 예산 ÷ 12)' },
   { key: 'card', label: '카드대금(미분류)' },
+]
+const legacyIrregularLabels: Array<{ key: ExpenseKey; label: string }> = [
   { key: 'water', label: '수도요금(2개월)' },
   { key: 'gas', label: '가스요금(2개월)' },
   { key: 'residentTax', label: '주민세' },
@@ -41,6 +46,7 @@ const expenseLabels: Array<{ key: ExpenseKey; label: string }> = [
   { key: 'vehicleTax', label: '자동차세' },
   { key: 'taxAdjustment', label: '연말정산 추가 납부' },
 ]
+const expenseLabels: Array<{ key: ExpenseKey; label: string }> = [...PLAN_LABELS, ...legacyMainLabels, ...legacyIrregularLabels]
 const extraIncomeLabels: Array<{ key: ExtraIncomeKey; label: string }> = [
   { key: 'incentive', label: '인센티브' },
   { key: 'vacation', label: '휴가비' },
@@ -50,9 +56,9 @@ const extraIncomeLabels: Array<{ key: ExtraIncomeKey; label: string }> = [
 
 const emptyRecord = (): MonthRecord => ({
   status: 'recorded', household: 'solo', ownIncome: 0, partnerIncome: 0, ownPayday: null, partnerPayday: null,
-  expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: 0, irregularFund: 0, card: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0 },
+  expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: 0, fixedCost: 0, variableCost: 0, irregularFund: 0, emergencyRefill: 0, card: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0 },
   extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0 },
-  reserve: 0, plan: 0,
+  reserve: 0, plan: 0, breakdown: null,
 })
 
 // 금액 가리기: 렌더 시작마다 컴포넌트가 값을 맞춰 두고, 모든 금액 문자열이 krw()를 거쳐 가려진다.
@@ -75,7 +81,7 @@ const entriesSaved = (list: Entry[] | undefined) => activeEntries(list).reduce((
 const entriesDeposited = (list: Entry[] | undefined) => activeEntries(list).reduce((sum, entry) => sum + entry.deposited, 0)
 const todayKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 const signedKrw = (amount: number) => `${amount < 0 ? '-' : ''}${krw(Math.abs(amount))}`
-const recurringExpenseKeys: ExpenseKey[] = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other', 'irregularFund']
+const recurringExpenseKeys: ExpenseKey[] = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other', 'fixedCost', 'variableCost', 'irregularFund']
 // 비정기 적립(1년 예산 ÷ 12)을 떼는 달은 낸 달 실제 금액(수도·세금)을 다시 더하지 않는다 — 목표 추적 화면과 같은 규칙
 const expenseSum = (expenses: Record<ExpenseKey, number>) => seedExpenseTotal(expenses)
 const sumValues = (values: Record<string, number>) => Object.values(values).reduce((sum, value) => sum + value, 0)
@@ -123,6 +129,8 @@ export default function SeedBuilderPage() {
   const [confirmTransfer, setConfirmTransfer] = useState(false)
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
   const [latestCheck, setLatestCheck] = useState<{ date: string; input: FlowCheckInput } | null>(null)
+  // 이 달 예상 지출: 지난달 돈 흐름(카드 합계 + 현금) + 최근 점검(고정·비정기 예산)
+  const [flowPlan, setFlowPlan] = useState<SeedPlan | null>(null)
   amountMask = masked
   // 수입·급여일은 '우리 집 수입'(시작하기·돈 흐름 점검과 같은 값). 기록 안 한 이번 달·다음 달은 그 값으로 채워 두고,
   // 이번 달 이후의 수입을 고치면 우리 집 수입도 바로 바뀐다. 지난달 기록은 그달 실제 값이라 건드리지 않는다
@@ -163,6 +171,9 @@ export default function SeedBuilderPage() {
   }, [clientId, year])
 
   const expenseTotal = expenseSum(draft.expenses)
+  // 예전 항목별 칸에 값이 있는 기록(지난 달)은 펼쳐 둔다
+  const legacyTotal = seedExpenseTotal(Object.fromEntries([...legacyMainLabels, ...legacyIrregularLabels].map(({ key }) => [key, draft.expenses[key]])))
+  const legacyOpen = legacyTotal > 0
   const extraIncomeTotal = sumValues(draft.extraIncome)
   const income = monthIncome(draft)
   const paydays = [
@@ -221,14 +232,25 @@ export default function SeedBuilderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incomeBaseJson, loading, selectedMonth])
 
-  // 점검에서 정한 평소 한 달 지출을 이번 달 지출 칸으로 가져올 수 있게 최근 점검을 읽어 둔다
+  // 이 달 예상 지출을 계산하려고 지난달 돈 흐름(칸 합계·세부 기록)과 최근 점검을 읽어 둔다
   useEffect(() => {
     if (!clientId) return
-    const today = todayKst()
-    apiFetch(`/api/ui/money-flow?from=${today}&to=${today}`, { cacheMs: 0, retries: 0 })
-      .then((res) => { const c = Array.isArray(res?.checks) ? res.checks[0] : null; setLatestCheck(c?.input ? { date: String(c.date), input: c.input } : null) })
+    const base = shiftMonthKey(selectedMonth, -1)
+    let alive = true
+    apiFetch(`/api/ui/money-flow?from=${base}-01&to=${lastDayOf(base)}`, { cacheMs: 0, retries: 0 })
+      .then((res) => {
+        if (!alive) return
+        const c = Array.isArray(res?.checks) ? res.checks[0] : null
+        const check = c?.input ? { date: String(c.date), input: c.input as FlowCheckInput } : null
+        setLatestCheck(check)
+        const totals = (Array.isArray(res?.totals) ? res.totals : []).filter((t: any) => t.month === base)
+          .map((t: any) => ({ label: t.mine === false ? `${t.label}(배우자)` : t.label, kind: t.kind, amount: Number(t.amount) || 0 }))
+        const records = (Array.isArray(res?.entries) ? res.entries : []).filter((e: any) => String(e.date).startsWith(base))
+        setFlowPlan(check || totals.length > 0 ? seedPlanFromFlow({ baseMonth: base, check, totals, records }) : null)
+      })
       .catch(() => {})
-  }, [clientId])
+    return () => { alive = false }
+  }, [clientId, selectedMonth])
 
   useEffect(() => {
     if (!dirty) return
@@ -265,10 +287,16 @@ export default function SeedBuilderPage() {
   const fillFromCheck = () => {
     if (!latestCheck) return
     const { input } = latestCheck
-    // 비정기는 1년 예산 ÷ 12를 '비정기 적립' 한 칸으로 — 낸 달 실제 금액은 비교용이라 합계에 다시 더하지 않는다
-    const seed = seedFromCheck(input)
-    setDraft((current) => ({ ...current, expenses: { ...emptyRecord().expenses, ...seed.expenses, irregularFund: seed.irregularFund }, reserve: input.reserveMonthly }))
-    setNotice(`${latestCheck.date} 점검의 평소 한 달 지출(현금 기준, 환급 뺀 금액)과 비상자금 적립을 채웠습니다. 이번 달에 다르게 나간 것만 고치고 저장하세요.`)
+    // 고정비·비정기 적립은 점검, 변동 지출은 지난달 돈 흐름에서. 예전 항목별 칸은 비운다(두 번 세지 않게). 내역은 저장 때 함께 남는다
+    const plan = flowPlan
+    if (!plan) return
+    setDraft((current) => ({
+      ...current,
+      expenses: { ...emptyRecord().expenses, fixedCost: plan.fixed.total, variableCost: plan.variable.total, irregularFund: plan.irregularFund.total, emergencyRefill: plan.emergency.total },
+      reserve: input.reserveMonthly, breakdown: plan,
+    }))
+    const variableFrom = plan.variable.source === 'flow' ? `${Number(plan.baseMonth.slice(5))}월 돈 흐름` : '점검(지난달 합계 없음)'
+    setNotice(`고정비·비정기 적립은 ${latestCheck.date} 점검, 변동 지출은 ${variableFrom}에서 채웠습니다. 줄마다 펼쳐 무엇이 들어갔는지 확인하고 저장하세요.`)
   }
 
   const fillFromPrevious = () => {
@@ -476,7 +504,7 @@ export default function SeedBuilderPage() {
       <section className="seed-editor">
         <div className="seed-section-title"><div><h2>이번 달 돈의 흐름</h2><p>큰 금액만 입력해도 됩니다. 항목별 거래 내역은 필요하지 않습니다.</p></div></div>
         {(previous || latestCheck) && <div className="seed-fill-row">
-          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>지금 상태 점검 값으로 지출 채우기</button>}
+          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>돈 흐름·점검에서 지출 채우기</button>}
           {previous && <button type="button" className="seed-secondary" onClick={fillFromPrevious}>지난달 값 채우기</button>}
           <Detail><span>점검 값은 평소 한 달 기준(비정기는 1년 ÷ 12)입니다. 지난달 값은 수입·급여일·식비 등 반복 항목만 채우고 일시 항목은 복사하지 않습니다.</span></Detail>
         </div>}
@@ -500,13 +528,23 @@ export default function SeedBuilderPage() {
           </div>
           <div className="seed-input-group">
             <h3>지출 <span>{krw(expenseTotal)}</span></h3>
-            {expenseLabels.slice(0, showExpenses ? 9 : 4).map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}
+            <SeedPlanLines
+              values={{ fixedCost: draft.expenses.fixedCost, variableCost: draft.expenses.variableCost, irregularFund: draft.expenses.irregularFund, emergencyRefill: draft.expenses.emergencyRefill }}
+              plan={draft.breakdown ?? flowPlan}
+              krw={krw}
+              onChange={(key: PlanKey, value) => { setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: value } })); setNotice('') }}
+            />
+            <details className="seed-legacy" open={legacyOpen}>
+            <summary>예전 방식(식비·주거비 등 항목별 입력){legacyTotal > 0 ? ` · ${krw(legacyTotal)}` : ''}</summary>
+            {legacyMainLabels.slice(0, showExpenses ? 8 : 4).map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}
             <button className="seed-link-button" type="button" onClick={() => setShowExpenses(!showExpenses)}>{showExpenses ? '간단히 보기' : '세금·카드대금 등도 입력'}</button>
             {showExpenses && <p className="seed-payday-help">카드대금은 위 항목에 이미 적은 사용액을 제외한 미분류 금액만 입력하세요. 중복 입력하면 지출이 두 번 계산됩니다.</p>}
             {showExpenses && <button className="seed-link-button" type="button" onClick={() => setShowIrregular(!showIrregular)}>{showIrregular ? '비정기 지출 접기' : '수도·가스·계절성 세금 입력'}</button>}
-            {showExpenses && showIrregular && <div className="seed-optional-inputs">{expenseLabels.slice(9).map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}{draft.expenses.irregularFund > 0
+            {showExpenses && showIrregular && <div className="seed-optional-inputs">{legacyIrregularLabels.map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}{draft.expenses.irregularFund > 0
               ? <p className="seed-payday-help">비정기 적립 {krw(draft.expenses.irregularFund)}을 매달 떼어 두므로, 여기 적는 실제 낸 금액은 모아 둔 돈에서 낸 것으로 보고 지출 합계에 더하지 않습니다(기록·비교용). 1년 예산에 없던 지출이면 위 항목에 넣으세요.</p>
-              : <p className="seed-payday-help">2개월치 공과금은 납부한 달에 전액 적습니다. 세금·보험에 이미 포함한 금액은 다시 넣지 마세요. 1년 예산을 매달 나눠 떼어 두려면 "비정기 적립" 칸을 쓰세요(지금 상태 점검 값 가져오기로 채워집니다).</p>}</div>}
+              : <p className="seed-payday-help">2개월치 공과금은 납부한 달에 전액 적습니다. 세금·보험에 이미 포함한 금액은 다시 넣지 마세요. 1년 예산을 매달 나눠 떼어 두려면 위 "비정기 적립" 줄을 쓰세요.</p>}</div>}
+            <p className="seed-payday-help">위 세 줄을 쓰면 여기는 비워 두세요. 같이 적으면 두 번 셉니다.</p>
+            </details>
             <Detail>{previousExpense !== null && <p className="seed-compare">지난달 총지출 {krw(previousExpense)} · 이번 달 {krw(Math.abs(expenseTotal - previousExpense))} {expenseTotal >= previousExpense ? '증가' : '감소'}</p>}</Detail>
           </div>
         </div>
@@ -613,4 +651,14 @@ export default function SeedBuilderPage() {
       <p className="seed-disclaimer"><Wallet size={15} /> 이 기록은 실제 돈 기록입니다. 실험(가상) 계좌의 시드·월 입금·자동매매에는 반영되지 않습니다.{virtualDeposit !== null && <> 실험 계좌 월 입금은 {virtualDeposit > 0 ? krw(virtualDeposit) : '꺼짐'}이며 <button type="button" className="seed-link-button" onClick={() => navigate('/settings')}>설정</button>에서 바꿉니다.</>}</p>
     </main>
   )
+}
+function shiftMonthKey(month: string, delta: number) {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+function lastDayOf(month: string) {
+  const [y, m] = month.split('-').map(Number)
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
 }

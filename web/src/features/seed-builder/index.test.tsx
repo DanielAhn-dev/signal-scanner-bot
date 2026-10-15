@@ -279,9 +279,42 @@ describe('비정기 1년 예산(비정기 적립)', () => {
     apiFetchMock.mockImplementation((path: string) => Promise.resolve(String(path).includes('money-flow') ? { checks: [{ date: '2026-10-01', input }] } : { data: [] }))
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     await openEditor()
-    fireEvent.click(await screen.findByRole('button', { name: '지금 상태 점검 값으로 지출 채우기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '돈 흐름·점검에서 지출 채우기' }))
     fireEvent.click(screen.getByRole('button', { name: '세금·카드대금 등도 입력' }))
     expect((screen.getByLabelText(/비정기 적립/) as HTMLInputElement).value).toBe('50000')
     expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('950,000원')
+  })
+})
+
+describe('예상 지출 세 줄(돈 흐름·점검)', () => {
+  it('지난달 돈 흐름으로 변동 지출을 계산해 채우고, 줄마다 내역을 펼쳐 보며, 저장할 때 내역도 함께 보낸다', async () => {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+    const prev = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1)).toISOString().slice(0, 7)
+    const input = { monthlyIncome: 5_000_000, reserveMonthly: 100_000, variable: [{ categoryId: 'grocery_mart', amount: 400_000 }],
+      fixed: [{ categoryId: 'maintenance', amount: 300_000, label: '관리비' }],
+      irregular: [{ categoryId: 'car', label: '엔진오일(하이브리드)', yearlyAmount: 240_000, months: [4, 10] }] }
+    apiFetchMock.mockImplementation((path: string) => Promise.resolve(String(path).includes('money-flow') ? {
+      checks: [{ date: '2026-10-01', input }],
+      totals: [{ month: prev, label: 'A카드', kind: 'cash', amount: 1_200_000, mine: true }],
+      entries: [{ date: `${prev}-10`, amount: 80_000, memo: '주유', categoryId: 'fuel', payment: 'cash' }],
+    } : { data: [] }))
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await openEditor()
+    fireEvent.click(await screen.findByRole('button', { name: '돈 흐름·점검에서 지출 채우기' }))
+    expect((screen.getByLabelText('고정비') as HTMLInputElement).value).toBe('300000')
+    // 1,200,000 − 고정 300,000 − 비정기 0
+    expect((screen.getByLabelText('변동 지출') as HTMLInputElement).value).toBe('900000')
+    expect((screen.getByLabelText('비정기 적립') as HTMLInputElement).value).toBe('20000')
+    expect(screen.getByText(/돈 흐름: 지출 1,200,000원 − 고정 300,000원 − 비정기 0원/)).toBeTruthy()
+    expect(screen.getByText('엔진오일(하이브리드)', { exact: false })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('1,220,000원')
+    fireEvent.change(screen.getByLabelText('변동 지출'), { target: { value: '950000' } })
+    expect(screen.getByText(/직접 고침\(계산값 900,000원\)/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /이번 달 저장/ }))
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'PUT' })))
+    const body = JSON.parse(apiFetchMock.mock.calls.find(([p, o]) => p === '/api/ui/seed-builder' && o?.method === 'PUT')![1].body)
+    expect(body.expenses).toMatchObject({ fixedCost: 300_000, variableCost: 950_000, irregularFund: 20_000, emergencyRefill: 0, food: 0 })
+    expect(body.breakdown.variable.total).toBe(900_000)
+    expect(body.breakdown.fixed.items).toEqual([{ label: '관리비', amount: 300_000 }])
   })
 })
