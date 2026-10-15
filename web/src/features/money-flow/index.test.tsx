@@ -295,9 +295,31 @@ describe('월 합계 칸', () => {
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('1,000,000원')
     expect(screen.getAllByText('세부 안 적음')[0].nextElementSibling?.textContent).toBe('950,000원')
     expect(screen.getByLabelText('줄일 수 있나').textContent).toContain('모름(세부 안 적음)950,000원')
-    const trend = screen.getByLabelText('최근 6개월 현금 지출')
+    const trend = screen.getByLabelText('최근 6개월 지출 추이')
     expect(trend.textContent).toContain('1,000,000원')
     // 합계를 안 적은 지난달은 세부 합으로 표시
     expect(trend.textContent).toContain('70,000원세부 합')
+  })
+})
+
+describe('지출 추이', () => {
+  it('합계를 적은 달은 카드 합계 − 그 달 고정비 = 나머지(변동)와 전달 대비 증감을 보여 준다', async () => {
+    const month = today.slice(0, 7)
+    const [y, m] = month.split('-').map(Number)
+    const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7)
+    const input = { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [], fixed: [{ categoryId: 'maintenance', amount: 900_000, label: '' }] }
+    apiFetchMock.mockResolvedValue({
+      entries: [], rules: [],
+      checks: [{ id: 'c1', date: `${prev}-01`, label: '', input }],
+      totals: [{ month: prev, label: 'A카드', kind: 'cash', amount: 1_700_000, mine: true }, { month, label: 'A카드', kind: 'cash', amount: 1_500_000, mine: true }],
+    })
+    renderPage()
+    await screen.findByText(/합계\b|월 합계/)
+    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
+    const rows = [...screen.getByLabelText('최근 6개월 지출 추이').querySelectorAll('tbody tr')].map((tr) => tr.textContent)
+    expect(rows).toEqual([
+      `${Number(prev.slice(5))}월1,700,000원900,000원800,000원`,
+      `${Number(month.slice(5))}월1,500,000원900,000원600,000원▼200,000원`,
+    ])
   })
 })

@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
@@ -404,7 +404,7 @@ export default function MoneyFlowPage() {
 
       {tab === 'maturity' && <MaturityTab />}
 
-      {tab === 'month' && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} allEntries={scoped} totals={scopedTotals} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
+      {tab === 'month' && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} allEntries={scoped} totals={scopedTotals} checks={checks} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
 
       <p className="acc-note mf-foot">기록은 본인 계정에 저장되고, <Link to="/family">부부 연결</Link>에서 지출 공유를 켠 배우자만 함께 봅니다. 투자 가능액 계산은 <Link to="/seed-builder">시드 만들기</Link>에서 합니다.</p>
     </div>
@@ -413,43 +413,73 @@ export default function MoneyFlowPage() {
 
 const monthLabel = (month: string) => `${month.slice(0, 4)}년 ${Number(month.slice(5))}월`
 
-/** 최근 6개월 현금 지출. 합계를 적은 달은 합계 기준, 아니면 세부 기록 합. 둘 다 없는 달은 건너뛴다 */
-function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[]) {
+/**
+ * 최근 6개월: 카드 합계 · 고정비 · 나머지(변동). 나머지 = 합계 − 그 달 고정비 기준(그 달 말일까지 저장한 가장 최근 점검)
+ * 합계를 안 적은 달은 세부 기록 합이라 실제보다 적을 수 있어 나머지를 계산하지 않는다
+ */
+function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], checks: SavedCheck[]) {
   return Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).flatMap((m) => {
     const t = totals.filter((x) => x.month === m)
     const e = allEntries.filter((x) => x.date.startsWith(m))
     if (t.length === 0 && e.length === 0) return []
-    return [{ month: m, cash: reconcileMonth(t, summarizeItems(e.map(toItem))).cash, fromTotals: t.length > 0 }]
+    const cash = reconcileMonth(t, summarizeItems(e.map(toItem))).cash
+    const check = checkForMonth(checks, m)
+    const fixed = check ? fixedCashOf(check.input) : null
+    return [{ month: m, cash, fromTotals: t.length > 0, fixed, rest: t.length > 0 && fixed !== null ? cash - fixed : null }]
   })
 }
 
 function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month: string }) {
-  const max = Math.max(1, ...rows.map((r) => r.cash))
+  const max = Math.max(1, ...rows.map((r) => Math.max(0, r.rest ?? 0)))
+  const anyRest = rows.some((r) => r.rest !== null)
   return (
     <section className="acc-card">
-      <h2>현금 지출 추이</h2>
-      <ul className="mf-trend" aria-label="최근 6개월 현금 지출">
-        {rows.map((r) => (
-          <li key={r.month} className={r.month === month ? 'is-current' : ''} title={`${monthLabel(r.month)} ${krw(r.cash)}${r.fromTotals ? '' : ' (세부 기록 합)'}`}>
-            <span className="mf-trend-month">{Number(r.month.slice(5))}월</span>
-            <span className="mf-trend-track"><span className="mf-trend-bar" style={{ width: `${(Math.max(0, r.cash) / max) * 100}%` }} /></span>
-            <span className="mf-trend-value">{krw(r.cash)}{!r.fromTotals && <small>세부 합</small>}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="acc-note">합계를 적은 달은 합계 기준이고, 안 적은 달은 세부 기록을 더한 값이라 실제보다 적을 수 있습니다("세부 합" 표시). 환급은 뺀 금액입니다.</p>
+      <h2>지출 추이</h2>
+      <div className="mf-trend-wrap">
+        <table className="mf-trend" aria-label="최근 6개월 지출 추이">
+          <thead><tr><th scope="col">달</th><th scope="col">카드 합계</th><th scope="col">고정비</th><th scope="col">나머지(변동)</th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const prevRest = rows.slice(0, i).reverse().find((x) => x.rest !== null)?.rest ?? null
+              const diff = r.rest !== null && prevRest !== null ? r.rest - prevRest : null
+              return (
+                <tr key={r.month} className={r.month === month ? 'is-current' : ''}>
+                  <th scope="row">{Number(r.month.slice(5))}월</th>
+                  <td>{krw(r.cash)}{!r.fromTotals && <small>세부 합</small>}</td>
+                  <td className="mf-trend-muted">{r.fixed === null ? '—' : krw(r.fixed)}</td>
+                  <td>
+                    {r.rest === null ? <span className="mf-trend-muted">—</span> : (
+                      <span className="mf-trend-rest">
+                        <span className="mf-trend-track" aria-hidden="true"><span className="mf-trend-bar" style={{ width: `${(Math.max(0, r.rest) / max) * 100}%` }} /></span>
+                        <span>{krw(r.rest)}</span>
+                        {diff !== null && diff !== 0 && <small className={diff > 0 ? 'is-up' : 'is-down'}>{diff > 0 ? '▲' : '▼'}{krw(Math.abs(diff))}</small>}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="acc-note">
+        {anyRest
+          ? '나머지 = 카드 합계 − 그 달 고정비(그 달까지 저장한 지금 상태 점검의 고정지출). 고정비를 뺀 장보기·물건·간식 같은 지출이 줄었는지 봅니다. '
+          : '지금 상태 점검을 저장하면 고정비를 뺀 나머지(변동 지출)도 달마다 보여 줍니다. '}
+        합계를 안 적은 달은 세부 기록만 더한 값이라("세부 합") 나머지를 계산하지 않습니다. 환급은 뺀 금액입니다.
+      </p>
     </section>
   )
 }
 
-function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, baseMonth, baseEntries, loading }: { month: string; thisMonth: string; setMonth: (m: string) => void; entries: Entry[]; allEntries: Entry[]; totals: MonthTotalRow[]; baseMonth: string | null; baseEntries: Entry[]; loading: boolean }) {
+function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, checks, baseMonth, baseEntries, loading }: { month: string; thisMonth: string; setMonth: (m: string) => void; entries: Entry[]; allEntries: Entry[]; totals: MonthTotalRow[]; checks: SavedCheck[]; baseMonth: string | null; baseEntries: Entry[]; loading: boolean }) {
   const summary = useMemo(() => summarizeItems(entries.map(toItem)), [entries])
   const monthTotals = totals.filter((t) => t.month === month)
   const hasTotals = monthTotals.length > 0
   const rec = reconcileMonth(monthTotals, summary)
   const unrecorded = rec.unrecordedCash + rec.unrecordedPoint
   const refunds = summary.refundRegular + summary.refundOnce
-  const trend = trendRows(month, allEntries, totals)
+  const trend = trendRows(month, allEntries, totals, checks)
   // 공용이 아닌 기록이 하나라도 있으면 공용·나·배우자 현금(환급 뺀)과 돌려받은 돈을 나눠 보여 준다
   const byWho = useMemo(() => {
     if (entries.every((e) => whomOf(e) === 'shared')) return null

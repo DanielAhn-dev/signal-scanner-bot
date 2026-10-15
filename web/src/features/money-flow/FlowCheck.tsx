@@ -7,7 +7,7 @@ import { MAX_CHILDREN, sanitizeChildState, type Child, type ChildGiftState } fro
 import { useUserState } from '../../lib/userState'
 import { EMPTY_HOUSEHOLD_INCOME, HOUSEHOLDS, householdTotal, useHouseholdIncome, withHousehold, type HouseholdIncome } from '../../lib/householdIncome'
 import {
-  FLOW_CATEGORIES, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, reconcileMonth, summarizeItems, toSeedExpenses,
+  FLOW_CATEGORIES, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, fixedHistory, reconcileMonth, summarizeItems, toSeedExpenses,
   type CutLevel, type MonthTotal as MonthTotalBase, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
 } from '../../../../src/lib/moneyFlow'
 
@@ -243,6 +243,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
   }), [household, reserve, fixed, variable, irregular])
   const result = useMemo(() => evaluateFlowCheck(input), [input])
   const prev = latest && saved ? checks[1] ?? null : latest
+  const history = useMemo(() => fixedHistory(checks), [checks])
   const prevResult = useMemo(() => (prev ? evaluateFlowCheck(prev.input) : null), [prev])
   const changes = prevResult ? compareSummaries(prevResult.summary, result.summary).filter((c) => c.difference !== 0).slice(0, 5) : []
   const perChild = childState.children
@@ -317,6 +318,27 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
         <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다. 공과금처럼 달마다 조금씩 다른 건 평소 금액(높은 쪽)을 적으세요. 기록이 있으면 옆에 실제 금액이 보이고, 바꿀지는 직접 고릅니다.</p>
         <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} kids={kids} />
       </section>
+
+      {history.dates.length >= 2 && (
+        <section className="acc-card">
+          <h2>고정비 바뀐 기록</h2>
+          <div className="mf-trend-wrap">
+            <table className="mf-trend" aria-label="고정비 바뀐 기록">
+              <thead><tr><th scope="col">항목</th>{history.dates.map((d) => <th key={d} scope="col">{Number(d.slice(5, 7))}/{Number(d.slice(8))}</th>)}<th scope="col">지난번 대비</th></tr></thead>
+              <tbody>
+                {history.rows.map((r) => (
+                  <tr key={r.categoryId}>
+                    <th scope="row">{categoryById(r.categoryId)?.label ?? r.categoryId}</th>
+                    {r.amounts.map((a, i) => <td key={history.dates[i]} className={a === null ? 'mf-trend-muted' : ''}>{a === null ? '—' : krw(a)}</td>)}
+                    <td>{r.change === null ? <span className="mf-trend-muted">—</span> : r.change === 0 ? '0' : <small className={r.change > 0 ? 'is-up' : 'is-down'}>{r.change > 0 ? '+' : '−'}{krw(Math.abs(r.change))}</small>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="acc-note">저장한 점검마다의 고정지출(최근 {history.dates.length}번)입니다. 공과금이 바뀌면 위 금액을 고치고 점검을 저장하면 여기에 쌓입니다. 포인트로 낸 건 빼고, 환급은 뺀 금액입니다.</p>
+        </section>
+      )}
 
       <section className="acc-card">
         <h2>변동지출</h2>

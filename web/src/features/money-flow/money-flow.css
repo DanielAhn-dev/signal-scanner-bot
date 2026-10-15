@@ -99,12 +99,18 @@
 .mf-detail[open] > summary { margin-bottom: 12px; }
 /* 세부 안 적음: 무엇인지 모르는 칸이라 빗금으로 구분(색만으로 구분하지 않음) */
 .mf-bar .is-unknown, .mf-key.is-unknown { background: repeating-linear-gradient(135deg, var(--color-text-tertiary) 0 3px, var(--color-bg-sunken) 3px 6px); }
-/* 현금 지출 추이: 한 계열이라 범례 없이 값을 바로 적는다 */
-.mf-trend { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.mf-trend li { display: grid; grid-template-columns: 3em minmax(0, 1fr) auto; gap: 8px; align-items: center; color: var(--color-text-secondary); font-size: 13px; }
-.mf-trend li.is-current { color: var(--color-text-primary); font-weight: 700; }
-.mf-trend-track { height: 12px; }
+/* 지출 추이 표: 나머지(변동) 막대만 강조하고 합계·고정비는 숫자로. 좁은 화면에선 표만 가로로 스크롤 */
+.mf-trend-wrap { overflow-x: auto; }
+.mf-trend { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.mf-trend th, .mf-trend td { padding: 6px 8px; text-align: right; color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border-default); white-space: nowrap; }
+.mf-trend thead th { font-weight: 400; color: var(--color-text-tertiary); font-size: 12px; }
+.mf-trend th[scope="row"], .mf-trend thead th:first-child { text-align: left; }
+.mf-trend tr.is-current th, .mf-trend tr.is-current td { color: var(--color-text-primary); font-weight: 700; }
+.mf-trend small { margin-left: 4px; color: var(--color-text-tertiary); font-weight: 400; font-size: 11px; }
+.mf-trend small.is-up { color: var(--color-error); }
+.mf-trend small.is-down { color: var(--color-success, #2e7d32); }
+.mf-trend-muted { color: var(--color-text-tertiary) !important; }
+.mf-trend-rest { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.mf-trend-track { display: inline-block; width: 64px; height: 10px; }
 .mf-trend-bar { display: block; height: 100%; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--color-brand); opacity: .55; }
-.mf-trend li.is-current .mf-trend-bar { opacity: 1; }
-.mf-trend-value { text-align: right; font-variant-numeric: tabular-nums; }
-.mf-trend-value small { margin-left: 4px; color: var(--color-text-tertiary); font-weight: 400; font-size: 11px; }
+.mf-trend tr.is-current .mf-trend-bar { opacity: 1; }

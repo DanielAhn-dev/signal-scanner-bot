@@ -177,3 +177,17 @@ describe('월 합계와 점검', () => {
     expect((screen.getByLabelText('월세 월 금액') as HTMLInputElement).value).toBe('900000')
   })
 })
+
+describe('고정비 바뀐 기록', () => {
+  it('저장한 점검이 둘 이상이면 고정비를 항목별로 나란히 보여 주고 지난번 대비 차이를 표시한다', async () => {
+    const withUtilities = (amount: number) => ({ ...savedInput, fixed: [...savedInput.fixed, { categoryId: 'utilities', amount, label: '전기·가스' }] })
+    apiFetchMock.mockResolvedValue({
+      entries: [], rules: [],
+      checks: [{ id: 'c2', date: '2026-09-30', label: '', input: withUtilities(90_000) }, { id: 'c1', date: '2026-08-31', label: '', input: withUtilities(123_000) }],
+    })
+    renderCheck()
+    const table = await screen.findByLabelText('고정비 바뀐 기록')
+    const row = [...table.querySelectorAll('tbody tr')].find((tr) => tr.textContent?.startsWith('전기·가스·수도'))!
+    expect(row.textContent).toBe('전기·가스·수도123,000원90,000원−33,000원')
+  })
+})
