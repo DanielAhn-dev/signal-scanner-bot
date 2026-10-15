@@ -147,3 +147,10 @@
 .seed-plan-items small { color: var(--color-text-tertiary); }
 .seed-legacy { margin-top: 10px; font-size: 13px; }
 .seed-legacy > summary { color: var(--color-text-secondary); }
+/* 세 줄 입력칸도 다른 지출 칸처럼 오른쪽에 붙인다(입력칸+원 묶음을 밀어 줌) */
+.seed-input-group .seed-amount { margin-left: auto; flex: none; }
+.seed-input-group .seed-amount input { margin-left: 0; max-width: none; }
+/* 네 줄은 '이름 | 입력칸 원' 고정 2열 — 이름 길이와 상관없이 입력칸이 같은 자리에 선다 */
+.seed-plan-line > label { display: grid; grid-template-columns: minmax(0, 1fr) 150px; align-items: center; gap: 8px; margin-top: 10px; }
+.seed-plan-line > label .seed-amount { margin-left: 0; width: 150px; }
+.seed-plan-line > label .seed-amount input { width: 100%; flex: 1 1 auto; min-width: 0; }

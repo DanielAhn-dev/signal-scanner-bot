@@ -16,9 +16,11 @@ const planTotal = (plan: SeedPlan, key: PlanKey) =>
  * 예상 지출 세 줄(+ 비상금 채우기). 합계로 투자 여력을 보되, 줄마다 펼치면 무엇이 들어갔는지(항목·출처)가 보인다.
  * 내역은 저장할 때 기록에 함께 남아, 나중에 점검을 고쳐도 지난 달 숫자의 근거가 바뀌지 않는다.
  */
-export default function SeedPlanLines({ values, plan, onChange, krw }: {
+export default function SeedPlanLines({ values, plan, filled, onChange, krw }: {
   values: Record<PlanKey, number>
   plan: SeedPlan | null
+  /** 이 내역으로 채웠거나 저장한 상태인지 — 아니면 계산값을 '채우면 ○원'으로만 보여 준다 */
+  filled: boolean
   onChange: (key: PlanKey, value: number) => void
   krw: (amount: number) => string
 }) {
@@ -39,7 +41,7 @@ export default function SeedPlanLines({ values, plan, onChange, krw }: {
         summary: `${monthName(plan.baseMonth)} 돈 흐름: 지출 ${krw(v.spending)} − 고정 ${krw(v.fixedSub)} − 비정기 ${krw(v.irregularSub)}`,
         body: (
           <>
-            {list([...v.cards, ...(v.cash > 0 ? [{ label: '현금(세부 기록)', amount: v.cash }] : [])])}
+            {list([...v.cards, ...(v.cash > 0 ? [{ label: '현금(세부 기록)', amount: v.cash }] : []), ...(v.outsideCard > 0 ? [{ label: '카드 밖 고정비(계좌 자동이체)', amount: v.outsideCard }] : [])])}
             {v.recorded.length > 0 && <><p className="seed-payday-help">세부로 적은 변동 지출</p>{list(v.recorded)}</>}
             {v.unrecorded > 0 && <p className="seed-payday-help">카드 중 세부 안 적음 {krw(v.unrecorded)}</p>}
           </>
@@ -68,13 +70,14 @@ export default function SeedPlanLines({ values, plan, onChange, krw }: {
       {PLAN_LABELS.map(({ key, label }) => {
         const d = detail(key)
         const computed = plan ? planTotal(plan, key) : null
-        const edited = computed !== null && d !== null && values[key] !== computed
+        const edited = filled && computed !== null && d !== null && values[key] !== computed
+        const preview = !filled && computed !== null && d !== null && computed !== values[key]
         return (
           <div key={key} className="seed-plan-line">
             <label>{label}<span className="seed-amount"><input type="number" inputMode="numeric" min="0" step="1000" aria-label={label} value={values[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); onChange(key, Number.isFinite(value) ? value : 0) }} /><span>원</span></span></label>
             {d && (
               <details className="seed-plan-detail">
-                <summary>{d.summary}{edited && <em> · 직접 고침(계산값 {krw(computed!)})</em>}</summary>
+                <summary>{d.summary}{edited && <em> · 직접 고침(계산값 {krw(computed!)})</em>}{preview && <em> · 채우면 {krw(computed!)}</em>}</summary>
                 {d.body}
               </details>
             )}
