@@ -122,3 +122,6 @@
 .mf-irregular-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 9em); gap: 8px; align-items: center; word-break: keep-all; }
 .mf-irregular-row small { color: var(--color-text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .mf-irregular-row input { min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; text-align: right; }
+/* 현금으로 냄: 카드 합계 밖이라 더해지는 기록 */
+.mf-cash-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; cursor: pointer; }
+.mf-cash-check input { width: 16px; height: 16px; accent-color: var(--color-brand); }

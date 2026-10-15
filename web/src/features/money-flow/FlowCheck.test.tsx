@@ -214,3 +214,23 @@ describe('비정기 1년 예산', () => {
     expect(row.textContent).toBe('재산세600,000원590,000원612,000원예산 +12,000원')
   })
 })
+
+describe('현금·비상금과 점검', () => {
+  it('현금 세부는 카드 차액에서 빼지 않고 따로 들어가며, 예산 밖 비정기는 1년 예산에 넣지 않고 비상금 안내만 한다', async () => {
+    apiFetchMock.mockResolvedValue({
+      rules: [], checks: [],
+      entries: [
+        { id: 'a', date: `${month}-05`, amount: 30_000, memo: '시장', categoryId: 'grocery_mart', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
+        { id: 'b', date: `${month}-06`, amount: 100_000, memo: '축의금', categoryId: 'occasion', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
+      ],
+      totals: [{ month, label: 'A카드', kind: 'cash', amount: 800_000, mine: true }],
+    })
+    renderCheck()
+    fireEvent.click(await screen.findByRole('button', { name: /기록으로 채우기/ }))
+    // 카드 800,000은 세부가 없으니 전부 세부 안 적음, 현금 장보기는 따로
+    expect((screen.getByLabelText('세부 안 적음 월 금액') as HTMLInputElement).value).toBe('800000')
+    expect((screen.getByLabelText('장보기(마트) 월 금액') as HTMLInputElement).value).toBe('30000')
+    expect(screen.queryByLabelText('경조사·명절 1년 금액')).toBeNull()
+    expect(screen.getByText(/1년 예산에 없던 비정기 100,000원은 비상금에서 나간 돈/)).toBeTruthy()
+  })
+})

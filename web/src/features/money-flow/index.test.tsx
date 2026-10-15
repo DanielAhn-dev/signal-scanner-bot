@@ -264,8 +264,10 @@ describe('월 합계 칸', () => {
   it('겹치는 칸 이름은 저장 전에 막는다', async () => {
     renderPage()
     await screen.findByText('아직 기록이 없습니다.')
-    fireEvent.change(screen.getByLabelText('1번 칸 이름'), { target: { value: '현금' } })
-    const [first, second] = screen.getAllByLabelText('현금 금액')
+    // 기본 칸은 '카드' 하나 — 칸을 더해 같은 이름을 붙인다
+    fireEvent.click(screen.getByRole('button', { name: '칸 추가' }))
+    fireEvent.change(screen.getByLabelText('2번 칸 이름'), { target: { value: '카드' } })
+    const [first, second] = screen.getAllByLabelText('카드 금액')
     fireEvent.change(first, { target: { value: '1000' } })
     fireEvent.change(second, { target: { value: '2000' } })
     fireEvent.click(screen.getByRole('button', { name: '합계 저장' }))
@@ -371,5 +373,45 @@ describe('이번 달 나가는 비정기', () => {
     fireEvent.change(a, { target: { value: '1600000' } })
     fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '우유 3000원' } })
     expect((screen.getByLabelText('A카드 금액') as HTMLInputElement).value).toBe('1600000')
+  })
+})
+
+describe('현금으로 낸 돈', () => {
+  const month = today.slice(0, 7)
+
+  it('메모에 "현금"이 있으면 현금으로 표시해 저장하고, 고칠 때도 현금 표시를 유지한다', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '축의금 100000원 현금\n망원시장 서울페이 23000원' } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    const checks = screen.getAllByRole('checkbox', { name: '현금으로 냄' }) as HTMLInputElement[]
+    expect(checks.map((c) => c.checked)).toEqual([true, true])
+    fireEvent.click(screen.getByRole('button', { name: '2건 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    expect(postBodies()[0].entries.map((e: any) => [e.memo, e.categoryId, e.paidWith])).toEqual([['축의금', 'occasion', 'cash'], ['망원시장 서울페이', expect.any(String), 'cash']])
+  })
+
+  it('카드 합계에 현금 세부를 더하고, 1년 예산에 없던 비정기는 비상금에서 나간 돈으로 따로 보여 준다', async () => {
+    const plan = { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [], fixed: [{ categoryId: 'maintenance', amount: 300_000, label: '' }] }
+    apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true }) : Promise.resolve({
+      entries: [
+        { id: 'a', date: `${month}-02`, amount: 100_000, memo: '축의금', categoryId: 'occasion', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
+        { id: 'b', date: `${month}-03`, amount: 20_000, memo: '시장', categoryId: 'grocery_mart', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
+        { id: 'c', date: `${month}-04`, amount: 30_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+      ],
+      rules: [], checks: [{ id: 'c1', date: `${month}-01`, label: '', input: plan }],
+      totals: [{ month, label: 'A카드', kind: 'cash', amount: 1_000_000, mine: true }],
+    }))
+    renderPage()
+    const facts = await screen.findByLabelText('합계와 세부 기록')
+    await waitFor(() => expect(facts.textContent).toContain('현금으로 낸 돈120,000원 (2건)'))
+    // 카드 1,000,000(배민은 그 안의 세부) + 현금 120,000
+    expect(facts.textContent).toContain('이 달 지출1,120,000원')
+    expect(facts.textContent).toContain('세부 안 적음970,000원')
+    // 나머지(변동) = 1,120,000 − 고정 300,000 − 비정기(예산 밖 축의금 100,000)
+    expect(facts.textContent).toContain('나머지(변동)720,000원')
+    expect(screen.getByText(/1년 예산에 없던 비정기 100,000원은 비상금에서 나간 돈/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
+    expect(screen.getByText('비상금에서 나간 돈').nextElementSibling?.textContent).toBe('100,000원')
+    expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('1,120,000원')
   })
 })

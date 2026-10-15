@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
-import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, irregularKey, reconcileMonth, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
+import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, irregularKey, monthSpending, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
 
 /** 서버가 주는 월 합계 한 칸. mine = 내가 적은 칸(배우자 칸은 읽기만) */
 export type MonthTotalRow = { month: string; label: string; kind: TotalKind; amount: number; mine: boolean }
 type Slot = { key: string; label: string; kind: TotalKind; amount: string }
 /** 이 달 세부 기록(비정기 실제 금액을 찾고 고치는 데 쓴다) */
-export type MonthRecord = { id: string; date: string; amount: number; memo: string; categoryId: string; payment: Payment; forWhom?: string; cut: string | null; mustPart: number | null }
+export type MonthRecord = { id: string; date: string; amount: number; memo: string; categoryId: string; payment: Payment; forWhom?: string; paidWith?: 'card' | 'cash'; cut: string | null; mustPart: number | null }
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const newKey = () => Math.random().toString(36).slice(2)
@@ -17,9 +17,10 @@ const KIND_LABEL: Record<TotalKind, string> = { cash: '카드·현금', point: '
  * 이 달 합계 칸. 카드 앱의 '이번 달 이용금액'(이용월 기준)을 칸별로 옮겨 적는다.
  * 세부 기록은 원할 때만 — 합계와의 차액은 '세부 안 적음'으로 남고 0을 맞추지 않아도 저장된다.
  */
-export default function MonthTotals({ month, thisMonth, today, setMonth, totals, detail, records, plan, partnerShared, ready, onSaved }: {
+export default function MonthTotals({ month, thisMonth, today, setMonth, totals, cardDetail, cashDetail, records, plan, partnerShared, ready, onSaved }: {
   month: string; thisMonth: string; today: string; setMonth: (m: string) => void
-  totals: MonthTotalRow[]; detail: FlowSummary
+  /** 카드 세부(합계 안)와 현금 세부(합계 밖, 더함) 요약 */
+  totals: MonthTotalRow[]; cardDetail: FlowSummary; cashDetail: FlowSummary
   /** 이 달 세부 기록과, 그 달 기준 점검(고정비·1년 비정기 예산). 점검이 없으면 비정기 칸을 안 보여 준다 */
   records: MonthRecord[]; plan: FlowCheckInput | null
   partnerShared: boolean; ready: boolean; onSaved: () => Promise<void> | void
@@ -47,10 +48,10 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
 
   const partnerTotals = totals.filter((t) => !t.mine && t.month === month)
   const entered = slots.filter((s) => s.amount.trim() !== '')
-  const preview = reconcileMonth([
+  const preview = monthSpending([
     ...entered.map((s) => ({ label: s.label, kind: s.kind, amount: Math.max(0, Math.round(Number(s.amount) || 0)) })),
     ...partnerTotals,
-  ], detail)
+  ], cardDetail, cashDetail)
   const savedMonth = mine.some((t) => t.month === month)
   const update = (key: string, patch: Partial<Slot>) => setSlots((list) => list.map((s) => (s.key === key ? { ...s, ...patch } : s)))
 
@@ -81,7 +82,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
         const value = Number(actual[r.label])
         const existing = records.find((x) => irregularKey(x.memo) === irregularKey(r.label))
         if (existing) {
-          await apiFetch('/api/ui/money-flow', { method: 'POST', cacheMs: 0, body: JSON.stringify({ action: 'update-entry', id: existing.id, date: existing.date, amount: value, memo: existing.memo, categoryId: existing.categoryId, payment: existing.payment, forWhom: existing.forWhom ?? 'shared', cut: existing.cut, mustPart: existing.mustPart !== null && existing.mustPart <= value ? existing.mustPart : null, learn: false }) })
+          await apiFetch('/api/ui/money-flow', { method: 'POST', cacheMs: 0, body: JSON.stringify({ action: 'update-entry', id: existing.id, date: existing.date, amount: value, memo: existing.memo, categoryId: existing.categoryId, payment: existing.payment, forWhom: existing.forWhom ?? 'shared', paidWith: existing.paidWith ?? 'card', cut: existing.cut, mustPart: existing.mustPart !== null && existing.mustPart <= value ? existing.mustPart : null, learn: false }) })
         } else {
           adds.push({ date, amount: value, memo: r.label, categoryId: r.categoryId, payment: 'cash', forWhom: 'shared', learn: false })
         }
@@ -98,7 +99,8 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
     }
   }
 
-  const refunds = detail.refundRegular + detail.refundOnce
+  const refunds = cardDetail.refundRegular + cardDetail.refundOnce + cashDetail.refundRegular + cashDetail.refundOnce
+  const cashRecords = records.filter((r) => r.paidWith === 'cash')
   // 미리 보기: 아직 저장 안 한 실제 금액도 반영한 비정기 합
   const irregularPreview = irregular.rows.reduce((sum, r) => sum + ((actual[r.label] ?? '').trim() !== '' ? Math.max(0, Number(actual[r.label]) || 0) : r.expected), 0) + irregular.others
   const fixed = plan ? fixedCashOf(plan) : null
@@ -148,13 +150,17 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
             </div>
           )}
           <dl className="acc-facts mf-reconcile" aria-label="합계와 세부 기록">
-            <div><dt>합계</dt><dd>{krw(total)}</dd></div>
-            <div><dt>세부 기록</dt><dd>{krw(detailTotal)}{total > 0 && ` (${Math.round((Math.min(detailTotal, total) / total) * 100)}%)`}</dd></div>
+            <div><dt>카드 합계</dt><dd>{krw(total)}</dd></div>
+            <div><dt>카드 세부 기록</dt><dd>{krw(detailTotal)}{total > 0 && ` (${Math.round((Math.min(detailTotal, total) / total) * 100)}%)`}</dd></div>
             <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd></div>
+            <div><dt>현금으로 낸 돈</dt><dd>{krw(preview.cashPaid)}{cashRecords.length > 0 && ` (${cashRecords.length}건)`}</dd></div>
+            <div><dt>이 달 지출</dt><dd>{krw(preview.cash)}</dd></div>
             {rest !== null && <div><dt>고정 · 비정기</dt><dd>{krw(fixed!)} · {krw(irregularPreview)}</dd></div>}
             {rest !== null && <div><dt>나머지(변동)</dt><dd>{krw(rest)}</dd></div>}
           </dl>
-          {(preview.overCash || preview.overPoint) && <p className="acc-warn">세부 기록이 합계보다 많습니다. 다른 달 기록이 섞였거나 합계를 덜 적었을 수 있어요. 저장은 됩니다.</p>}
+          <p className="acc-note">현금·계좌이체·서울페이로 낸 돈은 칸에 적지 않고, 쓸 때 아래 "자세히 적기"에 "현금"을 붙여 적으면(예: 축의금 100000원 현금) 여기 더해집니다. 나중에 기억으로 적으면 빠지기 쉽습니다.</p>
+          {irregular.emergency > 0 && <p className="acc-warn">1년 예산에 없던 비정기 {krw(irregular.emergency)}은 비상금에서 나간 돈으로 봅니다. 변동 지출에는 넣지 않으니, 다음 달 비상금 적립에 더해 채워 넣으세요.</p>}
+          {(preview.overCash || preview.overPoint) && <p className="acc-warn">카드 세부 기록이 카드 합계보다 많습니다. 다른 달 기록이 섞였거나 합계를 덜 적었을 수 있어요. 저장은 됩니다.</p>}
           {refunds > 0 && entered.some((s) => s.kind === 'cash') && <p className="acc-note">세부 기록의 돌려받은 돈(환급·캐시백) {krw(refunds)}은 카드 이용금액과 별개라 통장에서 나간 돈을 셀 때 따로 뺍니다.</p>}
           <button type="button" className="acc-primary" onClick={() => void save()} disabled={saving || (!savedMonth && entered.length === 0 && changedIrregular.length === 0)}>{saving ? '저장 중…' : '합계 저장'}</button>
           {notice && <p className="acc-note" role="status">{notice}</p>}

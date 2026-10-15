@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, irregularForMonth, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, irregularForMonth, classifyMemo, compareSummaries, detectPayment, isRefund, monthSpending, needsItemName, parseQuickLines, splitCashWord, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
@@ -15,11 +15,13 @@ import './money-flow.css'
 
 // mine = 내가 기록함, forWhom = 누구 몫(보는 사람 기준). 기록은 한 사람이 해도 지출은 대부분 공용이라 둘은 다르다
 type ForWhom = 'shared' | 'me' | 'partner'
-type Entry = { id: string; mine?: boolean; forWhom?: ForWhom; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
+// 무엇으로 냈나: card = 월 합계(명세서) 안, cash = 현금·계좌이체 — 합계 밖이라 더한다
+type PaidWith = 'card' | 'cash'
+type Entry = { id: string; mine?: boolean; forWhom?: ForWhom; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment; paidWith?: PaidWith }
 // baseMemo = 붙여 넣은 그대로, item = 통로(네이버페이·쿠팡 등) 이름만 있을 때 덧붙인 산 물건, memo = 저장할 메모
-type Draft = { key: string; forWhom: ForWhom; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
+type Draft = { key: string; forWhom: ForWhom; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment; paidWith: PaidWith }
 type Tab = 'record' | 'month' | 'check' | 'maturity'
-type EditForm = { id: string; date: string; amount: number; memo: string; categoryId: string; forWhom: ForWhom; payment: Payment }
+type EditForm = { id: string; date: string; amount: number; memo: string; categoryId: string; forWhom: ForWhom; payment: Payment; paidWith: PaidWith }
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const kstToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
@@ -33,6 +35,12 @@ const PAYMENT_TAG: Partial<Record<Payment, string>> = { point_regular: '포인�
 // 기본은 공용. 나·배우자는 한 사람만 쓴 게 분명할 때만 고른다(누구 카드로 냈는지가 아니라 누구를 위한 지출인지)
 const WHOM_LABEL: Record<ForWhom, string> = { shared: '공용', me: '내 것', partner: '배우자 것' }
 const whomOf = (entry: { forWhom?: ForWhom }): ForWhom => entry.forWhom ?? 'shared'
+const paidOf = (entry: { paidWith?: PaidWith }): PaidWith => entry.paidWith ?? 'card'
+/** 카드 세부(합계 안)와 현금 세부(합계 밖) 요약을 따로 낸다 */
+const splitSummaries = (list: Entry[]) => ({
+  card: summarizeItems(list.filter((e) => paidOf(e) !== 'cash').map(toItem)),
+  cash: summarizeItems(list.filter((e) => paidOf(e) === 'cash').map(toItem)),
+})
 const toItem = (entry: Entry): FlowItem => ({ categoryId: entry.categoryId, amount: entry.amount, payment: entry.payment, cut: entry.cut ?? undefined, mustPart: entry.mustPart ?? undefined })
 
 function WhomSelect({ value, onChange, label }: { value: ForWhom; onChange: (value: ForWhom) => void; label: string }) {
@@ -116,7 +124,7 @@ export default function MoneyFlowPage() {
   // 월 합계는 카드 단위라 누구 몫으로 나눌 수 없다. '배우자 것 빼고'에서는 내가 적은 칸만 센다
   const scopedTotals = partnerShared && scope === 'me' ? totals.filter((t) => t.mine) : totals
   const monthEntries = scoped.filter((e) => e.date.startsWith(month))
-  const monthDetail = summarizeItems(monthEntries.map(toItem))
+  const monthDetail = splitSummaries(monthEntries)
   // 기준 = 이 달 이전에 기록(세부 또는 합계)이 있는 가장 최근 달. 그사이 달을 건너뛰었어도 그 기록이 기준으로 남는다
   const baseMonth = [...scoped.map((e) => e.date.slice(0, 7)), ...scopedTotals.map((t) => t.month)].filter((m) => m < month).sort().pop() ?? null
   const baseEntries = baseMonth ? scoped.filter((e) => e.date.startsWith(baseMonth)) : []
@@ -128,10 +136,12 @@ export default function MoneyFlowPage() {
     setNotice('')
     setDrafts(parsed.map((p, i) => {
       // "배우자"는 어디에 있든 배우자 것 표시로 바꾸고(없으면 공용), 분류·학습은 그 단어를 뺀 메모로 한다
-      const { memo, forPartner } = splitPartnerWord(p.memo)
+      // "현금"·서울페이·계좌이체 등이 있으면 현금으로 표시한다("현금" 단어는 뺀다)
+      const cash = splitCashWord(p.memo)
+      const { memo, forPartner } = splitPartnerWord(cash.memo)
       const result = classifyMemo(memo, rules)
       // 줄 맨 앞에 날짜(261001 등)가 있으면 그 날짜, 없으면 아래 날짜 칸
-      return { key: `${Date.now()}-${i}`, forWhom: forPartner ? 'partner' : 'shared', date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: memo, item: '', askItem: needsItemName(memo), memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: detectPayment(memo) }
+      return { key: `${Date.now()}-${i}`, forWhom: forPartner ? 'partner' : 'shared', date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: memo, item: '', askItem: needsItemName(memo), memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: detectPayment(memo), paidWith: cash.paidCash ? 'cash' : 'card' }
     }))
   }
   const updateDraft = (key: string, patch: Partial<Draft>) => setDrafts((list) => list.map((d) => d.key === key ? { ...d, ...patch } : d))
@@ -155,7 +165,7 @@ export default function MoneyFlowPage() {
       const body = {
         action: 'add-entries',
         // 자동 분류를 고쳤거나, 모르던 메모를 직접 고른 경우만 기억한다(소액이라 묻지 않고 넘긴 줄은 기억하지 않는다)
-        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, forWhom: d.forWhom, learn: d.memo !== '' && ((!d.known && !isQuiet(d)) || d.categoryId !== d.autoCategoryId) })),
+        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, forWhom: d.forWhom, paidWith: d.paidWith, learn: d.memo !== '' && ((!d.known && !isQuiet(d)) || d.categoryId !== d.autoCategoryId) })),
       }
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify(body), cacheMs: 0 })
       setNotice(`${drafts.length}건 기록했습니다.`)
@@ -174,11 +184,11 @@ export default function MoneyFlowPage() {
 
   const updateEntry = (entry: Entry, patch: Partial<Entry>, learn: boolean) => {
     const next = { ...entry, ...patch }
-    return apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'update-entry', id: entry.id, date: next.date, amount: next.amount, memo: next.memo, categoryId: next.categoryId, payment: next.payment, forWhom: whomOf(next), cut: next.cut, mustPart: next.mustPart && next.mustPart <= next.amount ? next.mustPart : null, learn }), cacheMs: 0 })
+    return apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'update-entry', id: entry.id, date: next.date, amount: next.amount, memo: next.memo, categoryId: next.categoryId, payment: next.payment, forWhom: whomOf(next), paidWith: paidOf(next), cut: next.cut, mustPart: next.mustPart && next.mustPart <= next.amount ? next.mustPart : null, learn }), cacheMs: 0 })
   }
 
   // 목록은 읽기 전용으로 두고, 고칠 줄만 '고치기'를 눌러 펼친다
-  const startEdit = (e: Entry) => setEditing({ id: e.id, date: e.date, amount: e.amount, memo: e.memo, categoryId: e.categoryId, forWhom: whomOf(e), payment: e.payment })
+  const startEdit = (e: Entry) => setEditing({ id: e.id, date: e.date, amount: e.amount, memo: e.memo, categoryId: e.categoryId, forWhom: whomOf(e), payment: e.payment, paidWith: paidOf(e) })
   const patchEdit = (patch: Partial<EditForm>) => setEditing((form) => form ? { ...form, ...patch } : form)
 
   const saveEdit = async (entry: Entry) => {
@@ -190,7 +200,7 @@ export default function MoneyFlowPage() {
     const learn = memo !== '' && editing.categoryId !== entry.categoryId
     setSaving(true)
     try {
-      await updateEntry(entry, { date: editing.date, amount: editing.amount, memo, categoryId: editing.categoryId, forWhom: editing.forWhom, payment: editing.payment }, learn)
+      await updateEntry(entry, { date: editing.date, amount: editing.amount, memo, categoryId: editing.categoryId, forWhom: editing.forWhom, payment: editing.payment, paidWith: editing.paidWith }, learn)
       setNotice(learn ? `"${memo}"은(는) 다음부터 ${categoryById(editing.categoryId)?.label}(으)로 분류합니다.` : `${memo || '메모 없음'} 기록을 고쳤습니다.`)
       setEditing(null)
       if (!editing.date.startsWith(month)) setMonth(editing.date.slice(0, 7))
@@ -250,6 +260,7 @@ export default function MoneyFlowPage() {
       <div className="mf-draft-tools">
         <CategorySelect label={`${d.baseMemo || '메모 없음'} 분류`} value={d.categoryId} onChange={(id) => updateDraft(d.key, { categoryId: id })} />
         <WhomSelect label={`${d.baseMemo || '메모 없음'} 누구 몫`} value={d.forWhom} onChange={(forWhom) => updateDraft(d.key, { forWhom })} />
+        <label className="mf-cash-check"><input type="checkbox" checked={d.paidWith === 'cash'} onChange={(event) => updateDraft(d.key, { paidWith: event.target.checked ? 'cash' : 'card' })} />현금으로 냄</label>
         <select aria-label={`${d.baseMemo || '메모 없음'} 결제 수단`} value={d.payment} onChange={(event) => updateDraft(d.key, { payment: event.target.value as Payment })}>
           {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -290,7 +301,7 @@ export default function MoneyFlowPage() {
 
       {tab === 'record' && (
         <>
-          <MonthTotals month={month} thisMonth={thisMonth} today={today} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} detail={monthDetail} records={monthEntries} plan={checkForMonth(checks, month)?.input ?? null} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
+          <MonthTotals month={month} thisMonth={thisMonth} today={today} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} cardDetail={monthDetail.card} cashDetail={monthDetail.cash} records={monthEntries} plan={checkForMonth(checks, month)?.input ?? null} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
 
           <details className="acc-card mf-detail">
             <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">어디에 썼는지까지 보고 싶을 때만. 한 결제를 품목까지 나눌 필요는 없어요.</span></summary>
@@ -343,6 +354,7 @@ export default function MoneyFlowPage() {
                         <div className="mf-list-tools">
                           <CategorySelect label={`${name} 분류 바꾸기`} value={editing.categoryId} onChange={(categoryId) => patchEdit({ categoryId })} />
                           <WhomSelect label={`${name} 누구 몫 바꾸기`} value={editing.forWhom} onChange={(forWhom) => patchEdit({ forWhom })} />
+                          <label className="mf-cash-check"><input type="checkbox" checked={editing.paidWith === 'cash'} onChange={(event) => patchEdit({ paidWith: event.target.checked ? 'cash' : 'card' })} />현금으로 냄</label>
                           <select aria-label={`${name} 결제 수단 바꾸기`} value={editing.payment} onChange={(event) => patchEdit({ payment: event.target.value as Payment })}>
                             {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                           </select>
@@ -362,6 +374,7 @@ export default function MoneyFlowPage() {
                           {whomOf(e) !== 'shared' && <em className="mf-point mf-partner">{WHOM_LABEL[whomOf(e)]}</em>}
                           {e.memo || '메모 없음'}
                           {PAYMENT_TAG[e.payment] && <em className="mf-point">{PAYMENT_TAG[e.payment]}</em>}
+                          {paidOf(e) === 'cash' && <em className="mf-point mf-cash">현금</em>}
                           {e.mine === false && <em className="mf-point">배우자가 적음</em>}
                           {e.editedBy && <em className="mf-point mf-edited">{e.editedBy === 'me' ? '내가 고침' : '배우자가 고침'}</em>}
                           {category && <small>{category.label}</small>}
@@ -423,7 +436,8 @@ function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], 
     const t = totals.filter((x) => x.month === m)
     const e = allEntries.filter((x) => x.date.startsWith(m))
     if (t.length === 0 && e.length === 0) return []
-    const cash = reconcileMonth(t, summarizeItems(e.map(toItem))).cash
+    const split = splitSummaries(e)
+    const cash = monthSpending(t, split.card, split.cash).cash
     const check = checkForMonth(checks, m)
     const fixed = check ? fixedCashOf(check.input) : null
     // 비정기: 실제 낸 기록(예산 항목과 이름이 같은 세부 기록)이 있으면 실제, 없으면 1년 예산 중 이 달 몫. 예산에 없는 비정기 기록도 뺀다
@@ -480,10 +494,13 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
   const summary = useMemo(() => summarizeItems(entries.map(toItem)), [entries])
   const monthTotals = totals.filter((t) => t.month === month)
   const hasTotals = monthTotals.length > 0
-  const rec = reconcileMonth(monthTotals, summary)
+  const split = useMemo(() => splitSummaries(entries), [entries])
+  const rec = monthSpending(monthTotals, split.card, split.cash)
   const unrecorded = rec.unrecordedCash + rec.unrecordedPoint
   const refunds = summary.refundRegular + summary.refundOnce
   const trend = trendRows(month, allEntries, totals, checks)
+  // 1년 예산에 없던 비정기 = 비상금에서 나간 돈(변동 지출에서 빼고 따로 보여 준다)
+  const emergency = irregularForMonth(checkForMonth(checks, month)?.input ?? null, Number(month.slice(5)), entries).emergency
   // 공용이 아닌 기록이 하나라도 있으면 공용·나·배우자 현금(환급 뺀)과 돌려받은 돈을 나눠 보여 준다
   const byWho = useMemo(() => {
     if (entries.every((e) => whomOf(e) === 'shared')) return null
@@ -508,6 +525,8 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
             <dl className="acc-tiles">
               <div className="is-main"><dt>현금 지출</dt><dd>{krw(rec.cash)}</dd>{(hasTotals || refunds > 0) && <small>{[hasTotals ? '칸 합계 기준' : '', refunds > 0 ? `돌려받은 ${krw(refunds)}을 뺀 금액` : ''].filter(Boolean).join(', ')}</small>}</div>
               {hasTotals && <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd><small>세부 기록 {krw(rec.detailedCash + rec.detailedPoint)} 밖, 어디에 썼는지 모르는 금액</small></div>}
+              {rec.cashPaid > 0 && <div><dt>현금으로 낸 돈</dt><dd>{krw(rec.cashPaid)}</dd><small>세부 기록에서 현금으로 표시한 것, 카드 합계에 더함</small></div>}
+              {emergency > 0 && <div><dt>비상금에서 나간 돈</dt><dd>{krw(emergency)}</dd><small>1년 예산에 없던 비정기 — 다음 달 비상금 적립에 더해 채워 넣기</small></div>}
               <div><dt>생활 소비(포인트 포함)</dt><dd>{krw(rec.consumption)}</dd></div>
               <div><dt>포인트·환급이 메운 금액</dt><dd>{krw(Math.max(rec.pointTotal, rec.detailedPoint) + refunds)}</dd>{summary.pointOnce + summary.refundOnce > 0 && <small>이번만 들어온 {krw(summary.pointOnce + summary.refundOnce)}는 다음 달엔 없을 수 있습니다</small>}</div>
               {byWho && <div><dt>누구 몫(현금)</dt><dd className="mf-small">공용 {krw(byWho.shared.cash)} · 나 {krw(byWho.me.cash)} · 배우자 {krw(byWho.partner.cash)}</dd>{refundOf(byWho.shared) + refundOf(byWho.me) + refundOf(byWho.partner) > 0 && <small>돌려받은 돈: 공용 {krw(refundOf(byWho.shared))} · 나 {krw(refundOf(byWho.me))} · 배우자 {krw(refundOf(byWho.partner))}</small>}</div>}
