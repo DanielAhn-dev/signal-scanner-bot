@@ -131,3 +131,8 @@
 .seed-manage > div { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 10px; }
 .seed-delete-confirm { color: var(--color-orange-600); }
 @media (pointer: coarse) { .seed-builder button, .seed-builder input { min-height: 44px; } .seed-quick button { min-width: 44px; } }
+/* 금액 입력칸과 '원'은 한 묶음 — 폭이 좁아도 '원'만 다음 줄로 떨어지지 않게 */
+.seed-amount { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.seed-amount > span { flex: none; color: var(--color-text-secondary); }
+.seed-plan-row .seed-amount { flex: 1 1 100%; }
+.seed-plan-row .seed-amount input, .seed-entry-form .seed-amount input { flex: 1 1 auto; min-width: 0; }
