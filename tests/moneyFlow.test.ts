@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -459,4 +459,29 @@ test('세부 기록에는 "세부 안 적음" 분류를 쓸 수 없고, 합계 �
   assert.equal(isMissingTable({ code: '42P01' }), true)
   assert.equal(isMissingTable({ code: '57014' }), false)
   assert.equal(isMissingTable(null), false)
+})
+
+test('고정비 기준: 그 달 말일까지 저장한 가장 최근 점검, 고정비 현금은 포인트 제외·환급 차감', () => {
+  const input = (rent: number) => ({ monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [], fixed: [
+    { categoryId: 'rent', amount: rent }, { categoryId: 'sub_media', amount: 17_000, payment: 'point_regular' as const }, { categoryId: 'phone', amount: 5_000, payment: 'refund_regular' as const },
+  ] })
+  const checks = [{ date: '2026-08-31', input: input(900_000) }, { date: '2026-09-15', input: input(950_000) }]
+  assert.equal(checkForMonth(checks, '2026-07'), null)
+  assert.equal(checkForMonth(checks, '2026-08')?.date, '2026-08-31')
+  assert.equal(checkForMonth(checks, '2026-10')?.date, '2026-09-15')
+  assert.equal(fixedCashOf(checks[1].input), 945_000)
+})
+
+test('고정비 바뀐 기록: 소분류별로 나란히, 없던 항목은 빈칸, 마지막 두 점검 차이', () => {
+  const mk = (date: string, fixed: Array<{ categoryId: string; amount: number }>) => ({ date, input: { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [], fixed } })
+  const h = fixedHistory([
+    mk('2026-09-30', [{ categoryId: 'utilities', amount: 123_000 }, { categoryId: 'maintenance', amount: 280_000 }]),
+    mk('2026-08-31', [{ categoryId: 'utilities', amount: 81_000 }]),
+    mk('2026-10-31', [{ categoryId: 'utilities', amount: 50_000 }, { categoryId: 'utilities', amount: 40_000 }, { categoryId: 'maintenance', amount: 295_000 }, { categoryId: 'phone', amount: 110_000 }]),
+  ])
+  assert.deepEqual(h.dates, ['2026-08-31', '2026-09-30', '2026-10-31'])
+  assert.deepEqual(h.rows.find((r) => r.categoryId === 'utilities'), { categoryId: 'utilities', amounts: [81_000, 123_000, 90_000], change: -33_000 })
+  assert.deepEqual(h.rows.find((r) => r.categoryId === 'maintenance'), { categoryId: 'maintenance', amounts: [null, 280_000, 295_000], change: 15_000 })
+  assert.deepEqual(h.rows.find((r) => r.categoryId === 'phone')?.change, null)
+  assert.equal(fixedHistory([mk('2026-01-31', []), mk('2026-02-28', []), mk('2026-03-31', []), mk('2026-04-30', []), mk('2026-05-31', [])]).dates[0], '2026-02-28')
 })

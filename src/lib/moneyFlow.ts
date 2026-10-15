@@ -577,3 +577,45 @@ export function toSeedExpenses(items: FlowItem[]): Record<SeedExpenseKey, number
   for (const key of Object.keys(out) as SeedExpenseKey[]) out[key] = Math.max(0, out[key]);
   return out;
 }
+
+/** 저장한 점검 한 번(날짜 YYYY-MM-DD + 입력) */
+export type DatedCheck = { date: string; input: FlowCheckInput };
+
+/** 점검의 고정지출 중 통장에서 나가는 돈(포인트 제외, 환급은 뺌) */
+export function fixedCashOf(input: FlowCheckInput): number {
+  return input.fixed.reduce((sum, item) => sum + cashEffect(item), 0);
+}
+
+/** 그 달 고정비 기준 = 그 달 말일까지 저장한 점검 중 가장 최근 것. 없으면 null(그 전엔 기준이 없었다) */
+export function checkForMonth<T extends DatedCheck>(checks: T[], month: string): T | null {
+  const end = `${month}-31`;
+  return [...checks].filter((c) => c.date <= end).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0] ?? null;
+}
+
+export type FixedHistory = {
+  /** 오래된 것 → 최근 */
+  dates: string[];
+  /** amounts는 dates 순서, 그 점검에 없던 항목은 null. 소분류 단위로 합친다(전기·가스를 두 줄로 적어도 한 줄) */
+  rows: Array<{ categoryId: string; amounts: Array<number | null>; change: number | null }>;
+};
+
+/** 저장한 점검들의 고정지출을 소분류별로 나란히 놓는다. change = 마지막 점검 − 그 직전 점검(둘 다 있을 때) */
+export function fixedHistory(checks: DatedCheck[], limit = 4): FixedHistory {
+  const recent = [...checks].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(-limit);
+  const ids: string[] = [];
+  const byCheck = recent.map((check) => {
+    const map = new Map<string, number>();
+    for (const item of check.input.fixed) {
+      if (!ids.includes(item.categoryId)) ids.push(item.categoryId);
+      map.set(item.categoryId, (map.get(item.categoryId) ?? 0) + cashEffect(item));
+    }
+    return map;
+  });
+  const rows = ids.map((categoryId) => {
+    const amounts = byCheck.map((map) => (map.has(categoryId) ? map.get(categoryId)! : null));
+    const last = amounts[amounts.length - 1];
+    const before = amounts[amounts.length - 2];
+    return { categoryId, amounts, change: last != null && before != null ? last - before : null };
+  });
+  return { dates: recent.map((c) => c.date), rows };
+}
