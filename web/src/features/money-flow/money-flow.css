@@ -58,6 +58,8 @@
 .mf-months button { min-width: 36px; min-height: 32px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
 .mf-months button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }
 .mf-check-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.mf-save-bar { position: sticky; bottom: 0; z-index: 2; margin-top: 20px; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--color-border-default); border-radius: 8px; background: var(--color-bg-surface); box-shadow: 0 -2px 8px rgb(0 0 0 / 0.08); }
+.mf-save-bar span { font-weight: 700; }
 .mf-basis { font-size: 12px; color: var(--color-text-tertiary); border-top: 1px dashed var(--color-border-default); padding-top: 8px; }
 .mf-edited { background: var(--color-warning, #ed6c02); color: var(--color-text-inverse); }
 .mf-row-actions { display: inline-flex; gap: 4px; flex: 0 0 auto; align-self: center; }

@@ -45,7 +45,7 @@ describe('예산', () => {
     await screen.findByLabelText('점검 결과')
     fireEvent.change(screen.getByLabelText('월세 줄일 수 있나'), { target: { value: 'trim' } })
     expect(screen.getByLabelText('점검 결과')).toHaveTextContent('최대로 줄이면3,350,000원')
-    fireEvent.click(screen.getByRole('button', { name: '이 점검 저장' }))
+    fireEvent.click(screen.getByRole('button', { name: '예산 저장' }))
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/money-flow', expect.objectContaining({ method: 'POST' })))
     const body = JSON.parse(apiFetchMock.mock.calls.find(([, o]) => o?.method === 'POST')![1].body)
     expect(body.action).toBe('save-check')

@@ -282,10 +282,10 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     setSaving(true)
     setNotice('')
     try {
-      const res = await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'save-check', label: `${kstMonth().replace('-', '년 ')}월 점검`, input }), cacheMs: 0 })
+      const res = await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'save-check', label: `${kstMonth().replace('-', '년 ')}월 예산`, input }), cacheMs: 0 })
       if (res?.ok === false) throw new Error(res.error || '저장 실패')
       setSaved(true)
-      setNotice('점검을 저장했습니다. 다음 점검은 이 결과와 비교합니다.')
+      setNotice(`${Number(kstMonth().slice(5))}월 예산을 저장했습니다. 이 달에 다시 저장하면 덮어씁니다.`)
       await onSaved()
     } catch (e) {
       setNotice(`저장 실패: ${e instanceof Error ? e.message : String(e)}`)
@@ -406,6 +406,12 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
 
       {notice && <p className="acc-note mf-notice" role="status">{notice}</p>}
 
+      {/* 결과가 없어도 언제든 저장할 수 있게 화면 아래에 붙여 둔다. 같은 달에 다시 저장하면 그 달 예산을 덮어쓴다 */}
+      <div className="mf-save-bar">
+        <span>{Number(kstMonth().slice(5))}월 예산</span>
+        <button type="button" className="acc-primary" disabled={saving} onClick={() => void save()}>{saving ? '저장 중…' : '예산 저장'}</button>
+      </div>
+
       {hasAny && (
         <section className="acc-card" aria-label="점검 결과">
           <h2>결과</h2>
@@ -464,7 +470,6 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
           )}
 
           <div className="mf-check-actions">
-            <button type="button" className="acc-primary" disabled={saving} onClick={() => void save()}>{saving ? '저장 중…' : '이 점검 저장'}</button>
             <button type="button" className="acc-secondary" onClick={() => void applyToSeed()}>이번 달 투자금 이번 달에 반영</button>
             {fromStart && <button type="button" className="acc-secondary" onClick={() => navigate('/start')}>시작하기로 돌아가기</button>}
           </div>
