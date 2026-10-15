@@ -61,28 +61,26 @@ export default function RebalanceReportStrip({
       <tbody>
         <tr className="xls-row">
           <td className="xls-cell xls-cell--wrap" style={{ fontWeight: 600, width: '21%' }}>실계좌 리밸런싱 가이드</td>
-          <td className="xls-cell">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 0, flex: '1 1 260px', wordBreak: 'keep-all' }}>
-                <div className="caption">
-                  계좌를 고르면 수익 구간에서 정리할 종목, 분배금을 모을 지수 ETF, 가격이 오면 정리할 목록, 실행 순서를 문서로 만듭니다. 주문은 하지 않습니다.
-                </div>
-                {error && <div className="caption mt-1" style={{ color: 'var(--color-danger, #C0392B)' }}>{error}</div>}
-                {accounts && accounts.length === 0 && (
-                  <div className="caption mt-1">입력된 실계좌 보유가 없습니다. 포트폴리오에서 계좌/보유를 추가하면 만들 수 있습니다.</div>
-                )}
-                {status && <div className="caption mt-1">{status}</div>}
+          <td className="xls-cell xls-cell--wrap">
+            <div className="reports-rebalance">
+              <div className="caption">
+                계좌를 고르면 수익 구간에서 정리할 종목, 분배금을 모을 지수 ETF, 가격이 오면 정리할 목록, 실행 순서를 문서로 만듭니다. 주문은 하지 않습니다.
               </div>
-              <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+              {error && <div className="caption reports-rebalance__error">{error}</div>}
+              {accounts && accounts.length === 0 && (
+                <div className="caption">입력된 실계좌 보유가 없습니다. 포트폴리오에서 계좌/보유를 추가하면 만들 수 있습니다.</div>
+              )}
+              {status && <div className="caption">{status}</div>}
+              <div className="reports-rebalance__controls">
                 <select
-                  className="ui-input ui-text"
+                  className="reports-rebalance__select"
                   aria-label="계좌 선택"
                   value={selected}
                   onChange={(e) => setSelected(e.target.value)}
                   disabled={!accounts?.length}
-                  style={{ minWidth: 180, maxWidth: '100%' }}
                 >
-                  {!accounts && <option value="">계좌 불러오는 중…</option>}
+                  {!accounts && !error && <option value="">계좌 불러오는 중…</option>}
+                  {error && !accounts && <option value="">계좌를 불러오지 못했습니다</option>}
                   {accounts?.map((a) => (
                     <option key={a.key} value={a.key}>
                       {a.label} · {a.holdingCount}종목 · {formatKrwCompact(a.total)}

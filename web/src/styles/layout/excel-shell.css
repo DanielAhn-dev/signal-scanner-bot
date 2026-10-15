@@ -2460,6 +2460,37 @@
   display: none;
 }
 
+/* 실계좌 리밸런싱 가이드: 설명은 윗줄(줄바꿈), 계좌 선택·버튼은 아랫줄 한 줄 */
+.reports-sheet .reports-rebalance {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.reports-sheet .reports-rebalance__error {
+  color: var(--color-danger);
+}
+
+.reports-sheet .reports-rebalance__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 전역 select(w-full·높이 2.75rem)를 셀 안 크기로 되돌린다 */
+.reports-sheet .reports-rebalance__select {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 320px;
+  min-height: 26px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .reports-output-group__heading th {
   padding: 7px 10px;
   border: 1px solid var(--color-excel-grid-border);
