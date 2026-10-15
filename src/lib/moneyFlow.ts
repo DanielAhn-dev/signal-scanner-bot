@@ -637,27 +637,33 @@ export function checkForMonth<T extends DatedCheck>(checks: T[], month: string):
 export type FixedHistory = {
   /** 오래된 것 → 최근 */
   dates: string[];
-  /** amounts는 dates 순서, 그 점검에 없던 항목은 null. 소분류 단위로 합친다(전기·가스를 두 줄로 적어도 한 줄) */
-  rows: Array<{ categoryId: string; amounts: Array<number | null>; change: number | null }>;
+  /**
+   * amounts는 dates 순서, 그 점검에 없던 항목은 null.
+   * 내가 붙인 이름이 있으면 이름별로(소분류가 같아도 '손주 돌봄비'·'본인 용돈'처럼 따로), 이름이 없으면 소분류 단위로 합친다.
+   * name = 내가 붙인 이름, 없으면 소분류 이름
+   */
+  rows: Array<{ categoryId: string; name: string; amounts: Array<number | null>; change: number | null }>;
 };
 
 /** 저장한 점검들의 고정지출을 소분류별로 나란히 놓는다. change = 마지막 점검 − 그 직전 점검(둘 다 있을 때) */
 export function fixedHistory(checks: DatedCheck[], limit = 4): FixedHistory {
   const recent = [...checks].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(-limit);
-  const ids: string[] = [];
+  const keys: Array<{ key: string; categoryId: string; name: string }> = [];
   const byCheck = recent.map((check) => {
     const map = new Map<string, number>();
     for (const item of check.input.fixed) {
-      if (!ids.includes(item.categoryId)) ids.push(item.categoryId);
-      map.set(item.categoryId, (map.get(item.categoryId) ?? 0) + cashEffect(item));
+      const label = item.label?.trim() ?? "";
+      const key = `${item.categoryId}|${label}`;
+      if (!keys.some((k) => k.key === key)) keys.push({ key, categoryId: item.categoryId, name: label || (categoryById(item.categoryId)?.label ?? item.categoryId) });
+      map.set(key, (map.get(key) ?? 0) + cashEffect(item));
     }
     return map;
   });
-  const rows = ids.map((categoryId) => {
-    const amounts = byCheck.map((map) => (map.has(categoryId) ? map.get(categoryId)! : null));
+  const rows = keys.map(({ key, categoryId, name }) => {
+    const amounts = byCheck.map((map) => (map.has(key) ? map.get(key)! : null));
     const last = amounts[amounts.length - 1];
     const before = amounts[amounts.length - 2];
-    return { categoryId, amounts, change: last != null && before != null ? last - before : null };
+    return { categoryId, name, amounts, change: last != null && before != null ? last - before : null };
   });
   return { dates: recent.map((c) => c.date), rows };
 }

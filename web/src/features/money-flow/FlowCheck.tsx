@@ -352,8 +352,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
               <thead><tr><th scope="col">항목</th>{history.dates.map((d) => <th key={d} scope="col">{Number(d.slice(5, 7))}/{Number(d.slice(8))}</th>)}<th scope="col">지난번 대비</th></tr></thead>
               <tbody>
                 {history.rows.map((r) => (
-                  <tr key={r.categoryId}>
-                    <th scope="row">{categoryById(r.categoryId)?.label ?? r.categoryId}</th>
+                  <tr key={`${r.categoryId}|${r.name}`}>
+                    <th scope="row">{r.name}</th>
                     {r.amounts.map((a, i) => <td key={history.dates[i]} className={a === null ? 'mf-trend-muted' : ''}>{a === null ? '—' : krw(a)}</td>)}
                     <td>{r.change === null ? <span className="mf-trend-muted">—</span> : r.change === 0 ? '0' : <small className={r.change > 0 ? 'is-up' : 'is-down'}>{r.change > 0 ? '+' : '−'}{krw(Math.abs(r.change))}</small>}</td>
                   </tr>

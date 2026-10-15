@@ -480,9 +480,14 @@ test('고정비 바뀐 기록: 소분류별로 나란히, 없던 항목은 빈�
     mk('2026-10-31', [{ categoryId: 'utilities', amount: 50_000 }, { categoryId: 'utilities', amount: 40_000 }, { categoryId: 'maintenance', amount: 295_000 }, { categoryId: 'phone', amount: 110_000 }]),
   ])
   assert.deepEqual(h.dates, ['2026-08-31', '2026-09-30', '2026-10-31'])
-  assert.deepEqual(h.rows.find((r) => r.categoryId === 'utilities'), { categoryId: 'utilities', amounts: [81_000, 123_000, 90_000], change: -33_000 })
-  assert.deepEqual(h.rows.find((r) => r.categoryId === 'maintenance'), { categoryId: 'maintenance', amounts: [null, 280_000, 295_000], change: 15_000 })
+  assert.deepEqual(h.rows.find((r) => r.categoryId === 'utilities'), { categoryId: 'utilities', name: '전기·가스·수도', amounts: [81_000, 123_000, 90_000], change: -33_000 })
+  assert.deepEqual(h.rows.find((r) => r.categoryId === 'maintenance'), { categoryId: 'maintenance', name: '관리비', amounts: [null, 280_000, 295_000], change: 15_000 })
   assert.deepEqual(h.rows.find((r) => r.categoryId === 'phone')?.change, null)
+  // 이름을 붙인 줄은 소분류가 같아도 이름으로 따로 본다
+  const named = fixedHistory([
+    { date: '2026-10-01', input: { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [], fixed: [{ categoryId: 'family_parents', amount: 1_000_000, label: '손주 돌봄비' }, { categoryId: 'family_parents', amount: 300_000 }] } },
+  ])
+  assert.deepEqual(named.rows.map((r) => [r.name, r.amounts[0]]), [['손주 돌봄비', 1_000_000], ['부모님 용돈', 300_000]])
   assert.equal(fixedHistory([mk('2026-01-31', []), mk('2026-02-28', []), mk('2026-03-31', []), mk('2026-04-30', []), mk('2026-05-31', [])]).dates[0], '2026-02-28')
 })
 
