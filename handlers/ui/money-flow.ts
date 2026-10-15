@@ -47,7 +47,10 @@ export function normalizeFlowEntry(body: any, now = new Date()) {
   // 누구 몫은 보내는 사람 기준(shared/me/partner), 기본은 공용. 저장은 기록한 사람 기준 — 상대 기록을 고칠 때는 핸들러가 뒤집는다
   const forWhom = body.forWhom ?? 'shared'
   if (!forWhoms.includes(forWhom)) return null
-  return { spent_on: body.date, amount: value, memo: memo.trim(), category_id: body.categoryId, cut_level: cut, must_part: mustPart, payment, for_whom: forWhom as ForWhom }
+  // 무엇으로 냈나: card(월 합계 칸 안) | cash(현금·계좌이체 — 합계에 더함). 기본은 카드
+  const paidWith = body.paidWith ?? 'card'
+  if (paidWith !== 'card' && paidWith !== 'cash') return null
+  return { spent_on: body.date, amount: value, memo: memo.trim(), category_id: body.categoryId, cut_level: cut, must_part: mustPart, payment, for_whom: forWhom as ForWhom, paid_with: paidWith as 'card' | 'cash' }
 }
 
 function normalizeItem(raw: any): FlowItem | null {
@@ -123,7 +126,7 @@ export function toMonthTotal(row: any, viewer: string) {
   return { month: String(row.month).slice(0, 7), label: row.label, kind: row.kind, amount: Number(row.amount), mine: row.client_id === viewer }
 }
 
-const entryColumns = 'id,client_id,spent_on,amount,memo,category_id,cut_level,must_part,payment,for_whom,updated_by_client_id,deleted_at,deleted_by_client_id'
+const entryColumns = 'id,client_id,spent_on,amount,memo,category_id,cut_level,must_part,payment,for_whom,paid_with,updated_by_client_id,deleted_at,deleted_by_client_id'
 
 /**
  * 보는 사람 기준으로 바꾼다. client_id는 내보내지 않고 '나/배우자'로만 알린다. 기록한 사람이 아닌 쪽이 고쳤을 때만 editedBy를 준다.
@@ -134,7 +137,7 @@ export function toEntry(row: any, viewer: string) {
   const mine = row.client_id === viewer
   return {
     id: row.id, mine, forWhom: flipForWhom(row.for_whom ?? 'shared', mine), date: String(row.spent_on).slice(0, 10), amount: Number(row.amount), memo: row.memo, categoryId: row.category_id,
-    cut: row.cut_level ?? null, mustPart: row.must_part == null ? null : Number(row.must_part), payment: row.payment,
+    cut: row.cut_level ?? null, mustPart: row.must_part == null ? null : Number(row.must_part), payment: row.payment, paidWith: row.paid_with === 'cash' ? 'cash' : 'card',
     editedBy: row.updated_by_client_id && row.updated_by_client_id !== row.client_id ? who(row.updated_by_client_id) : null,
     deletedBy: row.deleted_at ? who(row.deleted_by_client_id ?? row.client_id) : null,
   }

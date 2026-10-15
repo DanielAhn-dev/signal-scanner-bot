@@ -193,6 +193,16 @@ const PASS_THROUGH_NOISE = ["결제", "주문", "구매", "간편결제", "(주)
  * 메모에 "배우자"가 있으면(앞이든 중간이든) 배우자 몫으로 보고, 그 단어를 뺀 메모를 돌려준다.
  * 한 사람이 둘의 지출·환급을 같이 적을 때 쓴다. "모두의 카드 배우자 환급" → { memo: "모두의 카드 환급", forPartner: true }
  */
+/** 계좌에서 바로 나가는 결제 통로 — 현금으로 본다(이름은 어디서 냈는지 정보라 메모에 남긴다) */
+const ACCOUNT_PAY_WORDS = ["서울페이", "제로페이", "계좌이체", "송금"];
+
+/** "현금"이라는 단어가 있으면 현금으로 낸 것으로 보고 그 단어는 메모에서 뺀다("축의금 100000원 현금"). 서울페이·계좌이체 등도 현금 */
+export function splitCashWord(memo: string): { memo: string; paidCash: boolean } {
+  const viaAccount = ACCOUNT_PAY_WORDS.some((word) => memo.replace(/\s+/g, "").includes(word));
+  if (!memo.includes("현금")) return { memo, paidCash: viaAccount };
+  return { memo: memo.replace(/현금(으로|결제|지출)?/g, " ").replace(/\s+/g, " ").trim(), paidCash: true };
+}
+
 export function splitPartnerWord(memo: string): { memo: string; forPartner: boolean } {
   if (!memo.includes("배우자")) return { memo, forPartner: false };
   return { memo: memo.replace(/배우자(의|꺼|거|것|용)?/g, " ").replace(/\s+/g, " ").trim(), forPartner: true };
@@ -426,8 +436,9 @@ export function compareSummaries(previous: FlowSummary, current: FlowSummary): C
 export type TotalKind = "cash" | "point";
 export type MonthTotal = { label: string; kind: TotalKind; amount: number };
 export const MAX_TOTAL_SLOTS = 12;
+// 현금은 칸에 적지 않고 세부 기록에서 '현금'으로 표시한 것을 더한다(쓸 때 바로 적어야 빠지지 않는다). 포인트는 투자 판단에 안 쓰여 기본 칸에서 뺐다
 export const DEFAULT_TOTAL_SLOTS: Array<{ label: string; kind: TotalKind }> = [
-  { label: "카드", kind: "cash" }, { label: "현금", kind: "cash" }, { label: "포인트", kind: "point" },
+  { label: "카드", kind: "cash" },
 ];
 /** 점검으로 넘길 때 차액이 들어가는 소분류 */
 export const UNRECORDED_CATEGORY_ID = "unrecorded";
@@ -471,6 +482,21 @@ export function reconcileMonth(totals: MonthTotal[], summary: FlowSummary): Mont
     cash: Math.max(detailedCash, cashTotal) - refunds,
     consumption: Math.max(detailedCash, cashTotal) + Math.max(detailedPoint, pointTotal),
   };
+}
+
+export type MonthSpending = MonthReconcile & {
+  /** 세부 기록에서 '현금'으로 표시한 쓴 돈(환급 빼기 전) — 칸 합계 밖이라 더한다 */
+  cashPaid: number;
+};
+
+/**
+ * 한 달 지출: 카드 칸 합계(명세서) + 현금으로 낸 세부 기록. 카드 세부는 카드 합계 안의 일부라 차액(세부 안 적음)만 구하고,
+ * 현금 세부는 합계에 더한다. 현금 기록에 붙은 환급도 통장 기준으로 뺀다.
+ */
+export function monthSpending(totals: MonthTotal[], cardSummary: FlowSummary, cashSummary: FlowSummary): MonthSpending {
+  const rec = reconcileMonth(totals, cardSummary);
+  const cashPaid = cashSummary.cash + cashSummary.refundRegular + cashSummary.refundOnce;
+  return { ...rec, cashPaid, cash: rec.cash + cashSummary.cash, consumption: rec.consumption + cashSummary.consumption };
 }
 
 /** 이 달에 보여 줄 칸: 이 달에 적은 칸이 있으면 그것, 없으면 가장 최근에 적은 달의 칸 이름(금액 빈칸), 그것도 없으면 기본 칸 */
@@ -641,13 +667,23 @@ export const irregularLabel = (item: { label?: string; categoryId: string }) => 
 type RecordLike = { categoryId: string; amount: number; memo: string; payment?: Payment };
 
 export type IrregularMonthRow = { label: string; categoryId: string; expected: number; actual: number | null };
+export type IrregularMonth = {
+  rows: IrregularMonthRow[];
+  /** 1년 예산에 있는 분류지만 이번 달 몫이 아니거나 이름이 다른 기록(예: 경조사 예산 안의 축의금) — 모아 둔 돈에서 냄 */
+  inBudget: number;
+  /** 1년 예산에 없는 비정기 분류 기록 — 비상금에서 나간 돈. 다음 달에 채워 넣어야 한다 */
+  emergency: number;
+  /** inBudget + emergency */
+  others: number;
+  total: number;
+};
 
 /**
  * 그 달 비정기: 1년 예산(점검) 중 이 달에 나갈 몫(expected)과 실제 낸 기록(actual, 이름이 같은 세부 기록 합).
  * others = 예산에 없는 비정기 소분류 기록(경조사 등). total = Σ(실제가 있으면 실제, 없으면 예상) + others.
  * 1년 예산은 매달 1/12씩 떼어 두고 낼 때는 모아 둔 돈에서 내는 것으로 본다 — 여기 값은 그 달 카드 합계에서 빼서 변동 지출을 보기 위한 것.
  */
-export function irregularForMonth(input: FlowCheckInput | null, month: number, records: RecordLike[]): { rows: IrregularMonthRow[]; others: number; total: number } {
+export function irregularForMonth(input: FlowCheckInput | null, month: number, records: RecordLike[]): IrregularMonth {
   const rows: IrregularMonthRow[] = [];
   const used = new Set<RecordLike>();
   for (const item of input?.irregular ?? []) {
@@ -660,8 +696,11 @@ export function irregularForMonth(input: FlowCheckInput | null, month: number, r
     matched.forEach((r) => used.add(r));
     rows.push({ label, categoryId: item.categoryId, expected: base + (months[0] === month ? amount - base * months.length : 0), actual: matched.length > 0 ? matched.reduce((s, r) => s + cashEffect(r), 0) : null });
   }
-  const others = records.filter((r) => !used.has(r) && categoryById(r.categoryId)?.kind === "irregular").reduce((s, r) => s + cashEffect(r), 0);
-  return { rows, others, total: rows.reduce((s, r) => s + (r.actual ?? r.expected), 0) + others };
+  const budgetCategories = new Set((input?.irregular ?? []).map((item) => item.categoryId));
+  const rest = records.filter((r) => !used.has(r) && categoryById(r.categoryId)?.kind === "irregular");
+  const inBudget = rest.filter((r) => budgetCategories.has(r.categoryId)).reduce((s, r) => s + cashEffect(r), 0);
+  const emergency = rest.filter((r) => !budgetCategories.has(r.categoryId)).reduce((s, r) => s + cashEffect(r), 0);
+  return { rows, inBudget, emergency, others: inBudget + emergency, total: rows.reduce((s, r) => s + (r.actual ?? r.expected), 0) + inBudget + emergency };
 }
 
 export type IrregularYearRow = { label: string; budget: number; byYear: Record<string, number> };

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, seedExpenseTotal, seedFromCheck, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, monthSpending, seedExpenseTotal, seedFromCheck, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -237,7 +237,7 @@ const now = new Date('2026-10-06T03:00:00Z')
 
 test('빠른 기록 입력 검증: 미래 날짜·없는 소분류·포인트 종류·못 줄이는 몫 초과 거절', () => {
   const ok = { date: '2026-10-06', amount: 15170, memo: '냉동피자 4판', categoryId: 'grocery_ready' }
-  assert.deepEqual(normalizeFlowEntry(ok, now), { spent_on: '2026-10-06', amount: 15170, memo: '냉동피자 4판', category_id: 'grocery_ready', cut_level: null, must_part: null, payment: 'cash', for_whom: 'shared' })
+  assert.deepEqual(normalizeFlowEntry(ok, now), { spent_on: '2026-10-06', amount: 15170, memo: '냉동피자 4판', category_id: 'grocery_ready', cut_level: null, must_part: null, payment: 'cash', for_whom: 'shared', paid_with: 'card' })
   assert.equal(normalizeFlowEntry({ ...ok, date: '2026-10-07' }, now), null)
   assert.equal(normalizeFlowEntry({ ...ok, date: '2026-02-30' }, now), null)
   assert.equal(normalizeFlowEntry({ ...ok, amount: 0 }, now), null)
@@ -434,7 +434,7 @@ test('월 합계 칸: 이 달 칸 → 지난달 칸 이름(금액 빈칸) → �
   ]
   assert.deepEqual(slotsForMonth('2026-09', all).map((t) => [t.label, t.amount]), [['B카드', 300_000], ['포인트', 10_000]])
   assert.deepEqual(slotsForMonth('2026-10', all).map((t) => [t.label, t.kind, t.amount]), [['B카드', 'cash', null], ['포인트', 'point', null]])
-  assert.deepEqual(slotsForMonth('2026-07', all).map((t) => t.label), ['카드', '현금', '포인트'])
+  assert.deepEqual(slotsForMonth('2026-07', all).map((t) => t.label), ['카드'])
 })
 
 test('월 합계 저장 검증: 이번 달 이후·겹치는 이름·빈 이름·잘못된 종류는 거절, 빈 목록은 지우기', () => {
@@ -543,4 +543,33 @@ test('시드 지출 합계: 비정기 적립이 있는 달만 낸 달 실제 금
   assert.equal(seedExpenseTotal({ food: 100_000, water: 50_000, propertyTax: 300_000 }), 450_000)
   assert.equal(seedExpenseTotal({ food: 100_000, card: 700_000, irregularFund: 10_000, water: 5 }, ['card']), 110_000)
   assert.equal(seedExpenseTotal(undefined), 0)
+})
+
+test('현금: 메모의 "현금"으로 표시하고, 카드 합계 밖이라 더한다(환급도 뺀다)', () => {
+  assert.deepEqual(splitCashWord('축의금 현금'), { memo: '축의금', paidCash: true })
+  assert.deepEqual(splitCashWord('현금으로 시장 장보기'), { memo: '시장 장보기', paidCash: true })
+  assert.deepEqual(splitCashWord('스타벅스'), { memo: '스타벅스', paidCash: false })
+  assert.deepEqual(splitCashWord('망원시장 서울 페이'), { memo: '망원시장 서울 페이', paidCash: true })
+  assert.deepEqual(splitCashWord('엄마 송금'), { memo: '엄마 송금', paidCash: true })
+  const card = summarizeItems([{ categoryId: 'delivery', amount: 30_000 }])
+  const cash = summarizeItems([{ categoryId: 'occasion', amount: 100_000 }, { categoryId: 'grocery_mart', amount: 20_000 }, { categoryId: 'grocery_mart', amount: 5_000, payment: 'refund_once' as const }])
+  const s = monthSpending([{ label: 'A카드', kind: 'cash', amount: 1_500_000 }], card, cash)
+  assert.deepEqual([s.cashTotal, s.unrecordedCash, s.cashPaid, s.cash], [1_500_000, 1_470_000, 120_000, 1_615_000])
+  const now = new Date('2026-10-06T03:00:00Z')
+  const ok = { date: '2026-10-05', amount: 100_000, memo: '축의금', categoryId: 'occasion' }
+  assert.equal(normalizeFlowEntry(ok, now)?.paid_with, 'card')
+  assert.equal(normalizeFlowEntry({ ...ok, paidWith: 'cash' }, now)?.paid_with, 'cash')
+  assert.equal(normalizeFlowEntry({ ...ok, paidWith: 'point' }, now), null)
+  assert.equal(toEntry({ id: 'x', client_id: 'a', spent_on: '2026-10-05', amount: 1, memo: '', category_id: 'etc', payment: 'cash', paid_with: 'cash' }, 'a').paidWith, 'cash')
+  assert.equal(toEntry({ id: 'x', client_id: 'a', spent_on: '2026-10-05', amount: 1, memo: '', category_id: 'etc', payment: 'cash' }, 'a').paidWith, 'card')
+})
+
+test('비정기 예산 밖(비상금): 1년 예산에 있는 분류는 이름이 달라도 예산 안, 없는 분류만 비상금', () => {
+  const input = { monthlyIncome: 0, reserveMonthly: 0, fixed: [], variable: [], irregular: [{ categoryId: 'occasion', label: '경조사·명절', yearlyAmount: 1_200_000, months: [2, 9] }] }
+  const r = irregularForMonth(input, 5, [
+    { categoryId: 'occasion', amount: 100_000, memo: '축의금' },
+    { categoryId: 'big_item', amount: 300_000, memo: '세탁기' },
+    { categoryId: 'eat_out', amount: 50_000, memo: '외식' },
+  ])
+  assert.deepEqual([r.rows.length, r.inBudget, r.emergency, r.total], [0, 100_000, 300_000, 400_000])
 })
