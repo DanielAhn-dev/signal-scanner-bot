@@ -47,15 +47,20 @@ function bandCell(diffPp: number, outOfBand: boolean): string {
   return outOfBand ? `${d} <span class="rb-chip rb-sell">조정 필요</span>` : `${d} <span class="rb-chip rb-hold">범위 안</span>`
 }
 
-/** 같은 지수 상품 총보수 비교 — 자료가 둘 이상일 때만 */
+const eok = (v: number | null) => (v == null ? '-' : v >= 1e12 ? `${(v / 1e12).toFixed(1)}조` : `${Math.round(v / 1e8).toLocaleString('ko-KR')}억`)
+
+/** 같은 지수 상품 비교 — 총보수·시가총액·1년 수익률·괴리율과 상품별 판단 */
 function feeTable(r: RebalanceReport): string {
   if (r.feeCompare.length < 2) return ''
   const rows = r.feeCompare
-    .map((c) => `<tr><td class="rb-l">${c.chosen ? '<b>' : ''}${e(c.name)}${c.chosen ? '</b>' : ''}</td><td>${c.fee}%</td><td>${c.held ? '보유 중' : '-'}</td><td>${c.chosen ? '<span class="rb-chip rb-buy">새 돈은 여기로</span>' : ''}</td></tr>`)
+    .map((c) => `<tr>
+      <td class="rb-l">${c.chosen ? '<b>' : ''}${e(c.name)}${c.chosen ? '</b>' : ''}${c.held ? ' <span class="rb-muted">(보유 중)</span>' : ''}</td>
+      <td>${c.fee}%</td><td>${eok(c.marketCap)}</td><td>${c.return1y == null ? '-' : pct(c.return1y, 2)}</td><td>${c.deviation == null ? '-' : `${c.deviation.toFixed(2)}%`}</td>
+      <td class="rb-l">${c.chosen ? '<span class="rb-chip rb-buy">새 돈은 여기로</span>' : e(c.note)}</td></tr>`)
     .join('')
-  return `<p class="rb-muted" style="margin-top:10px">같은 지수 상품 총보수 비교 (연, 낮은 순)</p>
-    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>상품</th><th>총보수</th><th>이 계좌</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="rb-muted">총보수만 비교했습니다. 기타비용·매매비용을 더한 실부담비용, 거래량(호가 차이)도 다를 수 있습니다. 같은 지수끼리 갈아타려고 기존 보유를 팔 필요는 없습니다.</p>`
+  return `<p class="rb-muted" style="margin-top:10px">같은 지수 상품 비교 — ${e(r.feeWhy ?? '')}</p>
+    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>상품</th><th>총보수(연)</th><th>시가총액</th><th>1년 수익률</th><th>괴리율</th><th>판단</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="rb-muted">고르는 순서: ① 시가총액 1천억 미만·괴리율 ±1% 초과 제외 → ② 총보수 최저에서 0.01%p 안 → ③ 1년 수익률 최고에서 0.2%p 안(같은 지수라 차이는 기타비용·매매비용·추적 차이) → ④ 시가총액이 가장 큰 것. 이미 가진 상품이 ③까지 남으면 그대로 둡니다. 1년 수익률은 지난 1년의 결과일 뿐 앞으로를 보장하지 않습니다. 같은 지수끼리 갈아타려고 기존 보유를 팔 필요는 없습니다.</p>`
 }
 
 function section(title: string, body: string): string {

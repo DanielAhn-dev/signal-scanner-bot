@@ -5,13 +5,18 @@ import { resolveUiUserContext } from './_userContext'
 import { kstDateKey } from '../../src/services/virtualAutoTradeTiming'
 import { loadGoalFile } from '../../src/services/goalTracker'
 import { fetchGuidePrices, loadAccountPositionRows, loadGuideFile, toGuideHoldings } from '../../src/services/incomeGuideStore'
-import { fetchEtfKeyIndicators } from '../../src/services/etfKeyIndicator'
+import { fetchEtfKeyIndicators, type EtfKeyIndicator } from '../../src/services/etfKeyIndicator'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView } from '../../src/lib/incomeGuide'
 import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
 import { buildRebalanceReport, sameIndexKey, type EtfYield } from '../../src/lib/rebalanceReport'
 import { renderRebalanceReportHtml } from '../../src/services/rebalanceReportRender'
+
+/** 네이버 ETF 지표 → 리포트가 쓰는 값 (없으면 모두 null) */
+function toEtfYield(k: EtfKeyIndicator | null): EtfYield {
+  return { yieldTtm: k?.yieldTtm ?? null, fee: k?.fee ?? null, marketCap: k?.marketCap ?? null, return1y: k?.return1y ?? null, deviation: k?.deviation ?? null }
+}
 
 // 실계좌 리밸런싱 가이드 리포트 (계산 src/lib/rebalanceReport.ts, 렌더 src/services/rebalanceReportRender.ts)
 //   GET            → { ok, data: { accounts: [{ key, label, total, holdingCount }] } }  리포트 화면의 계좌 선택용
@@ -73,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchEtfKeyIndicators(etfCodes).catch(() => new Map()),
       fetchDropDayContext(null, null).catch(() => null),
     ])
-    const etf = new Map<string, EtfYield>([...etfMap.entries()].map(([code, k]) => [code, { yieldTtm: k.yieldTtm, fee: k.fee }]))
+    const etf = new Map<string, EtfYield>([...etfMap.entries()].map(([code, k]) => [code, toEtfYield(k)]))
     const baseInput = {
       view,
       plan,
@@ -104,7 +109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             code: String(p.code),
             name: String(p.name),
             price: peerPrices.prices.get(String(p.code)) ?? 0,
-            fee: fees.get(String(p.code))?.fee ?? null,
+            ...toEtfYield(fees.get(String(p.code)) ?? null),
           }))
           report = buildRebalanceReport({ ...baseInput, feeAlternatives }) ?? report
         }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView, type GuideHolding, type IncomeGuideSettings } from "../src/lib/incomeGuide";
 import { buildRebalancePlan } from "../src/lib/rebalancePlan";
-import { buildRebalanceReport, estimateSellCost, sameIndexKey } from "../src/lib/rebalanceReport";
+import { buildRebalanceReport, estimateSellCost, pickIndexProduct, sameIndexKey } from "../src/lib/rebalanceReport";
 import { renderRebalanceReportHtml } from "../src/services/rebalanceReportRender";
 
 const H = (code: string, name: string, price: number, quantity: number, avgPrice: number | null, account = "a"): GuideHolding => ({
@@ -159,4 +159,27 @@ test("같은 지수 상품 총보수가 0.01%p 이상 낮으면 새 돈은 그�
   const same = buildRebalanceReport({ view, plan, accountKey: "a", etf, feeAlternatives: [{ code: "999999", name: "TIGER 200TR", price: 12_000, fee: 0.045 }] })!;
   assert.equal(same.buy.target?.code, "278530");
   assert.equal(same.feeSwitch, null);
+});
+
+test("pickIndexProduct: 보수가 같으면 1년 수익률·시가총액으로, 작은 상품·큰 괴리율은 제외", () => {
+  const c = (code: string, name: string, fee: number, capEok: number | null, ret: number | null, dev: number | null = 0.05) => ({
+    code, name, price: 10_000, fee, marketCap: capEok == null ? null : capEok * 1e8, return1y: ret, deviation: dev,
+  });
+  const pool = [
+    c("A", "ACE 200TR", 0.01, 3_000, 92.1),
+    c("P", "PLUS 200TR", 0.01, 8_000, 92.2),
+    c("K", "KIWOOM 200TR", 0.01, 500, 92.3), // 작음
+    c("S", "SOL 200TR", 0.01, 9_000, 91.7), // 수익률 0.6%p 낮음
+    c("R", "RISE 200TR", 0.012, 12_000, 92.2, 1.5), // 괴리율 큼
+    c("X", "KODEX 200TR", 0.05, 61_000, 92.0),
+  ];
+  const pick = pickIndexProduct(pool, "X")!;
+  assert.equal(pick.chosen.code, "P", "ACE(첫 번째)가 아니라 조건을 모두 통과한 것 중 가장 큰 PLUS");
+  assert.match(pick.notes.get("K")!, /시가총액 500억/);
+  assert.match(pick.notes.get("S")!, /1년 수익률이 0.50%p 낮음/);
+  assert.match(pick.notes.get("R")!, /괴리율/);
+  assert.match(pick.notes.get("X")!, /총보수가 최저/);
+  assert.equal(pick.notes.get("A"), "조건은 같고 시가총액이 더 작음");
+  // 가진 상품이 최선 묶음이면 바꾸지 않는다
+  assert.equal(pickIndexProduct(pool, "A")!.chosen.code, "A");
 });
