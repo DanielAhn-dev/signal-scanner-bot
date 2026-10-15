@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -484,4 +484,17 @@ test('고정비 바뀐 기록: 소분류별로 나란히, 없던 항목은 빈�
   assert.deepEqual(h.rows.find((r) => r.categoryId === 'maintenance'), { categoryId: 'maintenance', amounts: [null, 280_000, 295_000], change: 15_000 })
   assert.deepEqual(h.rows.find((r) => r.categoryId === 'phone')?.change, null)
   assert.equal(fixedHistory([mk('2026-01-31', []), mk('2026-02-28', []), mk('2026-03-31', []), mk('2026-04-30', []), mk('2026-05-31', [])]).dates[0], '2026-02-28')
+})
+
+test('그 달 비정기: 고른 달에만, 여러 달이면 나눠서(나머지는 첫 달), 포인트는 제외', () => {
+  const input = { monthlyIncome: 0, reserveMonthly: 0, fixed: [], variable: [], irregular: [
+    { categoryId: 'tax', label: '재산세', yearlyAmount: 600_001, months: [9, 7] },
+    { categoryId: 'tax', label: '자동차세', yearlyAmount: 300_000, months: [1] },
+    { categoryId: 'travel', label: '여행', yearlyAmount: 100_000, months: [7], payment: 'point_once' as const },
+  ] }
+  assert.equal(irregularDueIn(input, 7), 300_001)
+  assert.equal(irregularDueIn(input, 9), 300_000)
+  assert.equal(irregularDueIn(input, 1), 300_000)
+  assert.equal(irregularDueIn(input, 2), 0)
+  assert.equal(evaluateFlowCheck({ ...input, irregular: input.irregular.slice(0, 2) }).irregularDueByMonth[7], 300_001)
 })

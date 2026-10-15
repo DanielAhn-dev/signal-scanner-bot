@@ -619,3 +619,16 @@ export function fixedHistory(checks: DatedCheck[], limit = 4): FixedHistory {
   });
   return { dates: recent.map((c) => c.date), rows };
 }
+
+/** 그 달(1~12)에 실제로 나가는 비정기 지출(현금). 1년 총액을 고른 달 수로 나눈 몫 — evaluateFlowCheck.irregularDueByMonth와 같은 나눔 */
+export function irregularDueIn(input: FlowCheckInput, month: number): number {
+  let total = 0;
+  for (const item of input.irregular) {
+    const months = [...new Set(item.months.filter((m) => Number.isInteger(m) && m >= 1 && m <= 12))].sort((a, b) => a - b);
+    if (!months.includes(month)) continue;
+    const amount = cashEffect({ amount: item.yearlyAmount, payment: item.payment });
+    const base = Math.trunc(amount / months.length);
+    total += base + (months[0] === month ? amount - base * months.length : 0);
+  }
+  return total;
+}

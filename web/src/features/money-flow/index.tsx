@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, irregularDueIn, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
@@ -414,7 +414,8 @@ export default function MoneyFlowPage() {
 const monthLabel = (month: string) => `${month.slice(0, 4)}년 ${Number(month.slice(5))}월`
 
 /**
- * 최근 6개월: 카드 합계 · 고정비 · 나머지(변동). 나머지 = 합계 − 그 달 고정비 기준(그 달 말일까지 저장한 가장 최근 점검)
+ * 최근 6개월: 카드 합계 · 고정비 · 비정기 · 나머지(변동). 나머지 = 합계 − 그 달 고정비 − 그 달에 나가는 비정기(점검에서 고른 달)
+ * 기준은 그 달 말일까지 저장한 가장 최근 점검. 재산세·자동차세처럼 그 달에만 나간 돈이 나머지를 부풀리지 않게 뺀다
  * 합계를 안 적은 달은 세부 기록 합이라 실제보다 적을 수 있어 나머지를 계산하지 않는다
  */
 function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], checks: SavedCheck[]) {
@@ -425,7 +426,8 @@ function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], 
     const cash = reconcileMonth(t, summarizeItems(e.map(toItem))).cash
     const check = checkForMonth(checks, m)
     const fixed = check ? fixedCashOf(check.input) : null
-    return [{ month: m, cash, fromTotals: t.length > 0, fixed, rest: t.length > 0 && fixed !== null ? cash - fixed : null }]
+    const irregular = check ? irregularDueIn(check.input, Number(m.slice(5))) : null
+    return [{ month: m, cash, fromTotals: t.length > 0, fixed, irregular, rest: t.length > 0 && fixed !== null ? cash - fixed - (irregular ?? 0) : null }]
   })
 }
 
@@ -437,7 +439,7 @@ function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month
       <h2>지출 추이</h2>
       <div className="mf-trend-wrap">
         <table className="mf-trend" aria-label="최근 6개월 지출 추이">
-          <thead><tr><th scope="col">달</th><th scope="col">카드 합계</th><th scope="col">고정비</th><th scope="col">나머지(변동)</th></tr></thead>
+          <thead><tr><th scope="col">달</th><th scope="col">카드 합계</th><th scope="col">고정비</th><th scope="col">비정기</th><th scope="col">나머지(변동)</th></tr></thead>
           <tbody>
             {rows.map((r, i) => {
               const prevRest = rows.slice(0, i).reverse().find((x) => x.rest !== null)?.rest ?? null
@@ -447,6 +449,7 @@ function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month
                   <th scope="row">{Number(r.month.slice(5))}월</th>
                   <td>{krw(r.cash)}{!r.fromTotals && <small>세부 합</small>}</td>
                   <td className="mf-trend-muted">{r.fixed === null ? '—' : krw(r.fixed)}</td>
+                  <td className="mf-trend-muted">{r.irregular === null || r.irregular === 0 ? '—' : krw(r.irregular)}</td>
                   <td>
                     {r.rest === null ? <span className="mf-trend-muted">—</span> : (
                       <span className="mf-trend-rest">
@@ -464,7 +467,7 @@ function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month
       </div>
       <p className="acc-note">
         {anyRest
-          ? '나머지 = 카드 합계 − 그 달 고정비(그 달까지 저장한 지금 상태 점검의 고정지출). 고정비를 뺀 장보기·물건·간식 같은 지출이 줄었는지 봅니다. '
+          ? '나머지 = 카드 합계 − 고정비 − 그 달에 나가는 비정기(그 달까지 저장한 지금 상태 점검 기준). 재산세·자동차세처럼 그 달에만 나간 돈을 빼고, 장보기·물건·간식 같은 지출이 줄었는지 봅니다. '
           : '지금 상태 점검을 저장하면 고정비를 뺀 나머지(변동 지출)도 달마다 보여 줍니다. '}
         합계를 안 적은 달은 세부 기록만 더한 값이라("세부 합") 나머지를 계산하지 않습니다. 환급은 뺀 금액입니다.
       </p>

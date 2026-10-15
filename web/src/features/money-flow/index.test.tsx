@@ -303,11 +303,11 @@ describe('월 합계 칸', () => {
 })
 
 describe('지출 추이', () => {
-  it('합계를 적은 달은 카드 합계 − 그 달 고정비 = 나머지(변동)와 전달 대비 증감을 보여 준다', async () => {
+  it('합계를 적은 달은 카드 합계 − 고정비 − 그 달 비정기 = 나머지(변동)와 전달 대비 증감을 보여 준다', async () => {
     const month = today.slice(0, 7)
     const [y, m] = month.split('-').map(Number)
     const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7)
-    const input = { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [], fixed: [{ categoryId: 'maintenance', amount: 900_000, label: '' }] }
+    const input = { monthlyIncome: 0, reserveMonthly: 0, variable: [], fixed: [{ categoryId: 'maintenance', amount: 900_000, label: '' }], irregular: [{ categoryId: 'tax', label: '자동차세', yearlyAmount: 300_000, months: [m] }] }
     apiFetchMock.mockResolvedValue({
       entries: [], rules: [],
       checks: [{ id: 'c1', date: `${prev}-01`, label: '', input }],
@@ -318,8 +318,9 @@ describe('지출 추이', () => {
     fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     const rows = [...screen.getByLabelText('최근 6개월 지출 추이').querySelectorAll('tbody tr')].map((tr) => tr.textContent)
     expect(rows).toEqual([
-      `${Number(prev.slice(5))}월1,700,000원900,000원800,000원`,
-      `${Number(month.slice(5))}월1,500,000원900,000원600,000원▼200,000원`,
+      `${Number(prev.slice(5))}월1,700,000원900,000원—800,000원`,
+      // 이번 달에 나간 자동차세 30만 원은 나머지(변동)에서 뺀다
+      `${Number(month.slice(5))}월1,500,000원900,000원300,000원300,000원▼500,000원`,
     ])
   })
 })
