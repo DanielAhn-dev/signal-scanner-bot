@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 
-const expenseKeys = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other', 'card', 'water', 'gas', 'residentTax', 'propertyTax', 'vehicleTax', 'taxAdjustment'] as const
+const expenseKeys = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other', 'irregularFund', 'card', 'water', 'gas', 'residentTax', 'propertyTax', 'vehicleTax', 'taxAdjustment'] as const
 const extraIncomeKeys = ['incentive', 'vacation', 'taxRefund', 'other'] as const
 const households = ['solo', 'single-income', 'dual-income'] as const
 const maxAmount = 100_000_000_000

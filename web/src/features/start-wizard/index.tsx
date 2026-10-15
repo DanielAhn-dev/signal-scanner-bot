@@ -23,7 +23,7 @@ import {
 import { userScopedKey, writeUserState } from '../../lib/userState'
 import { HOUSEHOLDS, useHouseholdIncome, type Household } from '../../lib/householdIncome'
 import { START_DONE_EVENT } from '../../lib/useStartGate'
-import { cashEffect, type FlowCheckInput, type FlowItem } from '../../../../src/lib/moneyFlow'
+import { cashEffect, seedExpenseTotal, type FlowCheckInput, type FlowItem } from '../../../../src/lib/moneyFlow'
 import './start-wizard.css'
 
 // 월수입·대출 같은 민감한 입력이라 사용자별 키로만 보관하고 로그아웃 때 지운다 (lib/userState.ts)
@@ -32,8 +32,7 @@ const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
 const man = formatKrwMan
 const num = (v: string) => { const n = Number(v.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? n : 0 }
 // 시드 만들기는 지출을 항목별로 받고 마법사는 카드값과 '그 밖의 고정지출' 두 칸만 받는다 — 카드 외 항목 합이 '그 밖의 고정지출'에 해당한다
-const nonCardExpenses = (expenses: Record<string, unknown> | undefined) =>
-  Object.entries(expenses ?? {}).reduce((sum, [k, v]) => (k === 'card' ? sum : sum + (Number(v) || 0)), 0)
+const nonCardExpenses = (expenses: Record<string, unknown> | undefined) => seedExpenseTotal(expenses, ['card'])
 // 돈 흐름 '지금 상태 점검'을 마법사 칸으로 옮긴다: 고정지출 → 그 밖의 고정지출, 변동 + 비정기 월할 → 카드값 (현금 기준, 포인트 제외, 환급은 뺌)
 export function wizardFromCheck(input: FlowCheckInput): { income: number; otherFixed: number; card: number } {
   const cash = (items: FlowItem[]) => items.reduce((sum, i) => sum + cashEffect(i), 0)

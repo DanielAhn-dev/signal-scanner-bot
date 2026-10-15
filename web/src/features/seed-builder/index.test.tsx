@@ -262,3 +262,26 @@ describe('우리 집 수입으로 채우기', () => {
     expect(screen.queryByText('저장 안 됨')).not.toBeInTheDocument()
   })
 })
+
+describe('비정기 1년 예산(비정기 적립)', () => {
+  it('비정기 적립을 떼는 달은 낸 달 실제 금액(수도·세금)을 지출 합계에 다시 더하지 않는다', async () => {
+    const today = new Date()
+    const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    apiFetchMock.mockResolvedValue({ data: [{ month: currentMonth, household: 'solo', ownIncome: 2_000_000, partnerIncome: 0, reserve: 0, plan: 0, status: 'recorded', entries: [],
+      expenses: { food: 100_000, irregularFund: 125_000, water: 50_000, propertyTax: 300_000 }, extraIncome: {} }] })
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('225,000원'))
+  })
+
+  it('점검 값을 가져오면 비정기는 1년 예산 ÷ 12를 비정기 적립 한 칸으로 채운다', async () => {
+    const input = { monthlyIncome: 3_000_000, reserveMonthly: 0, variable: [], fixed: [{ categoryId: 'rent', amount: 900_000 }],
+      irregular: [{ categoryId: 'tax', label: '재산세', yearlyAmount: 600_000, months: [7, 9] }] }
+    apiFetchMock.mockImplementation((path: string) => Promise.resolve(String(path).includes('money-flow') ? { checks: [{ date: '2026-10-01', input }] } : { data: [] }))
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await openEditor()
+    fireEvent.click(await screen.findByRole('button', { name: '지금 상태 점검 값으로 지출 채우기' }))
+    fireEvent.click(screen.getByRole('button', { name: '세금·카드대금 등도 입력' }))
+    expect((screen.getByLabelText(/비정기 적립/) as HTMLInputElement).value).toBe('50000')
+    expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('950,000원')
+  })
+})

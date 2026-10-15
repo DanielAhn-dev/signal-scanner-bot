@@ -687,3 +687,21 @@ export function seedFromCheck(input: FlowCheckInput): { expenses: Record<SeedExp
     irregularFund: Math.max(0, input.irregular.reduce((s, item) => s + cashEffect({ amount: irregularMonthly(item), payment: item.payment }), 0)),
   };
 }
+
+/** 시드 만들기 한 달 기록에서 낸 달에 적는 비정기 실제 금액 칸 */
+export const SEED_IRREGULAR_ACTUAL_KEYS = ["water", "gas", "residentTax", "propertyTax", "vehicleTax", "taxAdjustment"] as const;
+
+/**
+ * 시드 만들기 한 달 지출 합계. 비정기 적립(1년 예산 ÷ 12)을 떼는 달은 비정기를 모아 둔 돈에서 내므로
+ * 낸 달 실제 금액 칸(수도·세금 등)을 다시 더하지 않는다. 적립이 없으면 예전처럼 낸 달에 지출로 본다.
+ * exclude: 따로 보는 칸(예: 시작 마법사의 카드값)
+ */
+export function seedExpenseTotal(expenses: Record<string, unknown> | undefined, exclude: string[] = []): number {
+  const values = expenses ?? {};
+  const fund = Number(values.irregularFund) || 0;
+  return Object.entries(values).reduce((sum, [key, value]) => {
+    if (exclude.includes(key)) return sum;
+    if (fund > 0 && (SEED_IRREGULAR_ACTUAL_KEYS as readonly string[]).includes(key)) return sum;
+    return sum + (Number(value) || 0);
+  }, 0);
+}

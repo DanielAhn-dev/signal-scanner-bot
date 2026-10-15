@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, seedFromCheck, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, seedExpenseTotal, seedFromCheck, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -536,4 +536,11 @@ test('비정기 이력: 항목별 연도 합, 시드로는 1년 예산 ÷ 12를 
   assert.equal(seed.irregularFund, 125_000)
   assert.equal(seed.expenses.housing, 900_000)
   assert.equal(seed.expenses.tax, 0)
+})
+
+test('시드 지출 합계: 비정기 적립이 있는 달만 낸 달 실제 금액 칸을 빼고, 따로 볼 칸은 제외', () => {
+  assert.equal(seedExpenseTotal({ food: 100_000, irregularFund: 125_000, water: 50_000, propertyTax: 300_000 }), 225_000)
+  assert.equal(seedExpenseTotal({ food: 100_000, water: 50_000, propertyTax: 300_000 }), 450_000)
+  assert.equal(seedExpenseTotal({ food: 100_000, card: 700_000, irregularFund: 10_000, water: 5 }, ['card']), 110_000)
+  assert.equal(seedExpenseTotal(undefined), 0)
 })

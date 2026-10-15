@@ -3,6 +3,7 @@ import { formatKrwMan } from '../../lib/format'
 import { apiFetch } from '../../lib/api'
 import { useCurrentChatId } from '../../stores/profileStore'
 import type { LifePlan } from '../../../../src/services/goalTracker'
+import { seedExpenseTotal } from '../../../../src/lib/moneyFlow'
 
 export type GoalView = {
   today: string
@@ -75,7 +76,6 @@ export function useGoalTracker() {
 
 export type MonthlySurplus = { average: number; months: string[] }
 
-const sum = (o: unknown) => Object.values((o ?? {}) as Record<string, unknown>).reduce<number>((a, v) => a + (Number(v) || 0), 0)
 
 /**
  * 우리 집 매달 남는 돈 = 고정 수입(본인 + 맞벌이 배우자) − 지출 − 예비비. 보너스·환급 같은 비정기 수입은 뺀다.
@@ -98,7 +98,7 @@ export function useMonthlySurplus(today: string | undefined): MonthlySurplus | n
         .filter((r: any) => r?.status !== 'skipped' && String(r?.month) <= today.slice(0, 7))
         .map((r: any) => {
           const income = (Number(r.ownIncome) || 0) + (r.household === 'dual-income' ? Number(r.partnerIncome) || 0 : 0)
-          return { month: String(r.month), income, left: income - sum(r.expenses) - (Number(r.reserve) || 0) }
+          return { month: String(r.month), income, left: income - seedExpenseTotal(r.expenses) - (Number(r.reserve) || 0) }
         })
         .filter((r) => r.income > 0)
         .sort((x, y) => x.month.localeCompare(y.month))
