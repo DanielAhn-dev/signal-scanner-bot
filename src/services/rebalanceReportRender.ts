@@ -40,6 +40,12 @@ const STYLE = `<style>
   @media (max-width:720px) { .rb-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>`
 
+/** 목표와의 차이(%p)와 판정 — ±10%p 안이면 그대로, 밖이면 조정 */
+function bandCell(diffPp: number, outOfBand: boolean): string {
+  const d = `${diffPp > 0 ? '+' : ''}${diffPp.toFixed(1)}%p`
+  return outOfBand ? `${d} <span class="rb-chip rb-sell">조정 필요</span>` : `${d} <span class="rb-chip rb-hold">범위 안</span>`
+}
+
 function section(title: string, body: string): string {
   return `<section class="report-section"><h2>${e(title)}</h2>${body}</section>`
 }
@@ -67,13 +73,13 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
   // 1. 계좌 구성
   const groupRows = r.accountGroups.map((g) => `<tr><td class="rb-l">${e(g.label)}</td><td>${man(g.value)}</td><td>${g.pct.toFixed(1)}%</td></tr>`).join('')
   const pRows = r.portfolio.groups
-    .map((g) => `<tr><td class="rb-l">${e(g.label)}</td><td>${g.actualPct.toFixed(1)}%</td><td>${g.targetPct.toFixed(1)}%</td><td>${g.outOfBand ? '<span class="rb-chip rb-sell">밴드 밖</span>' : '안'}</td></tr>`)
+    .map((g) => `<tr><td class="rb-l">${e(g.label)}</td><td>${g.actualPct.toFixed(1)}%</td><td>${g.targetPct.toFixed(1)}%</td><td>${bandCell(g.actualPct - g.targetPct, g.outOfBand)}</td></tr>`)
     .join('')
   parts.push(section('1. 계좌 구성', `
     <p>${e(a.label)} · ${a.taxAdvantaged ? '절세 계좌(ISA·연금)' : '일반 계좌'} · ${a.holdingCount}종목</p>
     <div class="rb-wrap"><table class="rb-table"><thead><tr><th>바구니</th><th>평가금액</th><th>계좌 안 비중</th></tr></thead><tbody>${groupRows}</tbody></table></div>
-    <p class="rb-muted">전체 실계좌 ${r.portfolio.accountCount}개(${man(r.portfolio.total)}) 기준 목표 — ${r.portfolio.targetSource === 'custom' ? '직접 정한 목표' : '단계 기본 목표'}, ±10%p 밖일 때만 팔아서 맞춥니다.</p>
-    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>바구니(전체)</th><th>지금</th><th>목표</th><th>±10%p</th></tr></thead><tbody>${pRows}</tbody></table></div>`))
+    <p class="rb-muted">전체 실계좌 ${r.portfolio.accountCount}개(${man(r.portfolio.total)}) 기준 목표 — ${r.portfolio.targetSource === 'custom' ? '직접 정한 목표' : '단계 기본 목표'}. 목표와 차이가 ±10%p 안이면 팔지 않고 새 돈·분배금 방향으로만 맞추고, 밖으로 벗어난 바구니만 팔아서 맞춥니다.</p>
+    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>바구니(전체)</th><th>지금</th><th>목표</th><th>목표와 차이</th></tr></thead><tbody>${pRows}</tbody></table></div>`))
 
   // 2. 인컴
   const inc = r.income
