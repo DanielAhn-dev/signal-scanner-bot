@@ -16,6 +16,7 @@ import os
 import re
 import time
 import urllib.request
+from datetime import datetime, timedelta
 
 OUT = ".research-cache/index_etfs"
 
@@ -31,7 +32,7 @@ def http(url: str) -> str:
 
 def fetch_prices(code: str) -> list:
     url = (f"https://api.finance.naver.com/siseJson.naver?symbol={code}&requestType=1"
-           f"&startTime=20000101&endTime=20261231&timeframe=day")
+           f"&startTime=20000101&endTime={(datetime.now() - timedelta(days=1)):%Y%m%d}&timeframe=day")
     text = http(url)
     rows = re.findall(r"\[\"(\d{8})\",\s*[\d.]+,\s*[\d.]+,\s*[\d.]+,\s*([\d.]+),", text)
     return [[d, float(c) if "." in c else int(c)] for d, c in rows]

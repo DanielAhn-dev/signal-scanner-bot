@@ -17,7 +17,7 @@ import re
 import sys
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -41,14 +41,20 @@ def http(url, enc="utf-8"):
     return urllib.request.urlopen(req, timeout=30).read().decode(enc, "replace")
 
 
+def last_closed_day():
+    # 오늘 행은 장중 미완성 값일 수 있어 어제까지만 받는다
+    return (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+
+
 def fetch_kr(code):
-    t = http(f"https://api.finance.naver.com/siseJson.naver?symbol={code}&requestType=1&startTime=20000101&endTime=20261231&timeframe=day")
+    t = http(f"https://api.finance.naver.com/siseJson.naver?symbol={code}&requestType=1&startTime=20000101&endTime={last_closed_day()}&timeframe=day")
     rows = re.findall(r"\[\"(\d{8})\",\s*[\d.]+,\s*[\d.]+,\s*[\d.]+,\s*([\d.]+),", t)
     return [[d, float(c)] for d, c in rows]
 
 
 def fetch_us(sym):
-    u = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?period1=0&period2=1790000000&interval=1d&includeAdjustedClose=true"
+    # period2를 고정값(1790000000 = 2026-09-21)으로 두면 그 뒤가 영영 안 받아져 지금 시각을 쓴다
+    u = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?period1=0&period2={int(time.time())}&interval=1d&includeAdjustedClose=true"
     j = json.loads(http(u))["chart"]["result"][0]
     ts, q = j["timestamp"], j["indicators"]["quote"][0]["close"]
     adj = j["indicators"].get("adjclose", [{}])[0].get("adjclose") or q
@@ -57,7 +63,7 @@ def fetch_us(sym):
         if c is None or a is None:
             continue
         rows.append([datetime.fromtimestamp(t, timezone.utc).strftime("%Y%m%d"), a, c])
-    return rows
+    return [r for r in rows if r[0] <= last_closed_day()]
 
 
 def env_key(name):
@@ -76,7 +82,7 @@ def fetch_cd91(key):
     # 817Y002(시장금리 일별) 010502000 = CD(91일)
     rows, start = [], 1
     while True:
-        u = f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/{start}/10000/817Y002/D/19980101/20261231/010502000"
+        u = f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/{start}/10000/817Y002/D/19980101/{last_closed_day()}/010502000"
         j = json.loads(http(u))
         if "StatisticSearch" not in j:
             print("  ECOS 응답:", str(j)[:200])
