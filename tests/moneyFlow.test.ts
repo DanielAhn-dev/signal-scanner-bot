@@ -606,3 +606,10 @@ test('시드 계획: 고정·변동·비정기 적립을 항목 내역과 함께
   assert.deepEqual([noTotals.variable.source, noTotals.variable.total], ['check', 500_000])
   assert.equal(seedPlanFromFlow({ baseMonth: '2026-09', check: null, totals, records }).variable.source, 'none')
 })
+
+test('아이 돌봄비: 고정·못 줄임, "부모님 돌봄비 송금"은 돌봄비로 분류하고 송금이라 현금', () => {
+  assert.deepEqual([categoryById('family_care')?.kind, categoryById('family_care')?.cut], ['fixed', 'must'])
+  assert.equal(classifyMemo('부모님 돌봄비 송금').categoryId, 'family_care')
+  assert.equal(classifyMemo('부모님 용돈').categoryId, 'family_parents')
+  assert.equal(splitCashWord('부모님 돌봄비 송금').paidCash, true)
+})
