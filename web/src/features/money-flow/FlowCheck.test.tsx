@@ -187,8 +187,8 @@ describe('고정비 바뀐 기록', () => {
     })
     renderCheck()
     const table = await screen.findByLabelText('고정비 바뀐 기록')
-    const row = [...table.querySelectorAll('tbody tr')].find((tr) => tr.textContent?.startsWith('전기·가스·수도'))!
-    expect(row.textContent).toBe('전기·가스·수도123,000원90,000원−33,000원')
+    const row = [...table.querySelectorAll('tbody tr')].find((tr) => tr.textContent?.startsWith('전기·가스'))!
+    expect(row.textContent).toBe('전기·가스123,000원90,000원−33,000원')
   })
 })
 
