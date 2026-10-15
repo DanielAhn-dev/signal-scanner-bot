@@ -195,6 +195,19 @@ async function handlePost(supabase: any, clientId: string, body: any, res: Verce
   if (action === 'save-check') {
     const check = normalizeFlowCheck(body)
     if (!check) return res.status(400).json({ error: 'Invalid check' })
+    // 예산은 달마다 하나: 같은 달에 이미 저장한 게 있으면 그 달 최신 것을 덮어쓴다(고치다 여러 번 눌러도 기록이 쌓이지 않게)
+    const month = check.checked_on.slice(0, 7)
+    const [y, m] = month.split('-').map(Number)
+    const nextMonth = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`
+    const { data: existing, error: readError } = await supabase.from('money_flow_checks').select('id')
+      .eq('client_id', clientId).gte('checked_on', `${month}-01`).lt('checked_on', nextMonth)
+      .order('checked_on', { ascending: false }).order('created_at', { ascending: false }).limit(1)
+    if (readError) return res.status(500).json({ error: readError.message })
+    if (existing && existing.length > 0) {
+      const { error } = await supabase.from('money_flow_checks').update(check).eq('client_id', clientId).eq('id', existing[0].id)
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ ok: true, id: existing[0].id, replaced: true })
+    }
     const { data, error } = await supabase.from('money_flow_checks').insert({ ...check, client_id: clientId }).select('id').single()
     if (error) return res.status(500).json({ error: error.message })
     return res.status(200).json({ ok: true, id: data.id })
