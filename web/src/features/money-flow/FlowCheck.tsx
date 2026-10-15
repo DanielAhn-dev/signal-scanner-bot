@@ -7,12 +7,13 @@ import { MAX_CHILDREN, sanitizeChildState, type Child, type ChildGiftState } fro
 import { useUserState } from '../../lib/userState'
 import { EMPTY_HOUSEHOLD_INCOME, HOUSEHOLDS, householdTotal, useHouseholdIncome, withHousehold, type HouseholdIncome } from '../../lib/householdIncome'
 import {
-  FLOW_CATEGORIES, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, toSeedExpenses,
-  type CutLevel, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
+  FLOW_CATEGORIES, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, reconcileMonth, summarizeItems, toSeedExpenses,
+  type CutLevel, type MonthTotal as MonthTotalBase, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
 } from '../../../../src/lib/moneyFlow'
 
 export type SavedCheck = { id: string; date: string; label: string; input: FlowCheckInput }
 type Entry = { date: string; amount: number; categoryId: string; payment: Payment; cut: CutLevel | null; mustPart: number | null }
+type MonthTotal = MonthTotalBase & { month: string }
 type Row = FlowItem & { key: string }
 type IrrRow = IrregularItem & { key: string }
 
@@ -158,7 +159,7 @@ function IrregularRows({ rows, setRows }: { rows: IrrRow[]; setRows: (rows: IrrR
   )
 }
 
-export default function FlowCheck({ entries, checks, onSaved, fromStart }: { entries: Entry[]; checks: SavedCheck[]; onSaved: () => Promise<void> | void; fromStart: boolean }) {
+export default function FlowCheck({ entries, totals = [], checks, onSaved, fromStart }: { entries: Entry[]; totals?: MonthTotal[]; checks: SavedCheck[]; onSaved: () => Promise<void> | void; fromStart: boolean }) {
   const navigate = useNavigate()
   const childStore = useUserState<ChildGiftState>('childGifts')
   const childState = useMemo(() => sanitizeChildState(childStore.value), [childStore.value])
@@ -197,8 +198,18 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
   const dual = household.household === 'dual-income'
 
   // 가장 최근에 기록한 달(이번 달 포함)의 지출로 채운다 — 매달 적지 않아도 마지막 기록이 기준
-  const recordedMonth = entries.map((e) => e.date.slice(0, 7)).sort().pop() ?? null
-  const recordedRows = useMemo(() => (recordedMonth ? rowsFromEntries(entries.filter((e) => e.date.startsWith(recordedMonth))) : null), [entries, recordedMonth])
+  const recordedMonth = [...entries.map((e) => e.date.slice(0, 7)), ...totals.map((t) => t.month)].sort().pop() ?? null
+  const recordedRows = useMemo(() => {
+    if (!recordedMonth) return null
+    const monthEntries = entries.filter((e) => e.date.startsWith(recordedMonth))
+    const rows = rowsFromEntries(monthEntries)
+    // 월 합계를 적은 달이면 세부 기록과의 차액을 '세부 안 적음' 한 줄로 더한다(어디에 썼는지 몰라 줄일 수 있나는 기본값)
+    const gap = reconcileMonth(totals.filter((t) => t.month === recordedMonth), summarizeItems(monthEntries.map((e) => ({ categoryId: e.categoryId, amount: e.amount, payment: e.payment }))))
+    const label = categoryById(UNRECORDED_CATEGORY_ID)!.label
+    if (gap.unrecordedCash > 0) rows.variable.push({ key: newKey(), categoryId: UNRECORDED_CATEGORY_ID, label, amount: gap.unrecordedCash, payment: 'cash' })
+    if (gap.unrecordedPoint > 0) rows.variable.push({ key: newKey(), categoryId: UNRECORDED_CATEGORY_ID, label, amount: gap.unrecordedPoint, payment: 'point_regular' })
+    return rows
+  }, [entries, totals, recordedMonth])
   // 고정지출은 기준(평소 금액)이라 한 달 실제로 덮지 않는다. 공과금처럼 달마다 조금씩 다른 건 옆에 기록 금액만 보여 준다
   const fixedActual: Actual | undefined = recordedMonth && recordedRows ? { month: recordedMonth, byKey: new Map(recordedRows.fixed.map((r) => [rowKey(r), r.amount])) } : undefined
   const fillFromRecords = () => {

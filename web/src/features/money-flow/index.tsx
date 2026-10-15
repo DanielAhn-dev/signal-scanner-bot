@@ -4,11 +4,12 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, categoryById, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, splitPartnerWord, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, classifyMemo, compareSummaries, detectPayment, isRefund, needsItemName, parseQuickLines, reconcileMonth, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
 import MaturityTab from './MaturityTab'
+import MonthTotals, { shiftMonth, type MonthTotalRow } from './MonthTotals'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
 
@@ -22,11 +23,6 @@ type EditForm = { id: string; date: string; amount: number; memo: string; catego
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const kstToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
-const shiftMonth = (month: string, delta: number) => {
-  const [y, m] = month.split('-').map(Number)
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-}
 const monthEnd = (month: string) => {
   const [y, m] = month.split('-').map(Number)
   return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
@@ -51,6 +47,7 @@ function CategorySelect({ value, onChange, label }: { value: string; onChange: (
   const groups = useMemo(() => {
     const map = new Map<string, typeof FLOW_CATEGORIES>()
     for (const c of FLOW_CATEGORIES) {
+      if (c.id === UNRECORDED_CATEGORY_ID) continue
       const key = `${KIND_LABEL[c.kind]} · ${c.major}`
       map.set(key, [...(map.get(key) ?? []), c])
     }
@@ -80,6 +77,8 @@ export default function MoneyFlowPage() {
   const [deleted, setDeleted] = useState<Entry[]>([])
   const [rules, setRules] = useState<LearnedRule[]>([])
   const [partnerShared, setPartnerShared] = useState(false)
+  const [totals, setTotals] = useState<MonthTotalRow[]>([])
+  const [totalsReady, setTotalsReady] = useState(true)
   const [scope, setScope] = useState<'home' | 'me'>('home')
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
@@ -99,6 +98,8 @@ export default function MoneyFlowPage() {
       setDeleted(Array.isArray(res?.deleted) ? res.deleted : [])
       setRules(Array.isArray(res?.rules) ? res.rules : [])
       setPartnerShared(res?.partnerShared === true)
+      setTotals(Array.isArray(res?.totals) ? res.totals : [])
+      setTotalsReady(res?.totalsReady !== false)
       setChecks(Array.isArray(res?.checks) ? res.checks : [])
       setChecksLoaded(true)
     } catch (error) {
@@ -112,9 +113,12 @@ export default function MoneyFlowPage() {
   // 부부 연결로 상대 기록이 오면 '우리 집 합계'와 '배우자 것 빼고'를 고를 수 있다. 누가 적었든 배우자 것만 빠지고 공용은 남는다
   // 부부 연결 없이 혼자 둘 몫을 적는 사람도 있으니, 직접 골랐을 때만 거른다
   const scoped = partnerShared && scope === 'me' ? entries.filter((e) => whomOf(e) !== 'partner') : entries
+  // 월 합계는 카드 단위라 누구 몫으로 나눌 수 없다. '배우자 것 빼고'에서는 내가 적은 칸만 센다
+  const scopedTotals = partnerShared && scope === 'me' ? totals.filter((t) => t.mine) : totals
   const monthEntries = scoped.filter((e) => e.date.startsWith(month))
-  // 기준 = 이 달 이전에 기록이 있는 가장 최근 달. 그사이 달을 건너뛰었어도 그 기록이 기준으로 남는다
-  const baseMonth = scoped.map((e) => e.date.slice(0, 7)).filter((m) => m < month).sort().pop() ?? null
+  const monthDetail = summarizeItems(monthEntries.map(toItem))
+  // 기준 = 이 달 이전에 기록(세부 또는 합계)이 있는 가장 최근 달. 그사이 달을 건너뛰었어도 그 기록이 기준으로 남는다
+  const baseMonth = [...scoped.map((e) => e.date.slice(0, 7)), ...scopedTotals.map((t) => t.month)].filter((m) => m < month).sort().pop() ?? null
   const baseEntries = baseMonth ? scoped.filter((e) => e.date.startsWith(baseMonth)) : []
   const suggestions = suggestCategories(entries.filter((e) => e.mine !== false).slice(0, 60).map((e) => e.categoryId))
 
@@ -260,7 +264,7 @@ export default function MoneyFlowPage() {
       <header>
         <p className="acc-eyebrow">돈 흐름</p>
         <h1>지출, 줄일 수 있는 것과 없는 것</h1>
-        <p>한 달만 적어 봐도 지출 구조가 보입니다. 매달 적을 필요는 없고, 다시 적는 달은 마지막으로 적은 달과 비교합니다. 쓴 직후 한 줄로 적으면 알아서 나눕니다. 포인트로 낸 것도 소비에 넣고, 현금 지출과 따로 봅니다. 화면은 줄이라고 판단하지 않습니다.</p>
+        <p>카드·현금·포인트별 한 달 합계만 적어도 흐름이 보입니다. 어디에 썼는지는 적을 수 있을 때만 자세히 적으면 되고, 다 맞추지 않아도 됩니다. 포인트로 낸 것도 소비에 넣고, 현금 지출과 따로 봅니다. 화면은 줄이라고 판단하지 않습니다.</p>
       </header>
 
       <section className="acc-card">
@@ -286,8 +290,10 @@ export default function MoneyFlowPage() {
 
       {tab === 'record' && (
         <>
-          <section className="acc-card">
-            <h2>빠른 기록</h2>
+          <MonthTotals month={month} thisMonth={thisMonth} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} detail={monthDetail} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
+
+          <details className="acc-card mf-detail">
+            <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">어디에 썼는지까지 보고 싶을 때만. 한 결제를 품목까지 나눌 필요는 없어요.</span></summary>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
               <small className="acc-note">가게 이름과 금액만 적어도 됩니다. 자세한 규칙은 아래 "쓰는 법"에서 봅니다.</small>
@@ -317,14 +323,10 @@ export default function MoneyFlowPage() {
                 <button type="button" className="acc-primary" onClick={saveDrafts} disabled={saving}>{saving ? '저장 중…' : `${drafts.length}건 저장`}</button>
               </div>
             )}
-          </section>
+          </details>
 
           <section className="acc-card">
-            <div className="mf-month-nav">
-              <button type="button" aria-label="이전 달" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={18} /></button>
-              <h2>{month.replace('-', '년 ')}월 기록 {monthEntries.length}건</h2>
-              <button type="button" aria-label="다음 달" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth}><ChevronRight size={18} /></button>
-            </div>
+            <h2>{month.replace('-', '년 ')}월 세부 기록 {monthEntries.length}건</h2>
             {loading ? <p className="acc-note">불러오는 중…</p> : monthEntries.length === 0 ? <p className="acc-note">아직 기록이 없습니다.</p> : (
               <ul className="mf-list">
                 {monthEntries.map((e) => {
@@ -397,12 +399,12 @@ export default function MoneyFlowPage() {
       )}
 
       {tab === 'check' && (checksLoaded
-        ? <FlowCheck entries={scoped} checks={checks} onSaved={load} fromStart={fromStart} />
+        ? <FlowCheck entries={scoped} totals={scopedTotals} checks={checks} onSaved={load} fromStart={fromStart} />
         : <p className="acc-note mf-notice">불러오는 중…</p>)}
 
       {tab === 'maturity' && <MaturityTab />}
 
-      {tab === 'month' && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
+      {tab === 'month' && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} allEntries={scoped} totals={scopedTotals} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
 
       <p className="acc-note mf-foot">기록은 본인 계정에 저장되고, <Link to="/family">부부 연결</Link>에서 지출 공유를 켠 배우자만 함께 봅니다. 투자 가능액 계산은 <Link to="/seed-builder">시드 만들기</Link>에서 합니다.</p>
     </div>
@@ -411,8 +413,43 @@ export default function MoneyFlowPage() {
 
 const monthLabel = (month: string) => `${month.slice(0, 4)}년 ${Number(month.slice(5))}월`
 
-function MonthView({ month, thisMonth, setMonth, entries, baseMonth, baseEntries, loading }: { month: string; thisMonth: string; setMonth: (m: string) => void; entries: Entry[]; baseMonth: string | null; baseEntries: Entry[]; loading: boolean }) {
+/** 최근 6개월 현금 지출. 합계를 적은 달은 합계 기준, 아니면 세부 기록 합. 둘 다 없는 달은 건너뛴다 */
+function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[]) {
+  return Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).flatMap((m) => {
+    const t = totals.filter((x) => x.month === m)
+    const e = allEntries.filter((x) => x.date.startsWith(m))
+    if (t.length === 0 && e.length === 0) return []
+    return [{ month: m, cash: reconcileMonth(t, summarizeItems(e.map(toItem))).cash, fromTotals: t.length > 0 }]
+  })
+}
+
+function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month: string }) {
+  const max = Math.max(1, ...rows.map((r) => r.cash))
+  return (
+    <section className="acc-card">
+      <h2>현금 지출 추이</h2>
+      <ul className="mf-trend" aria-label="최근 6개월 현금 지출">
+        {rows.map((r) => (
+          <li key={r.month} className={r.month === month ? 'is-current' : ''} title={`${monthLabel(r.month)} ${krw(r.cash)}${r.fromTotals ? '' : ' (세부 기록 합)'}`}>
+            <span className="mf-trend-month">{Number(r.month.slice(5))}월</span>
+            <span className="mf-trend-track"><span className="mf-trend-bar" style={{ width: `${(Math.max(0, r.cash) / max) * 100}%` }} /></span>
+            <span className="mf-trend-value">{krw(r.cash)}{!r.fromTotals && <small>세부 합</small>}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="acc-note">합계를 적은 달은 합계 기준이고, 안 적은 달은 세부 기록을 더한 값이라 실제보다 적을 수 있습니다("세부 합" 표시). 환급은 뺀 금액입니다.</p>
+    </section>
+  )
+}
+
+function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, baseMonth, baseEntries, loading }: { month: string; thisMonth: string; setMonth: (m: string) => void; entries: Entry[]; allEntries: Entry[]; totals: MonthTotalRow[]; baseMonth: string | null; baseEntries: Entry[]; loading: boolean }) {
   const summary = useMemo(() => summarizeItems(entries.map(toItem)), [entries])
+  const monthTotals = totals.filter((t) => t.month === month)
+  const hasTotals = monthTotals.length > 0
+  const rec = reconcileMonth(monthTotals, summary)
+  const unrecorded = rec.unrecordedCash + rec.unrecordedPoint
+  const refunds = summary.refundRegular + summary.refundOnce
+  const trend = trendRows(month, allEntries, totals)
   // 공용이 아닌 기록이 하나라도 있으면 공용·나·배우자 현금(환급 뺀)과 돌려받은 돈을 나눠 보여 준다
   const byWho = useMemo(() => {
     if (entries.every((e) => whomOf(e) === 'shared')) return null
@@ -423,7 +460,7 @@ function MonthView({ month, thisMonth, setMonth, entries, baseMonth, baseEntries
   const prev = useMemo(() => summarizeItems(baseEntries.map(toItem)), [baseEntries])
   const changes = compareSummaries(prev, summary).filter((c) => c.difference !== 0).slice(0, 5)
   const cut = summary.cashByCut
-  const cashTotal = Math.max(1, cut.must + cut.trim + cut.drop)
+  const cashTotal = Math.max(1, cut.must + cut.trim + cut.drop + rec.unrecordedCash)
   return (
     <>
       <section className="acc-card">
@@ -432,12 +469,13 @@ function MonthView({ month, thisMonth, setMonth, entries, baseMonth, baseEntries
           <h2>{month.replace('-', '년 ')}월</h2>
           <button type="button" aria-label="다음 달" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth}><ChevronRight size={18} /></button>
         </div>
-        {loading ? <p className="acc-note">불러오는 중…</p> : entries.length === 0 ? <p className="acc-note">이 달은 기록하지 않았습니다. 매달 적을 필요는 없습니다.{baseMonth && ` 지금 기준은 ${monthLabel(baseMonth)} 기록입니다.`}</p> : (
+        {loading ? <p className="acc-note">불러오는 중…</p> : entries.length === 0 && !hasTotals ? <p className="acc-note">이 달은 기록하지 않았습니다. 매달 적을 필요는 없습니다.{baseMonth && ` 지금 기준은 ${monthLabel(baseMonth)} 기록입니다.`}</p> : (
           <>
             <dl className="acc-tiles">
-              <div className="is-main"><dt>현금 지출</dt><dd>{krw(summary.cash)}</dd>{summary.refundRegular + summary.refundOnce > 0 && <small>돌려받은 {krw(summary.refundRegular + summary.refundOnce)}을 뺀 금액</small>}</div>
-              <div><dt>생활 소비(포인트 포함)</dt><dd>{krw(summary.consumption)}</dd></div>
-              <div><dt>포인트·환급이 메운 금액</dt><dd>{krw(summary.pointRegular + summary.pointOnce + summary.refundRegular + summary.refundOnce)}</dd>{summary.pointOnce + summary.refundOnce > 0 && <small>이번만 들어온 {krw(summary.pointOnce + summary.refundOnce)}는 다음 달엔 없을 수 있습니다</small>}</div>
+              <div className="is-main"><dt>현금 지출</dt><dd>{krw(rec.cash)}</dd>{(hasTotals || refunds > 0) && <small>{[hasTotals ? '칸 합계 기준' : '', refunds > 0 ? `돌려받은 ${krw(refunds)}을 뺀 금액` : ''].filter(Boolean).join(', ')}</small>}</div>
+              {hasTotals && <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd><small>세부 기록 {krw(rec.detailedCash + rec.detailedPoint)} 밖, 어디에 썼는지 모르는 금액</small></div>}
+              <div><dt>생활 소비(포인트 포함)</dt><dd>{krw(rec.consumption)}</dd></div>
+              <div><dt>포인트·환급이 메운 금액</dt><dd>{krw(Math.max(rec.pointTotal, rec.detailedPoint) + refunds)}</dd>{summary.pointOnce + summary.refundOnce > 0 && <small>이번만 들어온 {krw(summary.pointOnce + summary.refundOnce)}는 다음 달엔 없을 수 있습니다</small>}</div>
               {byWho && <div><dt>누구 몫(현금)</dt><dd className="mf-small">공용 {krw(byWho.shared.cash)} · 나 {krw(byWho.me.cash)} · 배우자 {krw(byWho.partner.cash)}</dd>{refundOf(byWho.shared) + refundOf(byWho.me) + refundOf(byWho.partner) > 0 && <small>돌려받은 돈: 공용 {krw(refundOf(byWho.shared))} · 나 {krw(refundOf(byWho.me))} · 배우자 {krw(refundOf(byWho.partner))}</small>}</div>}
               <div><dt>고정 · 변동 · 비정기</dt><dd className="mf-small">{krw(summary.byKind.fixed)} · {krw(summary.byKind.variable)} · {krw(summary.byKind.irregular)}</dd></div>
             </dl>
@@ -446,20 +484,25 @@ function MonthView({ month, thisMonth, setMonth, entries, baseMonth, baseEntries
               <span className="is-must" style={{ width: `${(cut.must / cashTotal) * 100}%` }} />
               <span className="is-trim" style={{ width: `${(cut.trim / cashTotal) * 100}%` }} />
               <span className="is-drop" style={{ width: `${(cut.drop / cashTotal) * 100}%` }} />
+              {rec.unrecordedCash > 0 && <span className="is-unknown" style={{ width: `${(rec.unrecordedCash / cashTotal) * 100}%` }} />}
             </div>
             <dl className="acc-facts" aria-label="줄일 수 있나">
               {(['must', 'trim', 'drop'] as const).map((level) => (
                 <div key={level}><dt><i className={`mf-key is-${level}`} />{CUT_LABEL[level]}</dt><dd>{krw(cut[level])}</dd></div>
               ))}
+              {rec.unrecordedCash > 0 && <div><dt><i className="mf-key is-unknown" />모름(세부 안 적음)</dt><dd>{krw(rec.unrecordedCash)}</dd></div>}
             </dl>
             <p className="acc-note">기본값은 소분류마다 정해져 있습니다. 바꾸는 기능은 지금 상태 점검에서 제공할 예정입니다.</p>
           </>
         )}
       </section>
 
+      {!loading && trend.length >= 2 && <MonthTrend rows={trend} month={month} />}
+
       {!loading && entries.length > 0 && (
         <section className="acc-card">
           <h2>어디에 썼나</h2>
+          {hasTotals && unrecorded > 0 && <p className="acc-note">세부 기록한 {krw(rec.detailedCash + rec.detailedPoint)} 안에서만 나눴습니다. 나머지 {krw(unrecorded)}는 어디에 썼는지 모릅니다.</p>}
           <div className="mf-majors">
             {summary.byMajor.map((m) => (
               <details key={`${m.kind}-${m.major}`}>

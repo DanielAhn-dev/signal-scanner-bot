@@ -236,3 +236,68 @@ describe('누구 몫', () => {
     expect(screen.getByText('돌려받은 돈: 공용 0원 · 나 0원 · 배우자 23,000원')).toBeTruthy()
   })
 })
+
+describe('월 합계 칸', () => {
+  const month = today.slice(0, 7)
+  const [y, m] = month.split('-').map(Number)
+  const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7)
+
+  it('새 달은 지난달 칸 이름을 이어받고, 적은 칸만 저장하며 세부와의 차액을 보여 준다', async () => {
+    apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true }) : Promise.resolve({
+      entries: [{ id: 'a', date: `${month}-02`, amount: 50_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }],
+      rules: [], checks: [],
+      totals: [{ month: prev, label: 'A카드', kind: 'cash', amount: 900_000, mine: true }, { month: prev, label: '포인트', kind: 'point', amount: 10_000, mine: true }],
+    }))
+    renderPage()
+    await screen.findByText('배민')
+    expect((screen.getByLabelText('1번 칸 이름') as HTMLInputElement).value).toBe('A카드')
+    expect((screen.getByLabelText('A카드 금액') as HTMLInputElement).value).toBe('')
+    fireEvent.change(screen.getByLabelText('A카드 금액'), { target: { value: '1200000' } })
+    const facts = screen.getByLabelText('합계와 세부 기록')
+    expect(facts.textContent).toContain('세부 안 적음1,150,000원')
+    fireEvent.click(screen.getByRole('button', { name: '합계 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    // 금액을 비워 둔 포인트 칸은 보내지 않는다
+    expect(postBodies()[0]).toEqual({ action: 'save-month-totals', month, totals: [{ label: 'A카드', kind: 'cash', amount: 1_200_000 }] })
+  })
+
+  it('겹치는 칸 이름은 저장 전에 막는다', async () => {
+    renderPage()
+    await screen.findByText('아직 기록이 없습니다.')
+    fireEvent.change(screen.getByLabelText('1번 칸 이름'), { target: { value: '현금' } })
+    const [first, second] = screen.getAllByLabelText('현금 금액')
+    fireEvent.change(first, { target: { value: '1000' } })
+    fireEvent.change(second, { target: { value: '2000' } })
+    fireEvent.click(screen.getByRole('button', { name: '합계 저장' }))
+    expect(screen.getByText(/칸 이름이 겹칩니다/)).toBeTruthy()
+    expect(postBodies()).toHaveLength(0)
+  })
+
+  it('합계 테이블이 아직 없으면 합계 칸만 끄고 세부 기록은 그대로 쓴다', async () => {
+    apiFetchMock.mockResolvedValue({ entries: [], rules: [], checks: [], totals: [], totalsReady: false })
+    renderPage()
+    expect(await screen.findByText(/합계 칸은 준비 중입니다/)).toBeTruthy()
+    expect(screen.getByLabelText(/무엇을 얼마에/)).toBeTruthy()
+  })
+
+  it('이번 달 보기: 합계 기준 현금 지출, 세부 안 적음, 6개월 추이', async () => {
+    apiFetchMock.mockResolvedValue({
+      entries: [
+        { id: 'a', date: `${month}-02`, amount: 50_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', date: `${prev}-02`, amount: 70_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+      ],
+      rules: [], checks: [],
+      totals: [{ month, label: 'A카드', kind: 'cash', amount: 1_000_000, mine: true }],
+    })
+    renderPage()
+    await screen.findAllByText('배민')
+    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
+    expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('1,000,000원')
+    expect(screen.getAllByText('세부 안 적음')[0].nextElementSibling?.textContent).toBe('950,000원')
+    expect(screen.getByLabelText('줄일 수 있나').textContent).toContain('모름(세부 안 적음)950,000원')
+    const trend = screen.getByLabelText('최근 6개월 현금 지출')
+    expect(trend.textContent).toContain('1,000,000원')
+    // 합계를 안 적은 지난달은 세부 합으로 표시
+    expect(trend.textContent).toContain('70,000원세부 합')
+  })
+})

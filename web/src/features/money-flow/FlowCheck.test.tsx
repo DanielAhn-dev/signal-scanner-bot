@@ -147,3 +147,17 @@ describe('고정지출은 기준, 기록은 실제', () => {
     expect(screen.queryByText(/기준보다 600원 적음/)).toBeNull()
   })
 })
+
+describe('월 합계와 점검', () => {
+  it('합계를 적은 달로 채우면 세부와의 차액이 "세부 안 적음" 한 줄로 들어간다', async () => {
+    apiFetchMock.mockResolvedValue({
+      rules: [], checks: [],
+      entries: [{ id: 'c', date: `${month}-05`, amount: 30_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }],
+      totals: [{ month, label: 'A카드', kind: 'cash', amount: 800_000, mine: true }],
+    })
+    renderCheck()
+    fireEvent.click(await screen.findByRole('button', { name: /기록으로 채우기/ }))
+    expect((screen.getByLabelText('배달 월 금액') as HTMLInputElement).value).toBe('30000')
+    expect((screen.getByLabelText('세부 안 적음 월 금액') as HTMLInputElement).value).toBe('770000')
+  })
+})
