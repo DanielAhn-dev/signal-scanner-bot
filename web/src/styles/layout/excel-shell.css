@@ -4260,7 +4260,9 @@
     -webkit-overflow-scrolling: touch;
   }
   /* 이미 스크롤 틀(xls-scroll-frame) 안에 있는 표는 틀이 스크롤을 맡는다 — block이면 표가 내용 폭으로 쪼그라들어 꽉 차지 않는다 */
-  .xls-content-inner .xls-scroll-frame table {
+  .xls-content-inner .xls-scroll-frame table,
+  .xls-content-inner .mf-trend-wrap table,
+  .xls-content-inner .seed-table-wrap table {
     display: table;
     overflow-x: visible;
   }
