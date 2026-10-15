@@ -614,6 +614,14 @@ test('아이 돌봄비: 고정·못 줄임, "부모님 돌봄비 송금"은 돌�
   assert.equal(splitCashWord('부모님 돌봄비 송금').paidCash, true)
 })
 
+test('부부 용돈: "배우자 용돈"·"용돈"은 부부 용돈, 부모님·자녀 용돈은 그대로', () => {
+  assert.equal(categoryById('family_pocket')?.kind, 'fixed')
+  assert.equal(classifyMemo('배우자 용돈').categoryId, 'family_pocket')
+  assert.equal(classifyMemo('용돈').categoryId, 'family_pocket')
+  assert.equal(classifyMemo('부모님 용돈').categoryId, 'family_parents')
+  assert.equal(classifyMemo('자녀 용돈').categoryId, 'family_kids')
+})
+
 test('카드 밖 고정비(대출 자동이체): 매달 기록 없이 그달 지출에 더하고, 변동 계산에서 고정으로 다시 빠진다', () => {
   const input = { monthlyIncome: 0, reserveMonthly: 0, variable: [], irregular: [],
     fixed: [{ categoryId: 'maintenance', amount: 300_000, label: '관리비' }, { categoryId: 'rent', amount: 167_596, label: '대출금', outsideCard: true }] }

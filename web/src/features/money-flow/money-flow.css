@@ -1,5 +1,5 @@
 .mf .acc-seg button { flex: 1 1 120px; text-align: center; }
-.mf-notice { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: var(--color-bg-sunken); }
+.mf .mf-notice { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: var(--color-bg-sunken); }
 .mf-input { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; resize: vertical; }
 .mf-input:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
 .mf-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
@@ -40,7 +40,8 @@
 .mf-majors ul { padding-left: 12px; }
 .mf-changes .is-up { color: var(--color-error); font-weight: 600; }
 .mf-changes .is-down { color: var(--color-success, #2e7d32); font-weight: 600; }
-.mf-foot { margin-top: 20px; font-size: 12px; }
+.mf .mf-foot { margin-top: 20px; font-size: 12px; }
+.mf > header { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
 .mf a { color: var(--color-brand); }
 .mf-partner { margin: 0 6px 0 0; background: var(--color-brand); color: var(--color-text-inverse); }
 .mf-draft-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

@@ -105,12 +105,16 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
               <label className="mf-cash-check"><input type="checkbox" aria-label={`${name} 카드 밖`} checked={!!r.outsideCard} onChange={(e) => update(r.key, { outsideCard: e.target.checked || undefined })} />카드 밖(계좌 자동이체)</label>
             )}
             {kids && (
-              <select aria-label={`${name} 누구 몫`} value={r.childId && kids.list.some((c) => c.id === r.childId) ? r.childId : ''} onChange={(e) => {
-                if (e.target.value === '__add') { setAdding(r.key); return }
+              <select aria-label={`${name} 누구 몫`} value={r.childId && kids.list.some((c) => c.id === r.childId) ? r.childId : r.forWhom ? `__${r.forWhom}` : ''} onChange={(e) => {
+                const v = e.target.value
+                if (v === '__add') { setAdding(r.key); return }
                 setAdding(null)
-                update(r.key, { childId: e.target.value || undefined })
+                if (v === '__me' || v === '__partner') update(r.key, { childId: undefined, forWhom: v === '__me' ? 'me' : 'partner' })
+                else update(r.key, { childId: v || undefined, forWhom: undefined })
               }}>
                 <option value="">가족 공통</option>
+                <option value="__me">본인</option>
+                <option value="__partner">배우자</option>
                 {kids.list.map((c) => <option key={c.id} value={c.id}>{c.alias}</option>)}
                 {kids.list.length < MAX_CHILDREN && <option value="__add">+ 자녀 추가</option>}
               </select>
@@ -122,7 +126,7 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
                 <input type="month" aria-label="자녀 태어난 연월" value={kidBirth} max={kstMonth()} onChange={(e) => setKidBirth(e.target.value)} />
                 <button type="button" className="acc-primary" disabled={!/^\d{4}-(0[1-9]|1[0-2])$/.test(kidBirth)} onClick={() => {
                   const id = kids.add(kidAlias, kidBirth)
-                  if (id) update(r.key, { childId: id })
+                  if (id) update(r.key, { childId: id, forWhom: undefined })
                   setAdding(null); setKidAlias(''); setKidBirth('')
                 }}>추가하고 고르기</button>
                 <button type="button" className="acc-secondary" onClick={() => setAdding(null)}>취소</button>

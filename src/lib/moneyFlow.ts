@@ -48,7 +48,7 @@ export const FLOW_CATEGORIES: FlowCategory[] = [
   ...c("fixed", "구독", "subscriptions", [["sub_media", "영상·음악", "drop"], ["sub_membership", "쇼핑 멤버십", "drop"], ["sub_app", "클라우드·앱", "drop"]]),
   ...c("fixed", "보험", "tax", [["ins_health", "실손·건강", "must"], ["ins_other", "생명·기타", "trim"]]),
   ...c("fixed", "교육", "education", [["academy", "학원", "trim"], ["course", "강의·교재", "trim"]]),
-  ...c("fixed", "가족", "other", [["family_parents", "부모님 용돈", "must"], ["family_kids", "자녀 용돈", "trim"], ["family_care", "아이 돌봄비", "must"]]),
+  ...c("fixed", "가족", "other", [["family_parents", "부모님 용돈", "must"], ["family_kids", "자녀 용돈", "trim"], ["family_care", "아이 돌봄비", "must"], ["family_pocket", "부부 용돈", "trim"]]),
   ...c("fixed", "회비·기부", "other", [["dues", "회비·기부", "trim"]]),
   ...c("variable", "식재료", "food", [["grocery_mart", "장보기(마트)", "trim"], ["grocery_basic", "기본 식재료", "must"], ["grocery_ready", "간편식·냉동", "trim"], ["grocery_snack", "과자·음료", "drop"], ["grocery_drink", "생수·커피", "trim"]]),
   ...c("variable", "사 먹기", "food", [["eat_out", "외식", "trim"], ["delivery", "배달", "drop"], ["cafe", "카페", "drop"], ["snack_out", "간식", "drop"], ["convenience", "편의점", "drop"]]),
@@ -95,6 +95,8 @@ const DICTIONARY: Record<string, string[]> = {
   family_parents: ["부모님"],
   family_kids: ["아이 용돈", "자녀 용돈"],
   // 부모님·시터께 드리는 손주 돌봄비 — 용돈이 아니라 맞벌이 필수 비용이라 따로 둔다
+  // 본인·배우자 용돈 — '누구 몫'에서 본인/배우자를 고른다. '부모님'·'자녀 용돈'은 더 긴 키워드가 이긴다
+  family_pocket: ["내 용돈", "배우자 용돈", "남편 용돈", "아내 용돈", "용돈"],
   family_care: ["부모님 돌봄", "손주 돌봄", "돌봄비", "돌봄", "등하원", "하원도우미", "시터"],
   dues: ["회비", "기부", "후원"],
   grocery_basic: ["우유", "쌀", "계란", "달걀", "두부", "채소", "야채", "과일", "사과", "바나나", "고기", "돼지고기", "소고기", "닭가슴살", "김치", "식빵"],
@@ -339,6 +341,8 @@ export type FlowItem = {
   label?: string;
   /** 자녀 계좌(childGifts)의 자녀 id. 없으면 가족 공통 */
   childId?: string;
+  /** 본인·배우자 몫(예: 각자 용돈). 자녀 몫과 함께 쓰지 않는다. 없으면 가족 공통 */
+  forWhom?: "me" | "partner";
   /** 고정지출 중 카드가 아니라 통장에서 바로 나가는 것(대출 원리금 자동이체 등) — 카드 합계에 없으니 그달 지출에 따로 더한다 */
   outsideCard?: boolean;
 };

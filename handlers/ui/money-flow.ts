@@ -69,7 +69,10 @@ function normalizeItem(raw: any): FlowItem | null {
   // 카드 밖(계좌 자동이체) 표시 — 고정지출에서만 의미가 있다
   const outsideCard = raw.outsideCard ?? false
   if (typeof outsideCard !== 'boolean') return null
-  return { categoryId: raw.categoryId, amount: value, payment, cut, mustPart, label: label.trim(), ...(childId ? { childId } : {}), ...(outsideCard ? { outsideCard: true } : {}) }
+  // 본인·배우자 몫 — 자녀 몫이 있으면 자녀가 우선
+  const forWhom = raw.forWhom ?? undefined
+  if (forWhom !== undefined && forWhom !== 'me' && forWhom !== 'partner') return null
+  return { categoryId: raw.categoryId, amount: value, payment, cut, mustPart, label: label.trim(), ...(childId ? { childId } : forWhom ? { forWhom } : {}), ...(outsideCard ? { outsideCard: true } : {}) }
 }
 
 function normalizeIrregular(raw: any): IrregularItem | null {
