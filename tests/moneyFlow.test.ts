@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, seedFromCheck, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -497,4 +497,43 @@ test('그 달 비정기: 고른 달에만, 여러 달이면 나눠서(나머지�
   assert.equal(irregularDueIn(input, 1), 300_000)
   assert.equal(irregularDueIn(input, 2), 0)
   assert.equal(evaluateFlowCheck({ ...input, irregular: input.irregular.slice(0, 2) }).irregularDueByMonth[7], 300_001)
+})
+
+test('그 달 비정기: 예산 몫과 이름이 같은 실제 기록, 예산에 없는 비정기 기록은 따로', () => {
+  const input = { monthlyIncome: 0, reserveMonthly: 0, fixed: [], variable: [], irregular: [
+    { categoryId: 'tax', label: '재산세', yearlyAmount: 600_000, months: [7, 9] },
+    { categoryId: 'car', label: '자동차보험', yearlyAmount: 900_000, months: [9] },
+  ] }
+  const records = [
+    { categoryId: 'tax', amount: 312_000, memo: '재산 세' },
+    { categoryId: 'occasion', amount: 100_000, memo: '축의금' },
+    { categoryId: 'delivery', amount: 30_000, memo: '배민' },
+  ]
+  const r = irregularForMonth(input, 9, records)
+  assert.deepEqual(r.rows, [
+    { label: '재산세', categoryId: 'tax', expected: 300_000, actual: 312_000 },
+    { label: '자동차보험', categoryId: 'car', expected: 900_000, actual: null },
+  ])
+  assert.equal(r.others, 100_000)
+  assert.equal(r.total, 1_312_000)
+  // 예산이 없으면 비정기 소분류 기록은 모두 '예산에 없는 비정기'
+  assert.equal(irregularForMonth(null, 9, records).total, 412_000)
+})
+
+test('비정기 이력: 항목별 연도 합, 시드로는 1년 예산 ÷ 12를 비정기 적립 한 칸으로', () => {
+  const input = { monthlyIncome: 0, reserveMonthly: 0, fixed: [{ categoryId: 'rent', amount: 900_000 }], variable: [{ categoryId: 'fuel', amount: 200_000 }], irregular: [
+    { categoryId: 'tax', label: '자동차세', yearlyAmount: 300_000, months: [1] },
+    { categoryId: 'car', label: '', yearlyAmount: 1_200_000, months: [3] },
+  ] }
+  const h = irregularHistory(input, [
+    { date: '2025-01-20', categoryId: 'tax', amount: 280_000, memo: '자동차세' },
+    { date: '2026-01-20', categoryId: 'tax', amount: 275_000, memo: '자동차세' },
+    { date: '2026-03-02', categoryId: 'car', amount: 1_150_000, memo: '자동차보험·정비' },
+  ])
+  assert.deepEqual(h[0], { label: '자동차세', budget: 300_000, byYear: { '2025': 280_000, '2026': 275_000 } })
+  assert.deepEqual(h[1].byYear, { '2026': 1_150_000 })
+  const seed = seedFromCheck(input)
+  assert.equal(seed.irregularFund, 125_000)
+  assert.equal(seed.expenses.housing, 900_000)
+  assert.equal(seed.expenses.tax, 0)
 })

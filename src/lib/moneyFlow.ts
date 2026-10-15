@@ -632,3 +632,58 @@ export function irregularDueIn(input: FlowCheckInput, month: number): number {
   }
   return total;
 }
+
+/** 비정기 실제 기록과 예산 항목을 잇는 열쇠: 띄어쓰기·대소문자 무시한 이름 */
+export const irregularKey = (label: string) => label.replace(/\s+/g, "").toLowerCase();
+/** 예산 항목 이름(없으면 소분류 이름) */
+export const irregularLabel = (item: { label?: string; categoryId: string }) => (item.label ?? "").trim() || categoryById(item.categoryId)?.label || item.categoryId;
+
+type RecordLike = { categoryId: string; amount: number; memo: string; payment?: Payment };
+
+export type IrregularMonthRow = { label: string; categoryId: string; expected: number; actual: number | null };
+
+/**
+ * 그 달 비정기: 1년 예산(점검) 중 이 달에 나갈 몫(expected)과 실제 낸 기록(actual, 이름이 같은 세부 기록 합).
+ * others = 예산에 없는 비정기 소분류 기록(경조사 등). total = Σ(실제가 있으면 실제, 없으면 예상) + others.
+ * 1년 예산은 매달 1/12씩 떼어 두고 낼 때는 모아 둔 돈에서 내는 것으로 본다 — 여기 값은 그 달 카드 합계에서 빼서 변동 지출을 보기 위한 것.
+ */
+export function irregularForMonth(input: FlowCheckInput | null, month: number, records: RecordLike[]): { rows: IrregularMonthRow[]; others: number; total: number } {
+  const rows: IrregularMonthRow[] = [];
+  const used = new Set<RecordLike>();
+  for (const item of input?.irregular ?? []) {
+    const months = [...new Set(item.months.filter((m) => Number.isInteger(m) && m >= 1 && m <= 12))].sort((a, b) => a - b);
+    if (!months.includes(month)) continue;
+    const amount = cashEffect({ amount: item.yearlyAmount, payment: item.payment });
+    const base = Math.trunc(amount / months.length);
+    const label = irregularLabel(item);
+    const matched = records.filter((r) => !used.has(r) && irregularKey(r.memo) === irregularKey(label));
+    matched.forEach((r) => used.add(r));
+    rows.push({ label, categoryId: item.categoryId, expected: base + (months[0] === month ? amount - base * months.length : 0), actual: matched.length > 0 ? matched.reduce((s, r) => s + cashEffect(r), 0) : null });
+  }
+  const others = records.filter((r) => !used.has(r) && categoryById(r.categoryId)?.kind === "irregular").reduce((s, r) => s + cashEffect(r), 0);
+  return { rows, others, total: rows.reduce((s, r) => s + (r.actual ?? r.expected), 0) + others };
+}
+
+export type IrregularYearRow = { label: string; budget: number; byYear: Record<string, number> };
+
+/** 비정기 예산 항목별 연도별 실제 합(이름이 같은 세부 기록). 예산은 지금 점검의 1년 총액 */
+export function irregularHistory(input: FlowCheckInput | null, records: Array<RecordLike & { date: string }>): IrregularYearRow[] {
+  return (input?.irregular ?? []).map((item) => {
+    const label = irregularLabel(item);
+    const byYear: Record<string, number> = {};
+    for (const r of records) {
+      if (irregularKey(r.memo) !== irregularKey(label)) continue;
+      const year = r.date.slice(0, 4);
+      byYear[year] = (byYear[year] ?? 0) + cashEffect(r);
+    }
+    return { label, budget: cashEffect({ amount: item.yearlyAmount, payment: item.payment }), byYear };
+  });
+}
+
+/** 시드 만들기로 넘길 값: 고정·변동은 항목별, 비정기는 1년 예산 ÷ 12를 '비정기 적립' 한 칸으로 */
+export function seedFromCheck(input: FlowCheckInput): { expenses: Record<SeedExpenseKey, number>; irregularFund: number } {
+  return {
+    expenses: toSeedExpenses([...input.fixed, ...input.variable]),
+    irregularFund: Math.max(0, input.irregular.reduce((s, item) => s + cashEffect({ amount: irregularMonthly(item), payment: item.payment }), 0)),
+  };
+}
