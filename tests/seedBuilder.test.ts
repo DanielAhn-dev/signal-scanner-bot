@@ -63,3 +63,15 @@ test('전체 삭제는 명시적 확인 값이 있을 때만 허용한다', () =
   assert.equal(isDeleteAllConfirmed(null), false)
   assert.equal(isDeleteAllConfirmed({ confirm: true }), false)
 })
+
+test('예상 지출 세 줄과 내역(보여 주기 전용)을 저장한다 — 내역은 객체만, 크기 제한', () => {
+  const plan = { ...record, expenses: { fixedCost: 917_000, variableCost: 915_000, irregularFund: 248_000, emergencyRefill: 100_000 } }
+  const breakdown = { baseMonth: '2026-08', fixed: { total: 917_000, items: [{ label: '관리비', amount: 295_000 }] } }
+  const row = normalizeRecord({ ...plan, breakdown })
+  assert.deepEqual(row?.breakdown, breakdown)
+  assert.equal(row?.expenses.variableCost, 915_000)
+  assert.equal(normalizeRecord(plan)?.breakdown, null)
+  assert.equal(normalizeRecord({ ...plan, breakdown: [1, 2] }), null)
+  assert.equal(normalizeRecord({ ...plan, breakdown: 'x' }), null)
+  assert.equal(normalizeRecord({ ...plan, breakdown: { items: 'x'.repeat(20_000) } }), null)
+})

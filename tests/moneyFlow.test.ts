@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, monthSpending, seedExpenseTotal, seedFromCheck, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  checkForMonth, fixedCashOf, fixedHistory, irregularDueIn, irregularForMonth, irregularHistory, monthSpending, seedExpenseTotal, seedFromCheck, seedPlanFromFlow, splitCashWord, parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
@@ -572,4 +572,37 @@ test('비정기 예산 밖(비상금): 1년 예산에 있는 분류는 이름이
     { categoryId: 'eat_out', amount: 50_000, memo: '외식' },
   ])
   assert.deepEqual([r.rows.length, r.inBudget, r.emergency, r.total], [0, 100_000, 300_000, 400_000])
+})
+
+test('시드 계획: 고정·변동·비정기 적립을 항목 내역과 함께, 합계 없는 달은 점검 변동 값', () => {
+  const input = {
+    monthlyIncome: 0, reserveMonthly: 0,
+    fixed: [{ categoryId: 'maintenance', amount: 300_000, label: '관리비' }, { categoryId: 'phone', amount: 110_000, label: '' }],
+    variable: [{ categoryId: 'grocery_mart', amount: 500_000 }],
+    irregular: [{ categoryId: 'tax', label: '재산세', yearlyAmount: 600_000, months: [9, 7] }, { categoryId: 'car', label: '차량 소모품', yearlyAmount: 210_000, months: [4, 10] }],
+  }
+  const check = { date: '2026-09-30', input }
+  const records = [
+    { categoryId: 'fuel', amount: 180_000, memo: '주유' },
+    { categoryId: 'tax', amount: 312_000, memo: '재산세' },
+    { categoryId: 'occasion', amount: 100_000, memo: '축의금', paidWith: 'cash' as const },
+    { categoryId: 'grocery_mart', amount: 40_000, memo: '시장', paidWith: 'cash' as const },
+  ]
+  const totals = [{ label: 'A카드', kind: 'cash' as const, amount: 1_500_000 }, { label: 'B카드', kind: 'cash' as const, amount: 300_000 }]
+  const p = seedPlanFromFlow({ baseMonth: '2026-09', check, totals, records })
+  assert.deepEqual(p.fixed, { total: 410_000, items: [{ label: '관리비', amount: 300_000 }, { label: '휴대폰', amount: 110_000 }] })
+  // 지출 = 카드 1,800,000 + 현금 140,000 = 1,940,000 → − 고정 410,000 − 비정기(재산세 실제 312,000 + 예산 밖 축의금 100,000)
+  assert.equal(p.variable.spending, 1_940_000)
+  assert.equal(p.variable.total, 1_118_000)
+  assert.deepEqual(p.variable.cards, [{ label: 'A카드', amount: 1_500_000 }, { label: 'B카드', amount: 300_000 }])
+  assert.equal(p.variable.cash, 140_000)
+  assert.deepEqual(p.variable.recorded, [{ label: '주유', amount: 180_000 }, { label: '장보기(마트)', amount: 40_000 }])
+  assert.equal(p.variable.unrecorded, 1_800_000 - 180_000 - 312_000)
+  assert.deepEqual(p.irregularFund.items.map((i) => [i.label, i.amount, i.months]), [['재산세', 50_000, [7, 9]], ['차량 소모품', 17_500, [4, 10]]])
+  assert.equal(p.irregularFund.total, 67_500)
+  assert.deepEqual(p.emergency, { total: 100_000, items: [{ label: '축의금', amount: 100_000 }] })
+  assert.equal(p.expected, 410_000 + 1_118_000 + 67_500)
+  const noTotals = seedPlanFromFlow({ baseMonth: '2026-09', check, totals: [], records: [] })
+  assert.deepEqual([noTotals.variable.source, noTotals.variable.total], ['check', 500_000])
+  assert.equal(seedPlanFromFlow({ baseMonth: '2026-09', check: null, totals, records }).variable.source, 'none')
 })

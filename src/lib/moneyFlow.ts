@@ -744,3 +744,87 @@ export function seedExpenseTotal(expenses: Record<string, unknown> | undefined, 
     return sum + (Number(value) || 0);
   }, 0);
 }
+
+export type SeedPlanItem = { label: string; amount: number };
+/**
+ * 시드 만들기 한 달 예상 지출 = 고정비 + 변동 지출 + 비정기 적립 (+ 지난달 비상금 채우기).
+ * 합계만 보면 무엇이 들어갔는지 모르니 줄마다 항목 내역과 출처를 함께 둔다(저장할 때 그대로 남겨 나중에 예산을 고쳐도 지난 달이 바뀌지 않게).
+ */
+export type SeedPlan = {
+  /** 변동 지출을 가져온 달(보통 계획하는 달의 지난달) */
+  baseMonth: string;
+  /** 고정비·비정기 예산을 가져온 점검 날짜 */
+  checkDate: string | null;
+  fixed: { total: number; items: SeedPlanItem[] };
+  variable: {
+    total: number;
+    /** flow = 그 달 돈 흐름 합계로 계산, check = 합계가 없어 점검의 변동 값, none = 둘 다 없음 */
+    source: "flow" | "check" | "none";
+    cards: SeedPlanItem[];
+    cash: number;
+    spending: number;
+    fixedSub: number;
+    irregularSub: number;
+    /** 세부로 적은 변동 분류(주유·장보기 등) — 나머지는 '세부 안 적음' */
+    recorded: SeedPlanItem[];
+    unrecorded: number;
+  };
+  irregularFund: { total: number; items: Array<SeedPlanItem & { yearly: number; months: number[] }> };
+  /** 지난달 1년 예산에 없던 비정기 — 이번 달 비상금으로 채워 넣을 돈 */
+  emergency: { total: number; items: SeedPlanItem[] };
+  /** 고정 + 변동 + 비정기 적립(비상금 채우기 제외) */
+  expected: number;
+};
+
+const mergeItems = (items: SeedPlanItem[]) => {
+  const map = new Map<string, number>();
+  for (const item of items) map.set(item.label, (map.get(item.label) ?? 0) + item.amount);
+  return [...map.entries()].map(([label, amount]) => ({ label, amount })).filter((item) => item.amount !== 0).sort((a, b) => b.amount - a.amount);
+};
+
+export function seedPlanFromFlow(args: {
+  baseMonth: string;
+  check: DatedCheck | null;
+  /** 그 달 칸 합계. label은 화면에 보일 이름(배우자 칸은 호출하는 쪽이 표시) */
+  totals: MonthTotal[];
+  records: Array<RecordLike & { paidWith?: "card" | "cash" }>;
+}): SeedPlan {
+  const input = args.check?.input ?? null;
+  const fixedItems = mergeItems((input?.fixed ?? []).map((item) => ({ label: irregularLabel(item), amount: cashEffect(item) })));
+  const fixed = input ? fixedCashOf(input) : 0;
+  const card = summarizeItems(args.records.filter((r) => r.paidWith !== "cash"));
+  const cash = summarizeItems(args.records.filter((r) => r.paidWith === "cash"));
+  const spending = monthSpending(args.totals, card, cash);
+  const irregular = irregularForMonth(input, Number(args.baseMonth.slice(5)), args.records);
+  const hasTotals = args.totals.some((t) => t.kind === "cash");
+  const source: SeedPlan["variable"]["source"] = input && hasTotals ? "flow" : input ? "check" : "none";
+  const variableTotal = source === "flow"
+    ? Math.max(0, spending.cash - fixed - irregular.total)
+    : source === "check" ? Math.max(0, input!.variable.reduce((sum, item) => sum + cashEffect(item), 0)) : 0;
+  const recorded = mergeItems(args.records
+    .filter((r) => categoryById(r.categoryId)?.kind === "variable")
+    .map((r) => ({ label: categoryById(r.categoryId)!.label, amount: cashEffect(r) })));
+  const fundItems = (input?.irregular ?? []).map((item) => ({
+    label: irregularLabel(item), yearly: cashEffect({ amount: item.yearlyAmount, payment: item.payment }),
+    months: [...item.months].sort((a, b) => a - b), amount: cashEffect({ amount: irregularMonthly(item), payment: item.payment }),
+  })).filter((item) => item.yearly !== 0);
+  const fund = Math.max(0, fundItems.reduce((sum, item) => sum + item.amount, 0));
+  const budgetCategories = new Set((input?.irregular ?? []).map((item) => item.categoryId));
+  const emergencyItems = mergeItems(args.records
+    .filter((r) => categoryById(r.categoryId)?.kind === "irregular" && !budgetCategories.has(r.categoryId))
+    .map((r) => ({ label: r.memo.trim() || categoryById(r.categoryId)!.label, amount: cashEffect(r) })));
+  return {
+    baseMonth: args.baseMonth,
+    checkDate: args.check?.date ?? null,
+    fixed: { total: fixed, items: fixedItems },
+    variable: {
+      total: variableTotal, source,
+      cards: args.totals.filter((t) => t.kind === "cash").map((t) => ({ label: t.label, amount: t.amount })),
+      cash: spending.cashPaid, spending: spending.cash, fixedSub: fixed, irregularSub: irregular.total,
+      recorded, unrecorded: spending.unrecordedCash,
+    },
+    irregularFund: { total: fund, items: fundItems },
+    emergency: { total: Math.max(0, irregular.emergency), items: emergencyItems },
+    expected: fixed + variableTotal + fund,
+  };
+}

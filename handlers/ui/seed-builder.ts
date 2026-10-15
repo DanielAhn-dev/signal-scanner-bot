@@ -3,10 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 
-const expenseKeys = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other', 'irregularFund', 'card', 'water', 'gas', 'residentTax', 'propertyTax', 'vehicleTax', 'taxAdjustment'] as const
+// fixedCost·variableCost·emergencyRefill = 돈 흐름·점검에서 가져온 세 줄(+ 비상금 채우기). 나머지는 예전 항목별 입력
+const expenseKeys = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other', 'fixedCost', 'variableCost', 'irregularFund', 'emergencyRefill', 'card', 'water', 'gas', 'residentTax', 'propertyTax', 'vehicleTax', 'taxAdjustment'] as const
 const extraIncomeKeys = ['incentive', 'vacation', 'taxRefund', 'other'] as const
 const households = ['solo', 'single-income', 'dual-income'] as const
 const maxAmount = 100_000_000_000
+const maxBreakdownLength = 16_000
 
 function amount(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > maxAmount) return null
@@ -53,11 +55,14 @@ export function normalizeRecord(body: any) {
   if (body.household !== 'dual-income' && partnerIncome !== 0) return null
   const status = body.status ?? 'recorded'
   if (status !== 'recorded' && status !== 'skipped') return null
+  // 예상 지출 내역(보여 주기 전용). 객체만, 너무 크면 거절
+  const breakdown = body.breakdown ?? null
+  if (breakdown !== null && (typeof breakdown !== 'object' || Array.isArray(breakdown) || JSON.stringify(breakdown).length > maxBreakdownLength)) return null
   return {
     client_id: '', month: `${body.month}-01`, household: body.household,
     own_income: ownIncome, partner_income: partnerIncome, own_payday: ownPayday,
     partner_payday: body.household === 'dual-income' ? partnerPayday : null, expenses, extra_income: extraIncome,
-    reserve_amount: reserve, plan_amount: plan, record_status: status,
+    reserve_amount: reserve, plan_amount: plan, record_status: status, breakdown,
     updated_at: new Date().toISOString(),
   }
 }
@@ -136,7 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!Number.isInteger(year) || year < 2000 || year > 2099) return res.status(400).json({ error: 'Invalid year' })
     const range = { from: `${year}-01-01`, to: `${year}-12-01` }
     const { data, error } = await supabase.from('seed_builder_months')
-      .select('month,household,own_income,partner_income,own_payday,partner_payday,expenses,extra_income,reserve_amount,plan_amount,record_status')
+      .select('month,household,own_income,partner_income,own_payday,partner_payday,expenses,extra_income,reserve_amount,plan_amount,record_status,breakdown')
       .eq('client_id', user.clientId).gte('month', range.from).lte('month', range.to)
       .order('month')
     if (error) return res.status(500).json({ error: error.message })
@@ -164,6 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         expenses: { ...Object.fromEntries(expenseKeys.map((expenseKey) => [expenseKey, 0])), ...row?.expenses },
         extraIncome: { ...Object.fromEntries(extraIncomeKeys.map((incomeKey) => [incomeKey, 0])), ...row?.extra_income },
         reserve: Number(row?.reserve_amount ?? 0), plan: Number(row?.plan_amount ?? 0),
+        breakdown: row?.breakdown ?? null,
         entries: entriesByMonth.get(month) ?? [],
       }
     }) })
