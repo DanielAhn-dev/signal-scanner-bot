@@ -13,7 +13,7 @@
  *  └─ 상태바 ───────────────────────────────────────────────┘
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Save, Undo2, Redo2, Star, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus, LayoutDashboard, ScanSearch, BarChart2, FlaskConical, BriefcaseBusiness, FileText, Globe2, Newspaper, Bell, User, Settings, Database, Shield, ShieldCheck, Wrench, Zap, History, Search, PieChart, Activity, Target, Eye, List, PiggyBank, Sprout, Flag, ClipboardCheck, Blend, Baby, Copy, RotateCcw, Scale, Rocket, Receipt, HeartHandshake, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
+import { ClipboardList, Save, Undo2, Redo2, Star, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus, LayoutDashboard, ScanSearch, BarChart2, FlaskConical, BriefcaseBusiness, FileText, Globe2, Newspaper, Bell, User, Settings, Database, Shield, ShieldCheck, Wrench, Zap, History, Search, PieChart, Activity, Target, Eye, List, PiggyBank, Sprout, Flag, ClipboardCheck, Blend, Baby, Copy, RotateCcw, Scale, Rocket, Receipt, HeartHandshake, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useDetailed, useViewModeStore } from '../stores/viewModeStore'
@@ -70,6 +70,7 @@ const NAV_ICON_COMPONENTS: Record<string, React.ComponentType<{ size?: number | 
   'accumulate': PiggyBank,
   'seed-builder': Sprout,
   'money-flow': Receipt,
+  'budget': ClipboardList,
   'family': HeartHandshake,
   'goal-tracker': Flag,
   'plan': ClipboardCheck,

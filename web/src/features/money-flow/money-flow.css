@@ -125,3 +125,14 @@
 /* 현금으로 냄: 카드 합계 밖이라 더해지는 기록 */
 .mf-cash-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; cursor: pointer; }
 .mf-cash-check input { width: 16px; height: 16px; accent-color: var(--color-brand); }
+/* 한 화면 세 구역(예산 설정 · 지출 기록 · 이번 달 보기): 제목 바로 아래 내용과 버튼 */
+.mf-section-title { margin: 20px 0 8px; font-size: 18px; font-weight: 700; color: var(--color-text-primary); }
+.mf-budget { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.mf-budget .acc-facts { flex: 1 1 260px; margin: 0; }
+/* 이 달 투자 가능액: 한눈에 보이는 결과 */
+.mf-invest { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; margin: 8px 0 12px; border: 1px solid var(--color-border-default); border-radius: 8px; background: var(--color-bg-sunken); }
+.mf-invest > span { font-size: 13px; color: var(--color-text-secondary); }
+.mf-invest strong { font-size: 24px; color: var(--color-brand); font-variant-numeric: tabular-nums; }
+.mf-invest strong.is-negative { color: var(--color-error); }
+.mf-invest small { color: var(--color-text-tertiary); font-size: 12px; word-break: keep-all; }
+.mf-trend .mf-trend-invest { color: var(--color-text-primary); font-weight: 700; }

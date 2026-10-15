@@ -412,6 +412,7 @@ function AppContent() {
             <Route path="/start"                  element={<StartWizardPage />} />
             <Route path="/seed-builder"            element={<SeedBuilderPage />} />
             <Route path="/money-flow"             element={<MoneyFlowPage />} />
+            <Route path="/budget"                 element={<MoneyFlowPage mode="budget" />} />
             <Route path="/family"                 element={<FamilyPage />} />
             <Route path="/income-guide"           element={<IncomeGuidePage />} />
             <Route path="/goal-tracker"           element={<GoalTrackerPage />} />

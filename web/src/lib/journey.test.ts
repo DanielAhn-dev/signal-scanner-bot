@@ -7,7 +7,7 @@ describe('다음 할 일 길잡이', () => {
   it('처음 온 사람은 내 돈 점검부터', () => {
     const j = computeJourney(none)
     expect(j.next.key).toBe('money')
-    expect(j.next.route).toBe('money-flow?tab=check')
+    expect(j.next.route).toBe('budget')
     expect(j.steps.map((s) => s.key)).toEqual(['money', 'start', 'monthly', 'drop', 'checkin'])
   })
 

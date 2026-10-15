@@ -257,7 +257,7 @@ export default function StartWizardPage() {
       {step === 0 && <section className="start-card start-check-offer">
         <p className="start-question">내 지출을 자세히 보고 시작할까요?</p>
         <p className="start-note">고정지출·변동지출·1년에 몇 번 나가는 돈을 나눠 적으면, 줄일 수 없는 생활비와 실제로 투자할 수 있는 금액이 나옵니다. 5분 정도 걸리고, 끝나면 여기로 돌아와 그 값이 채워집니다.</p>
-        <button type="button" className="start-primary" onClick={() => navigate('/money-flow?tab=check&from=start')}>지출 자세히 점검하기 <ArrowRight size={15} /></button>
+        <button type="button" className="start-primary" onClick={() => navigate('/budget?from=start')}>지출 자세히 점검하기 <ArrowRight size={15} /></button>
         <p className="start-note">대략만 적고 넘어가려면 아래 칸에 한 달 총액을 적거나 건너뛰세요.</p>
       </section>}
 

@@ -154,3 +154,6 @@
 .seed-plan-line > label { display: grid; grid-template-columns: minmax(0, 1fr) 150px; align-items: center; gap: 8px; margin-top: 10px; }
 .seed-plan-line > label .seed-amount { margin-left: 0; width: 150px; }
 .seed-plan-line > label .seed-amount input { width: 100%; flex: 1 1 auto; min-width: 0; }
+/* 모아 둔 시드(예·적금 만기) — 이번 달 투자금 아래 */
+.seed-maturity { margin-top: 28px; }
+.seed-maturity > h2 { font-size: 18px; margin: 0 0 8px; }

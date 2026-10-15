@@ -79,11 +79,11 @@ export default function LifePlanCard({ view, reload }: { view: GoalView; reload:
           {surplus === undefined
             ? '우리 집 남는 돈을 불러오는 중…'
             : surplus
-              ? `시드 만들기 기록으로 보면 매달 남는 돈은 ${man(surplus.average)}입니다(최근 ${surplus.months.length}개월 평균, 보너스 제외). ` +
+              ? `이번 달 투자금 기록으로 보면 매달 남는 돈은 ${man(surplus.average)}입니다(최근 ${surplus.months.length}개월 평균, 보너스 제외). ` +
                 (surplusGap != null && surplusGap >= 0
                   ? `필요한 ${man(need)}보다 ${man(surplusGap)} 많아 남는 돈을 꾸준히 넣으면 닿습니다.`
                   : `필요한 ${man(need)}보다 ${man(-(surplusGap ?? 0))} 모자랍니다. 수입 늘리기(부업·N잡), 생활비 줄이기, 은퇴 늦추기 중 어느 쪽이든 이 차이만 메우면 됩니다.`)
-              : '무슨 일을 하든, 급여 − 생활비 = 남는 돈을 이 금액 이상으로 만들면 닿습니다. 시드 만들기에 수입·지출을 적으면 지금 남는 돈과 비교해 보여 줍니다.'}
+              : '무슨 일을 하든, 급여 − 생활비 = 남는 돈을 이 금액 이상으로 만들면 닿습니다. 이번 달 투자금에 수입·지출을 적으면 지금 남는 돈과 비교해 보여 줍니다.'}
         </div>
       )}
 

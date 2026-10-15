@@ -17,7 +17,7 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><MoneyFlowPage /></MemoryRouter>)
 const postBodies = () => apiFetchMock.mock.calls.filter(([, o]) => o?.method === 'POST').map(([, o]) => JSON.parse(o.body))
 
-describe('돈 흐름', () => {
+describe('지출 기록', () => {
   it('여러 줄을 읽어 자동 분류하고, 금액 없는 줄은 알려 준다', async () => {
     renderPage()
     fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '냉동피자 4판 15170\n곰곰 우유 900ml 2개 3690\n메모만' } })
@@ -110,7 +110,6 @@ describe('돈 흐름', () => {
     })
     renderPage()
     await screen.findByText('냉동피자')
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('18,860원')
     expect(screen.getByText('생활 소비(포인트 포함)').nextElementSibling?.textContent).toBe('40,360원')
     expect(screen.getByText(/이번만 들어온 21,500원/)).toBeTruthy()
@@ -132,7 +131,6 @@ describe('돈 흐름', () => {
     })
     renderPage()
     await screen.findAllByText('배민')
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(screen.getByText(`${threeAgo.slice(0, 4)}년 ${Number(threeAgo.slice(5))}월 기록보다`)).toBeTruthy()
     expect(screen.getByText('+30,000원')).toBeTruthy()
     expect(apiFetchMock.mock.calls[0][0]).toContain('from=')
@@ -188,7 +186,6 @@ describe('돈 흐름', () => {
     fireEvent.click(screen.getByRole('button', { name: '배우자 것 빼고' }))
     expect(screen.getByText(/기록 2건/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '우리 집 합계' }))
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('60,000원')
   })
 })
@@ -231,7 +228,6 @@ describe('누구 몫', () => {
     const e = (id: string, amount: number, payment: string, forWhom: string) => ({ id, mine: true, forWhom, date: `${month}-01`, amount, memo: '교통카드', categoryId: 'transit', cut: null, mustPart: null, payment })
     apiFetchMock.mockImplementation(() => Promise.resolve({ rules: [], checks: [], entries: [e('s', 40000, 'cash', 'shared'), e('a', 55000, 'cash', 'me'), e('b', 62000, 'cash', 'partner'), e('c', 23000, 'refund_regular', 'partner')] }))
     renderPage()
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(await screen.findByText('공용 40,000원 · 나 55,000원 · 배우자 39,000원')).toBeTruthy()
     expect(screen.getByText('돌려받은 돈: 공용 0원 · 나 0원 · 배우자 23,000원')).toBeTruthy()
   })
@@ -293,7 +289,6 @@ describe('월 합계 칸', () => {
     })
     renderPage()
     await screen.findAllByText('배민')
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('1,000,000원')
     expect(screen.getAllByText('세부 안 적음')[0].nextElementSibling?.textContent).toBe('950,000원')
     expect(screen.getByLabelText('줄일 수 있나').textContent).toContain('모름(세부 안 적음)950,000원')
@@ -317,12 +312,12 @@ describe('지출 추이', () => {
     })
     renderPage()
     await screen.findByText(/합계\b|월 합계/)
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     const rows = [...screen.getByLabelText('최근 6개월 지출 추이').querySelectorAll('tbody tr')].map((tr) => tr.textContent)
     expect(rows).toEqual([
-      `${Number(prev.slice(5))}월1,700,000원1,700,000원900,000원—800,000원`,
+      // 투자 가능 = 수입 0 − 고정 900,000 − 변동 − 비정기 적립 25,000 − 비상금 0
+      `${Number(prev.slice(5))}월1,700,000원1,700,000원900,000원—800,000원-1,725,000원`,
       // 이번 달에 나간 자동차세 30만 원은 나머지(변동)에서 뺀다
-      `${Number(month.slice(5))}월1,500,000원1,500,000원900,000원300,000원300,000원▼500,000원`,
+      `${Number(month.slice(5))}월1,500,000원1,500,000원900,000원300,000원300,000원▼500,000원-1,225,000원`,
     ])
   })
 })
@@ -410,7 +405,6 @@ describe('현금으로 낸 돈', () => {
     // 나머지(변동) = 1,120,000 − 고정 300,000 − 비정기(예산 밖 축의금 100,000)
     expect(facts.textContent).toContain('나머지(변동)720,000원')
     expect(screen.getByText(/1년 예산에 없던 비정기 100,000원은 비상금에서 나간 돈/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     expect(screen.getByText('비상금에서 나간 돈').nextElementSibling?.textContent).toBe('100,000원')
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('1,120,000원')
   })
@@ -431,12 +425,11 @@ describe('지출 추이 카드별 칸', () => {
     })
     renderPage()
     await screen.findByText('시장')
-    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
     const table = screen.getByLabelText('최근 6개월 지출 추이')
-    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['달', 'A카드', 'B카드', '현금', '지출 합계', '고정비', '비정기', '나머지(변동)'])
+    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['달', 'A카드', 'B카드', '현금', '지출 합계', '고정비', '비정기', '나머지(변동)', '투자 가능'])
     expect([...table.querySelectorAll('tbody tr')].map((tr) => tr.textContent)).toEqual([
-      `${Number(prev.slice(5))}월1,000,000원——1,000,000원———`,
-      `${Number(month.slice(5))}월1,100,000원200,000원50,000원1,350,000원———`,
+      `${Number(prev.slice(5))}월1,000,000원——1,000,000원————`,
+      `${Number(month.slice(5))}월1,100,000원200,000원50,000원1,350,000원————`,
     ])
   })
 })

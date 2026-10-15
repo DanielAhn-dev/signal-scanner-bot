@@ -31,14 +31,14 @@ export default function SeedPlanLines({ values, plan, filled, onChange, krw }: {
     if (!plan) return null
     if (key === 'fixedCost') {
       if (!plan.checkDate) return null
-      return { summary: `지금 상태 점검(${plan.checkDate}) 고정지출`, body: list(plan.fixed.items) }
+      return { summary: `예산(${plan.checkDate}) 고정지출`, body: list(plan.fixed.items) }
     }
     if (key === 'variableCost') {
       const v = plan.variable
       if (v.source === 'none') return null
-      if (v.source === 'check') return { summary: `${monthName(plan.baseMonth)} 합계가 없어 점검의 변동지출 값`, body: <p className="seed-payday-help">돈 흐름에 {monthName(plan.baseMonth)} 카드 합계를 적으면 실제 지출로 다시 계산합니다.</p> }
+      if (v.source === 'check') return { summary: `${monthName(plan.baseMonth)} 합계가 없어 점검의 변동지출 값`, body: <p className="seed-payday-help">지출 기록에 {monthName(plan.baseMonth)} 카드 합계를 적으면 실제 지출로 다시 계산합니다.</p> }
       return {
-        summary: `${monthName(plan.baseMonth)} 돈 흐름: 지출 ${krw(v.spending)} − 고정 ${krw(v.fixedSub)} − 비정기 ${krw(v.irregularSub)}`,
+        summary: `${monthName(plan.baseMonth)} 지출 기록: 지출 ${krw(v.spending)} − 고정 ${krw(v.fixedSub)} − 비정기 ${krw(v.irregularSub)}`,
         body: (
           <>
             {list([...v.cards, ...(v.cash > 0 ? [{ label: '현금(세부 기록)', amount: v.cash }] : []), ...(v.outsideCard > 0 ? [{ label: '카드 밖 고정비(계좌 자동이체)', amount: v.outsideCard }] : [])])}
@@ -51,7 +51,7 @@ export default function SeedPlanLines({ values, plan, filled, onChange, krw }: {
     if (key === 'irregularFund') {
       if (plan.irregularFund.items.length === 0) return null
       return {
-        summary: '1년 예산 ÷ 12 (지금 상태 점검의 비정기 지출)',
+        summary: '1년 예산 ÷ 12 (예산의 비정기 지출)',
         body: (
           <ul className="seed-plan-items">
             {plan.irregularFund.items.map((item) => (

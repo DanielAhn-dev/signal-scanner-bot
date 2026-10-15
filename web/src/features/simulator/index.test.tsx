@@ -103,7 +103,7 @@ describe('시뮬레이터', () => {
 
   it('시드 만들기에서 넘어오면 그 투자금으로 시작하고 서버 계획은 부르지 않는다', async () => {
     renderPage({ seedBuilderCapital: 3_000_000 })
-    expect(await screen.findByText(/시드 만들기에서 확인한 가용 현금/)).toBeTruthy()
+    expect(await screen.findByText(/이번 달 투자금에서 확인한 가용 현금/)).toBeTruthy()
     expect((screen.getByLabelText('총 투자금 (원)') as HTMLInputElement).value).toBe('3000000')
     await waitFor(() => expect(callsTo('/api/ui/scan-candidates')).toHaveLength(1))
     expect(callsTo('/api/ui/simulation-plan')).toHaveLength(0)

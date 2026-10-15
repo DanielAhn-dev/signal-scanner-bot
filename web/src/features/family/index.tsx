@@ -19,17 +19,17 @@ const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const kstToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 const kstDate = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 const SCOPES: Array<{ key: Scope; label: string; desc: string }> = [
-  { key: 'spending', label: '지출', desc: '돈 흐름에 적은 지출 기록. 서로 고치거나 지울 수 있고, 누가 했는지 표시되며 지운 기록은 되돌릴 수 있습니다.' },
-  { key: 'plan', label: '지금 상태 점검', desc: '가장 최근 점검 결과(투자 가능액·못 줄이는 생활비·고정지출 비율). 배우자는 보기만 합니다.' },
+  { key: 'spending', label: '지출', desc: '지출 기록에 적은 지출 기록. 서로 고치거나 지울 수 있고, 누가 했는지 표시되며 지운 기록은 되돌릴 수 있습니다.' },
+  { key: 'plan', label: '예산', desc: '가장 최근 점검 결과(투자 가능액·못 줄이는 생활비·고정지출 비율). 배우자는 보기만 합니다.' },
   { key: 'investing', label: '투자', desc: '가상 계좌 평가액·시드·월 적립 요약. 종목별 내역은 보여 주지 않습니다.' },
   { key: 'children', label: '자녀 계좌', desc: '자녀 별칭·나이·증여 합계·남은 공제 한도.' },
 ]
 
 /** 공유 규칙 — 초대한 사람과 받은 사람의 권한은 같다. 바꾸려면 이 표와 서버(src/services/household.ts)를 함께 고친다 */
 export const SHARE_RULES: Array<[string, string, string]> = [
-  ['지출 기록(돈 흐름)', '적기·고치기·지우기', '보기·고치기·지우기 (누가 했는지 표시, 지운 기록 되돌리기)'],
-  ['지금 상태 점검', '본인만 작성', '결과 보기만'],
-  ['시드 만들기(월 기록·확보)', '본인만', '보이지 않음'],
+  ['지출 기록', '적기·고치기·지우기', '보기·고치기·지우기 (누가 했는지 표시, 지운 기록 되돌리기)'],
+  ['예산', '본인만 작성', '결과 보기만'],
+  ['이번 달 투자금(월 기록·확보)', '본인만', '보이지 않음'],
   ['투자(가상 계좌·실계좌·매매)', '본인만', '요약 보기만 (평가액·원금·월 적립)'],
   ['자녀 계좌(증여 기록)', '등록한 사람만', '보기만 (나이·증여 합계·남은 한도)'],
 ]
@@ -200,10 +200,10 @@ function Linked({ view, busy, run }: { view: Extract<View, { status: 'active' }>
 
         <h3>지출</h3>
         {view.partnerShares.spending
-          ? <p className="acc-note"><Link to="/money-flow">돈 흐름</Link>에서 "우리 집 합계"로 함께 봅니다. 지출은 각자 자기 계정으로 적습니다.</p>
+          ? <p className="acc-note"><Link to="/money-flow">지출 기록</Link>에서 "우리 집 합계"로 함께 봅니다. 지출은 각자 자기 계정으로 적습니다.</p>
           : <p className="acc-note">공유하지 않았습니다.</p>}
 
-        <h3>지금 상태 점검</h3>
+        <h3>예산</h3>
         {!view.partnerShares.plan ? <p className="acc-note">공유하지 않았습니다.</p> : !view.partner.check ? <p className="acc-note">아직 점검하지 않았습니다.</p> : <PartnerCheck date={view.partner.check.date} input={view.partner.check.input} />}
 
         <h3>투자</h3>

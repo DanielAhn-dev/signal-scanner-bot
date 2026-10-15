@@ -24,7 +24,7 @@ beforeEach(() => {
 
 const renderCheck = (route = '/money-flow?tab=check') => render(<MemoryRouter initialEntries={[route]}><MoneyFlowPage /></MemoryRouter>)
 
-describe('지금 상태 점검', () => {
+describe('예산', () => {
   it('지난 점검을 불러와 투자 가능액·최대로 줄이면·10·20년 범위를 보여 준다', async () => {
     apiFetchMock.mockResolvedValue({ entries: [], rules: [], checks: [{ id: 'c1', date: '2026-09-30', label: '9월', input: savedInput }] })
     renderCheck()
@@ -85,7 +85,7 @@ describe('지금 상태 점검', () => {
   })
 })
 
-describe('우리 집 수입(시작하기·시드 만들기와 같은 값)', () => {
+describe('우리 집 수입(시작하기·이번 달 투자금와 같은 값)', () => {
   const stored = { household: 'dual-income', ownIncome: 3_000_000, partnerIncome: 2_000_000, ownPayday: 25, partnerPayday: 10 }
   const route = (userState: unknown) => (path: string, o?: { method?: string }) => {
     if (path === '/api/ui/user-state') return Promise.resolve(o?.method === 'POST' ? { ok: true } : { data: userState })
@@ -93,7 +93,7 @@ describe('우리 집 수입(시작하기·시드 만들기와 같은 값)', () =
     return Promise.resolve({ entries: [], rules: [], checks: [{ id: 'c1', date: '2026-09-30', label: '', input: savedInput }] })
   }
 
-  it('저장된 맞벌이 수입을 사람별로 보여 주고, 시드 만들기에 반영할 때 나눈 그대로 보낸다', async () => {
+  it('저장된 맞벌이 수입을 사람별로 보여 주고, 이번 달 투자금에 반영할 때 나눈 그대로 보낸다', async () => {
     window.localStorage.clear()
     apiFetchMock.mockImplementation(route({ householdIncome: { value: stored, updatedAt: Date.now() } }))
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -102,7 +102,7 @@ describe('우리 집 수입(시작하기·시드 만들기와 같은 값)', () =
     expect((screen.getByLabelText('본인 월 수입(세후)') as HTMLInputElement).value).toBe('3000000')
     // 5,000,000 − 현금 지출 1,517,000 − 비상자금 200,000
     expect(screen.getByLabelText('점검 결과')).toHaveTextContent('지금 투자 가능액(월)3,283,000원')
-    fireEvent.click(screen.getByRole('button', { name: '시드 만들기 이번 달에 반영' }))
+    fireEvent.click(screen.getByRole('button', { name: '이번 달 투자금 이번 달에 반영' }))
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'PUT' })))
     const body = JSON.parse(apiFetchMock.mock.calls.find(([p, o]) => p === '/api/ui/seed-builder' && o?.method === 'PUT')![1].body)
     expect(body).toMatchObject({ household: 'dual-income', ownIncome: 3_000_000, partnerIncome: 2_000_000, ownPayday: 25, partnerPayday: 10 })

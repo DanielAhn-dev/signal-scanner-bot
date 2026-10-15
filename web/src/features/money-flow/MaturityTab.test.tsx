@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import MoneyFlowPage from './index'
+import MaturityTab from './MaturityTab'
 
 const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -16,7 +16,8 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-const renderTab = () => render(<MemoryRouter initialEntries={['/money-flow?tab=maturity']}><MoneyFlowPage /></MemoryRouter>)
+// 만기 예·적금은 이번 달 투자금(모아 둔 시드) 아래로 옮겼다 — 컴포넌트만 띄운다
+const renderTab = () => render(<MemoryRouter initialEntries={['/seed-builder#maturity']}><MaturityTab /></MemoryRouter>)
 
 function addItem(name: string, manwon: string, date: string, horizon?: string) {
   fireEvent.change(screen.getByLabelText('이름 (예: OO적금)'), { target: { value: name } })
@@ -27,7 +28,7 @@ function addItem(name: string, manwon: string, date: string, horizon?: string) {
 }
 
 describe('만기 예·적금 탭', () => {
-  it('?tab=maturity로 바로 열리고, 입력이 비면 추가할 수 없다', () => {
+  it('입력이 비면 추가할 수 없다', () => {
     renderTab()
     expect(screen.getByText('만기 예·적금, 어디로 보낼지 미리')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '추가' })).toBeDisabled()

@@ -178,7 +178,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
   }
   const latest = checks[0] ?? null
   const withKeys = <T,>(list: T[] | undefined) => (list ?? []).map((x) => ({ ...x, key: newKey() }))
-  // 수입은 '우리 집 수입' 한 벌을 시작하기·시드 만들기와 같이 쓴다. 저장값이 생기기 전에는 지난 점검의 합계로 시작한다
+  // 수입은 '우리 집 수입' 한 벌을 시작하기·이번 달 투자금와 같이 쓴다. 저장값이 생기기 전에는 지난 점검의 합계로 시작한다
   const incomeStore = useHouseholdIncome()
   const [household, setHousehold] = useState<HouseholdIncome>(() => (latest ? { ...EMPTY_HOUSEHOLD_INCOME, ownIncome: latest.input.monthlyIncome } : EMPTY_HOUSEHOLD_INCOME))
   const [householdLoaded, setHouseholdLoaded] = useState(false)
@@ -192,7 +192,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
   // 저장하고 나면 길잡이의 다음 단계를 바로 보여 준다(시작하기에서 온 사람은 돌아가기 버튼이 그 역할)
   const journey = useJourney(saved && !fromStart)
 
-  // 저장된 우리 집 수입이 있으면 그 값이 기준. 없고 지난 점검도 없으면 시드 만들기 기록에서 가져온 값을 보여 준다
+  // 저장된 우리 집 수입이 있으면 그 값이 기준. 없고 지난 점검도 없으면 이번 달 투자금 기록에서 가져온 값을 보여 준다
   useEffect(() => {
     if (householdLoaded || !incomeStore.ready) return
     if (incomeStore.value && (incomeStore.saved || !latest)) setHousehold(incomeStore.value)
@@ -290,9 +290,9 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     }
   }
 
-  // 시드 만들기 이번 달 기록에 반영: 지출 큰 항목(현금 기준)·수입·비상자금 적립. 목표·확보 기록·일시 수입은 그대로 둔다
+  // 이번 달 투자금 이번 달 기록에 반영: 지출 큰 항목(현금 기준)·수입·비상자금 적립. 목표·확보 기록·일시 수입은 그대로 둔다
   const applyToSeed = async () => {
-    if (!window.confirm('시드 만들기 이번 달 수입·지출·남겨둘 돈을 이 점검 값으로 바꿀까요? 이번 달 목표와 확보 기록은 그대로 둡니다.')) return
+    if (!window.confirm('이번 달 투자금 이번 달 수입·지출·남겨둘 돈을 이 점검 값으로 바꿀까요? 이번 달 목표와 확보 기록은 그대로 둡니다.')) return
     try {
       const month = kstMonth()
       const rows: any[] = await apiFetch(`/api/ui/seed-builder?year=${month.slice(0, 4)}`, { cacheMs: 0, retries: 0 }).then((r) => (Array.isArray(r?.data) ? r.data : []))
@@ -309,7 +309,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
           extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, ...cur?.extraIncome }, reserve: input.reserveMonthly, plan: Number(cur?.plan ?? 0),
         }),
       })
-      setNotice('시드 만들기 이번 달 기록에 반영했습니다.')
+      setNotice('이번 달 투자금 이번 달 기록에 반영했습니다.')
     } catch (e) {
       setNotice(`반영 실패: ${e instanceof Error ? e.message : String(e)}`)
     }
@@ -318,7 +318,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
   return (
     <>
       <section className="acc-card">
-        <h2>지금 상태 점검</h2>
+        <h2>예산</h2>
         <p className="acc-note">한 번 해 두면 다음 점검 때 그대로 불러옵니다. 바뀐 것만 고치면 됩니다. 금액은 모두 한 달 기준입니다(비정기는 1년 합계).</p>
         <h3>우리 집 수입</h3>
         <div className="acc-seg" role="group" aria-label="가구 형태">
@@ -328,7 +328,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
           <label className="acc-field"><span>{household.household === 'solo' ? '월 수입(세후)' : '본인 월 수입(세후)'}</span><input type="number" inputMode="numeric" min="0" value={household.ownIncome || ''} onChange={(e) => editHousehold({ ...household, ownIncome: num(e.target.value) })} placeholder="0" /></label>
           {dual && <label className="acc-field"><span>배우자 월 수입(세후)</span><input type="number" inputMode="numeric" min="0" value={household.partnerIncome || ''} onChange={(e) => editHousehold({ ...household, partnerIncome: num(e.target.value) })} placeholder="0" /></label>}
         </div>
-        <p className="acc-note">{dual && household.partnerIncome > 0 ? `합계 ${krw(householdTotal(household))}. ` : ''}시작하기·시드 만들기와 같은 값이라 여기서 고치면 바로 저장되고 거기에도 반영됩니다. 성과급처럼 가끔 들어오는 돈은 시드 만들기의 그달 추가 수입에 적습니다.</p>
+        <p className="acc-note">{dual && household.partnerIncome > 0 ? `합계 ${krw(householdTotal(household))}. ` : ''}시작하기·이번 달 투자금와 같은 값이라 여기서 고치면 바로 저장되고 거기에도 반영됩니다. 성과급처럼 가끔 들어오는 돈은 이번 달 투자금의 그달 추가 수입에 적습니다.</p>
         <div className="acc-row">
           <label className="acc-field"><span>매달 비상자금으로 떼는 돈</span><input type="number" inputMode="numeric" min="0" value={reserve} onChange={(e) => setReserve(e.target.value)} placeholder="0" /></label>
         </div>
@@ -396,7 +396,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
               </tbody>
             </table>
           </div>
-          <p className="acc-note">돈 흐름 합계 칸의 "이번 달 비정기"나 세부 기록에 항목 이름 그대로 적은 금액을 모읍니다. 실제가 예산과 계속 다르면 위 1년 예산을 고쳐 저장하세요. 올해 열은 아직 안 낸 달이 있으면 예산보다 적게 보입니다.</p>
+          <p className="acc-note">지출 기록 합계 칸의 "이번 달 비정기"나 세부 기록에 항목 이름 그대로 적은 금액을 모읍니다. 실제가 예산과 계속 다르면 위 1년 예산을 고쳐 저장하세요. 올해 열은 아직 안 낸 달이 있으면 예산보다 적게 보입니다.</p>
         </section>
       )}
 
@@ -461,7 +461,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
 
           <div className="mf-check-actions">
             <button type="button" className="acc-primary" disabled={saving} onClick={() => void save()}>{saving ? '저장 중…' : '이 점검 저장'}</button>
-            <button type="button" className="acc-secondary" onClick={() => void applyToSeed()}>시드 만들기 이번 달에 반영</button>
+            <button type="button" className="acc-secondary" onClick={() => void applyToSeed()}>이번 달 투자금 이번 달에 반영</button>
             {fromStart && <button type="button" className="acc-secondary" onClick={() => navigate('/start')}>시작하기로 돌아가기</button>}
           </div>
           {journey && journey.next.key !== 'money' && (

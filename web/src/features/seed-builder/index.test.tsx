@@ -18,7 +18,7 @@ const openEditor = async () => {
   fireEvent.click(await screen.findByRole('button', { name: '자세히 직접 입력하기' }))
 }
 
-describe('시드 만들기', () => {
+describe('이번 달 투자금', () => {
   it('0원부터 시작해 확보 내역을 서버에 기록한 뒤에만 올해 시드에 반영한다', async () => {
     apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true, id: 'entry-1' }) : Promise.resolve({ data: [] }))
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
@@ -224,7 +224,7 @@ describe('시드 만들기', () => {
     ] }))
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     await waitFor(() => expect(screen.getByLabelText('시드 현황')).toHaveTextContent('올해 모은 돈30,000원'))
-    fireEvent.click(screen.getByRole('button', { name: '시드 만들기 기록 전체 삭제' }))
+    fireEvent.click(screen.getByRole('button', { name: '이번 달 투자금 기록 전체 삭제' }))
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'DELETE' }))
     fireEvent.click(screen.getByRole('button', { name: '삭제' }))
     await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'DELETE', body: expect.stringContaining('delete-all') })))
@@ -279,14 +279,14 @@ describe('비정기 1년 예산(비정기 적립)', () => {
     apiFetchMock.mockImplementation((path: string) => Promise.resolve(String(path).includes('money-flow') ? { checks: [{ date: '2026-10-01', input }] } : { data: [] }))
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     await openEditor()
-    fireEvent.click(await screen.findByRole('button', { name: '돈 흐름·점검에서 지출 채우기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '예산·지출 기록에서 채우기' }))
     expect((screen.getByLabelText(/비정기 적립/) as HTMLInputElement).value).toBe('50000')
     expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('950,000원')
   })
 })
 
-describe('예상 지출 세 줄(돈 흐름·점검)', () => {
-  it('지난달 돈 흐름으로 변동 지출을 계산해 채우고, 줄마다 내역을 펼쳐 보며, 저장할 때 내역도 함께 보낸다', async () => {
+describe('예상 지출 세 줄(지출 기록·점검)', () => {
+  it('지난달 지출 기록으로 변동 지출을 계산해 채우고, 줄마다 내역을 펼쳐 보며, 저장할 때 내역도 함께 보낸다', async () => {
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
     const prev = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1)).toISOString().slice(0, 7)
     const input = { monthlyIncome: 5_000_000, reserveMonthly: 100_000, variable: [{ categoryId: 'grocery_mart', amount: 400_000 }],
@@ -299,12 +299,12 @@ describe('예상 지출 세 줄(돈 흐름·점검)', () => {
     } : { data: [] }))
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     await openEditor()
-    fireEvent.click(await screen.findByRole('button', { name: '돈 흐름·점검에서 지출 채우기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '예산·지출 기록에서 채우기' }))
     expect((screen.getByLabelText('고정비') as HTMLInputElement).value).toBe('300000')
     // 1,200,000 − 고정 300,000 − 비정기 0
     expect((screen.getByLabelText('변동 지출') as HTMLInputElement).value).toBe('900000')
     expect((screen.getByLabelText('비정기 적립') as HTMLInputElement).value).toBe('20000')
-    expect(screen.getByText(/돈 흐름: 지출 1,200,000원 − 고정 300,000원 − 비정기 0원/)).toBeTruthy()
+    expect(screen.getByText(/지출 기록: 지출 1,200,000원 − 고정 300,000원 − 비정기 0원/)).toBeTruthy()
     expect(screen.getByText('엔진오일(하이브리드)', { exact: false })).toBeTruthy()
     expect(screen.getByRole('heading', { name: /^지출 [\d,]+원$/ })).toHaveTextContent('1,220,000원')
     fireEvent.change(screen.getByLabelText('변동 지출'), { target: { value: '950000' } })

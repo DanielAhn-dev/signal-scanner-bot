@@ -66,7 +66,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'money',
     label: '모으기',
     groups: [
-      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'money-flow', label: '돈 흐름' }, { key: 'seed-builder', label: '시드 만들기' }, { key: 'follow', label: '따라 사기' }] },
+      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'budget', label: '예산 설정' }, { key: 'money-flow', label: '지출 기록' }, { key: 'seed-builder', label: '이번 달 투자금' }, { key: 'follow', label: '따라 사기' }] },
     ],
   },
   {
@@ -164,6 +164,7 @@ export const USER_NAV_KEYS: readonly string[] = [
   'follow',
   'seed-builder',
   'money-flow',
+  'budget',
   'family',
   'simulator',
   'execution-guide',

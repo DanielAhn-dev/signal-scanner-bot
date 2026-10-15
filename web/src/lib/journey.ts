@@ -26,7 +26,7 @@ export type JourneyStep = { key: JourneyStepKey; label: string; desc: string; wh
 
 export function computeJourney(f: JourneyFacts): { steps: JourneyStep[]; next: JourneyStep; doneCount: number } {
   const steps: JourneyStep[] = [
-    { key: 'money', label: '내 돈 점검', route: 'money-flow?tab=check', done: f.hasCheck,
+    { key: 'money', label: '내 돈 점검', route: 'budget', done: f.hasCheck,
       desc: '고정·변동 지출을 나눠 실제로 투자할 수 있는 금액을 압니다.', why: '쓸 돈까지 투자하면 떨어졌을 때 팔 수밖에 없습니다.' },
     { key: 'start', label: '시작하기', route: 'start', done: f.hasAccount && f.hasProfile,
       desc: '성향 질문에 답하고 가상 계좌로 시작합니다. 실제 돈은 들어가지 않습니다.', why: '내 성향에 맞는 주식 비중과 적립 기본값이 정해집니다.' },

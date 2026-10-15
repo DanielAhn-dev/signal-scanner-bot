@@ -7,6 +7,9 @@ import { useCurrentClientId } from '../../stores/profileStore'
 import { HOUSEHOLDS, useHouseholdIncome, type Household, type HouseholdIncome } from '../../lib/householdIncome'
 import { seedExpenseTotal, seedPlanFromFlow, type FlowCheckInput, type SeedPlan } from '../../../../src/lib/moneyFlow'
 import SeedPlanLines, { PLAN_LABELS, type PlanKey } from './SeedPlanLines'
+import MaturityTab from '../money-flow/MaturityTab'
+import '../accumulate/accumulate.css'
+import '../money-flow/money-flow.css'
 import './seed-builder.css'
 
 type ExpenseKey = 'food' | 'housing' | 'vehicle' | 'education' | 'tax' | 'subscriptions' | 'other' | 'fixedCost' | 'variableCost' | 'irregularFund' | 'emergencyRefill' | 'card' | 'water' | 'gas' | 'residentTax' | 'propertyTax' | 'vehicleTax' | 'taxAdjustment'
@@ -27,7 +30,7 @@ type MonthRecord = {
   breakdown?: SeedPlan | null
 }
 
-// 예전 방식(항목별) — 지난 기록 보기·직접 입력용. 새 달은 세 줄(돈 흐름·점검에서 가져옴)을 쓴다
+// 예전 방식(항목별) — 지난 기록 보기·직접 입력용. 새 달은 세 줄(지출 기록·점검에서 가져옴)을 쓴다
 const legacyMainLabels: Array<{ key: ExpenseKey; label: string }> = [
   { key: 'food', label: '식비·생활' },
   { key: 'housing', label: '주거비' },
@@ -129,10 +132,10 @@ export default function SeedBuilderPage() {
   const [confirmTransfer, setConfirmTransfer] = useState(false)
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
   const [latestCheck, setLatestCheck] = useState<{ date: string; input: FlowCheckInput } | null>(null)
-  // 이 달 예상 지출: 지난달 돈 흐름(카드 합계 + 현금) + 최근 점검(고정·비정기 예산)
+  // 이 달 예상 지출: 지난달 지출 기록(카드 합계 + 현금) + 최근 점검(고정·비정기 예산)
   const [flowPlan, setFlowPlan] = useState<SeedPlan | null>(null)
   amountMask = masked
-  // 수입·급여일은 '우리 집 수입'(시작하기·돈 흐름 점검과 같은 값). 기록 안 한 이번 달·다음 달은 그 값으로 채워 두고,
+  // 수입·급여일은 '우리 집 수입'(시작하기·지출 기록 점검과 같은 값). 기록 안 한 이번 달·다음 달은 그 값으로 채워 두고,
   // 이번 달 이후의 수입을 고치면 우리 집 수입도 바로 바뀐다. 지난달 기록은 그달 실제 값이라 건드리지 않는다
   const incomeStore = useHouseholdIncome()
   const incomeBase = incomeStore.value
@@ -239,7 +242,7 @@ export default function SeedBuilderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incomeBaseJson, loading, selectedMonth])
 
-  // 이 달 예상 지출을 계산하려고 지난달 돈 흐름(칸 합계·세부 기록)과 최근 점검을 읽어 둔다
+  // 이 달 예상 지출을 계산하려고 지난달 지출 기록(칸 합계·세부 기록)과 최근 점검을 읽어 둔다
   useEffect(() => {
     if (!clientId) return
     const base = shiftMonthKey(selectedMonth, -1)
@@ -294,7 +297,7 @@ export default function SeedBuilderPage() {
   const fillFromCheck = () => {
     if (!latestCheck) return
     const { input } = latestCheck
-    // 고정비·비정기 적립은 점검, 변동 지출은 지난달 돈 흐름에서. 예전 항목별 칸은 비운다(두 번 세지 않게). 내역은 저장 때 함께 남는다
+    // 고정비·비정기 적립은 점검, 변동 지출은 지난달 지출 기록에서. 예전 항목별 칸은 비운다(두 번 세지 않게). 내역은 저장 때 함께 남는다
     const plan = flowPlan
     if (!plan) return
     setDraft((current) => ({
@@ -302,7 +305,7 @@ export default function SeedBuilderPage() {
       expenses: { ...emptyRecord().expenses, fixedCost: plan.fixed.total, variableCost: plan.variable.total, irregularFund: plan.irregularFund.total, emergencyRefill: plan.emergency.total },
       reserve: input.reserveMonthly, breakdown: plan,
     }))
-    const variableFrom = plan.variable.source === 'flow' ? `${Number(plan.baseMonth.slice(5))}월 돈 흐름` : '점검(지난달 합계 없음)'
+    const variableFrom = plan.variable.source === 'flow' ? `${Number(plan.baseMonth.slice(5))}월 지출 기록` : '점검(지난달 합계 없음)'
     setNotice(`고정비·비정기 적립은 ${latestCheck.date} 점검, 변동 지출은 ${variableFrom}에서 채웠습니다. 줄마다 펼쳐 무엇이 들어갔는지 확인하고 저장하세요.`)
   }
 
@@ -356,7 +359,7 @@ export default function SeedBuilderPage() {
     try {
       await apiFetch('/api/ui/seed-builder', { method: 'DELETE', body: JSON.stringify({ confirm: 'delete-all' }), cacheMs: 0 })
       setRecords({}); setEntries({}); setDraft(emptyRecord()); setConfirmDeleteAll(false)
-      setNotice('시드 만들기 기록을 모두 삭제했습니다. 가상 시드·자동 입금·자동매매는 그대로입니다.')
+      setNotice('이번 달 투자금 기록을 모두 삭제했습니다. 가상 시드·자동 입금·자동매매는 그대로입니다.')
     } catch (error) {
       setNotice(`삭제 실패: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -426,7 +429,7 @@ export default function SeedBuilderPage() {
   return (
     <main className={`seed-builder${masked ? ' is-masked' : ''}`}>
       <header className="seed-header">
-        <div><span className="seed-eyebrow">투자 전 단계</span><h1>시드 만들기</h1><p>큰 돈의 흐름을 보고, 이번 달 모을 수 있는 금액을 정합니다.</p></div>
+        <div><h1>이번 달 투자금</h1></div>
         <div className="seed-header-tools"><button type="button" className="seed-mask-button" aria-pressed={masked} onClick={toggleMask}>{masked ? <EyeOff size={15} /> : <Eye size={15} />} 금액 가리기</button></div>
         <div className="seed-month-nav" aria-label="기록 월 선택">
           <button type="button" title="이전 달" aria-label="이전 달" onClick={() => changeMonth(-1)}><ChevronLeft size={18} /></button>
@@ -487,7 +490,7 @@ export default function SeedBuilderPage() {
         </div>}
         {onboardStep === 1 && <div className="seed-input-group">
           <h3>이번 달 큰 지출</h3>
-          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>지금 상태 점검 값 가져오기</button>}
+          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>예산에서 가져오기</button>}
           <label>한 달 지출 합계(대략) <input type="number" inputMode="numeric" min="0" step="10000" value={expenseTotal || ''} placeholder="0" aria-describedby="hint-ob-expense" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...emptyRecord().expenses, other: Number.isFinite(value) ? value : 0 } })) }} /> <span>원</span></label>
           <AmountHint id="hint-ob-expense" value={expenseTotal} />
           <p className="seed-payday-help">항목을 나누지 않고 합계만 적어도 됩니다. 지금은 &lsquo;기타&rsquo;로 기록되고, 나중에 항목별로 나눌 수 있습니다. 카드대금까지 포함한 대략의 금액이면 충분합니다.</p>
@@ -511,11 +514,11 @@ export default function SeedBuilderPage() {
       <section className="seed-editor">
         <div className="seed-section-title"><div><h2>이번 달 돈의 흐름</h2><p>큰 금액만 입력해도 됩니다. 항목별 거래 내역은 필요하지 않습니다.</p></div></div>
         {(previous || latestCheck) && <div className="seed-fill-row">
-          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>돈 흐름·점검에서 지출 채우기</button>}
+          {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>예산·지출 기록에서 채우기</button>}
           {previous && <button type="button" className="seed-secondary" onClick={fillFromPrevious}>지난달 값 채우기</button>}
           <Detail><span>점검 값은 평소 한 달 기준(비정기는 1년 ÷ 12)입니다. 지난달 값은 수입·급여일·식비 등 반복 항목만 채우고 일시 항목은 복사하지 않습니다.</span></Detail>
         </div>}
-        {incomeMismatch && incomeBase && <p className="seed-warning">이 달 수입이 우리 집 수입(시작하기·돈 흐름 점검과 같은 값)과 다릅니다. <button type="button" className="seed-link-button" onClick={() => setDraft((current) => ({ ...current, ...incomeBase }))}>우리 집 수입으로 맞추기</button> 이 달만 다르다면 그대로 저장해도 됩니다.</p>}
+        {incomeMismatch && incomeBase && <p className="seed-warning">이 달 수입이 우리 집 수입(시작하기·지출 기록 점검과 같은 값)과 다릅니다. <button type="button" className="seed-link-button" onClick={() => setDraft((current) => ({ ...current, ...incomeBase }))}>우리 집 수입으로 맞추기</button> 이 달만 다르다면 그대로 저장해도 됩니다.</p>}
         <div className="seed-form-grid">
           <div className="seed-input-group">
             <h3>수입</h3>
@@ -654,11 +657,15 @@ export default function SeedBuilderPage() {
         <div>
           <button type="button" className="seed-secondary" onClick={exportYear} disabled={Object.keys(records).length === 0}>{year}년 기록 내려받기 (JSON)</button>
           {!confirmDeleteAll
-            ? <button type="button" className="seed-link-button" onClick={() => setConfirmDeleteAll(true)} disabled={!clientId || loading}>시드 만들기 기록 전체 삭제</button>
+            ? <button type="button" className="seed-link-button" onClick={() => setConfirmDeleteAll(true)} disabled={!clientId || loading}>이번 달 투자금 기록 전체 삭제</button>
             : <span className="seed-delete-confirm" role="alertdialog" aria-label="전체 삭제 확인">모든 연도의 월 기록과 확보 내역이 삭제되며 되돌릴 수 없습니다. <button type="button" className="seed-primary" disabled={saving} onClick={() => void deleteAll()}>삭제</button> <button type="button" className="seed-link-button" onClick={() => setConfirmDeleteAll(false)}>취소</button></span>}
         </div>
       </section></Detail>
       <p className="seed-disclaimer"><Wallet size={15} /> 이 기록은 실제 돈 기록입니다. 실험(가상) 계좌의 시드·월 입금·자동매매에는 반영되지 않습니다.{virtualDeposit !== null && <> 실험 계좌 월 입금은 {virtualDeposit > 0 ? krw(virtualDeposit) : '꺼짐'}이며 <button type="button" className="seed-link-button" onClick={() => navigate('/settings')}>설정</button>에서 바꿉니다.</>}</p>
+      <section className="seed-maturity" id="maturity" aria-label="모아 둔 시드">
+        <h2>모아 둔 시드</h2>
+        <MaturityTab />
+      </section>
     </main>
   )
 }
