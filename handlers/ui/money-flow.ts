@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { partnerSharing } from '../../src/services/household'
-import { categoryById, learnKeyword, type FlowCheckInput, type FlowItem, type IrregularItem } from '../../src/lib/moneyFlow'
+import { MAX_TOTAL_SLOTS, UNRECORDED_CATEGORY_ID, categoryById, learnKeyword, type FlowCheckInput, type FlowItem, type IrregularItem, type MonthTotal } from '../../src/lib/moneyFlow'
 
 const maxAmount = 100_000_000_000
 const maxEntriesPerPost = 50
@@ -36,7 +36,8 @@ export function normalizeFlowEntry(body: any, now = new Date()) {
   if (value === null) return null
   const memo = body.memo ?? ''
   if (typeof memo !== 'string' || memo.length > 100) return null
-  if (typeof body.categoryId !== 'string' || !categoryById(body.categoryId)) return null
+  // '세부 안 적음'은 월 합계 차액용이라 세부 기록에는 쓰지 않는다
+  if (typeof body.categoryId !== 'string' || !categoryById(body.categoryId) || body.categoryId === UNRECORDED_CATEGORY_ID) return null
   const cut = body.cut ?? null
   if (cut !== null && !cutLevels.includes(cut)) return null
   const payment = body.payment ?? 'cash'
@@ -92,6 +93,34 @@ export function normalizeFlowCheck(body: any, now = new Date()): { checked_on: s
     checked_on: date, label: label.trim(),
     input: { monthlyIncome: income, reserveMonthly: reserve, fixed: fixed as FlowItem[], variable: variable as FlowItem[], irregular: irregular as IrregularItem[] },
   }
+}
+
+/**
+ * 월 합계 저장 요청. 이용월 기준(YYYY-MM)이고 이번 달 이후는 받지 않는다.
+ * 칸 이름은 겹치지 않아야 하고, 빈 목록이면 그 달 합계를 지운다는 뜻이다.
+ */
+export function normalizeMonthTotals(body: any, now = new Date()): { month: string; totals: MonthTotal[] } | null {
+  const month = body?.month
+  if (typeof month !== 'string' || !validDate(`${month}-01`) || month > kstToday(now).slice(0, 7)) return null
+  if (!Array.isArray(body.totals) || body.totals.length > MAX_TOTAL_SLOTS) return null
+  const totals: MonthTotal[] = []
+  for (const raw of body.totals) {
+    const label = typeof raw?.label === 'string' ? raw.label.trim() : ''
+    const value = amount(raw?.amount)
+    if (!label || label.length > 20 || value === null || (raw.kind !== 'cash' && raw.kind !== 'point')) return null
+    if (totals.some((t) => t.label === label)) return null
+    totals.push({ label, kind: raw.kind, amount: value })
+  }
+  return { month, totals }
+}
+
+/** 마이그레이션 전: PostgREST가 테이블을 모를 때(PGRST205) 또는 Postgres 42P01 */
+export function isMissingTable(error: { code?: string } | null | undefined): boolean {
+  return error?.code === 'PGRST205' || error?.code === '42P01'
+}
+
+export function toMonthTotal(row: any, viewer: string) {
+  return { month: String(row.month).slice(0, 7), label: row.label, kind: row.kind, amount: Number(row.amount), mine: row.client_id === viewer }
 }
 
 const entryColumns = 'id,client_id,spent_on,amount,memo,category_id,cut_level,must_part,payment,for_whom,updated_by_client_id,deleted_at,deleted_by_client_id'
@@ -161,6 +190,26 @@ async function handlePost(supabase: any, clientId: string, body: any, res: Verce
     if (error) return res.status(500).json({ error: error.message })
     return res.status(200).json({ ok: true, id: data.id })
   }
+  if (action === 'save-month-totals') {
+    // 자기 칸만 저장한다(배우자 합계는 배우자가 적는다). 새 값을 먼저 upsert하고, 목록에서 빠진 칸만 지워 중간 실패 때 기존 값이 사라지지 않게 한다
+    const parsed = normalizeMonthTotals(body)
+    if (!parsed) return res.status(400).json({ error: 'Invalid totals' })
+    const month = `${parsed.month}-01`
+    const now = new Date().toISOString()
+    if (parsed.totals.length > 0) {
+      const { error } = await supabase.from('money_flow_month_totals')
+        .upsert(parsed.totals.map((t, position) => ({ client_id: clientId, month, label: t.label, kind: t.kind, amount: t.amount, position, updated_at: now })), { onConflict: 'client_id,month,label' })
+      if (error) return res.status(500).json({ error: error.message })
+    }
+    const { data: existing, error: readError } = await supabase.from('money_flow_month_totals').select('label').eq('client_id', clientId).eq('month', month)
+    if (readError) return res.status(500).json({ error: readError.message })
+    const removed = (existing ?? []).map((row: any) => row.label).filter((label: string) => !parsed.totals.some((t) => t.label === label))
+    if (removed.length > 0) {
+      const { error } = await supabase.from('money_flow_month_totals').delete().eq('client_id', clientId).eq('month', month).in('label', removed)
+      if (error) return res.status(500).json({ error: error.message })
+    }
+    return res.status(200).json({ ok: true })
+  }
   if (typeof body?.id !== 'string' || !uuidPattern.test(body.id)) return res.status(400).json({ error: 'Invalid id' })
   if (action === 'update-entry') {
     const row = normalizeFlowEntry(body)
@@ -224,7 +273,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!validDate(from) || !validDate(to) || from > to) return res.status(400).json({ error: 'Invalid range' })
     // 부부 연결: 상대가 지출을 공유하면 상대 기록도 함께 준다(읽기만, mine: false). 고치기·지우기는 client_id로 묶여 자기 것만 된다
     const partnerClientId = await partnerSharing(supabase, user.clientId, 'spending')
-    const [entries, rules, checks, partnerEntries] = await Promise.all([
+    const totalOwners = partnerClientId ? [user.clientId, partnerClientId] : [user.clientId]
+    const [entries, rules, checks, partnerEntries, totals] = await Promise.all([
       supabase.from('money_flow_entries').select(entryColumns).eq('client_id', user.clientId)
         .gte('spent_on', from).lte('spent_on', to).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).limit(2000),
       supabase.from('money_flow_rules').select('keyword,category_id').eq('client_id', user.clientId).limit(1000),
@@ -234,13 +284,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? supabase.from('money_flow_entries').select(entryColumns).eq('client_id', partnerClientId)
           .gte('spent_on', from).lte('spent_on', to).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).limit(2000)
         : Promise.resolve({ data: [], error: null }),
+      supabase.from('money_flow_month_totals').select('client_id,month,label,kind,amount,position').in('client_id', totalOwners)
+        .gte('month', `${from.slice(0, 7)}-01`).lte('month', to).order('month', { ascending: false }).order('position', { ascending: true }).limit(1000),
     ])
-    const failed = [entries, rules, checks, partnerEntries].find((result) => result.error)
+    // 월 합계 테이블(033)이 아직 없으면 그 기능만 끄고 나머지는 그대로 보여 준다. 다른 오류는 숨기지 않는다
+    const totalsMissing = isMissingTable(totals.error)
+    const failed = [entries, rules, checks, partnerEntries, ...(totalsMissing ? [] : [totals])].find((result) => result.error)
     if (failed) return res.status(500).json({ error: failed.error!.message })
     return res.status(200).json({
       ...splitDeleted([...(entries.data ?? []), ...(partnerEntries.data ?? [])].map((row: any) => toEntry(row, user.clientId!))
         .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))),
       partnerShared: !!partnerClientId,
+      totalsReady: !totalsMissing,
+      totals: totalsMissing ? [] : (totals.data ?? []).map((row: any) => toMonthTotal(row, user.clientId!)),
       rules: (rules.data ?? []).map((row: any) => ({ keyword: row.keyword, categoryId: row.category_id })),
       checks: (checks.data ?? []).map((row: any) => ({ id: row.id, date: String(row.checked_on).slice(0, 10), label: row.label, input: row.input })),
     })

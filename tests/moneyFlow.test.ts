@@ -3,9 +3,9 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, detectPayment, splitPartnerWord, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
-  parseLeadingDate, parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  parseLeadingDate, parseQuickLine, parseQuickLines, reconcileMonth, slotsForMonth, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
-import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, storedForWhom, toEntry } from '../handlers/ui/money-flow'
+import handler, { isMissingTable, normalizeFlowCheck, normalizeFlowEntry, normalizeMonthTotals, splitDeleted, storedForWhom, toEntry, toMonthTotal } from '../handlers/ui/money-flow'
 
 test('분류표: id 중복 없음, 모든 소분류에 갈래·대분류·기본값·시드 항목이 있다', () => {
   const ids = FLOW_CATEGORIES.map((c) => c.id)
@@ -400,4 +400,63 @@ test('누구 몫을 고쳐 저장하면 고친 사람 화면에 고른 그대로
       assert.equal(toEntry({ ...row, for_whom: stored }, viewer).forWhom, pick, `${viewer} ${pick}`)
     }
   }
+})
+
+test('월 합계: 세부를 일부만 적으면 차액이 세부 안 적음으로 남고, 환급은 합계에서 따로 뺀다', () => {
+  const summary = summarizeItems([
+    { categoryId: 'cafe', amount: 20_000 },
+    { categoryId: 'transit', amount: 30_000, payment: 'refund_regular' as const },
+    { categoryId: 'eat_out', amount: 10_000, payment: 'point_regular' as const },
+  ])
+  const r = reconcileMonth([
+    { label: 'A카드', kind: 'cash', amount: 1_000_000 }, { label: '현금', kind: 'cash', amount: 50_000 }, { label: '포인트', kind: 'point', amount: 32_000 },
+  ], summary)
+  assert.deepEqual([r.cashTotal, r.detailedCash, r.unrecordedCash], [1_050_000, 20_000, 1_030_000])
+  assert.deepEqual([r.pointTotal, r.unrecordedPoint], [32_000, 22_000])
+  assert.equal(r.cash, 1_020_000)
+  assert.equal(r.consumption, 1_082_000)
+  assert.equal(r.overCash, false)
+})
+
+test('월 합계: 합계가 없으면 세부 기록 그대로, 세부가 합계보다 많으면 막지 않고 표시만 한다', () => {
+  const summary = summarizeItems([{ categoryId: 'cafe', amount: 20_000 }])
+  const none = reconcileMonth([], summary)
+  assert.deepEqual([none.cashTotal, none.unrecordedCash, none.cash, none.overCash], [20_000, 0, 20_000, false])
+  const over = reconcileMonth([{ label: '카드', kind: 'cash', amount: 15_000 }], summary)
+  assert.deepEqual([over.unrecordedCash, over.overCash, over.cash], [0, true, 20_000])
+})
+
+test('월 합계 칸: 이 달 칸 → 지난달 칸 이름(금액 빈칸) → 기본 칸', () => {
+  const all = [
+    { month: '2026-08', label: 'A카드', kind: 'cash' as const, amount: 900_000 },
+    { month: '2026-09', label: 'B카드', kind: 'cash' as const, amount: 300_000 },
+    { month: '2026-09', label: '포인트', kind: 'point' as const, amount: 10_000 },
+  ]
+  assert.deepEqual(slotsForMonth('2026-09', all).map((t) => [t.label, t.amount]), [['B카드', 300_000], ['포인트', 10_000]])
+  assert.deepEqual(slotsForMonth('2026-10', all).map((t) => [t.label, t.kind, t.amount]), [['B카드', 'cash', null], ['포인트', 'point', null]])
+  assert.deepEqual(slotsForMonth('2026-07', all).map((t) => t.label), ['카드', '현금', '포인트'])
+})
+
+test('월 합계 저장 검증: 이번 달 이후·겹치는 이름·빈 이름·잘못된 종류는 거절, 빈 목록은 지우기', () => {
+  const now = new Date('2026-10-15T03:00:00Z')
+  const ok = { label: 'A카드', kind: 'cash', amount: 1_240_000 }
+  assert.deepEqual(normalizeMonthTotals({ month: '2026-10', totals: [ok, { label: ' 포인트 ', kind: 'point', amount: 0 }] }, now)?.totals.map((t) => t.label), ['A카드', '포인트'])
+  assert.deepEqual(normalizeMonthTotals({ month: '2026-09', totals: [] }, now)?.totals, [])
+  assert.equal(normalizeMonthTotals({ month: '2026-11', totals: [ok] }, now), null)
+  assert.equal(normalizeMonthTotals({ month: '2026-13', totals: [ok] }, now), null)
+  assert.equal(normalizeMonthTotals({ month: '2026-10', totals: [ok, { ...ok, amount: 1 }] }, now), null)
+  assert.equal(normalizeMonthTotals({ month: '2026-10', totals: [{ ...ok, label: '  ' }] }, now), null)
+  assert.equal(normalizeMonthTotals({ month: '2026-10', totals: [{ ...ok, kind: 'refund' }] }, now), null)
+  assert.equal(normalizeMonthTotals({ month: '2026-10', totals: [{ ...ok, amount: -1 }] }, now), null)
+  assert.equal(normalizeMonthTotals({ month: '2026-10', totals: Array.from({ length: 13 }, (_, i) => ({ ...ok, label: `카드${i}` })) }, now), null)
+  assert.deepEqual(toMonthTotal({ client_id: 'wife', month: '2026-10-01', label: 'A카드', kind: 'cash', amount: '1000' }, 'husband'), { month: '2026-10', label: 'A카드', kind: 'cash', amount: 1000, mine: false })
+})
+
+test('세부 기록에는 "세부 안 적음" 분류를 쓸 수 없고, 합계 테이블이 없을 때만 그 기능을 끈다', () => {
+  const now = new Date('2026-10-06T03:00:00Z')
+  assert.equal(normalizeFlowEntry({ date: '2026-10-05', amount: 1000, memo: '', categoryId: 'unrecorded' }, now), null)
+  assert.equal(isMissingTable({ code: 'PGRST205' }), true)
+  assert.equal(isMissingTable({ code: '42P01' }), true)
+  assert.equal(isMissingTable({ code: '57014' }), false)
+  assert.equal(isMissingTable(null), false)
 })

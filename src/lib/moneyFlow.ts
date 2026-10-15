@@ -58,6 +58,8 @@ export const FLOW_CATEGORIES: FlowCategory[] = [
   ...c("variable", "꾸밈", "other", [["clothes", "옷·신발", "trim"], ["beauty", "미용", "trim"], ["cosmetics", "화장품", "trim"]]),
   ...c("variable", "여가", "other", [["hobby", "취미·운동", "trim"], ["culture", "문화·공연", "drop"], ["game", "게임·앱 결제", "drop"]]),
   ...c("variable", "기타", "other", [["etc", "기타 생활", "trim"]]),
+  // 월 합계 − 세부 기록 차액. 세부 기록에는 고르지 않고, 점검으로 넘길 때만 쓴다(무엇에 썼는지 몰라 줄일 수 있나는 기본값 trim)
+  ...c("variable", "기타", "other", [["unrecorded", "세부 안 적음", "trim"]]),
   ...c("irregular", "세금", "tax", [["tax", "세금", "must"]]),
   ...c("irregular", "차량", "vehicle", [["car", "자동차보험·정비", "must"]]),
   ...c("irregular", "경조사·명절", "other", [["occasion", "경조사·명절", "trim"]]),
@@ -414,6 +416,70 @@ export function compareSummaries(previous: FlowSummary, current: FlowSummary): C
     .map((categoryId) => ({ categoryId, previous: prev.get(categoryId) ?? 0, current: curr.get(categoryId) ?? 0, difference: (curr.get(categoryId) ?? 0) - (prev.get(categoryId) ?? 0) }))
     .filter((row) => row.previous !== 0 || row.current !== 0)
     .sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference));
+}
+
+/**
+ * 월 합계 칸(A카드·B카드·현금·포인트 등). 세부를 다 적기 어려워 카드 앱의 '이번 달 이용금액'만 옮겨 적는 방식.
+ * 이용월 기준이라 같은 달 세부 기록과 비교해 '세부 안 적음'을 구한다. 0을 맞추지 않아도 된다.
+ * cash = 통장에서 나감(카드·현금), point = 포인트로 냄.
+ */
+export type TotalKind = "cash" | "point";
+export type MonthTotal = { label: string; kind: TotalKind; amount: number };
+export const MAX_TOTAL_SLOTS = 12;
+export const DEFAULT_TOTAL_SLOTS: Array<{ label: string; kind: TotalKind }> = [
+  { label: "카드", kind: "cash" }, { label: "현금", kind: "cash" }, { label: "포인트", kind: "point" },
+];
+/** 점검으로 넘길 때 차액이 들어가는 소분류 */
+export const UNRECORDED_CATEGORY_ID = "unrecorded";
+
+export type MonthReconcile = {
+  /** 칸에 적은 합계(환급 빼기 전) */
+  cashTotal: number;
+  pointTotal: number;
+  /** 세부 기록에 적힌 쓴 돈(환급 빼기 전) */
+  detailedCash: number;
+  detailedPoint: number;
+  /** 합계 − 세부. 세부가 더 많으면 0 */
+  unrecordedCash: number;
+  unrecordedPoint: number;
+  /** 세부 기록이 합계보다 많은 칸(다른 달 기록이 섞였거나 합계를 덜 적음) */
+  overCash: boolean;
+  overPoint: boolean;
+  /** 통장에서 실제로 나간 돈 = 합계 − 돌려받은 돈 */
+  cash: number;
+  /** 생활 소비(포인트 포함) */
+  consumption: number;
+};
+
+/**
+ * 합계와 세부 기록을 맞춰 본다. 합계가 없는 종류(cash/point)는 세부 기록을 그대로 쓴다.
+ * 환급은 카드 이용금액과 별개로 통장에 들어오는 돈이라 합계에서 따로 뺀다.
+ */
+export function reconcileMonth(totals: MonthTotal[], summary: FlowSummary): MonthReconcile {
+  const sum = (kind: TotalKind) => totals.filter((t) => t.kind === kind).reduce((s, t) => s + Math.max(0, t.amount), 0);
+  const has = (kind: TotalKind) => totals.some((t) => t.kind === kind);
+  const refunds = summary.refundRegular + summary.refundOnce;
+  const detailedCash = summary.cash + refunds;
+  const detailedPoint = summary.pointRegular + summary.pointOnce;
+  const cashTotal = has("cash") ? sum("cash") : detailedCash;
+  const pointTotal = has("point") ? sum("point") : detailedPoint;
+  const unrecordedCash = Math.max(0, cashTotal - detailedCash);
+  const unrecordedPoint = Math.max(0, pointTotal - detailedPoint);
+  return {
+    cashTotal, pointTotal, detailedCash, detailedPoint, unrecordedCash, unrecordedPoint,
+    overCash: has("cash") && detailedCash > cashTotal, overPoint: has("point") && detailedPoint > pointTotal,
+    cash: Math.max(detailedCash, cashTotal) - refunds,
+    consumption: Math.max(detailedCash, cashTotal) + Math.max(detailedPoint, pointTotal),
+  };
+}
+
+/** 이 달에 보여 줄 칸: 이 달에 적은 칸이 있으면 그것, 없으면 가장 최근에 적은 달의 칸 이름(금액 빈칸), 그것도 없으면 기본 칸 */
+export function slotsForMonth(month: string, all: Array<MonthTotal & { month: string }>): Array<{ label: string; kind: TotalKind; amount: number | null }> {
+  const own = all.filter((t) => t.month === month);
+  if (own.length > 0) return own.map((t) => ({ label: t.label, kind: t.kind, amount: t.amount }));
+  const prevMonth = all.map((t) => t.month).filter((m) => m < month).sort().pop();
+  const source = prevMonth ? all.filter((t) => t.month === prevMonth) : DEFAULT_TOTAL_SLOTS;
+  return source.map((t) => ({ label: t.label, kind: t.kind, amount: null }));
 }
 
 /** 비정기 지출: 1년에 낼 총액과 나가는 달. 월 금액은 총액 ÷ 12로 평소에 떼어 둔다. */
