@@ -42,6 +42,33 @@ def find_tickers_needing_backfill(supabase: Client, codes: list, trading_dt: dat
     return [c for c in codes if c not in have]
 
 
+# 기준일 행이 유니버스의 이 비율보다 적으면 "부분 수집"으로 보고 다시 받는다
+COMPLETE_ROW_RATIO = 0.9
+
+
+def needs_refetch_window(latest_dt: date, trading_dt: date, latest_rows: Optional[int], universe_size: int) -> bool:
+    """
+    최근 REFETCH_DAYS를 다시 받을지. 예전엔 DB 최신 날짜가 기준일과 같으면 무조건 "이미 수집됨"으로 보고
+    범위가 (기준일+1 ~ 기준일)로 비었는데, 기준일 행이 일부만 있던 날(2026-10-13: 다른 단계가 먼저 2행을 넣음)은
+    나머지 종목이 실패 0건으로 조용히 빠져 19행만 남았다. 기준일 행 수가 유니버스의 90%에 못 미치면 다시 받는다.
+    """
+    if latest_dt < trading_dt:
+        return True
+    if latest_rows is None or universe_size <= 0:
+        return False
+    return latest_rows < universe_size * COMPLETE_ROW_RATIO
+
+
+def _count_rows_on(supabase: Client, iso_date: str) -> Optional[int]:
+    """그 날짜의 stock_daily 행 수. 조회 실패는 None(=판단 보류, 기존처럼 스킵)."""
+    try:
+        res = supabase.table("stock_daily").select("ticker", count="exact", head=True).eq("date", iso_date).execute()
+        return res.count
+    except Exception as e:
+        print(f"   Row count check failed (skip): {e}")
+        return None
+
+
 def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
     """Fetch OHLCV for core/extended universe using per-ticker API."""
     trading_iso = to_iso(trading_date)
@@ -71,15 +98,6 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
     # 단, 이미 target까지 수집된 상태의 재실행은 기존처럼 스킵한다(KRX 대량조회 차단 위험 방지).
     REFETCH_DAYS = 10
     refetch_from = datetime.combine(trading_dt - timedelta(days=REFETCH_DAYS), datetime.min.time())
-    if from_dt.date() <= trading_dt and from_dt > refetch_from:
-        from_dt = refetch_from
-
-    cutoff_dt = trading_dt - timedelta(days=180)
-    if from_dt.date() < cutoff_dt:
-        from_dt = datetime.combine(cutoff_dt, datetime.min.time())
-        print(f"   Capping start date to recent 180-day window: {from_dt.date()}")
-    
-    from_str = from_dt.strftime("%Y%m%d")
 
     # Load core + extended universe
     res = supabase.table("stocks") \
@@ -94,6 +112,20 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
         return False
 
     print(f"  Universe size: {len(tickers)} tickers")
+
+    latest_rows = _count_rows_on(supabase, latest_date) if latest_dt >= trading_dt else None
+    if needs_refetch_window(latest_dt, trading_dt, latest_rows, len(tickers)):
+        if latest_dt >= trading_dt:
+            print(f"   Target date only partially collected ({latest_rows}/{len(tickers)} rows) — refetching recent window")
+        if from_dt > refetch_from:
+            from_dt = refetch_from
+
+    cutoff_dt = trading_dt - timedelta(days=180)
+    if from_dt.date() < cutoff_dt:
+        from_dt = datetime.combine(cutoff_dt, datetime.min.time())
+        print(f"   Capping start date to recent 180-day window: {from_dt.date()}")
+
+    from_str = from_dt.strftime("%Y%m%d")
 
     backfill_codes = set(find_tickers_needing_backfill(supabase, [c for c, _ in tickers], trading_dt))
     backfill_from_str = (trading_dt - timedelta(days=BACKFILL_DAYS)).strftime("%Y%m%d")
