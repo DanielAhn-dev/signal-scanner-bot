@@ -437,24 +437,32 @@ function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], 
     const e = allEntries.filter((x) => x.date.startsWith(m))
     if (t.length === 0 && e.length === 0) return []
     const split = splitSummaries(e)
-    const cash = monthSpending(t, split.card, split.cash).cash
+    const spending = monthSpending(t, split.card, split.cash)
+    const cash = spending.cash
+    // 칸별 금액(카드 이름별). 배우자 칸은 이름 뒤에 표시해 내 칸과 섞이지 않게 한다
+    const slots = Object.fromEntries(t.map((x) => [slotName(x), x.amount]))
     const check = checkForMonth(checks, m)
     const fixed = check ? fixedCashOf(check.input) : null
     // 비정기: 실제 낸 기록(예산 항목과 이름이 같은 세부 기록)이 있으면 실제, 없으면 1년 예산 중 이 달 몫. 예산에 없는 비정기 기록도 뺀다
     const irregular = check ? irregularForMonth(check.input, Number(m.slice(5)), e).total : null
-    return [{ month: m, cash, fromTotals: t.length > 0, fixed, irregular, rest: t.length > 0 && fixed !== null ? cash - fixed - (irregular ?? 0) : null }]
+    return [{ month: m, cash, cashPaid: spending.cashPaid, slots, fromTotals: t.length > 0, fixed, irregular, rest: t.length > 0 && fixed !== null ? cash - fixed - (irregular ?? 0) : null }]
   })
 }
 
+const slotName = (t: MonthTotalRow) => (t.mine ? t.label : `${t.label}(배우자)`)
+
 function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month: string }) {
   const max = Math.max(1, ...rows.map((r) => Math.max(0, r.rest ?? 0)))
+  // 6개월 동안 나온 칸 이름을 처음 나온 순서대로 — 카드별 추이를 칸마다 본다
+  const slotNames = [...new Set(rows.flatMap((r) => Object.keys(r.slots)))]
+  const anyCash = rows.some((r) => r.cashPaid > 0)
   const anyRest = rows.some((r) => r.rest !== null)
   return (
     <section className="acc-card">
       <h2>지출 추이</h2>
       <div className="mf-trend-wrap">
         <table className="mf-trend" aria-label="최근 6개월 지출 추이">
-          <thead><tr><th scope="col">달</th><th scope="col">카드 합계</th><th scope="col">고정비</th><th scope="col">비정기</th><th scope="col">나머지(변동)</th></tr></thead>
+          <thead><tr><th scope="col">달</th>{slotNames.map((n) => <th key={n} scope="col">{n}</th>)}{anyCash && <th scope="col">현금</th>}<th scope="col">지출 합계</th><th scope="col">고정비</th><th scope="col">비정기</th><th scope="col">나머지(변동)</th></tr></thead>
           <tbody>
             {rows.map((r, i) => {
               const prevRest = rows.slice(0, i).reverse().find((x) => x.rest !== null)?.rest ?? null
@@ -462,6 +470,8 @@ function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month
               return (
                 <tr key={r.month} className={r.month === month ? 'is-current' : ''}>
                   <th scope="row">{Number(r.month.slice(5))}월</th>
+                  {slotNames.map((n) => <td key={n} className={r.slots[n] === undefined ? 'mf-trend-muted' : ''}>{r.slots[n] === undefined ? '—' : krw(r.slots[n])}</td>)}
+                  {anyCash && <td>{r.cashPaid > 0 ? krw(r.cashPaid) : <span className="mf-trend-muted">—</span>}</td>}
                   <td>{krw(r.cash)}{!r.fromTotals && <small>세부 합</small>}</td>
                   <td className="mf-trend-muted">{r.fixed === null ? '—' : krw(r.fixed)}</td>
                   <td className="mf-trend-muted">{r.irregular === null || r.irregular === 0 ? '—' : krw(r.irregular)}</td>
@@ -482,7 +492,7 @@ function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month
       </div>
       <p className="acc-note">
         {anyRest
-          ? '나머지 = 카드 합계 − 고정비 − 그 달 비정기(실제 낸 금액, 안 적었으면 1년 예산 중 이 달 몫). 재산세·자동차세처럼 그 달에만 나간 돈을 빼고, 장보기·물건·간식 같은 지출이 줄었는지 봅니다. '
+          ? '카드는 칸별 명세서 금액, 현금은 현금으로 표시한 세부 기록 합입니다. 나머지 = 지출 합계 − 고정비 − 그 달 비정기(실제 낸 금액, 안 적었으면 1년 예산 중 이 달 몫). 재산세·자동차세처럼 그 달에만 나간 돈을 빼고, 장보기·물건·간식 같은 지출이 줄었는지 봅니다. '
           : '지금 상태 점검을 저장하면 고정비를 뺀 나머지(변동 지출)도 달마다 보여 줍니다. '}
         합계를 안 적은 달은 세부 기록만 더한 값이라("세부 합") 나머지를 계산하지 않습니다. 환급은 뺀 금액입니다.
       </p>
