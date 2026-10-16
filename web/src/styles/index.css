@@ -8466,3 +8466,21 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 .portfolio-card-toggle .portfolio-position-meta { margin-top: 2px; }
 .portfolio-position-card > .portfolio-action,
 .portfolio-position-card > .portfolio-actions-row { margin-top: var(--space-2); }
+
+/* ── 리밸런싱 가이드 · 받은 분배금 입력 (DistributionReceipts) — 모바일 2열(종목은 한 줄), 넓으면 한 줄 ── */
+.ig-receipt-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+  align-items: end;
+  margin-top: var(--space-3);
+}
+.ig-receipt-form > .ui-field,
+.ig-receipt-form > .ui-field + .ui-field { margin-top: 0; min-width: 0; }
+.ig-receipt-form .ui-label { word-break: keep-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ig-receipt-code { grid-column: 1 / -1; }
+.ig-receipt-submit { display: flex; justify-content: flex-end; }
+@media (min-width: 720px) {
+  .ig-receipt-form { grid-template-columns: 8rem minmax(0, 2fr) repeat(3, minmax(0, 1fr)) auto; }
+  .ig-receipt-code { grid-column: auto; }
+}

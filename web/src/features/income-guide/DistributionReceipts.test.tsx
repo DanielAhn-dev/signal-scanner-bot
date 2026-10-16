@@ -40,7 +40,7 @@ describe('DistributionReceipts', () => {
   it('종목을 고르면 지금 수량이 기본값으로 들어가고, 서버 오류는 그 자리에 보인다', async () => {
     const submit = vi.fn(async () => '주당 분배금(원)을 적어 주세요.')
     render(<DistributionReceipts data={data} holdings={holdings} buyName={null} submit={submit} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '0105E0' } })
+    fireEvent.change(screen.getByLabelText('종목'), { target: { value: '0105E0' } })
     expect((screen.getByPlaceholderText('주') as HTMLInputElement).value).toBe('700')
     fireEvent.click(screen.getByText('적기'))
     await waitFor(() => expect(screen.getByText('주당 분배금(원)을 적어 주세요.')).toBeTruthy())

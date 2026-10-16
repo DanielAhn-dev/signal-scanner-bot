@@ -48,10 +48,15 @@ const muted: React.CSSProperties = { color: 'var(--color-text-secondary)' }
 const faint: React.CSSProperties = { color: 'var(--color-text-tertiary)', fontSize: 12 }
 const cell: React.CSSProperties = { padding: '3px 6px' }
 const num: React.CSSProperties = { ...cell, textAlign: 'right', whiteSpace: 'nowrap' }
-const thisMonthKey = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
+/** 이번 달부터 거슬러 n달 — 달력 입력 대신 고른다(작은 달력 아이콘·iOS 높이 문제 없이) */
+const recentMonths = (n: number) =>
+  Array.from({ length: n }, (_, i) => {
+    const d = new Date()
+    d.setDate(1)
+    d.setMonth(d.getMonth() - i)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+const monthLabel = (m: string, i: number) => `${Number(m.slice(5))}월${i === 0 ? ' (이번 달)' : i === 1 ? ' (지난달)' : ''}`
 
 /**
  * 받은 분배금 — 종목·받은 수량·주당 분배금(·세후 입금액)을 적으면 이번 달 실제 합계와
@@ -62,7 +67,8 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
   const [pending, setPending] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
-  const [form, setForm] = useState({ month: thisMonthKey(), code: '', quantity: '', perShare: '', net: '' })
+  const months = useMemo(() => recentMonths(3), [])
+  const [form, setForm] = useState({ month: months[0], code: '', quantity: '', perShare: '', net: '' })
   const holdingOf = useMemo(() => new Map(holdings.map((h) => [h.code, h])), [holdings])
   const { thisMonth, projection } = data
   const delta = projection.total - thisMonth.net
@@ -122,36 +128,42 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
         달마다 주당 분배금이 바뀌니 예상치입니다. 위 요약의 월 인컴도 이 값을 씁니다.
       </div>
 
-      {/* 적기 */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'flex-end', marginTop: 10 }}>
-        <label style={{ fontSize: 12 }}>
-          입금된 달
-          <input type="month" value={form.month} onChange={(e) => setForm((f) => ({ ...f, month: e.target.value }))} style={{ display: 'block', width: 120 }} />
+      {/* 적기 — 공통 입력 스타일(ui-field·ui-text), 모바일 2열·넓으면 한 줄 */}
+      <div className="ig-receipt-form">
+        <label className="ui-field ig-receipt-month">
+          <span className="ui-label">입금된 달</span>
+          <select value={form.month} onChange={(e) => setForm((f) => ({ ...f, month: e.target.value }))}>
+            {months.map((m, i) => (
+              <option key={m} value={m}>{monthLabel(m, i)}</option>
+            ))}
+          </select>
         </label>
-        <label style={{ fontSize: 12 }}>
-          종목
-          <select value={form.code} onChange={(e) => pick(e.target.value)} style={{ display: 'block', maxWidth: 220 }}>
+        <label className="ui-field ig-receipt-code">
+          <span className="ui-label">종목</span>
+          <select value={form.code} onChange={(e) => pick(e.target.value)}>
             <option value="">골라 주세요</option>
             {holdings.map((h) => (
               <option key={h.code} value={h.code}>{h.name}</option>
             ))}
           </select>
         </label>
-        <label style={{ fontSize: 12 }}>
-          받은 수량
-          <input inputMode="numeric" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} style={{ display: 'block', width: 70 }} placeholder="주" />
+        <label className="ui-field">
+          <span className="ui-label">받은 수량(주)</span>
+          <input className="ui-text" inputMode="numeric" autoComplete="off" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} placeholder="주" />
         </label>
-        <label style={{ fontSize: 12 }}>
-          주당 분배금
-          <input inputMode="decimal" value={form.perShare} onChange={(e) => setForm((f) => ({ ...f, perShare: e.target.value }))} style={{ display: 'block', width: 80 }} placeholder="원" />
+        <label className="ui-field">
+          <span className="ui-label">주당 분배금(원)</span>
+          <input className="ui-text" inputMode="decimal" autoComplete="off" value={form.perShare} onChange={(e) => setForm((f) => ({ ...f, perShare: e.target.value }))} placeholder="원" />
         </label>
-        <label style={{ fontSize: 12 }}>
-          세후 입금액(선택)
-          <input inputMode="numeric" value={form.net} onChange={(e) => setForm((f) => ({ ...f, net: e.target.value }))} style={{ display: 'block', width: 100 }} placeholder="원" />
+        <label className="ui-field">
+          <span className="ui-label">세후 입금액(선택)</span>
+          <input className="ui-text" inputMode="numeric" autoComplete="off" value={form.net} onChange={(e) => setForm((f) => ({ ...f, net: e.target.value }))} placeholder="원" />
         </label>
-        <Button size="sm" variant="secondary" onClick={() => void add()} disabled={pending}>
-          {pending ? '저장 중…' : '적기'}
-        </Button>
+        <div className="ig-receipt-submit">
+          <Button size="sm" variant="primary" onClick={() => void add()} disabled={pending}>
+            {pending ? '저장 중…' : '적기'}
+          </Button>
+        </div>
       </div>
       <div style={faint}>
         받은 수량은 지금 보유 수량이 기본값입니다. 기준일 뒤에 산 수량은 빼고 적어 주세요. 세후 입금액을 적으면 그 종목의 실제 세금(커버드콜은 15.4%보다 적게 떼는 경우가 있습니다)으로 다음 달을 계산합니다.
