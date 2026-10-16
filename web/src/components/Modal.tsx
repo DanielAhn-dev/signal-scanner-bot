@@ -9,9 +9,11 @@ interface ModalProps {
   onClose: () => void
   children: React.ReactNode
   size?: 'sm' | 'md' | 'lg'
+  /** 입력이 있는 모달은 false — 배경을 잘못 눌러 적던 내용을 잃지 않게 한다 */
+  closeOnBackdrop?: boolean
 }
 
-export default function Modal({ isOpen, open, title, onClose, children, size = 'md' }: ModalProps) {
+export default function Modal({ isOpen, open, title, onClose, children, size = 'md', closeOnBackdrop = true }: ModalProps) {
   const modalOpen = isOpen ?? open ?? false
   const overlayRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -88,7 +90,7 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
       ref={overlayRef}
       onClick={(e) => {
         // backdrop 클릭 시만 닫기 (내부 요소 클릭 시 이벤트 전파 방지)
-        if (e.target === overlayRef.current) {
+        if (closeOnBackdrop && e.target === overlayRef.current) {
           e.stopPropagation()
           onClose()
         }
