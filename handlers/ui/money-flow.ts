@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { partnerSharing } from '../../src/services/household'
-import { MAX_TOTAL_SLOTS, UNRECORDED_CATEGORY_ID, categoryById, learnKeyword, type FlowCheckInput, type FlowItem, type IrregularItem, type MonthTotal } from '../../src/lib/moneyFlow'
+import { MAX_TOTAL_SLOTS, UNRECORDED_CATEGORY_ID, categoryById, isSavingCategory, learnKeyword, type FlowCheckInput, type FlowItem, type IrregularItem, type MonthTotal } from '../../src/lib/moneyFlow'
 
 const maxAmount = 100_000_000_000
 const maxEntriesPerPost = 50
@@ -53,8 +53,8 @@ export function normalizeFlowEntry(body: any, now = new Date()) {
   return { spent_on: body.date, amount: value, memo: memo.trim(), category_id: body.categoryId, cut_level: cut, must_part: mustPart, payment, for_whom: forWhom as ForWhom, paid_with: paidWith as 'card' | 'cash' }
 }
 
-function normalizeItem(raw: any): FlowItem | null {
-  if (typeof raw?.categoryId !== 'string' || !categoryById(raw.categoryId)) return null
+function normalizeItem(raw: any, validCategory: (id: string) => boolean = (id) => !!categoryById(id)): FlowItem | null {
+  if (typeof raw?.categoryId !== 'string' || !validCategory(raw.categoryId)) return null
   const value = amount(raw.amount)
   if (value === null) return null
   const payment = raw.payment ?? 'cash'
@@ -92,15 +92,18 @@ export function normalizeFlowCheck(body: any, now = new Date()): { checked_on: s
   const income = amount(raw?.monthlyIncome)
   const reserve = amount(raw?.reserveMonthly ?? 0)
   if (income === null || reserve === null) return null
-  const lists = [raw?.fixed ?? [], raw?.variable ?? [], raw?.irregular ?? []]
+  // 저축·투자는 나중에 생긴 칸이라 없어도 된다(예전 예산). 지출 분류와 섞이지 않게 저축 분류만 받는다
+  const lists = [raw?.fixed ?? [], raw?.variable ?? [], raw?.irregular ?? [], raw?.saving ?? []]
   if (lists.some((list) => !Array.isArray(list)) || lists.reduce((sum, list) => sum + list.length, 0) > maxCheckItems) return null
-  const fixed = lists[0].map(normalizeItem)
-  const variable = lists[1].map(normalizeItem)
+  const fixed = lists[0].map((item: any) => normalizeItem(item))
+  const variable = lists[1].map((item: any) => normalizeItem(item))
   const irregular = lists[2].map(normalizeIrregular)
-  if ([...fixed, ...variable, ...irregular].some((item) => item === null)) return null
+  // 계좌 자동이체라 카드 밖 표시는 저장하지 않는다(저축은 카드 합계·지출 어디에도 더하지 않는다)
+  const saving = lists[3].map((item: any) => normalizeItem({ ...item, outsideCard: undefined, payment: 'cash' }, isSavingCategory))
+  if ([...fixed, ...variable, ...irregular, ...saving].some((item) => item === null)) return null
   return {
     checked_on: date, label: label.trim(),
-    input: { monthlyIncome: income, reserveMonthly: reserve, fixed: fixed as FlowItem[], variable: variable as FlowItem[], irregular: irregular as IrregularItem[] },
+    input: { monthlyIncome: income, reserveMonthly: reserve, fixed: fixed as FlowItem[], variable: variable as FlowItem[], irregular: irregular as IrregularItem[], ...(saving.length > 0 ? { saving: saving as FlowItem[] } : {}) },
   }
 }
 

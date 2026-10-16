@@ -676,3 +676,42 @@ test('한 달 투자 가능액: 수입 − 고정 − 변동 − 비정기 적�
     irregular: [{ categoryId: 'tax', label: '자동차세', yearlyAmount: 300_000, months: [1] }, { categoryId: 'car', label: '자동차보험', yearlyAmount: 1_200_000, months: [3] }] }
   assert.equal(investableOf(input, 1_500_000), 6_000_000 - 2_254_391 - 1_500_000 - 125_000 - 200_000)
 })
+
+test('저축·투자: 지출 분류·통계에 섞이지 않고 남는 돈에서만 따로 뺀다', () => {
+  const saving = [
+    { categoryId: 'save_pension', label: 'IRP', amount: 250_000 },
+    { categoryId: 'save_isa', label: 'ISA', amount: 1_660_000 },
+    { categoryId: 'save_pension', label: '연금저축', amount: 500_000 },
+  ]
+  const base = { monthlyIncome: 6_000_000, reserveMonthly: 200_000, fixed: [{ categoryId: 'maintenance', amount: 300_000 }], variable: [{ categoryId: 'grocery_mart', amount: 700_000 }], irregular: [{ categoryId: 'tax', label: '재산세', yearlyAmount: 1_200_000, months: [7] }] }
+  const without = evaluateFlowCheck(base)
+  const r = evaluateFlowCheck({ ...base, saving })
+  // 지출 합계·통계는 그대로
+  assert.deepEqual(r.summary, without.summary)
+  assert.equal(r.summary.cash, 300_000 + 700_000 + 100_000)
+  assert.equal(r.saving, 2_410_000)
+  assert.equal(r.savingRate, 2_410_000 / 6_000_000)
+  assert.equal(r.available, 6_000_000 - 2_410_000 - 1_100_000 - 200_000)
+  assert.equal(r.maxIfCut, without.maxIfCut - 2_410_000)
+  assert.equal(investableOf({ ...base, saving }, 700_000), 6_000_000 - 2_410_000 - 300_000 - 700_000 - 100_000 - 200_000)
+  // 예전 예산(saving 없음)은 그대로 계산된다
+  assert.equal(without.saving, 0)
+  assert.equal(investableOf(base, 700_000), 6_000_000 - 300_000 - 700_000 - 100_000 - 200_000)
+  // 저축 분류는 빠른 기록·자동 분류·카드 밖 고정비에 나오지 않는다
+  assert.equal(categoryById('save_isa'), undefined)
+  assert.ok(!FLOW_CATEGORIES.some((c) => c.id.startsWith('save_')))
+  assert.equal(fixedOutsideCardOf({ ...base, saving: saving.map((s) => ({ ...s, outsideCard: true })) }), 0)
+})
+
+test('예산 저장: 저축·투자는 저축 분류만 받고, 없으면 예전 모양 그대로', () => {
+  const now = new Date('2026-10-16T03:00:00Z')
+  const input = { monthlyIncome: 6_000_000, reserveMonthly: 0, fixed: [{ categoryId: 'maintenance', amount: 300_000 }], variable: [], irregular: [] }
+  const old = normalizeFlowCheck({ input }, now)
+  assert.ok(old)
+  assert.equal('saving' in old!.input, false)
+  const saved = normalizeFlowCheck({ input: { ...input, saving: [{ categoryId: 'save_isa', label: 'ISA', amount: 1_660_000, outsideCard: true, forWhom: 'me' }] } }, now)
+  assert.deepEqual(saved?.input.saving, [{ categoryId: 'save_isa', label: 'ISA', amount: 1_660_000, payment: 'cash', cut: undefined, mustPart: undefined, forWhom: 'me' }])
+  // 지출 분류를 저축에, 저축 분류를 고정지출에 넣으면 거절
+  assert.equal(normalizeFlowCheck({ input: { ...input, saving: [{ categoryId: 'maintenance', amount: 1 }] } }, now), null)
+  assert.equal(normalizeFlowCheck({ input: { ...input, fixed: [{ categoryId: 'save_isa', amount: 1 }] } }, now), null)
+})

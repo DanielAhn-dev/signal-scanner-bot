@@ -68,6 +68,20 @@ export const FLOW_CATEGORIES: FlowCategory[] = [
 ];
 
 const CATEGORY_BY_ID = new Map(FLOW_CATEGORIES.map((category) => [category.id, category]));
+
+/**
+ * 저축·투자(IRP·ISA·연금저축·적금 등 계좌로 옮기는 돈). 지출이 아니라 FLOW_CATEGORIES에 넣지 않는다 —
+ * 그래서 빠른 기록·자동 분류·지출 통계·기록으로 채우기에는 나오지 않고, 예산의 saving 목록에서만 쓴다.
+ */
+export const SAVING_MAJOR = "저축·투자";
+export const SAVING_CATEGORIES: Array<{ id: string; label: string }> = [
+  { id: "save_pension", label: "연금(IRP·연금저축)" },
+  { id: "save_isa", label: "ISA·증권" },
+  { id: "save_deposit", label: "적금·청약" },
+];
+const SAVING_LABEL_BY_ID = new Map(SAVING_CATEGORIES.map((category) => [category.id, category.label]));
+export const isSavingCategory = (id: string) => SAVING_LABEL_BY_ID.has(id);
+export const savingLabel = (id: string) => SAVING_LABEL_BY_ID.get(id);
 export const FALLBACK_CATEGORY_ID = "etc";
 
 export function categoryById(id: string): FlowCategory | undefined {
@@ -539,17 +553,33 @@ export type FlowCheckInput = {
   irregular: IrregularItem[];
   /** 매달 비상자금으로 따로 떼는 금액 */
   reserveMonthly: number;
+  /** 저축·투자(계좌 자동이체). 지출 합계·통계에 넣지 않고 남는 돈에서만 뺀다. 이 칸이 생기기 전 저장한 예산에는 없다 */
+  saving?: FlowItem[];
 };
+
+/** 매달 저축·투자로 나가는 돈 */
+export function savingCashOf(input: Pick<FlowCheckInput, "saving">): number {
+  return (input.saving ?? []).reduce((sum, item) => sum + cashEffect(item), 0);
+}
+
+/** 비정기 적립 = 1년 예산 ÷ 12 (현금 기준) */
+export function irregularFundOf(input: Pick<FlowCheckInput, "irregular">): number {
+  return input.irregular.reduce((sum, item) => sum + cashEffect({ amount: irregularMonthly(item), payment: item.payment }), 0);
+}
 
 export type FlowCheckResult = {
   summary: FlowSummary;
-  /** 지금 투자 가능액 = 수입 − 현금 지출 − 비상자금 적립 (꾸준한 포인트는 계속 들어온다고 본다) */
+  /** 저축·투자 합계(월). summary(지출)에는 들어 있지 않다 */
+  saving: number;
+  /** 저축률 = 저축·투자 ÷ 수입 (0~1). 수입이 0이면 null */
+  savingRate: number | null;
+  /** 지금 투자 가능액 = 수입 − 저축·투자 − 현금 지출 − 비상자금 적립 (꾸준한 포인트는 계속 들어온다고 본다) */
   available: number;
   /** "이번만" 포인트·환급이 끊기면: 그 소비가 현금이 된다 */
   availableWithoutOncePoints: number;
   /** 포인트·환급이 전부 없으면 */
   availableWithoutPoints: number;
-  /** 최대로 줄이면 = 수입 − 현금 지출 중 못 줄임 − 비상자금 적립. 투자 가능액의 상한 */
+  /** 최대로 줄이면 = 수입 − 저축·투자 − 현금 지출 중 못 줄임 − 비상자금 적립. 투자 가능액의 상한 */
   maxIfCut: number;
   /** 줄일 여지 = 현금 지출 중 줄일 수 있음 + 끊을 수 있음 */
   room: number;
@@ -572,7 +602,8 @@ export function evaluateFlowCheck(input: FlowCheckInput): FlowCheckResult {
   const summary = summarizeItems(all);
   const income = Math.max(0, input.monthlyIncome);
   const reserve = Math.max(0, input.reserveMonthly);
-  const available = income - summary.cash - reserve;
+  const saving = savingCashOf(input);
+  const available = income - saving - summary.cash - reserve;
   const cuttable = new Map<string, { categoryId: string; trim: number; drop: number }>();
   for (const item of all) {
     const payment = item.payment ?? "cash";
@@ -597,10 +628,12 @@ export function evaluateFlowCheck(input: FlowCheckInput): FlowCheckResult {
   }
   return {
     summary,
+    saving,
+    savingRate: income > 0 ? saving / income : null,
     available,
     availableWithoutOncePoints: available - summary.pointOnce - summary.refundOnce,
     availableWithoutPoints: available - summary.pointOnce - summary.pointRegular - summary.refundOnce - summary.refundRegular,
-    maxIfCut: income - summary.cashByCut.must - reserve,
+    maxIfCut: income - saving - summary.cashByCut.must - reserve,
     room: summary.cashByCut.trim + summary.cashByCut.drop,
     topCuttable: [...cuttable.values()].map((r) => ({ ...r, trim: Math.max(0, r.trim), drop: Math.max(0, r.drop) })).filter((r) => r.trim + r.drop > 0).sort((a, b) => b.trim + b.drop - (a.trim + a.drop)),
     mustMonthly: summary.consumptionByCut.must,
@@ -866,10 +899,9 @@ export function seedPlanFromFlow(args: {
 }
 
 /**
- * 한 달 투자 가능액 = 수입 − 고정비 − 변동 지출(그 달 기록) − 비정기 적립(1년 예산 ÷ 12) − 비상금 적립.
- * 수입·고정·적립은 예산(점검), 변동은 지출 기록에서. 비정기 실제 지출은 적립해 둔 돈에서 나가므로 다시 빼지 않는다.
+ * 한 달 투자 가능액 = 수입 − 저축·투자 − 고정비 − 변동 지출(그 달 기록) − 비정기 적립(1년 예산 ÷ 12) − 비상금 적립.
+ * 수입·저축·고정·적립은 예산(점검), 변동은 지출 기록에서. 비정기 실제 지출은 적립해 둔 돈에서 나가므로 다시 빼지 않는다.
  */
 export function investableOf(input: FlowCheckInput, variable: number): number {
-  const fund = input.irregular.reduce((sum, item) => sum + cashEffect({ amount: irregularMonthly(item), payment: item.payment }), 0);
-  return input.monthlyIncome - fixedCashOf(input) - variable - fund - input.reserveMonthly;
+  return input.monthlyIncome - savingCashOf(input) - fixedCashOf(input) - variable - irregularFundOf(input) - input.reserveMonthly;
 }
