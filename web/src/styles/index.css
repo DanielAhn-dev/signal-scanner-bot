@@ -51,6 +51,26 @@ a:focus-visible {
 .number-right {
   @apply text-right;
 }
+
+/* 클래스 없이 쓴 입력칸 기본 모양 — Tailwind 리셋 뒤엔 테두리가 없어 글자처럼 보였다.
+   base 층이라 부모·컴포넌트 CSS가 모양을 주면 그쪽이 이기고, 인라인 border를 준 칸(표 안 칸 등)은 건드리지 않는다. */
+input:not([class]):not([style*="border"]):not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"], [type="color"], [type="submit"], [type="button"]),
+textarea:not([class]):not([style*="border"]) {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  padding: 0.3125rem 0.5rem;
+  min-height: 2rem;
+  font-size: var(--font-size-sm);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+input:not([class]):not([style*="border"]):focus,
+textarea:not([class]):not([style*="border"]):focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: var(--shadow-focus);
+}
 }
 
 @layer components {
@@ -8484,5 +8504,24 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
   .ig-receipt-form { grid-template-columns: 8rem minmax(0, 2fr) repeat(3, minmax(0, 1fr)) auto; }
   .ig-receipt-code { grid-column: auto; }
 }
+/* ── 리밸런싱 가이드 · 겹치는 종목 합치기 — 팔기(파랑)·사기(빨강) 태그, 줄 사이 얇은 구분선 ── */
+.ig-merge-list { list-style: none; margin: var(--space-2) 0; padding: 0; }
+.ig-merge-item { padding: 8px 0; border-top: 1px solid var(--color-border-default); }
+.ig-merge-item:last-child { border-bottom: 1px solid var(--color-border-default); }
+.ig-merge-legs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.ig-merge-leg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.ig-merge-qty { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ig-merge-arrow { color: var(--color-text-tertiary); }
+.ig-trade-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 18px;
+  white-space: nowrap;
+}
+.ig-trade-tag--sell { color: var(--color-stock-down); background: var(--color-stock-down-bg); }
+.ig-trade-tag--buy  { color: var(--color-stock-up);   background: var(--color-stock-up-bg); }
 /* 리밸런싱 가이드의 접기 카드 — 위 카드(인라인 box, 여백 8px 12px)와 같은 폭·모서리로 맞춘다 */
 .collapsible.ig-collapsible { margin: 8px 12px; padding: 12px 14px; border-radius: 8px; }

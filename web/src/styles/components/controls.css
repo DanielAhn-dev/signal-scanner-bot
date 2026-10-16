@@ -132,7 +132,8 @@ select {
 }
 
 .ui-btn-secondary:hover:not(:disabled) { background: var(--btn-secondary-bg-hover); }
-.ui-btn-ghost { background: var(--btn-ghost-bg); color: var(--btn-ghost-text); }
+/* 테두리가 없으면 '주문표 보기'·'지우기' 같은 버튼이 본문 글자와 구별되지 않았다 */
+.ui-btn-ghost { background: var(--btn-ghost-bg); color: var(--btn-ghost-text); border-color: var(--color-border-strong); }
 .ui-btn-ghost:hover:not(:disabled) { background: var(--btn-ghost-bg-hover); }
 .ui-btn-ghost:active:not(:disabled) { background: var(--color-gray-200); }
 
