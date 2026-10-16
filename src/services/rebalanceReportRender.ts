@@ -27,9 +27,13 @@ const STYLE = `<style>
   .rb-headline { background:#F1F5F3; border-left:3px solid #24543D; padding:10px 12px; margin:0 0 16px; word-break:keep-all; }
   .rb-alert { background:#FFF6E5; border-left:3px solid #B7791F; padding:10px 12px; margin:0 0 16px; word-break:keep-all; }
   .rb-table { width:100%; border-collapse:collapse; font-size:13px; margin:6px 0 4px; }
-  .rb-table th, .rb-table td { border:1px solid #E1E5E2; padding:6px 8px; text-align:right; vertical-align:top; }
-  .rb-table th { text-align:center; white-space:nowrap; }
-  .rb-table td.rb-l { text-align:left; word-break:keep-all; }
+  .rb-table th, .rb-table td { border:1px solid #E1E5E2; padding:6px 8px; text-align:right; vertical-align:top; white-space:nowrap; }
+  .rb-table th { text-align:center; white-space:normal; word-break:keep-all; line-height:1.3; }
+  .rb-table td.rb-l { text-align:left; word-break:keep-all; white-space:normal; }
+  .rb-table td.rb-n { white-space:nowrap; }
+  .rb-table tbody.rb-hold-row td { border-bottom:0; }
+  .rb-table tbody.rb-hold-row tr + tr td { border-top:0; border-bottom:1px solid #E1E5E2; padding-top:0; padding-bottom:8px; }
+  @media print { .rb-wrap { overflow:visible; } .rb-table { font-size:11px; } .rb-table th, .rb-table td { padding:4px 5px; } }
   .rb-wrap { overflow-x:auto; }
   .rb-up { color:#C0392B; } .rb-down { color:#1F5FAF; }
   .rb-chip { display:inline-block; padding:1px 6px; border:1px solid currentColor; font-size:11px; white-space:nowrap; }
@@ -177,15 +181,16 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
 
   // 6. 종목별
   const holdingRows = r.rows
-    .map((h) => `<tr>
+    .map((h) => `<tbody class="rb-hold-row"><tr>
       <td class="rb-l"><b>${e(h.name)}</b><br><span class="rb-muted">${e(h.bucketLabel)}</span></td>
-      <td>${h.quantity.toLocaleString('ko-KR')}</td><td>${h.avgPrice == null ? '-' : won(h.avgPrice)}</td><td>${won(h.price)}</td>
+      <td>${h.quantity.toLocaleString('ko-KR')}</td>
+      <td>${h.avgPrice == null ? '-' : won(h.avgPrice)}<br><span class="rb-muted">현재 ${won(h.price)}</span></td>
       <td>${man(h.value)}</td><td class="${tone(h.pnlPct)}">${pct(h.pnlPct)}</td><td>${h.weightPct.toFixed(1)}%</td>
-      <td>${h.yieldPct.toFixed(1)}%${h.yieldSource === 'assumed' ? '<span class="rb-muted">*</span>' : ''}</td><td>${h.fee == null ? '-' : `${h.fee}%`}</td><td>${won(h.monthlyNet)}</td>
-      <td class="rb-l"><span class="rb-chip rb-${h.action}">${ACTION_LABEL[h.action]}</span><br>${e(h.actionText)}</td></tr>`)
+      <td>${h.yieldPct.toFixed(1)}%${h.yieldSource === 'assumed' ? '<span class="rb-muted">*</span>' : ''}</td><td>${h.fee == null ? '-' : `${h.fee}%`}</td><td>${won(h.monthlyNet)}</td></tr>
+      <tr><td colspan="9" class="rb-l"><span class="rb-chip rb-${h.action}">${ACTION_LABEL[h.action]}</span> ${e(h.actionText)}</td></tr></tbody>`)
     .join('')
   parts.push(section('6. 종목별 판단', `
-    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>평단</th><th>현재가</th><th>평가</th><th>손익</th><th>비중</th><th>분배율</th><th>총보수</th><th>월 분배금</th><th>판단</th></tr></thead><tbody>${holdingRows}</tbody></table></div>
+    <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>평단<br>(현재가)</th><th>평가</th><th>손익</th><th>비중</th><th>분배율</th><th>총보수</th><th>월 분배금</th></tr></thead>${holdingRows}</table></div>
     <p class="rb-muted">분배율: 네이버 최근 12개월. * 표시는 자료가 없어 상품 유형별 가정을 쓴 값입니다. 총보수: 리밸런싱 가이드에 직접 넣은 값, 없으면 네이버 공시 총보수(연).</p>`))
 
   // 7. 실행 순서
