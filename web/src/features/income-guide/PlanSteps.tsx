@@ -19,6 +19,25 @@ export type RebalancePlan = {
   }>
   kinds: { before: number; after: number }
   mergeIncomeDelta: number
+  /** 인컴 종목 압축 (설정에 목표 종목 수가 있을 때만) */
+  compress: {
+    target: number
+    before: number
+    after: number
+    reached: boolean
+    incomeAfter: number
+    floor: number
+    roles: Array<{
+      key: string
+      label: string
+      keeper: { code: string; name: string } | null
+      byUser: boolean
+      why: string
+      kept: Array<{ code: string; name: string }>
+      merged: Array<{ code: string; name: string }>
+    }>
+    blocked: Array<{ code: string; name: string; role: string; reason: string }>
+  } | null
   /** 인컴을 분배금으로만 줄여 가는 중 (가이드 설정 incomeMode 'hold') */
   hold: boolean
   cash: {
@@ -51,6 +70,8 @@ type Props = {
     feePctByCode?: Record<string, number>
     cashBalance?: number
     incomeMode?: 'hold'
+    incomeKindsTarget?: number
+    roleKeepers?: Record<string, string>
   }
   /** 설정 일부만 저장한다 (서버가 보낸 키만 고친다). 성공하면 true */
   saveSettings: (patch: Record<string, unknown>) => Promise<boolean>
@@ -110,6 +131,7 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
     Object.fromEntries(Object.entries(settings.feePctByCode ?? {}).map(([k, v]) => [k, String(v)])),
   )
   const [showOrders, setShowOrders] = useState(false)
+  const [kindsTarget, setKindsTarget] = useState(settings.incomeKindsTarget ? String(settings.incomeKindsTarget) : '')
 
   const save = async (patch: Record<string, unknown>, done: string) => {
     if (savingRef.current) return
@@ -399,6 +421,65 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
             )}
           </>
         )}
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--color-border-default)' }}>
+          <strong style={{ fontSize: 13 }}>인컴 종목을 더 줄이기</strong>
+          <div style={faint}>
+            남기고 싶은 인컴 종목 수를 적으면 한국·해외 × 고배당·커버드콜·리츠 역할마다 대표 하나로 합칩니다. 월 인컴이 하한({man(income.floor)}) 아래로 내려가거나,
+            같은 계좌에 대표가 없으면 합치지 않습니다. 합치기 목록과 리포트(문서 만들기)에 함께 나옵니다.
+          </div>
+          <div style={inlineRow}>
+            <UnitInput unit="종" width={72} inputMode="numeric" placeholder="6" aria-label="남길 인컴 종목 수" value={kindsTarget} onChange={(e) => setKindsTarget(e.target.value)} />
+            <Button size="sm" variant="secondary" onClick={() => void save({ incomeKindsTarget: kindsTarget.trim() }, kindsTarget.trim() ? '목표 종목 수를 저장했습니다.' : '종목 수 목표를 지웠습니다.')}>
+              저장
+            </Button>
+          </div>
+          {plan.compress && (
+            <div style={{ marginTop: 8 }}>
+              <div>
+                인컴 종목 <strong>{plan.compress.before}종 → {plan.compress.after}종</strong> (목표 {plan.compress.target}종{plan.compress.reached ? '' : ' · 목표까지는 못 줄임'}) · 압축 뒤 월 인컴{' '}
+                <strong>{man(plan.compress.incomeAfter)}</strong>
+              </div>
+              <ul className="ig-merge-list">
+                {plan.compress.roles.map((r) => {
+                  const options = [...r.kept, ...r.merged]
+                  return (
+                    <li key={r.key} className="ig-merge-item">
+                      <div className="ig-merge-legs">
+                        <strong>{r.label}</strong>
+                        <span style={muted}>대표</span>
+                        {options.length > 1 ? (
+                          <select
+                            aria-label={`${r.label} 대표 종목`}
+                            value={r.keeper?.code ?? ''}
+                            onChange={(e) => void save({ roleKeepers: { [r.key]: e.target.value } }, '대표 종목을 바꿨습니다.')}
+                            style={{ fontSize: 13, maxWidth: '100%' }}
+                          >
+                            {options.map((o) => (
+                              <option key={o.code} value={o.code}>{o.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <strong>{r.keeper?.name ?? '-'}</strong>
+                        )}
+                      </div>
+                      <div style={faint}>
+                        {r.merged.length > 0 ? `합쳐짐: ${r.merged.map((m) => m.name).join(', ')}` : '합칠 종목 없음'}
+                        {r.byUser ? ' · 직접 고른 대표' : r.why ? ` · ${r.why}` : ''}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+              {plan.compress.blocked.length > 0 && (
+                <ul style={{ ...faint, margin: '4px 0 0', paddingLeft: 18 }}>
+                  {plan.compress.blocked.map((b) => (
+                    <li key={`${b.role}-${b.code}`}>{b.name}: {b.reason}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ③ 팔기 */}
