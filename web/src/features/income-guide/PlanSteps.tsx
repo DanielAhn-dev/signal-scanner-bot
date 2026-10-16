@@ -170,7 +170,7 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 4, ...faint }}>
-          {income.source === 'actual' ? '내가 적은 실제 분배금 기준입니다.' : '상품 유형별 분배율로 낸 추정입니다. 최근 몇 달 실제로 받은 분배금을 적으면 그 값으로 계산합니다.'}
+          {income.source === 'actual' ? '내가 적은 실제 분배금 기준입니다.' : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 최근 몇 달 실제로 받은 분배금을 적으면 그 값으로 계산합니다.'}
           <span>
             실제로 받은 월 분배금(세후)
             <input

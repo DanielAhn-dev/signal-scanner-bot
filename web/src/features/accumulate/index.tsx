@@ -128,7 +128,7 @@ export default function AccumulatePage() {
   const { avg, months: avgMonths, partial } = averageReceived(state.received, ym)
   const estimate = income?.distribution.monthlyNet ?? null
   const baseIncome = avg ?? estimate ?? 0
-  const incomeSource = avg != null ? `완료된 ${avgMonths}개월 실제 입금 평균` : estimate != null ? '보유 종목 분배율 가정으로 낸 추정(실제 기록 없음)' : '기록 없음'
+  const incomeSource = avg != null ? `완료된 ${avgMonths}개월 실제 입금 평균` : estimate != null ? '보유 종목 최근 12개월 분배율로 낸 추정(실제 기록 없음)' : '기록 없음'
   const monthlyFromIncome = Math.round(baseIncome * incomeAdj)
   const monthly = mode === 'income' ? monthlyFromIncome + toMonthly(num(extra), 'month') : toMonthly(num(amount), freq)
   const lump = num(lumpText) || state.lump
