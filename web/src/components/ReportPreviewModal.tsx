@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ExternalLink, X } from 'lucide-react'
+import { ExternalLink, Maximize2, Minimize2, X } from 'lucide-react'
 import { formatKstDateTime } from '../lib/format'
 
 type Props = {
@@ -13,9 +13,18 @@ type Props = {
   error?: string
 }
 
+/** 홈 화면에 설치한 앱(PWA)으로 실행 중인지 — 이 상태에서는 blob 주소를 새 창으로 열 수 없다 */
+function isStandaloneApp(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia?.('(display-mode: standalone)').matches || (window.navigator as any).standalone === true
+}
+
 export default function ReportPreviewModal({ open, onClose, url, title, generatedAt, error }: Props) {
   const [frameLoading, setFrameLoading] = useState(true)
   const [frameError, setFrameError] = useState<string | null>(null)
+  // 설치 앱이거나 새 창이 막히면 새 창 대신 미리보기를 화면 가득 키운다
+  const [standalone] = useState(isStandaloneApp)
+  const [fullscreen, setFullscreen] = useState(false)
 
   const generatedLabel = useMemo(() => {
     if (!generatedAt) return ''
@@ -27,6 +36,7 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
     setFrameLoading(true)
     setFrameError(null)
   }, [open, url])
+  useEffect(() => { if (!open) setFullscreen(false) }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -50,15 +60,18 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
   // blob URL은 noopener로 열면 Chromium에서 빈 창이 되므로 opener만 끊고 연다.
   const openInNewWindow = () => {
     if (!url) return
+    if (standalone) { setFullscreen((v) => !v); return }
     const win = window.open(url, '_blank')
     if (win) win.opener = null
+    else setFullscreen(true)
   }
+  const expandLabel = fullscreen ? '원래 크기' : standalone ? '크게 보기' : '새 창'
 
   if (!open || typeof document === 'undefined') return null
 
   return createPortal(
     <div className="modal-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal report-preview-modal" role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
+      <div className={`modal report-preview-modal${fullscreen ? ' report-preview-modal--full' : ''}`} role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
         <div className="report-preview-modal__header">
           <div className="report-preview-modal__heading">
             <div className="report-preview-modal__eyebrow">공유 전 확인</div>
@@ -76,11 +89,11 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
             <button
               type="button"
               className="ui-button ui-btn-secondary ui-btn-sm"
-              onClick={openInNewWindow}
+              onClick={fullscreen ? () => setFullscreen(false) : openInNewWindow}
               disabled={!url}
-              title={url ? '새 창에서 열기' : '리포트 생성 후 사용할 수 있습니다'}
+              title={!url ? '리포트 생성 후 사용할 수 있습니다' : fullscreen ? '원래 크기로' : standalone ? '화면 가득 보기' : '새 창에서 열기'}
             >
-              <ExternalLink size={14} /> 새 창
+              {fullscreen ? <Minimize2 size={14} /> : standalone ? <Maximize2 size={14} /> : <ExternalLink size={14} />} {expandLabel}
             </button>
             <button type="button" className="modal-close" onClick={onClose} title="닫기" aria-label="미리보기 닫기"><X size={17} /></button>
           </div>

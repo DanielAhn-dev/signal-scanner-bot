@@ -1422,6 +1422,16 @@ textarea:not([class]):not([style*="border"]):focus {
   padding: 0;
   overflow: hidden;
 }
+/* 설치 앱(PWA)처럼 새 창을 못 열 때: 미리보기를 화면 가득 */
+.modal-overlay .modal.report-preview-modal.report-preview-modal--full {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
 .report-preview-modal__header {
   display: flex;
   align-items: flex-start;
