@@ -258,11 +258,22 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
             <div style={muted}>
               같은 계좌 안에서 팔고 바로 삽니다. 월 인컴 변화 <strong>{signedMan(plan.mergeIncomeDelta)}</strong> · ETF는 팔 때 거래세가 없습니다.
             </div>
-            <ul style={{ margin: '6px 0', paddingLeft: 18 }}>
+            <ul className="ig-merge-list">
               {merges.map((m) => (
-                <li key={`${m.from.accountLabel}-${m.from.code}`} style={{ marginBottom: 4 }}>
-                  <strong>{m.from.name}</strong> {m.from.shares.toLocaleString('ko-KR')}주 팔기 → <strong>{m.to.name}</strong>{' '}
-                  {m.to.shares.toLocaleString('ko-KR')}주 사기
+                <li key={`${m.from.accountLabel}-${m.from.code}`} className="ig-merge-item">
+                  <div className="ig-merge-legs">
+                    <span className="ig-merge-leg">
+                      <span className="ig-trade-tag ig-trade-tag--sell">팔기</span>
+                      <strong>{m.from.name}</strong>
+                      <span className="ig-merge-qty">{m.from.shares.toLocaleString('ko-KR')}주</span>
+                    </span>
+                    <span className="ig-merge-arrow" aria-hidden="true">→</span>
+                    <span className="ig-merge-leg">
+                      <span className="ig-trade-tag ig-trade-tag--buy">사기</span>
+                      <strong>{m.to.name}</strong>
+                      <span className="ig-merge-qty">{m.to.shares.toLocaleString('ko-KR')}주</span>
+                    </span>
+                  </div>
                   <div style={faint}>
                     {m.reason}
                     {m.taxedGain ? ' · 일반 계좌의 해외 기초 ETF라 매매차익에 15.4% 과세' : ''}
