@@ -74,6 +74,16 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
   const delta = projection.total - thisMonth.net
   const notYet = holdings.filter((h) => !thisMonth.items.some((r) => r.code === h.code) && projection.rows.some((p) => p.code === h.code)).length
   const added = projection.rows.filter((r) => r.source === 'receipt' && r.addedShares > 0 && r.perShare)
+  // 고른 달에 이미 적은 종목은 맨 아래로 — 남은 종목을 빨리 고르고, 고칠 때만 아래에서 고른다
+  const doneCodes = useMemo(() => {
+    const monthItems =
+      form.month === data.thisMonth.month ? data.thisMonth.items
+      : form.month === data.lastMonth.month ? data.lastMonth.items
+      : data.recent.filter((r) => r.month === form.month)
+    return new Set(monthItems.map((r) => r.code))
+  }, [form.month, data])
+  const todo = holdings.filter((h) => !doneCodes.has(h.code))
+  const done = holdings.filter((h) => doneCodes.has(h.code))
 
   const pick = (code: string) => {
     const h = holdingOf.get(code)
@@ -141,10 +151,17 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
         <label className="ui-field ig-receipt-code">
           <span className="ui-label">종목</span>
           <select value={form.code} onChange={(e) => pick(e.target.value)}>
-            <option value="">골라 주세요</option>
-            {holdings.map((h) => (
+            <option value="">{todo.length > 0 ? `골라 주세요 (남은 ${todo.length}종목)` : '모두 적었습니다'}</option>
+            {todo.map((h) => (
               <option key={h.code} value={h.code}>{h.name}</option>
             ))}
+            {done.length > 0 && (
+              <optgroup label={`이미 적음 ${done.length}종목 (다시 적으면 고침)`}>
+                {done.map((h) => (
+                  <option key={h.code} value={h.code}>{h.name}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </label>
         <label className="ui-field">
