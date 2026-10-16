@@ -311,7 +311,7 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
                 {g.items.map((r) => {
                   const prev = g.prevByCode?.get(r.code)
                   return (
-                    <li key={r.id} className="ig-receipt-row">
+                    <li key={r.id} className={`ig-receipt-row${g.prevByCode == null ? ' ig-receipt-row--single' : ''}`}>
                       <span className="ig-receipt-row__name">{r.name}</span>
                       <span className="ig-receipt-row__net">
                         {r.net != null ? won(r.net) : <span style={faint}>{won(netOf(r))} 추정</span>}
@@ -329,9 +329,9 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
                       <span className="ig-receipt-row__detail">
                         {r.quantity.toLocaleString('ko-KR')}주 × {won(r.perShare)}
                       </span>
-                      <span className="ig-receipt-row__delta">
-                        {g.prevByCode == null ? null : prev == null ? <span style={faint}>새로</span> : <DeltaWon v={netOf(r) - prev} />}
-                      </span>
+                      {g.prevByCode != null && (
+                        <span className="ig-receipt-row__delta">{prev == null ? <span style={faint}>새로</span> : <DeltaWon v={netOf(r) - prev} />}</span>
+                      )}
                     </li>
                   )
                 })}
