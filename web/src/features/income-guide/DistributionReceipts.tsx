@@ -282,26 +282,26 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
           </Button>
         </div>
       </div>
-      <div style={faint}>
+      <div style={{ ...faint, marginTop: 10 }}>
         받은 수량은 지금 보유 수량이 기본값입니다. 기준일 뒤에 산 수량은 빼고 적어 주세요. 세후 입금액을 적으면 그 종목의 실제 세금(커버드콜은 15.4%보다 적게 떼는 경우가 있습니다)으로 다음 달을 계산합니다.
         같은 달·같은 종목을 다시 적으면 고친 것으로 저장합니다.
       </div>
-      {msg && <div style={{ ...muted, marginTop: 4 }}>{msg}</div>}
+      {msg && <div style={{ ...muted, marginTop: 8 }}>{msg}</div>}
 
       {/* 기록 — 달별 묶음(최근 달만 펼침), 머리줄에 지난달 대비 증감 */}
       {monthGroups.length > 0 && (
         <div className="ig-receipt-months">
           {monthGroups.map((g, i) => (
-            <details key={g.month} className="ig-receipt-month" open={i === 0}>
-              <summary className="ig-receipt-month__head">
-                <span className="ig-receipt-month__title">{Number(g.month.slice(5))}월</span>
-                <span className="ig-receipt-month__total">
+            <details key={g.month} className="ig-receipt-mgroup" open={i === 0}>
+              <summary className="ig-receipt-mgroup__head">
+                <span className="ig-receipt-mgroup__title">{Number(g.month.slice(5))}월</span>
+                <span className="ig-receipt-mgroup__total">
                   세후 {won(g.total)}
                   {g.estimated && <span style={faint}> (추정 포함)</span>}
                 </span>
                 <span style={faint}>{g.items.length}종목</span>
                 {g.prevTotal != null && (
-                  <span className="ig-receipt-month__delta">
+                  <span className="ig-receipt-mgroup__delta">
                     지난달보다 <DeltaWon v={g.total - g.prevTotal} />
                     {g.sameDelta != null && <span style={faint}> · 같은 종목끼리 <DeltaWon v={g.sameDelta} /></span>}
                   </span>

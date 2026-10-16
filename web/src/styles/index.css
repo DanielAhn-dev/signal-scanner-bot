@@ -8510,17 +8510,17 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 }
 /* ── 받은 분배금 기록 — 달별 접기 묶음, 종목은 두 줄(이름·세후 / 수량×주당·지난달 대비), 가로 스크롤 없음 ── */
 .ig-receipt-months { margin-top: var(--space-3); display: grid; gap: var(--space-2); }
-.ig-receipt-month { border: 1px solid var(--color-border-default); border-radius: 6px; }
-.ig-receipt-month__head {
+.ig-receipt-mgroup { border: 1px solid var(--color-border-default); border-radius: 6px; }
+.ig-receipt-mgroup__head {
   display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px;
   padding: 8px 10px;
 }
 /* 화살표는 전역 details > summary::before 하나만 — 가운데 정렬이라 위로 올리는 보정만 뺀다 */
-.ig-receipt-month__head::before { margin-right: 0; transform: rotate(-45deg); }
-.ig-receipt-month[open] > .ig-receipt-month__head::before { transform: translateY(-0.12em) rotate(45deg); }
-.ig-receipt-month__title { font-weight: var(--font-weight-semibold); }
-.ig-receipt-month__total { font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
-.ig-receipt-month__delta { font-size: 12px; }
+.ig-receipt-mgroup__head::before { margin-right: 0; transform: rotate(-45deg); }
+.ig-receipt-mgroup[open] > .ig-receipt-mgroup__head::before { transform: translateY(-0.12em) rotate(45deg); }
+.ig-receipt-mgroup__title { font-weight: var(--font-weight-semibold); }
+.ig-receipt-mgroup__total { font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
+.ig-receipt-mgroup__delta { font-size: 12px; }
 .ig-receipt-rows { list-style: none; margin: 0; padding: 0 10px 4px; }
 .ig-receipt-row {
   display: grid;
