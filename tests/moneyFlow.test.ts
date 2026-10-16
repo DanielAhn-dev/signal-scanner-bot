@@ -442,7 +442,10 @@ test('월 합계 저장 검증: 이번 달 이후·겹치는 이름·빈 이름�
   const ok = { label: 'A카드', kind: 'cash', amount: 1_240_000 }
   assert.deepEqual(normalizeMonthTotals({ month: '2026-10', totals: [ok, { label: ' 포인트 ', kind: 'point', amount: 0 }] }, now)?.totals.map((t) => t.label), ['A카드', '포인트'])
   assert.deepEqual(normalizeMonthTotals({ month: '2026-09', totals: [] }, now)?.totals, [])
-  assert.equal(normalizeMonthTotals({ month: '2026-11', totals: [ok] }, now), null)
+  // 다음 달은 결제 예정금액으로 미리 적을 수 있고, 그 뒤 달은 안 된다
+  assert.equal(normalizeMonthTotals({ month: '2026-11', totals: [ok] }, now)?.month, '2026-11')
+  assert.equal(normalizeMonthTotals({ month: '2026-12', totals: [ok] }, now), null)
+  assert.equal(normalizeMonthTotals({ month: '2027-01', totals: [ok] }, new Date('2026-12-20T03:00:00Z'))?.month, '2027-01')
   assert.equal(normalizeMonthTotals({ month: '2026-13', totals: [ok] }, now), null)
   assert.equal(normalizeMonthTotals({ month: '2026-10', totals: [ok, { ...ok, amount: 1 }] }, now), null)
   assert.equal(normalizeMonthTotals({ month: '2026-10', totals: [{ ...ok, label: '  ' }] }, now), null)
@@ -450,6 +453,7 @@ test('월 합계 저장 검증: 이번 달 이후·겹치는 이름·빈 이름�
   assert.equal(normalizeMonthTotals({ month: '2026-10', totals: [{ ...ok, amount: -1 }] }, now), null)
   assert.equal(normalizeMonthTotals({ month: '2026-10', totals: Array.from({ length: 13 }, (_, i) => ({ ...ok, label: `카드${i}` })) }, now), null)
   assert.deepEqual(toMonthTotal({ client_id: 'wife', month: '2026-10-01', label: 'A카드', kind: 'cash', amount: '1000' }, 'husband'), { month: '2026-10', label: 'A카드', kind: 'cash', amount: 1000, mine: false })
+  assert.equal(toMonthTotal({ client_id: 'me', month: '2026-11-01', label: 'A카드', kind: 'cash', amount: 1, updated_at: '2026-10-16T08:00:00Z' }, 'me').updatedAt, '2026-10-16T08:00:00Z')
 })
 
 test('세부 기록에는 "세부 안 적음" 분류를 쓸 수 없고, 합계 테이블이 없을 때만 그 기능을 끈다', () => {

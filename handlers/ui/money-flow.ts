@@ -108,12 +108,13 @@ export function normalizeFlowCheck(body: any, now = new Date()): { checked_on: s
 }
 
 /**
- * 월 합계 저장 요청. 이용월 기준(YYYY-MM)이고 이번 달 이후는 받지 않는다.
+ * 월 합계 저장 요청. 결제월 기준(YYYY-MM) — 그 달 통장에서 빠져나간 카드 결제금액.
+ * 다음 달까지 받는다: 카드 앱의 '다음 결제 예정금액'을 미리 적고 수시로 고친다. 그 뒤 달은 받지 않는다.
  * 칸 이름은 겹치지 않아야 하고, 빈 목록이면 그 달 합계를 지운다는 뜻이다.
  */
 export function normalizeMonthTotals(body: any, now = new Date()): { month: string; totals: MonthTotal[] } | null {
   const month = body?.month
-  if (typeof month !== 'string' || !validDate(`${month}-01`) || month > kstToday(now).slice(0, 7)) return null
+  if (typeof month !== 'string' || !validDate(`${month}-01`) || month > nextMonthOf(kstToday(now).slice(0, 7))) return null
   if (!Array.isArray(body.totals) || body.totals.length > MAX_TOTAL_SLOTS) return null
   const totals: MonthTotal[] = []
   for (const raw of body.totals) {
@@ -131,8 +132,17 @@ export function isMissingTable(error: { code?: string } | null | undefined): boo
   return error?.code === 'PGRST205' || error?.code === '42P01'
 }
 
+function nextMonthOf(month: string) {
+  const [y, m] = month.split('-').map(Number)
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+}
+
 export function toMonthTotal(row: any, viewer: string) {
-  return { month: String(row.month).slice(0, 7), label: row.label, kind: row.kind, amount: Number(row.amount), mine: row.client_id === viewer }
+  return {
+    month: String(row.month).slice(0, 7), label: row.label, kind: row.kind, amount: Number(row.amount), mine: row.client_id === viewer,
+    // 예정금액을 언제 마지막으로 고쳤는지 보여 준다
+    ...(row.updated_at ? { updatedAt: String(row.updated_at) } : {}),
+  }
 }
 
 const entryColumns = 'id,client_id,spent_on,amount,memo,category_id,cut_level,must_part,payment,for_whom,paid_with,updated_by_client_id,deleted_at,deleted_by_client_id'
@@ -309,7 +319,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? supabase.from('money_flow_entries').select(entryColumns).eq('client_id', partnerClientId)
           .gte('spent_on', from).lte('spent_on', to).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).limit(2000)
         : Promise.resolve({ data: [], error: null }),
-      supabase.from('money_flow_month_totals').select('client_id,month,label,kind,amount,position').in('client_id', totalOwners)
+      supabase.from('money_flow_month_totals').select('client_id,month,label,kind,amount,position,updated_at').in('client_id', totalOwners)
         .gte('month', `${from.slice(0, 7)}-01`).lte('month', to).order('month', { ascending: false }).order('position', { ascending: true }).limit(1000),
     ])
     // 월 합계 테이블(033)이 아직 없으면 그 기능만 끄고 나머지는 그대로 보여 준다. 다른 오류는 숨기지 않는다
