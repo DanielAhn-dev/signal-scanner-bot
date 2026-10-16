@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button'
 import { useCurrentChatId } from '../../stores/profileStore'
 import Collapsible from '../../components/ui/Collapsible'
 import PlanSteps, { type RebalancePlan } from './PlanSteps'
+import DistributionReceipts, { type DistributionReceiptsData } from './DistributionReceipts'
 
 type Group = 'growth' | 'income' | 'satellite' | 'cash'
 type Warning = { level: 'info' | 'warn' | 'alert'; title: string; text: string }
@@ -94,7 +95,9 @@ type View = {
   }
   warnings: Warning[]
   accounts: Array<{ key: string; label: string; taxAdvantaged: boolean; total: number; byGroup: Record<Group, number> }>
-  holdings: Array<{ code: string; name: string; accountLabel: string; value: number; label?: string; bucket: string; group: Group; pct: number }>
+  holdings: Array<{ code: string; name: string; accountLabel: string; value: number; quantity: number; label?: string; bucket: string; group: Group; pct: number }>
+  /** 분배금 받은 기록·다음 달 예상 (handlers/ui/income-guide.ts) */
+  distributionReceipts?: DistributionReceiptsData
 }
 
 const GROUP_LABEL: Record<Group, string> = { growth: '성장 (지수)', income: '인컴 (분배형)', satellite: '위성 (개별주·테마)', cash: '현금성' }
@@ -148,6 +151,17 @@ function OrdersTable({ orders, th, td }: { orders: Order[]; th: React.CSSPropert
  * 실계좌 리밸런싱 가이드 — 포트폴리오에서 "계좌/보유 추가"로 넣은 실제 계좌 보유를 성장·인컴·위성·현금성으로 나눠
  * 모으기 → 전환 → 인컴 단계의 목표 비중과 비교한다. 계산은 src/lib/incomeGuide.ts. 주문은 하지 않는다.
  */
+/** 분배금 기록용 종목 목록 — 같은 종목은 계좌를 합치고, 분배금이 없는 TR형은 뺀다 */
+function receiptHoldings(holdings: View['holdings']) {
+  const m = new Map<string, { code: string; name: string; quantity: number; value: number }>()
+  for (const h of holdings) {
+    if (/TR$/i.test(h.name.trim()) || !(h.quantity > 0)) continue
+    const cur = m.get(h.code)
+    m.set(h.code, { code: h.code, name: h.name, quantity: (cur?.quantity ?? 0) + h.quantity, value: (cur?.value ?? 0) + h.value })
+  }
+  return [...m.values()].sort((a, b) => b.value - a.value)
+}
+
 export default function IncomeGuidePage() {
   const chatId = useCurrentChatId()
   const navigate = useNavigate()
@@ -253,6 +267,19 @@ export default function IncomeGuidePage() {
   const inputStyle: React.CSSProperties = { width: 90, marginRight: 8 }
 
   const saveSettings = (patch: Record<string, unknown>) => load({ method: 'POST', body: JSON.stringify(patch) }, appliedContrib)
+  // 분배금 기록은 검증 실패(400) 이유를 그 자리에 보여 준다 — 화면 전체 오류로 바꾸지 않는다
+  const submitReceipt = async (body: Record<string, unknown>): Promise<string | null> => {
+    try {
+      const q = appliedContrib > 0 ? `?contribution=${Math.round(appliedContrib)}` : ''
+      const res = await apiFetch(`/api/ui/income-guide${q}`, { method: 'POST', body: JSON.stringify(body), cacheMs: 0, retries: 0, timeoutMs: 20_000 })
+      if (!res?.data) return res?.error ?? '저장하지 못했습니다.'
+      setView(res.data)
+      return null
+    } catch (e: unknown) {
+      const text = e instanceof Error ? e.message : String(e)
+      return text.match(/"error":"([^"]+)"/)?.[1] ?? '저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.'
+    }
+  }
 
   const settingsBox = (
       <div style={box}>
@@ -341,7 +368,22 @@ export default function IncomeGuidePage() {
         </div>
       ) : (
         <>
-          {view.plan && <PlanSteps key={JSON.stringify(view.settings)} plan={view.plan} settings={view.settings} saveSettings={saveSettings} />}
+          {view.plan && (
+            <PlanSteps
+              key={JSON.stringify(view.settings)}
+              plan={view.plan}
+              settings={view.settings}
+              saveSettings={saveSettings}
+              receiptsSlot={view.distributionReceipts ? (
+                <DistributionReceipts
+                  data={view.distributionReceipts}
+                  holdings={receiptHoldings(view.holdings)}
+                  buyName={view.plan.buyTarget?.name ?? null}
+                  submit={submitReceipt}
+                />
+              ) : null}
+            />
+          )}
 
           <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span>증권사에서 옮기기 전에 한 번, 옮기고 보유를 고친 뒤에 한 번 기록하면 전후가 비교됩니다.</span>

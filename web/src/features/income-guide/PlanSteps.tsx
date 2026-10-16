@@ -53,6 +53,8 @@ type Props = {
   }
   /** 설정 일부만 저장한다 (서버가 보낸 키만 고친다). 성공하면 true */
   saveSettings: (patch: Record<string, unknown>) => Promise<boolean>
+  /** 요약 바로 아래에 넣을 '받은 분배금' 카드 */
+  receiptsSlot?: React.ReactNode
 }
 
 const man = formatKrwMan
@@ -78,10 +80,9 @@ const smallInput: React.CSSProperties = { width: 80, marginRight: 4 }
  * 리밸런싱 첫 화면 — "그래서 뭘 하면 되는지"만 쉬운 말로. 숫자 근거·바구니 표는 아래 "자세히 보기"에 둔다.
  * ① 새 돈은 한 곳으로 ② 겹치는 종목 합치기 ③ 파는 건 인컴 하한을 지키는 만큼만
  */
-export default function PlanSteps({ plan, settings, saveSettings }: Props) {
+export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }: Props) {
   const savingRef = useRef(false)
   const [msg, setMsg] = useState<string | null>(null)
-  const [actualMan, setActualMan] = useState(settings.actualMonthlyNet ? String(Math.round(settings.actualMonthlyNet / 10_000)) : '')
   const [contribMan, setContribMan] = useState(settings.monthlyContribution ? String(Math.round(settings.monthlyContribution / 10_000)) : '')
   const [cashMan, setCashMan] = useState(settings.cashBalance ? String(Math.round(settings.cashBalance / 10_000)) : '')
   const [fees, setFees] = useState<Record<string, string>>(() =>
@@ -170,21 +171,9 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 4, ...faint }}>
-          {income.source === 'actual' ? '내가 적은 실제 분배금 기준입니다.' : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 최근 몇 달 실제로 받은 분배금을 적으면 그 값으로 계산합니다.'}
-          <span>
-            실제로 받은 월 분배금(세후)
-            <input
-              style={{ ...smallInput, marginLeft: 4 }}
-              inputMode="numeric"
-              placeholder="만원"
-              value={actualMan}
-              onChange={(e) => setActualMan(e.target.value)}
-            />
-            만원
-          </span>
-          <Button size="sm" variant="secondary" onClick={() => void save({ actualMonthlyNet: toWon(actualMan) }, '실제 분배금으로 다시 계산했습니다.')}>
-            반영
-          </Button>
+          {income.source === 'actual'
+            ? '아래 받은 분배금 기록(최근 주당 분배금 × 지금 수량, 기록 없는 종목은 추정)으로 낸 다음 달 예상입니다.'
+            : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 아래에 받은 분배금을 적으면 실제 기준으로 바뀝니다.'}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
           <span>증권 계좌 예수금</span>
@@ -209,6 +198,8 @@ export default function PlanSteps({ plan, settings, saveSettings }: Props) {
             : '인컴 목표 비중에 맞춰 모자라면 사고, 성장이 모자라면 커버드콜을 팔아 옮기는 안까지 보여 줍니다.'}
         </div>
       </div>
+
+      {receiptsSlot}
 
       {/* ① 새 돈 */}
       <div style={card}>
