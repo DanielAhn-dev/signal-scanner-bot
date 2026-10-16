@@ -16,7 +16,7 @@
 .mf-chips button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }
 .mf-cut { color: var(--color-text-tertiary); font-size: 12px; }
 .mf-month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.mf-month-nav button, .mf-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-secondary); cursor: pointer; }
+.mf-month-nav button, .mf-icon { display: inline-flex; align-items: center; justify-content: center; gap: 2px; min-width: 36px; min-height: 36px; padding: 0 8px; font-size: 13px; white-space: nowrap; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-secondary); cursor: pointer; }
 .mf-month-nav button:disabled { opacity: .4; cursor: not-allowed; }
 .mf-list { list-style: none; padding: 0; display: flex; flex-direction: column; }
 .mf-list li { padding: 10px 0; border-bottom: 1px solid var(--color-border-default); display: flex; flex-direction: column; gap: 6px; }

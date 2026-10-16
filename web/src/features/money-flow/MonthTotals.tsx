@@ -115,9 +115,9 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
   return (
     <section className="acc-card">
       <div className="mf-month-nav">
-        <button type="button" aria-label="이전 달" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={18} /></button>
+        <button type="button" aria-label="이전 달" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={16} />{Number(shiftMonth(month, -1).slice(5))}월</button>
         <h2>{month.replace('-', '년 ')}월 {upcoming ? '결제 예정' : '합계'}</h2>
-        <button type="button" aria-label="다음 달" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= shiftMonth(thisMonth, 1)}><ChevronRight size={18} /></button>
+        <button type="button" aria-label="다음 달" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= shiftMonth(thisMonth, 1)}>{Number(shiftMonth(month, 1).slice(5))}월{shiftMonth(month, 1) > thisMonth ? ' 예정' : ''}<ChevronRight size={16} /></button>
       </div>
       {!ready ? <p className="acc-note">합계 칸은 준비 중입니다(서버 설정 대기). 아래 세부 기록은 그대로 쓸 수 있습니다.</p> : (
         <>
