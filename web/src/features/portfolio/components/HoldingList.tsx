@@ -19,6 +19,7 @@ type HoldingListProps = {
   tradeCostOpts: TradeCostOptions
   openTradeModal: (row: HoldingRow, side: 'buy' | 'sell') => void
   openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => void
+  realTotalValue: number
 }
 
 export default function HoldingList({
@@ -33,6 +34,7 @@ export default function HoldingList({
   tradeCostOpts,
   openTradeModal,
   openMaintenanceModal,
+  realTotalValue,
 }: HoldingListProps) {
   return (
     <div className="cards-list portfolio-cards-list">
@@ -64,6 +66,7 @@ export default function HoldingList({
           tradeCostOpts={tradeCostOpts}
           openTradeModal={openTradeModal}
           openMaintenanceModal={openMaintenanceModal}
+          realTotalValue={realTotalValue}
         />
       ))}
     </div>

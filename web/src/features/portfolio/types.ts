@@ -87,6 +87,8 @@ export type HoldingRow = {
   peak_since_buy?: { price: number; date: string } | null
   /** 실계좌 개별주: 마지막 매수 뒤 판 적이 있는가 (null = 모름) — src/lib/trimSinceBuy.ts */
   trimmed_since_buy?: boolean | null
+  /** 이 종목 60일 변동성 ÷ KODEX 200 — 담을 크기 안내(src/lib/positionSizing.ts, C66) */
+  sizing_vol_ratio?: number | null
   stock?: { close?: number | null; sector_id?: string | number | null; sector?: { id?: string | number; name?: string } | null } | null
   lots?: Array<{ acquired_quantity: number; acquired_price: number; acquired_at?: string | null }>
 }

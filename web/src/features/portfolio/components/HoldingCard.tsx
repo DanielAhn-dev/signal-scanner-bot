@@ -11,6 +11,7 @@ import { accountLabel, holdingAccountKey, holdingValue } from '../lib/accountKey
 import { BADGE_TOOLTIPS, toSignalLabel, toWarnLabel } from '../lib/labels'
 import { getScoreValue, type HoldingStateKind } from '../lib/holdingState'
 import { buildReasonBadges } from '../lib/reasonBadges'
+import { holdingSizing } from '../lib/stockSizing'
 import type { HoldingRow } from '../types'
 
 type HoldingCardProps = {
@@ -23,6 +24,8 @@ type HoldingCardProps = {
   tradeCostOpts: TradeCostOptions
   openTradeModal: (row: HoldingRow, side: 'buy' | 'sell') => void
   openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => void
+  /** 실계좌 보유 평가액 합 — 담을 크기(C66) 계산용 */
+  realTotalValue: number
 }
 
 export default function HoldingCard({
@@ -35,6 +38,7 @@ export default function HoldingCard({
   tradeCostOpts,
   openTradeModal,
   openMaintenanceModal,
+  realTotalValue,
 }: HoldingCardProps) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -148,6 +152,17 @@ export default function HoldingCard({
           </span>
         )}
       </div>
+      {(() => {
+        // 담을 크기(C66): 최대를 넘은 실계좌 개별주만 한 줄. 팔라는 안내는 위성 20% 선·C54가 맡는다
+        const sz = holdingSizing(r, realTotalValue)
+        if (!sz || sz.overAmount <= 0) return null
+        return (
+          <div className="portfolio-peak-giveback portfolio-peak-giveback--alert">
+            <AlertTriangle size={12} aria-hidden />
+            <span>담을 크기: 최대({formatKrw(sz.maxAmount)})보다 {formatKrw(sz.overAmount)} 많음 · 추가매수 멈춤</span>
+          </div>
+        )
+      })()}
       </div>
 
       {open && (

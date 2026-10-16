@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Detail from '../../components/ui/Detail'
 import Button from '../../components/ui/Button'
@@ -29,6 +29,7 @@ import { usePortfolioView } from './hooks/usePortfolioView'
 import { useTradeModal } from './hooks/useTradeModal'
 import { useMaintenance } from './hooks/useMaintenance'
 import { useShare } from './hooks/useShare'
+import { realHoldingTotal } from './lib/stockSizing'
 
 export default function Portfolio() {
   const navigate = useNavigate()
@@ -74,6 +75,9 @@ export default function Portfolio() {
       setSelectedAccountKey('virtual')
     }
   }, [loading, realCount, virtualHoldingRows.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 담을 크기(C66)의 분모 — 선택한 탭과 상관없이 실계좌 전체(개별주 한도와 같은 기준)
+  const realTotal = useMemo(() => realHoldingTotal(holdingAll), [holdingAll])
 
   // 모달
   const trade = useTradeModal({ load })
@@ -149,6 +153,7 @@ export default function Portfolio() {
         accountSummary={accountSummary} addEntryMinScore={safeAddEntryMinScore}
         includeCost={includeCost} tradeCostOpts={tradeCostOpts}
         openTradeModal={openTradeModal} openMaintenanceModal={openMaintenanceModal}
+        realTotalValue={realTotal}
       />
 
       {totalPages > 1 && (
@@ -193,7 +198,7 @@ export default function Portfolio() {
       />
       </Detail>
 
-      <TradeModal trade={trade} />
+      <TradeModal trade={trade} realTotalValue={realTotal} />
 
       <ShareModal share={share} holdingAll={holdingAll} totalInvested={totalInvested} totalUnrealized={totalUnrealized} totalReturnPct={totalReturnPct} />
 

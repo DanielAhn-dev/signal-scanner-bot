@@ -1,11 +1,15 @@
+import { AlertTriangle } from 'lucide-react'
 import { formatKrw, formatNumber } from '../../../../lib/format'
 import Button from '../../../../components/ui/Button'
 import Input from '../../../../components/ui/Input'
 import Modal from '../../../../components/Modal'
 import { getTodayLocalYmd, shiftYmd, toKstYmd } from '../../lib/dates'
 import type { TradeModalState } from '../../hooks/useTradeModal'
+import { SIZING_EVIDENCE, SIZING_MAX_MULTIPLE } from '../../../../../../src/lib/positionSizing'
+import { holdingSizing, SIZING_LEVEL_LABEL } from '../../lib/stockSizing'
 
-export default function TradeModal({ trade }: { trade: TradeModalState }) {
+/** realTotalValue: 실계좌 보유 평가액 합(개별주 한도와 같은 분모) — 담을 크기 계산용 */
+export default function TradeModal({ trade, realTotalValue }: { trade: TradeModalState; realTotalValue: number }) {
   const {
     modalOpen,
     modalSide,
@@ -91,6 +95,42 @@ export default function TradeModal({ trade }: { trade: TradeModalState }) {
                     증권사 앱의 보유 수량과 같은지 확인하세요. 여러 번 나눠 체결됐으면 합친 수량과 평균 체결가로 한 번에 적어도 돼요.
                   </div>
                 )}
+              </div>
+            )
+          })()}
+
+          {/* 담을 크기(C66): 실계좌 개별주만. 흔들림이 큰 종목일수록 적게 — 막지 않는 참고 안내 */}
+          {modalSide === 'buy' && (() => {
+            const addPrice = tradePrice !== '' ? Number(tradePrice) : Number(modalRow.stock?.close ?? modalRow.avg_price ?? 0)
+            const addValue = Math.max(0, Number(tradeQty) || 0) * addPrice
+            const s = holdingSizing(modalRow, realTotalValue, addValue)
+            if (!s) return null
+            const ev = SIZING_EVIDENCE
+            return (
+              <div className="portfolio-modal-lots" style={{ marginBottom: 'var(--space-4)' }}>
+                <div className="portfolio-modal-lots-title">이 종목 담을 크기 (참고)</div>
+                <div className="portfolio-modal-lots-row">
+                  최근 60일 흔들림: 지수의 {formatNumber(s.volRatio, 1)}배 ({SIZING_LEVEL_LABEL[s.level]})
+                </div>
+                <div className="portfolio-modal-lots-row">
+                  이 종목에 담을 최대: 약 {formatKrw(s.maxAmount)} · 입력대로면 {formatKrw(s.maxAmount + s.overAmount)}
+                </div>
+                {s.overAmount > 0 && (
+                  <div className="portfolio-peak-giveback portfolio-peak-giveback--alert">
+                    <AlertTriangle size={12} aria-hidden />
+                    <span>최대보다 {formatKrw(s.overAmount)} 많아요. 기록은 그대로 할 수 있어요.</span>
+                  </div>
+                )}
+                <details style={{ marginTop: 'var(--space-1)' }}>
+                  <summary className="caption muted">왜 이 금액인가요?</summary>
+                  <div className="caption muted" style={{ marginTop: 'var(--space-1)', wordBreak: 'keep-all', lineHeight: 1.6 }}>
+                    개별주 한도(실계좌의 10%)를 5종목으로 나눈 {formatKrw(s.baseAmount)}을 기준으로, 흔들림이 큰 종목은 덜 담고
+                    잔잔한 종목은 더 담아요(기준의 {SIZING_MAX_MULTIPLE}배까지). {ev.period}년 시총 상위 200개 중 무작위 5종목 바구니
+                    {' '}{formatNumber(ev.baskets, 0)}개로 시험했더니, 이렇게 담으면 나쁜 해(하위 5%)의 1년 손실이 {ev.tail5Equal}%에서
+                    {' '}{ev.tail5Sized}%로 줄었어요. 지수를 이기는 방법은 아니에요(같은 시점 지수 1년 평균 +{ev.indexAvg1y}%,
+                    바구니 +{ev.basketAvg1y}%). 근거 {ev.code} · 생성 {ev.generatedAt}
+                  </div>
+                </details>
               </div>
             )
           })()}
