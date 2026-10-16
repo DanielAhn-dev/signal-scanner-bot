@@ -9,12 +9,13 @@ import { seedExpenseTotal, seedPlanFromFlow, type FlowCheckInput, type SeedPlan 
 import SeedPlanLines, { PLAN_LABELS, type PlanKey } from './SeedPlanLines'
 import MaturityTab from '../money-flow/MaturityTab'
 import MaturityInbox from './MaturityInbox'
+import DistributionInbox from './DistributionInbox'
 import '../accumulate/accumulate.css'
 import '../money-flow/money-flow.css'
 import './seed-builder.css'
 
 type ExpenseKey = 'food' | 'housing' | 'vehicle' | 'education' | 'tax' | 'subscriptions' | 'other' | 'fixedCost' | 'variableCost' | 'irregularFund' | 'emergencyRefill' | 'card' | 'water' | 'gas' | 'residentTax' | 'propertyTax' | 'vehicleTax' | 'taxAdjustment'
-type ExtraIncomeKey = 'incentive' | 'vacation' | 'taxRefund' | 'other' | 'maturity'
+type ExtraIncomeKey = 'incentive' | 'vacation' | 'taxRefund' | 'other' | 'maturity' | 'distribution'
 type Entry = { id: string; date: string; amount: number; deposited: number; memo: string; cancelled: boolean }
 type MonthRecord = {
   status: 'recorded' | 'skipped'
@@ -57,12 +58,13 @@ const extraIncomeLabels: Array<{ key: ExtraIncomeKey; label: string }> = [
   { key: 'taxRefund', label: '연말정산 환급' },
   { key: 'other', label: '그 밖의 수입' },
   { key: 'maturity', label: '예·적금 만기' },
+  { key: 'distribution', label: '분배금 재투자' },
 ]
 
 const emptyRecord = (): MonthRecord => ({
   status: 'recorded', household: 'solo', ownIncome: 0, partnerIncome: 0, ownPayday: null, partnerPayday: null,
   expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: 0, fixedCost: 0, variableCost: 0, irregularFund: 0, emergencyRefill: 0, card: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0 },
-  extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, maturity: 0 },
+  extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, maturity: 0, distribution: 0 },
   reserve: 0, plan: 0, breakdown: null,
 })
 
@@ -353,6 +355,13 @@ export default function SeedBuilderPage() {
     return save(next)
   }
 
+  // 실계좌에서 이 달 받은 분배금을 투자금에 넣거나(+) 되돌린다(−). 일시 수입 '분배금 재투자' 칸에 더하고 바로 저장한다
+  const applyDistribution = (delta: number) => {
+    const next: MonthRecord = { ...draft, extraIncome: { ...draft.extraIncome, distribution: Math.max(0, (draft.extraIncome.distribution ?? 0) + delta) } }
+    setDraft(next)
+    return save(next)
+  }
+
   const toggleMask = () => { setMasked((current) => { writeStore('seed-builder-mask', current ? '0' : '1'); return !current }) }
   const exportYear = () => {
     const payload = { year, exportedAt: new Date().toISOString(), months: Object.entries(records).map(([key, record]) => ({ month: key, ...record, entries: entries[key] ?? [] })) }
@@ -458,6 +467,9 @@ export default function SeedBuilderPage() {
       </div>}
 
       {selectedMonth === monthKey(new Date()) && !loading && !loadError && <MaturityInbox month={selectedMonth} onApply={applyMaturity} krw={krw} />}
+      {selectedMonth === monthKey(new Date()) && !loading && !loadError && (
+        <DistributionInbox month={selectedMonth} invested={draft.extraIncome.distribution ?? 0} onApply={applyDistribution} krw={krw} />
+      )}
 
       <section className="seed-overview" aria-label="시드 현황">
         <div><span>{isFuture ? '계획 (예정)' : '이번 달 계획'}</span><strong>{krw(records[selectedMonth]?.plan ?? 0)}</strong></div>
