@@ -34,6 +34,8 @@ type Props = {
 
 const man = formatKrwMan
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
+/** 1만원 아래는 '0만원'으로 뭉개지지 않게 원 단위(100원 반올림) */
+const smallWon = (v: number) => (Math.abs(v) < 10_000 ? `${(Math.round(v / 100) * 100).toLocaleString('ko-KR')}원` : man(v))
 const card: React.CSSProperties = {
   margin: '8px 12px',
   padding: 14,
@@ -123,13 +125,17 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
       </div>
       <div style={{ marginTop: 4 }}>
         다음 달 예상(세후) <strong>약 {man(projection.total)}</strong>
-        {thisMonth.items.length > 0 && (
+        {/* 안 적은 종목이 있으면 이번 달 합계엔 빠지고 예상엔 추정으로 들어가 차이가 부풀려진다 — 그땐 비교하지 않는다 */}
+        {thisMonth.items.length > 0 && notYet === 0 && (
           <span style={{ ...muted, marginLeft: 4 }}>· 이번 달보다 {Math.abs(delta) < 5_000 ? '거의 그대로' : `${delta > 0 ? '+' : '−'}${man(Math.abs(delta))}`}</span>
+        )}
+        {notYet > 0 && projection.fromEstimate > 0 && (
+          <span style={{ ...muted, marginLeft: 4 }}>· 이번 달에 안 적은 종목 추정 {man(projection.fromEstimate)} 포함이라 이번 달 합계와 바로 비교할 수 없습니다</span>
         )}
       </div>
       {added.map((r) => (
         <div key={r.code} style={faint}>
-          └ {r.name} {r.addedShares.toLocaleString('ko-KR')}주 늘어남 → 약 +{man((r.perShare ?? 0) * r.addedShares * (r.netRatio ?? 0.846) / (r.intervalMonths ?? 1))}
+          └ {r.name} {r.addedShares.toLocaleString('ko-KR')}주 늘어남 → 다음 달 약 +{smallWon((r.perShare ?? 0) * r.addedShares * (r.netRatio ?? 0.846) / (r.intervalMonths ?? 1))}
         </div>
       ))}
       <div style={faint}>
