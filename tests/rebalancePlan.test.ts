@@ -252,3 +252,24 @@ test("sanitize: 인컴 목표 종목 수는 1~20 정수, 역할별 대표는 보
   assert.equal(sanitizeIncomeGuideSettings({}, b).incomeKindsTarget, 6);
   assert.equal(sanitizeIncomeGuideSettings({}, a).incomeKindsTarget, 6);
 });
+
+test("같은 지수 겹침: 설정을 켰을 때만, 같은 계좌의 KODEX 200·TIGER 200·200TR을 TR 하나로(일반 계좌)", () => {
+  const holdings = [...PORTFOLIO, H("102110", "TIGER 200", 38_000, 40)];
+  const off = planFor({}, holdings).plan;
+  assert.ok(!off.merges.some((m) => m.reason.startsWith("같은 지수 겹침")));
+  const { plan } = planFor({ indexOverlapMerge: true }, holdings);
+  const idx = plan.merges.filter((m) => m.reason.startsWith("같은 지수 겹침"));
+  assert.deepEqual(idx.map((m) => m.from.code).sort(), ["069500", "102110"]);
+  for (const m of idx) {
+    assert.equal(m.to.code, "278530");
+    assert.match(m.reason, /TR형/);
+    assert.ok(m.to.amount <= m.from.amount);
+  }
+  // 다른 지수(코스닥150 등)·헤지 상품은 합치지 않는다
+  const other = planFor({ indexOverlapMerge: true }, [...holdings, H("229200", "KODEX 코스닥150", 12_000, 10), H("360750", "TIGER 미국S&P500", 20_000, 10), H("448290", "TIGER 미국S&P500(H)", 15_000, 10)]).plan;
+  assert.ok(!other.merges.some((m) => ["229200", "448290"].includes(m.from.code)));
+  // 새 돈 방향은 합쳐진 종목이 아니라 남는 TR형
+  assert.equal(plan.buyTarget?.code, "278530");
+  assert.equal(sanitizeIncomeGuideSettings({ indexOverlapMerge: true }, DEFAULT_INCOME_GUIDE_SETTINGS).indexOverlapMerge, true);
+  assert.equal(sanitizeIncomeGuideSettings({ indexOverlapMerge: "" as unknown as boolean }, { ...DEFAULT_INCOME_GUIDE_SETTINGS, indexOverlapMerge: true }).indexOverlapMerge, undefined);
+});

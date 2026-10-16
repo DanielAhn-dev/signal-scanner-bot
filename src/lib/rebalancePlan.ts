@@ -90,6 +90,13 @@ export function roleLabel(role: string): string {
   return `${region === "us" ? "해외" : "한국"} ${ROLE_BUCKET_LABEL[bucket] ?? bucket}`;
 }
 
+/** 같은 지수 성장 ETF를 알아보는 키 — 운용사 이름과 끝의 TR만 뗀다 ("KODEX 200"·"TIGER 200"·"KODEX 200TR"). 헤지(H)·다른 지수는 따로 본다 */
+export function indexOverlapKey(name: string): string | null {
+  const m = String(name ?? "").trim().match(/^\S+\s+(.+)$/);
+  const rest = m ? m[1].replace(/\s+/g, "").replace(/TR$/i, "") : "";
+  return rest.length >= 2 ? rest : null;
+}
+
 export type PlanMerge = {
   from: { code: string; name: string; accountLabel: string; shares: number; amount: number; realizedGain: number | null };
   to: { code: string; name: string; accountLabel: string; price: number; shares: number; amount: number };
@@ -265,6 +272,24 @@ export function buildRebalancePlan(input: {
     }
   }
 
+  // ②-a 같은 지수 성장 ETF 겹침 (설정에서 켰을 때만) — 같은 계좌 안, 일반 계좌는 분배금 과세를 미루는 TR형을 남긴다
+  if (settings.indexOverlapMerge) {
+    const sameIdx = new Map<string, PlanHolding[]>();
+    for (const h of holdings) {
+      if (h.group !== "growth" || mergedAway.has(h)) continue;
+      const key = indexOverlapKey(h.name);
+      if (key) sameIdx.set(`${h.accountKey}|${key}`, [...(sameIdx.get(`${h.accountKey}|${key}`) ?? []), h]);
+    }
+    for (const members of sameIdx.values()) {
+      if (members.length < 2) continue;
+      const trMembers = members.filter((m) => /TR\s*$/i.test(m.name.trim()));
+      const preferTr = !isTaxAdvantagedAccount(members[0].accountLabel) && trMembers.length > 0;
+      const { keeper, byFee } = pickKeeper(preferTr ? trMembers : members, fees);
+      const why = preferTr ? `일반 계좌라 분배금 과세를 미루는 TR형을 남김${trMembers.length > 1 ? ` · ${keeperReason(keeper, byFee)}` : ""}` : keeperReason(keeper, byFee);
+      for (const m of members) if (m !== keeper) toMerge(m, keeper, `같은 지수 겹침 · ${why}`);
+    }
+  }
+
   // ②-b 인컴 종목 압축 — 목표 종목 수가 있으면 역할(지역×바구니)별 대표 하나로 더 합친다. 월 인컴 하한과 같은 계좌 안 이동은 지킨다.
   const incomeKindsBefore = new Set(holdings.filter((h) => h.group === "income").map((h) => h.code)).size;
   let compress: RebalancePlan["compress"] = null;
@@ -375,7 +400,7 @@ export function buildRebalancePlan(input: {
   const remainingCodes = new Set(holdings.filter((h) => !mergedAway.has(h)).map((h) => h.code));
 
   // ① 새 돈을 넣을 곳 — 일반 계좌면 분배금 과세를 미루는 TR, 아니면 가장 큰 성장 ETF
-  const growthRows = holdings.filter((h) => h.group === "growth").sort((a, b) => b.value - a.value);
+  const growthRows = holdings.filter((h) => h.group === "growth" && !mergedAway.has(h)).sort((a, b) => b.value - a.value);
   const trInTaxable = growthRows.find((h) => /TR/i.test(h.name) && !isTaxAdvantagedAccount(h.accountLabel));
   const buy = trInTaxable ?? growthRows[0] ?? null;
   const buyTarget = buy ? { code: buy.code, name: buy.name, accountLabel: buy.accountLabel, price: buy.price } : null;

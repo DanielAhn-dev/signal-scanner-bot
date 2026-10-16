@@ -188,6 +188,8 @@ export type IncomeGuideSettings = {
   incomeKindsTarget?: number;
   /** 역할별로 직접 고른 대표 종목 — 키는 "kr|covered_call"처럼 지역|바구니. 비우면 자동 추천 */
   roleKeepers?: Record<string, string>;
+  /** true면 같은 계좌의 같은 지수 성장 ETF(예: KODEX 200·TIGER 200·200TR)도 한 종목으로 합친다. 일반 계좌는 TR형을 남긴다 */
+  indexOverlapMerge?: boolean;
 };
 
 /** 예수금을 보유 행처럼 다룰 때 쓰는 코드 — 주문·세금·분배금 추정·계좌 배치에서는 뺀다 */
@@ -335,7 +337,9 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
       else delete roleKeepers[role];
     }
   }
+  const indexOverlapMerge = "indexOverlapMerge" in input ? (input.indexOverlapMerge === true || (input.indexOverlapMerge as unknown) === "true" ? true : undefined) : current.indexOverlapMerge;
   return {
+    ...(indexOverlapMerge ? { indexOverlapMerge } : {}),
     ...(actualMonthlyNet != null ? { actualMonthlyNet } : {}),
     ...(incomeKindsTarget != null ? { incomeKindsTarget } : {}),
     ...(Object.keys(roleKeepers).length ? { roleKeepers } : {}),

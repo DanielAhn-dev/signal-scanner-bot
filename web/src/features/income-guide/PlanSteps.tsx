@@ -72,6 +72,7 @@ type Props = {
     incomeMode?: 'hold'
     incomeKindsTarget?: number
     roleKeepers?: Record<string, string>
+    indexOverlapMerge?: boolean
   }
   /** 설정 일부만 저장한다 (서버가 보낸 키만 고친다). 성공하면 true */
   saveSettings: (patch: Record<string, unknown>) => Promise<boolean>
@@ -432,6 +433,23 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
             <Button size="sm" variant="secondary" onClick={() => void save({ incomeKindsTarget: kindsTarget.trim() }, kindsTarget.trim() ? '목표 종목 수를 저장했습니다.' : '종목 수 목표를 지웠습니다.')}>
               저장
             </Button>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <strong style={{ fontSize: 13 }}>같은 지수 ETF 겹침도 합치기</strong>
+            <div style={faint}>
+              KODEX 200·TIGER 200·200TR처럼 운용사만 다른 같은 지수 ETF를 한 종목으로 합칩니다. 같은 계좌 안에서만 옮기고, 일반 계좌는 분배금 과세를 미루는 TR형을 남깁니다.
+              국내 지수 ETF는 팔 때 거래세·매매차익 과세가 없고 같은 날 팔고 사면 시장 노출은 그대로입니다. 수익 구간은 지금, 손실 구간은 평단 회복 시로 안내합니다.
+            </div>
+            <div style={inlineRow}>
+              <Button
+                size="sm"
+                variant={settings.indexOverlapMerge ? 'secondary' : 'primary'}
+                onClick={() => void save({ indexOverlapMerge: settings.indexOverlapMerge ? '' : true }, settings.indexOverlapMerge ? '같은 지수 겹침 합치기를 껐습니다.' : '같은 지수 겹침도 합치도록 바꿨습니다.')}
+              >
+                {settings.indexOverlapMerge ? '끄기' : '켜기'}
+              </Button>
+              {settings.indexOverlapMerge && <span style={faint}>켜져 있음</span>}
+            </div>
           </div>
           {plan.compress && (
             <div style={{ marginTop: 8 }}>

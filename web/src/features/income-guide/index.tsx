@@ -41,6 +41,7 @@ type View = {
     feePctByCode?: Record<string, number>
     incomeKindsTarget?: number
     roleKeepers?: Record<string, string>
+    indexOverlapMerge?: boolean
   }
   /** 첫 화면 "할 일" (src/lib/rebalancePlan.ts). 보유가 없으면 null */
   plan?: RebalancePlan | null
