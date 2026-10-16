@@ -28,6 +28,7 @@ import { MAX_RECEIPTS, monthSummary, projectNextMonth, sanitizeReceipt } from '.
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
+//   GET  ?summary=1 — 보유 수·직접 남긴 점검 기록 수만 (홈 길잡이용, 시세 조회 없음)
 //   POST { ...설정 } — 가이드 설정 변경 / POST { action: 'record', note } — 오늘 비중을 점검 기록에 남김
 //   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
 // 이번 달 기록이 없으면 열 때 자동 기록을 하나 남긴다(매월 배치 scripts/income_guide_monthly.ts와 같은 규칙).
@@ -62,6 +63,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         history: [],
       }
+    }
+    // 홈 '다음 할 일' 판정용 가벼운 조회 — 시세를 받지 않고 보유 수와 직접 남긴 점검 기록 수만 준다(자동 기록은 세지 않음)
+    if (req.method === 'GET' && req.query?.summary === '1') {
+      const rows = await loadAccountPositionRows(supabase, chatId)
+      const manualRecords = (file.history ?? []).filter((h) => !h.auto).length
+      return res.status(200).json({ ok: true, data: { holdingCount: rows.length, manualRecords } })
     }
     const body = req.method === 'POST' ? ((typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) ?? {}) : {}
     const isRecord = req.method === 'POST' && body.action === 'record'
