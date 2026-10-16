@@ -730,3 +730,23 @@ test('간편결제·쇼핑몰: 다른 단서가 없으면 묻지 않고 온라�
   assert.equal(classifyMemo('동네 분식').source, 'none')
   assert.equal(categoryById('online_shop')?.kind, 'variable')
 })
+
+test('카드로 내는 고정지출은 카드 합계 안에 있으니 한 번만 센다(예산 고정비와 중복 없음), 카드 밖 자동이체만 더한다', () => {
+  const plan = {
+    monthlyIncome: 7_000_000, reserveMonthly: 0, variable: [], irregular: [],
+    fixed: [
+      { categoryId: 'academy', label: '학원', amount: 400_000 },
+      { categoryId: 'phone', label: '통신', amount: 100_000 },
+      { categoryId: 'rent', label: '대출 원리금', amount: 500_000, outsideCard: true },
+    ],
+    saving: [{ categoryId: 'save_isa', amount: 1_660_000 }],
+  }
+  // 카드 결제금액 2,000,000원 안에 학원·통신 500,000원이 들어 있다
+  const none = summarizeItems([])
+  const spending = monthSpending([{ label: '카드', kind: 'cash', amount: 2_000_000 }], none, none, fixedOutsideCardOf(plan))
+  assert.equal(spending.cash, 2_500_000)
+  const variable = spending.cash - fixedCashOf(plan)
+  assert.equal(variable, 1_500_000)
+  // 수입 − 저축 − 카드 결제금액 − 카드 밖 자동이체 = 실제로 남는 돈
+  assert.equal(investableOf(plan, variable), 7_000_000 - 1_660_000 - 2_000_000 - 500_000)
+})
