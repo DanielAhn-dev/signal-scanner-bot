@@ -120,6 +120,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const projection = projectNextMonth({ receipts, holdings: view.holdings, estimateMonthlyNet, today })
     const month = today.slice(0, 7)
     const prevMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()
+    const yearAgoMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 12 ? `${y}-01` : `${y - 1}-${String(m + 1).padStart(2, '0')}` })()
     // 받은 기록이 하나라도 있으면 월 인컴은 기록 기반 예상을 쓴다. 예전 '실제 월 분배금' 숫자 칸은 화면에서 없앴으므로(고칠 수 없는 값)
     // 기록이 없을 때도 쓰지 않고 분배율 추정으로 둔다
     const planSettings = { ...file.settings, actualMonthlyNet: projection.receiptCodes > 0 ? projection.total : undefined }
@@ -134,7 +135,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           thisMonth: monthSummary(receipts, month),
           lastMonth: monthSummary(receipts, prevMonth),
           projection,
-          recent: receipts.filter((r) => r.month >= prevMonth).sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.localeCompare(a.createdAt)),
+          // 최근 12개월 — 화면이 달별로 묶어 지난달 대비 증감을 보여 준다
+          recent: receipts.filter((r) => r.month >= yearAgoMonth).sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.localeCompare(a.createdAt)),
         },
         priceFallbacks,
         history, comparison: compareWithHistory(view, history, ctx), health: healthTrend(view, history, ctx) },
