@@ -33,7 +33,9 @@
 .mf-bar .is-drop, .mf-key.is-drop { background: var(--color-brand); }
 .mf-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .mf-majors details { border-bottom: 1px solid var(--color-border-default); }
-.mf-majors summary { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; color: var(--color-text-primary) !important; }
+.mf-majors summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; color: var(--color-text-primary) !important; }
+/* 전역 summary::before 화살표가 flex 항목으로 끼어 이름이 가운데로 밀리지 않게, 이름이 남는 폭을 차지한다 */
+.mf-majors summary > span { flex: 1; min-width: 0; }
 .mf-majors small, .mf-list small, .mf-majors li small { color: var(--color-text-tertiary); font-size: 11px; margin-left: 4px; }
 .mf-majors ul, .mf-changes { list-style: none; padding: 0 0 8px; display: flex; flex-direction: column; gap: 6px; }
 .mf-majors li, .mf-changes li { display: flex; justify-content: space-between; gap: 12px; color: var(--color-text-secondary); }
