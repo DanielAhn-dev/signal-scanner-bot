@@ -30,4 +30,28 @@ describe('다음 할 일 길잡이', () => {
     expect(all.next.key).toBe('checkin')
     expect(all.doneCount).toBe(4)
   })
+
+  it('길을 고르지 않았으면 실계좌가 있으면 이미 투자 중, 시드만 있으면 처음 시작, 둘 다 없으면 고르게 한다', () => {
+    expect(computeJourney(none).path).toBeNull()
+    expect(computeJourney({ ...none, hasAccount: true }).path).toBe('start')
+    expect(computeJourney({ ...none, hasAccount: true, hasRealHoldings: true }).path).toBe('invested')
+    expect(computeJourney({ ...none, hasRealHoldings: true, entryPath: 'start' }).path).toBe('start')
+  })
+
+  it('이미 투자 중인 길은 계좌 넣기 → 진단 → 내 돈 점검 → 새 돈은 지수로 순서', () => {
+    const j = computeJourney({ ...none, entryPath: 'invested' })
+    expect(j.steps.map((s) => s.key)).toEqual(['holdings', 'review', 'money', 'monthly', 'drop', 'checkin'])
+    expect(j.next.key).toBe('holdings')
+    expect(j.steps.find((s) => s.key === 'review')!.why).toMatch(/억지로 팔지 않아요/)
+    expect(j.steps.find((s) => s.key === 'monthly')!.side?.route).toBe('start')
+    expect(j.steps.find((s) => s.key === 'checkin')!.route).toBe('choices')
+  })
+
+  it('진단은 직접 남긴 점검 기록이 있어야, 새 돈은 실제 적립 기록이 있어야 끝난다(가상 월 적립액은 세지 않음)', () => {
+    const base = { ...none, entryPath: 'invested' as const, hasRealHoldings: true }
+    expect(computeJourney(base).next.key).toBe('review')
+    expect(computeJourney({ ...base, hasManualCheck: true }).next.key).toBe('money')
+    expect(computeJourney({ ...base, hasManualCheck: true, hasCheck: true, monthlyDeposit: 300_000 }).next.key).toBe('monthly')
+    expect(computeJourney({ ...base, hasManualCheck: true, hasCheck: true, hasRealDeposit: true }).next.key).toBe('drop')
+  })
 })

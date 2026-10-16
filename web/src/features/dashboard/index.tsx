@@ -12,7 +12,8 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
 import MyPlanCard from '../my-plan/MyPlanCard'
 import { useGoalTracker } from '../goal-tracker/useGoalTracker'
-import { useJourney } from '../../lib/journey'
+import { useJourney, type EntryPath } from '../../lib/journey'
+import { useToast } from '../../components/ToastProvider'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 import { adviseHoldings, type Holding } from '../../lib/holdingAdvice'
 import { satelliteStatus, SATELLITE_LOSS_LIMIT_PCT, SATELLITE_MAX_WEIGHT_PCT, SATELLITE_SELL_WEIGHT_PCT } from '../../lib/satelliteGuard'
@@ -179,9 +180,20 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   // 끝난 단계는 ✓, 지금 할 단계에는 왜 하는지까지 붙인다
   const journey = useJourney(!isAdmin)
   const nextTodoKey: string | null = isAdmin ? null : journey?.next.key ?? null
-  const todoSteps = isAdmin ? ADMIN_TODO_STEPS : (journey?.steps ?? []).map((s) => ({
-    key: s.key, route: s.route, label: s.done ? `✓ ${s.label}` : s.label, desc: s.key === nextTodoKey ? `${s.desc} ${s.why}` : s.desc,
+  const todoSteps: Array<{ key: string; route?: string; label: string; desc: string; side?: { label: string; route: string } }> = isAdmin ? ADMIN_TODO_STEPS : (journey?.steps ?? []).map((s) => ({
+    key: s.key, route: s.route, label: s.done ? `✓ ${s.label}` : s.label, desc: s.key === nextTodoKey ? `${s.desc} ${s.why}` : s.desc, side: s.side,
   }))
+  // 길을 아직 안 골랐고 추정할 근거(시드·실계좌)도 없으면 홈에서 고르게 한다. 저장이 확인된 뒤에만 화면이 바뀐다
+  const toast = useToast()
+  const choosingRef = useRef(false)
+  const choosePath = async (path: EntryPath) => {
+    if (!journey || choosingRef.current) return
+    choosingRef.current = true
+    const ok = await journey.choosePath(path)
+    choosingRef.current = false
+    if (!ok) toast.show('저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.')
+  }
+  const needsPathChoice = !isAdmin && journey != null && journey.path === null
   const chatId = useCurrentChatId()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [sectors, setSectors]     = useState<SectorItem[]>([])
@@ -328,12 +340,12 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-              {isAdmin ? '오늘 점검' : '다음 할 일'}
+              {isAdmin ? '오늘 점검' : needsPathChoice ? '어디서 시작할까요' : '다음 할 일'}
               {isAdmin ? (
                 <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('reports')}>
                   복기 보기 →
                 </span>
-              ) : todoSteps.length > 1 && (
+              ) : !needsPathChoice && todoSteps.length > 1 && (
                 <button type="button" style={{ float: 'right', ...S.link, background: 'none', border: 0, padding: 0, fontWeight: 400 }} aria-expanded={allTodosOpen} onClick={() => setAllTodosOpen((v) => !v)}>
                   {allTodosOpen ? '접기' : `전체 ${todoSteps.length}단계 보기`}
                 </button>
@@ -341,14 +353,44 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             </td>
           </tr>
 
+          {/* 처음 들어온 일반 사용자: 길 고르기. 고르면 사라지고 그 길의 다음 할 일 1개만 보인다 */}
+          {needsPathChoice && (<>
+            <tr className="xls-row xls-row--even">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.5, wordBreak: 'keep-all' }}>
+                <strong style={{ fontSize: 12 }}>흔들릴 때 결정하지 않아도 되게</strong>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginLeft: 8 }}>지출 확인부터 지수 정기매수까지, 한 번 정해 두고 따라가요.</span>
+              </td>
+            </tr>
+            {([
+              ['start', '처음 시작해요', '남는 돈부터 찾고, 정해진 길로'],
+              ['invested', '이미 투자하고 있어요', '물린 종목은 두고, 새 돈부터 제자리로'],
+            ] as Array<[EntryPath, string, string]>).map(([path, label, desc], i) => (
+              <tr key={path} className={`xls-row${i % 2 === 1 ? ' xls-row--even' : ''}`}>
+                <td className="xls-row-num">{rowNum()}</td>
+                <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>
+                  <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{label}</span>
+                </td>
+                <td className="xls-cell" colSpan={2} style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5, wordBreak: 'keep-all' }}>{desc}</td>
+                <td className="xls-cell" colSpan={2} style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  <button type="button" style={{ ...S.link, background: 'none', border: 0, padding: 0, fontWeight: 700 }} onClick={() => void choosePath(path)}>이 길로 →</button>
+                </td>
+              </tr>
+            ))}
+            <tr className="xls-row">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={6} style={S.quiet}>나중에 다음 할 일의 전체 단계 보기에서 바꿀 수 있어요</td>
+            </tr>
+          </>)}
+
           {/* 길잡이를 불러오기 전에는 '할 일 없음'을 띄우지 않는다 */}
-          {visibleTodos.length === 0 && (isAdmin || journey) && (
+          {!needsPathChoice && visibleTodos.length === 0 && (isAdmin || journey) && (
             <tr className="xls-row xls-row--even">
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell" colSpan={6} style={S.quiet}>할 일 없음 — 계획대로 두면 됩니다</td>
             </tr>
           )}
-          {visibleTodos.map((s, i) => (
+          {!needsPathChoice && visibleTodos.map((s, i) => (
             <tr key={s.key} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>
@@ -359,9 +401,24 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               </td>
               <td className="xls-cell" colSpan={2} style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                 <span style={{ ...S.link, ...(s.key === nextTodoKey ? { fontWeight: 700 } : {}) }} onClick={() => nav(s.route ?? s.key)}>{s.key === nextTodoKey ? '지금 하기 →' : '열기 →'}</span>
+                {s.side && s.key === nextTodoKey && (
+                  <div><span style={{ ...S.link, fontSize: 10 }} onClick={() => nav(s.side!.route)}>{s.side.label} →</span></div>
+                )}
               </td>
             </tr>
           ))}
+          {/* 전체 단계를 펼쳤을 때만 길 바꾸기 — 평소 홈은 다음 할 일 1개로 단순하게 */}
+          {!isAdmin && !needsPathChoice && allTodosOpen && journey?.path && (
+            <tr className="xls-row">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={6} style={S.quiet}>
+                지금 길: {journey.path === 'invested' ? '이미 투자하고 있어요' : '처음 시작해요'} ·{' '}
+                <button type="button" style={{ ...S.link, background: 'none', border: 0, padding: 0, fontSize: 'inherit' }} onClick={() => void choosePath(journey.path === 'invested' ? 'start' : 'invested')}>
+                  {journey.path === 'invested' ? '처음 시작해요' : '이미 투자하고 있어요'}로 바꾸기
+                </button>
+              </td>
+            </tr>
+          )}
 
           {/* ── 시장 분위기 변화: 자기 과거 대비 위치·변화 현황(예측 아님). 관리자의 자세히 보기에서만 ── */}
           {showMarketDetail && marketShift && (<>
