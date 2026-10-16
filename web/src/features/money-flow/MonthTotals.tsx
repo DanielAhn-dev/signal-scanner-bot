@@ -123,7 +123,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
         <>
           {upcoming
             ? <p className="acc-note">{monthNo}월에 빠져나갈 카드값입니다. 카드 앱의 "다음 결제 예정금액"을 칸별로 적고, 앱을 볼 때마다 고쳐 저장하세요. 결제일이 지나면 그 금액이 그대로 {monthNo}월 결제금액이 됩니다. 아래 투자 가능액은 예상입니다.</p>
-            : <p className="acc-note">{monthNo}월에 통장에서 빠져나간 카드 결제금액(명세서 결제금액)을 적는 칸입니다. 지난달에 쓴 돈이 이 달에 나가므로, 이 달 수입에서 빼야 실제로 남는 돈이 나옵니다. 다음 달 예정금액은 오른쪽 화살표로 넘어가 미리 적을 수 있습니다. 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다.</p>}
+            : <p className="acc-note">{monthNo}월에 통장에서 빠져나간 카드 결제금액(명세서 결제금액)을 적는 칸입니다. 지난달에 쓴 돈이 이 달에 나가므로, 이 달 수입에서 빼야 실제로 남는 돈이 나옵니다. 다음 달 예정금액은 오른쪽 "{Number(shiftMonth(month, 1).slice(5))}월{shiftMonth(month, 1) > thisMonth ? ' 예정' : ''}" 버튼으로 넘어가 미리 적을 수 있습니다. 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다.</p>}
           {lastEdited && <p className="acc-note">마지막 수정 {lastEdited.slice(5, 10).replace('-', '/')}</p>}
           <div className="mf-slots" role="group" aria-label="합계 칸">
             {slots.map((s, i) => (
