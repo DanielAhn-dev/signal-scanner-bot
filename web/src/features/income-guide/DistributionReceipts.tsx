@@ -49,8 +49,6 @@ const card: React.CSSProperties = {
 }
 const muted: React.CSSProperties = { color: 'var(--color-text-secondary)' }
 const faint: React.CSSProperties = { color: 'var(--color-text-tertiary)', fontSize: 12 }
-const cell: React.CSSProperties = { padding: '3px 6px' }
-const num: React.CSSProperties = { ...cell, textAlign: 'right', whiteSpace: 'nowrap' }
 /** 이번 달부터 거슬러 n달 — 달력 입력 대신 고른다(작은 달력 아이콘·iOS 높이 문제 없이) */
 const recentMonths = (n: number) =>
   Array.from({ length: n }, (_, i) => {
@@ -59,6 +57,44 @@ const recentMonths = (n: number) =>
     d.setMonth(d.getMonth() - i)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
+/** 세후를 안 적은 기록은 15.4%를 떼고 본다(서버 monthSummary와 같은 가정) */
+const netOf = (r: Receipt) => r.net ?? Math.round(r.quantity * r.perShare * 0.846)
+const prevMonthKey = (m: string) => {
+  const [y, mo] = m.split('-').map(Number)
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`
+}
+/** 달별 묶음 — 최근 달이 먼저, 달 안은 세후 큰 순. 바로 앞 달 기록이 있을 때만 증감을 낸다 */
+function groupByMonth(list: Receipt[]) {
+  const by = new Map<string, Receipt[]>()
+  for (const r of list) by.set(r.month, [...(by.get(r.month) ?? []), r])
+  const sum = (rs: Receipt[]) => rs.reduce((s, r) => s + netOf(r), 0)
+  return [...by.keys()].sort().reverse().map((month) => {
+    const items = [...(by.get(month) ?? [])].sort((a, b) => netOf(b) - netOf(a))
+    const prevItems = by.get(prevMonthKey(month))
+    const prevByCode = prevItems ? new Map(prevItems.map((r) => [r.code, netOf(r)])) : null
+    const same = prevByCode ? items.filter((r) => prevByCode.has(r.code)) : []
+    return {
+      month,
+      items,
+      total: sum(items),
+      estimated: items.some((r) => r.net == null),
+      prevTotal: prevItems ? sum(prevItems) : null,
+      prevByCode,
+      sameDelta: prevByCode && same.length > 0 ? same.reduce((s, r) => s + netOf(r) - (prevByCode.get(r.code) ?? 0), 0) : null,
+    }
+  })
+}
+/** 증감 — 늘면 빨강·줄면 파랑(국내 시세 색과 같게) */
+function DeltaWon({ v }: { v: number }) {
+  if (Math.round(v) === 0) return <span style={{ color: 'var(--color-text-tertiary)' }}>그대로</span>
+  return (
+    <span style={{ color: v > 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)', fontVariantNumeric: 'tabular-nums' }}>
+      {v > 0 ? '+' : '−'}
+      {Math.abs(Math.round(v)).toLocaleString('ko-KR')}원
+    </span>
+  )
+}
+
 /** 종목 선택의 '직접 찾기' 값 — 6자리 종목 코드와 겹치지 않는다 */
 const MANUAL = '__manual'
 const monthLabel =(m: string, i: number) => `${Number(m.slice(5))}월${i === 0 ? ' (이번 달)' : i === 1 ? ' (지난달)' : ''}`
@@ -71,7 +107,6 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
   const busy = useRef(false)
   const [pending, setPending] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
-  const [showAll, setShowAll] = useState(false)
   const months = useMemo(() => recentMonths(3), [])
   const [form, setForm] = useState({ month: months[0], code: '', quantity: '', perShare: '', net: '' })
   const holdingOf = useMemo(() => new Map(holdings.map((h) => [h.code, h])), [holdings])
@@ -82,13 +117,15 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
   const candidates = useMemo(() => {
     const list: Array<{ code: string; name: string; quantity: number }> = [...holdings]
     const seen = new Set(list.map((h) => h.code))
+    // 고를 수 있는 달(최근 3개월)에 받은 종목만 — 오래전에 판 종목까지 늘어놓지 않는다
     for (const r of data.recent) {
-      if (seen.has(r.code)) continue
+      if (seen.has(r.code) || r.month < months[months.length - 1]) continue
       seen.add(r.code)
       list.push({ code: r.code, name: r.name, quantity: 0 })
     }
     return list
-  }, [holdings, data.recent])
+  }, [holdings, data.recent, months])
+  const monthGroups = useMemo(() => groupByMonth(data.recent), [data.recent])
   const nameOf = (code: string) => candidates.find((c) => c.code === code)?.name ?? (manualPick?.code === code ? manualPick.name : null)
   const { thisMonth, projection } = data
   const delta = projection.total - thisMonth.net
@@ -251,42 +288,57 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
       </div>
       {msg && <div style={{ ...muted, marginTop: 4 }}>{msg}</div>}
 
-      {/* 기록 */}
-      {data.recent.length > 0 && (
-        <div style={{ marginTop: 10, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
-              <tr style={muted}>
-                <th style={{ ...cell, textAlign: 'left' }}>달</th>
-                <th style={{ ...cell, textAlign: 'left' }}>종목</th>
-                <th style={{ ...num }}>수량</th>
-                <th style={{ ...num }}>주당</th>
-                <th style={{ ...num }}>세후</th>
-                <th style={cell} />
-              </tr>
-            </thead>
-            <tbody>
-              {(showAll ? data.recent : data.recent.slice(0, 6)).map((r) => (
-                <tr key={r.id} style={{ borderTop: '1px solid var(--color-border-default)' }}>
-                  <td style={cell}>{r.month.slice(5).replace(/^0/, '')}월</td>
-                  <td style={cell}>{r.name}</td>
-                  <td style={num}>{r.quantity.toLocaleString('ko-KR')}주</td>
-                  <td style={num}>{won(r.perShare)}</td>
-                  <td style={num}>{r.net != null ? won(r.net) : <span style={faint}>{won(r.quantity * r.perShare * 0.846)} 추정</span>}</td>
-                  <td style={{ ...cell, textAlign: 'right' }}>
-                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => void run({ action: 'receipt-delete', id: r.id }, `${r.name} 기록을 지웠습니다.`)}>
-                      지우기
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {data.recent.length > 6 && (
-            <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? '접기' : `기록 ${data.recent.length}건 모두 보기`}
-            </Button>
-          )}
+      {/* 기록 — 달별 묶음(최근 달만 펼침), 머리줄에 지난달 대비 증감 */}
+      {monthGroups.length > 0 && (
+        <div className="ig-receipt-months">
+          {monthGroups.map((g, i) => (
+            <details key={g.month} className="ig-receipt-month" open={i === 0}>
+              <summary className="ig-receipt-month__head">
+                <span className="ig-receipt-month__title">{Number(g.month.slice(5))}월</span>
+                <span className="ig-receipt-month__total">
+                  세후 {won(g.total)}
+                  {g.estimated && <span style={faint}> (추정 포함)</span>}
+                </span>
+                <span style={faint}>{g.items.length}종목</span>
+                {g.prevTotal != null && (
+                  <span className="ig-receipt-month__delta">
+                    지난달보다 <DeltaWon v={g.total - g.prevTotal} />
+                    {g.sameDelta != null && <span style={faint}> · 같은 종목끼리 <DeltaWon v={g.sameDelta} /></span>}
+                  </span>
+                )}
+              </summary>
+              <ul className="ig-receipt-rows">
+                {g.items.map((r) => {
+                  const prev = g.prevByCode?.get(r.code)
+                  return (
+                    <li key={r.id} className="ig-receipt-row">
+                      <span className="ig-receipt-row__name">{r.name}</span>
+                      <span className="ig-receipt-row__net">
+                        {r.net != null ? won(r.net) : <span style={faint}>{won(netOf(r))} 추정</span>}
+                      </span>
+                      <span className="ig-receipt-row__del">
+                        <button
+                          type="button"
+                          className="ig-receipt-row__del-btn"
+                          disabled={pending}
+                          onClick={() => void run({ action: 'receipt-delete', id: r.id }, `${r.name} ${Number(r.month.slice(5))}월 기록을 지웠습니다.`)}
+                        >
+                          지우기
+                        </button>
+                      </span>
+                      <span className="ig-receipt-row__detail">
+                        {r.quantity.toLocaleString('ko-KR')}주 × {won(r.perShare)}
+                      </span>
+                      <span className="ig-receipt-row__delta">
+                        {g.prevByCode == null ? null : prev == null ? <span style={faint}>새로</span> : <DeltaWon v={netOf(r) - prev} />}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </details>
+          ))}
+          <div style={faint}>최근 12개월을 보여 줍니다. 지난달 대비는 그 달에 적은 종목 합계끼리, &lsquo;같은 종목끼리&rsquo;는 두 달 모두 적은 종목만 비교합니다.</div>
         </div>
       )}
 
