@@ -60,7 +60,25 @@ type Props = {
 
 const man = formatKrwMan
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
-const signedMan = (v: number) => (Math.abs(v) < 5_000 ? '거의 그대로' : `${v > 0 ? '+' : '−'}${man(Math.abs(v))}`)
+/** 1만원 아래는 '0만원'으로 뭉개지지 않게 원 단위 */
+const wonOrMan = (v: number) => (Math.abs(v) < 10_000 ? won(v) : man(v))
+
+/**
+ * 합치기는 같은 지수·같은 종류끼리라 지금 바꾸든 나중에 바꾸든 손익 흐름은 거의 같다 — 서두를 필요가 없다.
+ * 예외: 일반 계좌의 해외 기초 ETF는 차익에 15.4% 과세라, 손익이 0 이하인 지금 옮기면 세금이 없다.
+ */
+function MergeTiming({ taxedGain, gain }: { taxedGain: boolean; gain: number | null }) {
+  if (gain == null) return null
+  if (taxedGain && gain <= 0) {
+    return <div className="ig-merge-timing ig-merge-timing--now">지금 옮기면 세금 없음 · 오른 뒤에 옮기면 차익의 15.4%가 세금</div>
+  }
+  if (gain < 0) {
+    return <div className="ig-merge-timing">지금은 손실 구간 · 서두르지 않고 오를 때 옮겨도 됩니다</div>
+  }
+  return null
+}
+
+const signedMan =(v: number) => (Math.abs(v) < 5_000 ? '거의 그대로' : `${v > 0 ? '+' : '−'}${man(Math.abs(v))}`)
 
 const card: React.CSSProperties = {
   margin: '8px 12px',
@@ -273,7 +291,8 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
         ) : (
           <>
             <div style={muted}>
-              같은 계좌 안에서 팔고 바로 삽니다. 월 인컴 변화 <strong>{signedMan(plan.mergeIncomeDelta)}</strong> · ETF는 팔 때 거래세가 없습니다.
+              정리할 때 어디로 옮길지 정해 둔 목록입니다. 같은 지수·같은 종류끼리라 지금 바꾸든 오른 뒤에 바꾸든 손익 흐름은 거의 같아 급하지 않습니다.
+              옮길 때는 같은 계좌 안에서 팔고 바로 삽니다. 월 인컴 변화 <strong>{signedMan(plan.mergeIncomeDelta)}</strong> · ETF는 팔 때 거래세가 없습니다.
             </div>
             <ul className="ig-merge-list">
               {merges.map((m) => (
@@ -291,10 +310,11 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
                       <span className="ig-merge-qty">{m.to.shares.toLocaleString('ko-KR')}주</span>
                     </span>
                   </div>
+                  <MergeTiming taxedGain={m.taxedGain} gain={m.from.realizedGain} />
                   <div style={faint}>
                     {m.reason}
                     {m.taxedGain ? ' · 일반 계좌의 해외 기초 ETF라 매매차익에 15.4% 과세' : ''}
-                    {m.from.realizedGain != null ? ` · 확정 손익 ${m.from.realizedGain >= 0 ? '+' : '−'}${man(Math.abs(m.from.realizedGain))}` : ''}
+                    {m.from.realizedGain != null ? ` · 확정 손익 ${m.from.realizedGain >= 0 ? '+' : '−'}${wonOrMan(Math.abs(m.from.realizedGain))}` : ''}
                   </div>
                 </li>
               ))}

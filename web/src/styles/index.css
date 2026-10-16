@@ -8554,6 +8554,9 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 .ig-merge-leg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .ig-merge-qty { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ig-merge-arrow { color: var(--color-text-tertiary); }
+/* 옮길 때 — 기본은 '서두르지 않아도 됨'(차분한 회색), 지금이 유리한 줄만 브랜드색 */
+.ig-merge-timing { margin-top: 3px; font-size: 12px; color: var(--color-text-secondary); }
+.ig-merge-timing--now { color: var(--color-brand); font-weight: var(--font-weight-semibold); }
 .ig-trade-tag {
   display: inline-block;
   padding: 0 6px;
