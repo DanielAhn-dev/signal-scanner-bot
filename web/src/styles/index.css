@@ -2161,6 +2161,13 @@ a:focus-visible {
   gap: var(--space-3);
 }
 
+.portfolio-sort-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  word-break: keep-all;
+}
+
 .portfolio-loading-card {
   border-style: dashed;
 }

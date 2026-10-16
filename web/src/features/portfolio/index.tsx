@@ -43,7 +43,7 @@ export default function Portfolio() {
   const {
     page, setPage, pageSize, search, setSearch, searchInput, selectedSector, selectedAccountKey, setSelectedAccountKey,
     holdingStateFilter, setHoldingStateFilter, gradeFilter, setGradeFilter, showAllSectors, setShowAllSectors,
-    filterAccordionOpen, setFilterAccordionOpen, onSearchChange, onSectorChange,
+    filterAccordionOpen, setFilterAccordionOpen, sortKey, setSortKey, onSearchChange, onSectorChange,
   } = usePortfolioFilters()
   const {
     gradeAThreshold, setGradeAThreshold, gradeBThreshold, setGradeBThreshold, addEntryMinScore, setAddEntryMinScore,
@@ -64,7 +64,7 @@ export default function Portfolio() {
     summaryRows, selectedAccountLabel, totalUnrealized, totalInvested, totalTradeCost, adjustedUnrealized, totalReturnPct,
     totalEvaluationValue, estimatedCash, totalAssetValue, tradeCostOpts, allocationRows, allocationChartStyle,
   } = usePortfolioView({
-    allRows, accountFolders, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, page, pageSize,
+    allRows, accountFolders, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, sortKey, page, pageSize,
     rules, macroRiskLevel, policyByKey, includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital,
   })
 
@@ -154,6 +154,7 @@ export default function Portfolio() {
         includeCost={includeCost} tradeCostOpts={tradeCostOpts}
         openTradeModal={openTradeModal} openMaintenanceModal={openMaintenanceModal}
         realTotalValue={realTotal}
+        sortKey={sortKey} onSortChange={setSortKey} total={total}
       />
 
       {totalPages > 1 && (

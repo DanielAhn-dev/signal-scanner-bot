@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { isHoldingSortKey, type HoldingSortKey } from '../lib/holdingSort'
+
+const SORT_STORAGE_KEY = 'portfolio.holdingSort'
 
 /** 처음 열 탭 — 주소의 ?account=virtual이면 실험 계좌, 그 밖에는 실제 계좌 */
 export function initialAccountKey(): string {
@@ -30,6 +33,20 @@ export function usePortfolioFilters() {
   const [gradeFilter, setGradeFilter] = useState<'all' | 'A' | 'B' | 'C'>('all')
   const [showAllSectors, setShowAllSectors] = useState(false)
   const [filterAccordionOpen, setFilterAccordionOpen] = useState(false)
+  // 카드 정렬은 다음에 열어도 그대로 — 기기별 편의 설정이라 브라우저 저장소에만 둔다
+  const [sortKey, setSortKeyState] = useState<HoldingSortKey>(() => {
+    try {
+      const saved = window.localStorage.getItem(SORT_STORAGE_KEY)
+      return isHoldingSortKey(saved) ? saved : 'default'
+    } catch {
+      return 'default'
+    }
+  })
+  const setSortKey = (key: HoldingSortKey) => {
+    setSortKeyState(key)
+    setPage(1)
+    try { window.localStorage.setItem(SORT_STORAGE_KEY, key) } catch { /* 저장 못 해도 이번 화면엔 적용 */ }
+  }
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onSearchChange = (v: string) => {
@@ -65,6 +82,8 @@ export function usePortfolioFilters() {
     setShowAllSectors,
     filterAccordionOpen,
     setFilterAccordionOpen,
+    sortKey,
+    setSortKey,
     onSearchChange,
     onSectorChange,
   }

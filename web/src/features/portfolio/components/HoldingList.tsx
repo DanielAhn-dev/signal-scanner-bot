@@ -5,6 +5,7 @@ import type { summarizeAccounts } from '../../../lib/holdingAction'
 import type { TradeCostOptions } from '../lib/summary'
 import type { HoldingStateKind } from '../lib/holdingState'
 import HoldingCard from './HoldingCard'
+import { HOLDING_SORT_OPTIONS, type HoldingSortKey } from '../lib/holdingSort'
 import type { HoldingRow } from '../types'
 
 type HoldingListProps = {
@@ -20,6 +21,10 @@ type HoldingListProps = {
   openTradeModal: (row: HoldingRow, side: 'buy' | 'sell') => void
   openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => void
   realTotalValue: number
+  sortKey: HoldingSortKey
+  onSortChange: (key: HoldingSortKey) => void
+  /** 필터 후 전체 종목 수 — 2개 이상일 때만 정렬 버튼을 보인다 */
+  total: number
 }
 
 export default function HoldingList({
@@ -35,9 +40,27 @@ export default function HoldingList({
   openTradeModal,
   openMaintenanceModal,
   realTotalValue,
+  sortKey,
+  onSortChange,
+  total,
 }: HoldingListProps) {
   return (
     <div className="cards-list portfolio-cards-list">
+      {!error && total > 1 && (
+        <div className="portfolio-sort-row" role="group" aria-label="보유 종목 정렬">
+          {HOLDING_SORT_OPTIONS.map((o) => (
+            <Button
+              key={o.key}
+              size="sm"
+              variant={sortKey === o.key ? 'primary' : 'secondary'}
+              aria-pressed={sortKey === o.key}
+              onClick={() => onSortChange(o.key)}
+            >
+              {o.label}
+            </Button>
+          ))}
+        </div>
+      )}
       {loading && rows.length === 0 && <div className="card portfolio-loading-card"><Skeleton lines={5} height={18} /></div>}
 
       {!loading && !error && rows.length === 0 && (

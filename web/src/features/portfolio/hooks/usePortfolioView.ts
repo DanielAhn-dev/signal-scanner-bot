@@ -4,6 +4,7 @@ import type { AccountFolder, AccountPolicy } from '../types'
 import { accountLabel, buildAccountKey, holdingAccountKey, holdingValue } from '../lib/accountKey'
 import { selectAccountRows, extractSectors, filterHoldings } from '../lib/filtering'
 import { summarizeHoldings } from '../lib/summary'
+import { sortHoldings, type HoldingSortKey } from '../lib/holdingSort'
 import { buildAllocationRows, buildDonutGradient } from '../lib/allocation'
 import type { MacroRisk } from '../lib/macroRisk'
 import { applyMacroToRules, resolveAdvisoryThresholds, type RuleSettings } from '../lib/thresholds'
@@ -18,6 +19,7 @@ type PortfolioViewInput = {
   search: string
   holdingStateFilter: 'all' | 'hold' | 'add' | 'partial'
   gradeFilter: 'all' | 'A' | 'B' | 'C'
+  sortKey: HoldingSortKey
   page: number
   pageSize: number
   rules: RuleSettings
@@ -32,7 +34,7 @@ type PortfolioViewInput = {
 /** 불러온 행과 설정으로부터 화면에 필요한 파생값(필터·합계·비중)을 만든다. 서버 호출 없이 즉시 계산 */
 export function usePortfolioView(input: PortfolioViewInput) {
   const {
-    allRows, accountFolders, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter,
+    allRows, accountFolders, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, sortKey,
     page, pageSize, rules, macroRiskLevel, policyByKey, includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital,
   } = input
   const safeGradeAThreshold = rules.gradeAThreshold
@@ -76,9 +78,15 @@ export function usePortfolioView(input: PortfolioViewInput) {
     [holdingAll, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPctWithMacro, safePartialWarnScoreMin, safeAddEntryMinScoreWithMacro, safeGradeAThreshold, safeGradeBThreshold],
   )
 
-  const total = filteredRows.length
+  // 페이지를 나누기 전에 정렬해야 1쪽에 전체 기준 상위가 온다
+  const sortedRows = useMemo(
+    () => sortHoldings(filteredRows, sortKey, { includeCost, tradeCostOpts: { buyFeeRatePct, sellFeeRatePct } }),
+    [filteredRows, sortKey, includeCost, buyFeeRatePct, sellFeeRatePct],
+  )
+
+  const total = sortedRows.length
   const totalPages = Math.ceil(total / pageSize)
-  const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
+  const rows = sortedRows.slice((page - 1) * pageSize, page * pageSize)
   const summaryRows = selectAccountRows(holdingAll, selectedAccountKey)
   const isVirtualTab = selectedAccountKey === 'virtual'
   const selectedAccountLabel = selectedAccountKey === 'real'
