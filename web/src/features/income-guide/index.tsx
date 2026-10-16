@@ -37,6 +37,7 @@ type View = {
     actualMonthlyNet?: number
     monthlyContribution?: number
     cashBalance?: number
+    cashByAccount?: Record<string, number>
     incomeMode?: 'hold'
     feePctByCode?: Record<string, number>
     incomeKindsTarget?: number
@@ -378,6 +379,7 @@ export default function IncomeGuidePage() {
               plan={view.plan}
               settings={view.settings}
               saveSettings={saveSettings}
+              accounts={view.accounts}
               receiptsSlot={view.distributionReceipts ? (
                 <DistributionReceipts
                   data={view.distributionReceipts}

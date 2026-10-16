@@ -40,8 +40,24 @@ export type RebalancePlan = {
   } | null
   /** 인컴을 분배금으로만 줄여 가는 중 (가이드 설정 incomeMode 'hold') */
   hold: boolean
-  /** 입력한 예수금 — 현금 목표 몫은 두고 넘는 몫으로 살 것 (hold가 아니고 예수금이 있을 때만) */
-  idleCash: { balance: number; cashTargetPct: number; keep: number; spendable: number; shares: number; spend: number } | null
+  /** 입력한 예수금 — 현금 목표 몫(일반 계좌부터)은 두고 넘는 몫으로 그 계좌의 지수를 산다 (hold가 아니고 예수금이 있을 때만) */
+  idleCash: {
+    balance: number
+    cashTargetPct: number
+    keep: number
+    spendable: number
+    spend: number
+    accounts: Array<{
+      accountKey: string | null
+      accountLabel: string
+      balance: number
+      keep: number
+      spendable: number
+      buyTarget: { code: string; name: string; price: number } | null
+      shares: number
+      spend: number
+    }>
+  } | null
   cash: {
     value: number
     actualPct: number
@@ -71,6 +87,7 @@ type Props = {
     monthlyContribution?: number
     feePctByCode?: Record<string, number>
     cashBalance?: number
+    cashByAccount?: Record<string, number>
     incomeMode?: 'hold'
     incomeKindsTarget?: number
     roleKeepers?: Record<string, string>
@@ -78,11 +95,15 @@ type Props = {
   }
   /** 설정 일부만 저장한다 (서버가 보낸 키만 고친다). 성공하면 true */
   saveSettings: (patch: Record<string, unknown>) => Promise<boolean>
+  /** 예수금을 계좌별로 받을 실계좌 목록 */
+  accounts: Array<{ key: string; label: string }>
   /** 요약 바로 아래에 넣을 '받은 분배금' 카드 */
   receiptsSlot?: React.ReactNode
 }
 
 const man = formatKrwMan
+/** 계좌를 정하지 않은 예전 예수금 입력값 (settings.cashBalance) */
+const LEGACY_CASH = '__legacy'
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
 /** 1만원 아래는 '0만원'으로 뭉개지지 않게 원 단위 */
 const wonOrMan = (v: number) => (Math.abs(v) < 10_000 ? won(v) : man(v))
@@ -123,13 +144,20 @@ const inlineRow: React.CSSProperties = { display: 'flex', alignItems: 'center', 
  * 리밸런싱 첫 화면 — "그래서 뭘 하면 되는지"만 쉬운 말로. 숫자 근거·바구니 표는 아래 "자세히 보기"에 둔다.
  * ① 새 돈은 한 곳으로 ② 겹치는 종목 합치기 ③ 파는 건 인컴 하한을 지키는 만큼만
  */
-export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }: Props) {
+export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot }: Props) {
   const savingRef = useRef(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [contribMan, setContribMan] = useState(settings.monthlyContribution ? String(Math.round(settings.monthlyContribution / 10_000)) : '')
   // 예수금은 증권사 앱에 보이는 그대로 원 단위로 받는다(만원 칸에 원 금액을 넣어 1만 배로 저장된 일이 있었다)
-  const [cashWon, setCashWon] = useState(settings.cashBalance ? Math.round(settings.cashBalance).toLocaleString('ko-KR') : '')
-  const cashWonValue = cashWon.replace(/[^\d]/g, '')
+  // 계좌별로 받는다 — 분배금·매도 대금이 그 계좌로 들어오고 다시 사는 것도 그 계좌 안에서다. LEGACY_CASH는 계좌를 정하지 않은 예전 입력값
+  const [cashWon, setCashWon] = useState<Record<string, string>>(() => {
+    const fmt = (v: number) => (v > 0 ? Math.round(v).toLocaleString('ko-KR') : '')
+    const init: Record<string, string> = Object.fromEntries(accounts.map((a) => [a.key, fmt(settings.cashByAccount?.[a.key] ?? 0)]))
+    if (settings.cashBalance) init[LEGACY_CASH] = fmt(settings.cashBalance)
+    return init
+  })
+  const digitsOf = (v: string | undefined) => (v ?? '').replace(/[^\d]/g, '')
+  const cashTotal = Object.values(cashWon).reduce((s, v) => s + Number(digitsOf(v) || 0), 0)
   const [fees, setFees] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(settings.feePctByCode ?? {}).map(([k, v]) => [k, String(v)])),
   )
@@ -221,28 +249,40 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
             ? '아래 받은 분배금 기록(최근 주당 분배금 × 지금 수량, 기록 없는 종목은 추정)으로 낸 다음 달 예상입니다.'
             : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 아래에 받은 분배금을 적으면 실제 기준으로 바뀝니다.'}
         </div>
-        <div style={inlineRow}>
-          <span>증권 계좌 예수금</span>
-          <UnitInput
-            unit="원"
-            width={150}
-            inputMode="numeric"
-            placeholder="0"
-            aria-label="증권 계좌 예수금(원)"
-            value={cashWon}
-            onChange={(e) => {
-              const digits = e.target.value.replace(/[^\d]/g, '')
-              setCashWon(digits ? Number(digits).toLocaleString('ko-KR') : '')
-            }}
-          />
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void save({ cashBalance: cashWonValue === '' ? '' : Number(cashWonValue) }, `예수금 ${cashWonValue ? man(Number(cashWonValue)) : '0원'}을 현금에 넣어 다시 계산했습니다.`)}
-          >
-            반영
-          </Button>
-          {cashWonValue !== '' && <span style={faint}>= 약 {man(Number(cashWonValue))}</span>}
+        <div style={{ marginTop: 6 }}>
+          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 원 단위로. 분배금이 들어온 직후에 적으면 가장 정확합니다.</span>
+          {[...accounts.map((a) => ({ key: a.key, label: a.label })), ...(LEGACY_CASH in cashWon ? [{ key: LEGACY_CASH, label: '계좌 미지정 (예전 입력)' }] : [])].map((a) => (
+            <div key={a.key} style={{ ...inlineRow, marginTop: 4 }}>
+              <span style={{ minWidth: 140 }}>{a.label}</span>
+              <UnitInput
+                unit="원"
+                width={150}
+                inputMode="numeric"
+                placeholder="0"
+                aria-label={`${a.label} 예수금(원)`}
+                value={cashWon[a.key] ?? ''}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/[^\d]/g, '')
+                  setCashWon((cur) => ({ ...cur, [a.key]: digits ? Number(digits).toLocaleString('ko-KR') : '' }))
+                }}
+              />
+            </div>
+          ))}
+          <div style={{ ...inlineRow, marginTop: 4 }}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                const cashByAccount = Object.fromEntries(accounts.map((a) => [a.key, digitsOf(cashWon[a.key]) === '' ? '' : Number(digitsOf(cashWon[a.key]))]))
+                const patch: Record<string, unknown> = { cashByAccount }
+                if (LEGACY_CASH in cashWon) patch.cashBalance = digitsOf(cashWon[LEGACY_CASH]) === '' ? '' : Number(digitsOf(cashWon[LEGACY_CASH]))
+                void save(patch, `예수금 합계 ${cashTotal > 0 ? man(cashTotal) : '0원'}을 계좌별로 넣어 다시 계산했습니다.`)
+              }}
+            >
+              반영
+            </Button>
+            {cashTotal > 0 && <span style={faint}>합계 약 {man(cashTotal)}</span>}
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
           <span>커버드콜·배당 줄이는 방식</span>
@@ -282,24 +322,32 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
         )}
         {idleCash && (
           <div style={{ marginTop: 6 }}>
-            {idleCash.spendable <= 0 ? (
-              <>
-                예수금 {wonOrMan(idleCash.balance)}은 현금 목표 {idleCash.cashTargetPct.toFixed(0)}%를 채우는 몫이라 <strong>그대로 둡니다</strong>.
-              </>
-            ) : idleCash.shares > 0 && buyTarget ? (
-              <>
-                예수금 {wonOrMan(idleCash.balance)} 중{idleCash.keep > 0 ? ` 현금 목표 ${idleCash.cashTargetPct.toFixed(0)}% 몫 ${wonOrMan(idleCash.keep)}은 두고,` : ''} 남는{' '}
-                {wonOrMan(idleCash.spendable)}으로 지금 <strong>{buyName} {idleCash.shares.toLocaleString('ko-KR')}주 (약 {wonOrMan(idleCash.spend)})</strong>를 삽니다. 이미 계좌에 와 있는 새
-                돈이라 기다리지 않습니다.
-              </>
-            ) : buyTarget ? (
-              <>
-                현금 목표를 넘는 예수금 {wonOrMan(idleCash.spendable)}이 {buyName} 1주 값({won(buyTarget.price)})보다 작습니다. 다음 달 새 돈·분배금과 합쳐서 삽니다.
-              </>
-            ) : (
-              <>현금 목표를 넘는 예수금 {wonOrMan(idleCash.spendable)}은 아래 안내대로 지수 ETF를 하나 정해 사는 데 씁니다.</>
-            )}
-            <div style={faint}>예수금이 다른 계좌에 있으면 그 계좌에서 가진 지수 ETF를 삽니다. 산 뒤에는 위 예수금 칸을 남은 금액으로 고쳐 주세요.</div>
+            예수금 {wonOrMan(idleCash.balance)}
+            {idleCash.keep > 0 ? ` 중 현금 목표 ${idleCash.cashTargetPct.toFixed(0)}% 몫 ${wonOrMan(idleCash.keep)}은 일반 계좌부터 남기고,` : ''} 나머지는 그 계좌에서 바로 삽니다.
+            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+              {idleCash.accounts.map((a) => (
+                <li key={a.accountKey ?? LEGACY_CASH}>
+                  {a.accountLabel}:{' '}
+                  {a.spendable <= 0 ? (
+                    <>{wonOrMan(a.balance)} — 현금 목표 몫이라 그대로 둡니다</>
+                  ) : a.buyTarget && a.shares > 0 ? (
+                    <>
+                      {a.keep > 0 ? `${wonOrMan(a.keep)}은 두고 ` : ''}
+                      <strong>
+                        {a.buyTarget.name} {a.shares.toLocaleString('ko-KR')}주 (약 {wonOrMan(a.spend)})
+                      </strong>
+                    </>
+                  ) : a.buyTarget ? (
+                    <>
+                      {wonOrMan(a.spendable)} — {a.buyTarget.name} 1주 값({won(a.buyTarget.price)})보다 작아 다음 분배금·새 돈과 합쳐서
+                    </>
+                  ) : (
+                    <>{wonOrMan(a.spendable)} — 이 계좌에 지수 ETF가 없습니다. 아래 안내대로 하나 정해 삽니다</>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div style={faint}>판 대금이 있으면 같은 계좌 예수금과 합쳐 한 번에 삽니다(리포트). 산 뒤에는 위 예수금 칸을 남은 금액으로 고쳐 주세요.</div>
           </div>
         )}
         <div style={faint}>{plan.buyHint}</div>
