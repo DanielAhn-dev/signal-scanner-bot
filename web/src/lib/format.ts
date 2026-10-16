@@ -41,7 +41,8 @@ export function formatKrwMan(value: number): string {
 
 export function formatKstDateTime(value: unknown, options: Intl.DateTimeFormatOptions = {}): string {
   if (value == null || value === '') return '—'
-  const date = value instanceof Date ? value : new Date(String(value))
+  // 숫자(밀리초 시각)는 문자열로 바꾸면 Date가 못 읽어 늘 '—'가 됐다
+  const date = value instanceof Date ? value : typeof value === 'number' ? new Date(value) : new Date(String(value))
   if (!Number.isFinite(date.getTime())) return '—'
 
   return new Intl.DateTimeFormat('ko-KR', {

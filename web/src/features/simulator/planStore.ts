@@ -57,6 +57,8 @@ export function defaultPlanItem(input: {
   }
 }
 
+const PLACEHOLDER_CODE = '000000'
+
 export function readSimulationPlan(): HighlightSimulationPlan | null {
   try {
     const key = planKey()
@@ -64,11 +66,14 @@ export function readSimulationPlan(): HighlightSimulationPlan | null {
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed || !Array.isArray(parsed.items)) return null
+    // 예전 시뮬레이터가 빈 계획에 넣어 자동 저장하던 자리표시 종목(000000 '예시 종목')은 뺀다.
+    // 종목이 비어도 투자금은 실행 가이드가 쓰므로 계획 자체는 남긴다(리포트는 종목이 없으면 줄을 숨긴다)
+    const items = parsed.items.filter((it: any) => it && String(it.code ?? '') !== PLACEHOLDER_CODE)
     return {
       createdAt: Number(parsed.createdAt || Date.now()),
       totalCapital: Number(parsed.totalCapital || 0),
       notes: typeof parsed.notes === 'string' ? parsed.notes : '',
-      items: parsed.items,
+      items,
     }
   } catch {
     return null

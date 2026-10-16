@@ -22,6 +22,10 @@ describe('formatKstDateTime', () => {
     expect(formatted).toContain('17:00')
   })
 
+  it('reads millisecond numbers (Date.now()) too', () => {
+    expect(formatKstDateTime(Date.parse('2026-09-30T08:00:00.000Z'))).toContain('17:00')
+  })
+
   it('uses a dash for missing or invalid timestamps', () => {
     expect(formatKstDateTime(null)).toBe('—')
     expect(formatKstDateTime('not-a-date')).toBe('—')
