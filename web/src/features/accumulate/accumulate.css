@@ -75,3 +75,13 @@
 .acc summary { cursor: pointer; color: var(--color-text-secondary); }
 @media (max-width: 420px) { .acc-seg button { flex-basis: 100%; } }
 .acc-table tr.is-picked td { background: var(--color-bg-sunken); font-weight: 700; }
+
+/* 3번 카드 "기간 골라 보기" */
+.acc-trough { fill: var(--color-error); stroke: var(--color-bg-surface); stroke-width: 2; }
+.acc-period-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.acc-period-presets button { padding: 6px 10px; border: 1px solid var(--color-border-default); border-radius: 999px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 13px; cursor: pointer; word-break: keep-all; }
+.acc-period-presets button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }
+.acc-period-range { display: flex; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.acc-period-range label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--color-text-secondary); }
+.acc-period-range select { padding: 6px 8px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; }
+.acc-view-toggle { margin-bottom: 12px; }

@@ -109,6 +109,77 @@ export function simulateDca(input: SimInput): SimResult | null {
   }
 }
 
+/** 고른 기간 하나를 실제 월말 가격으로 따라간 결과 — 분포(simulateDca)와 달리 한 사람의 경로다 */
+export type PeriodResult = {
+  /** 경로의 각 시점 [YYYYMM] (0 = 시작월) */
+  labels: string[]
+  paid: number[]
+  value: number[]
+  months: number
+  /** 원금 대비 가장 깊었던 지점. 한 번도 원금 아래로 내려가지 않았으면 null */
+  trough: { pct: number; ym: string; step: number } | null
+  /** 가장 깊었던 지점에서 다시 원금 이상이 되기까지 개월. 기간 안에 못 돌아왔으면 null */
+  recoveryMonths: number | null
+  /** 같은 길이로 시작할 수 있었던 모든 시작점 수와, 그중 이 기간보다 끝 배율이 낮았던 비율(%) */
+  peers: number
+  worsePct: number
+}
+
+/** 데이터가 있는 월 목록 [YYYYMM] */
+export function historyMonths(): string[] {
+  return KODEX200_MONTHLY.map(([m]) => m)
+}
+
+/**
+ * startYm 월초부터 매달 같은 금액을 넣고 endYm 월말 가격으로 평가한다(simulateDca와 같은 규칙: i개월 뒤 평가금 = i번 넣은 단위 × 그 달 가격).
+ * 시작과 끝이 같거나 데이터 밖이면 null.
+ */
+export function simulatePeriod(input: { startYm: string; endYm: string; monthly: number; lump?: number; annualDrag?: number; series?: Array<[string, number]> }): PeriodResult | null {
+  const series = input.series ?? KODEX200_MONTHLY
+  const months = series.map(([m]) => m)
+  const s = months.indexOf(input.startYm)
+  const e = months.indexOf(input.endYm)
+  if (s < 0 || e <= s) return null
+  const q = dragged(series.map(([, p]) => p), input.annualDrag ?? 0)
+  const monthly = Math.max(0, input.monthly)
+  const lump = Math.max(0, input.lump ?? 0)
+  const n = e - s
+  const path = (start: number) => {
+    const value: number[] = []
+    const paid: number[] = []
+    let units = 0
+    for (let i = 0; i <= n; i += 1) {
+      value.push(monthly * units * q[start + i] + lump * (q[start + i] / q[start]))
+      paid.push(monthly * i + lump)
+      if (i < n) units += 1 / q[start + i]
+    }
+    return { value, paid }
+  }
+  const { value, paid } = path(s)
+  let trough: PeriodResult['trough'] = null
+  for (let i = 1; i <= n; i += 1) {
+    if (!(paid[i] > 0)) continue
+    const pct = (value[i] / paid[i] - 1) * 100
+    if (pct < 0 && (!trough || pct < trough.pct)) trough = { pct, ym: months[s + i], step: i }
+  }
+  let recoveryMonths: number | null = null
+  if (trough) {
+    for (let i = trough.step + 1; i <= n; i += 1) {
+      if (value[i] >= paid[i]) { recoveryMonths = i - trough.step; break }
+    }
+  }
+  const ratio = (v: number[], p: number[]) => (p[n] > 0 ? v[n] / p[n] : 0)
+  const mine = ratio(value, paid)
+  let peers = 0
+  let worse = 0
+  for (let st = 0; st + n < q.length; st += 1) {
+    const r = path(st)
+    peers += 1
+    if (ratio(r.value, r.paid) < mine) worse += 1
+  }
+  return { labels: months.slice(s, e + 1), paid, value, months: n, trough, recoveryMonths, peers, worsePct: peers ? (worse / peers) * 100 : 0 }
+}
+
 export type SimSummary = {
   paid: number
   worst: number

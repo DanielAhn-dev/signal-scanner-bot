@@ -29,6 +29,7 @@ import {
   type SimResult,
 } from '../../lib/accumulate'
 import SplitPlanCard from './SplitPlanCard'
+import PeriodSim from './PeriodSim'
 import './accumulate.css'
 
 const man = formatKrwMan
@@ -82,6 +83,8 @@ export default function AccumulatePage() {
   const [amount, setAmount] = useState('500000')
   const [years, setYears] = useState(10)
   const [mode, setMode] = useState<'direct' | 'income'>('direct')
+  // 3번 카드 보기: 모든 시작 시점 분포 / 기간 하나를 골라 실제 경로
+  const [pastView, setPastView] = useState<'all' | 'period'>('all')
   const [extra, setExtra] = useState('0')
   const [incomeAdj, setIncomeAdj] = useState(1)
   const [lumpText, setLumpText] = useState('')
@@ -245,7 +248,13 @@ export default function AccumulatePage() {
 
       <section className="acc-card" aria-labelledby="acc-result">
         <h2 id="acc-result">3. 과거에 이렇게 모았다면</h2>
-        {!sim || !summary ? (
+        <div className="acc-seg acc-view-toggle" role="group" aria-label="보기 방식">
+          <button type="button" className={pastView === 'all' ? 'is-active' : ''} aria-pressed={pastView === 'all'} onClick={() => setPastView('all')}>모든 시작 시점</button>
+          <button type="button" className={pastView === 'period' ? 'is-active' : ''} aria-pressed={pastView === 'period'} onClick={() => setPastView('period')}>기간 골라 보기</button>
+        </div>
+        {pastView === 'period' ? (
+          <PeriodSim monthly={monthly} lump={lump} drag={drag} years={years} />
+        ) : !sim || !summary ? (
           <p className="acc-warn">{monthly <= 0 ? '금액을 입력하세요.' : '이 기간은 비교할 시작점이 너무 적어 계산하지 않습니다. 기간을 줄여 보세요.'}</p>
         ) : (
           <>
@@ -268,7 +277,7 @@ export default function AccumulatePage() {
             )}
           </>
         )}
-        {simTr && simPlain && (
+        {pastView === 'all' && simTr && simPlain && (
           <div className="acc-compare">
             <h3>KODEX 200 vs KODEX 200TR</h3>
             <table className="acc-table">

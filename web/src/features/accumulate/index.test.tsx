@@ -39,6 +39,19 @@ describe('모아가기', () => {
     expect(screen.getByText(/원금의 \+20% 이상/)).toBeInTheDocument()
   })
 
+  it('기간 골라 보기: 금융위기 직전 시작이 기본이고, 가장 깊었던 손실과 다른 시작점 대비 위치를 보여 준다', async () => {
+    renderPage()
+    await screen.findByText('추천')
+    fireEvent.click(screen.getByRole('button', { name: '기간 골라 보기' }))
+    expect(screen.getByRole('button', { name: '2008 금융위기 직전' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('끝 평가금')).toBeInTheDocument()
+    expect(screen.getByText('가장 깊었던 손실')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /고른 기간의 실제 평가금/ })).toBeInTheDocument()
+    expect(screen.getByText(/이보다 결과가 나빴던 경우가/)).toBeInTheDocument()
+    // 분포 화면의 TR 비교표는 기간 보기에서 숨긴다
+    expect(screen.queryByText('KODEX 200 vs KODEX 200TR')).not.toBeInTheDocument()
+  })
+
   it('목적을 분배금 받기로 바꾸면 일반형을 추천한다', async () => {
     renderPage()
     fireEvent.click(await screen.findByRole('radio', { name: '분배금 받기' }))
