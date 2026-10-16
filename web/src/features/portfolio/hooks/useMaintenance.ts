@@ -108,7 +108,36 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
     }
   }
 
+  // 여러 종목 붙여넣기 저장 — 서버는 한 종목씩 받으므로 차례로 보내고 줄마다 결과를 돌려준다(실패한 줄은 남겨 고치게)
+  const runBulkRestore = async (items: Array<{ code: string; quantity: number; avgPrice: number; buyDate: string }>) => {
+    const results: Array<{ code: string; ok: boolean; created?: boolean; error?: string }> = []
+    for (const it of items) {
+      try {
+        const json = await apiFetch('/api/ui/positions-maintenance', {
+          method: 'POST',
+          cacheMs: 0,
+          retries: 0,
+          timeoutMs: 20_000,
+          body: JSON.stringify({
+            mode: 'holdingrestore', code: it.code, quantity: it.quantity, buy_price: it.avgPrice, buy_date: it.buyDate,
+            broker_name: String(maintBrokerName || '').trim(), account_name: String(maintAccountName || '').trim(),
+          }),
+        })
+        if (json?.error) results.push({ code: it.code, ok: false, error: String(json.error) })
+        else results.push({ code: it.code, ok: true, created: !!json?.created })
+      } catch (e: any) {
+        results.push({ code: it.code, ok: false, error: String(e?.message || e) })
+      }
+    }
+    if (results.some((r) => r.ok)) {
+      invalidateCache('/api/ui/positions')
+      await load({ soft: true, force: true })
+    }
+    return results
+  }
+
   return {
+    runBulkRestore,
     maintModalOpen,
     setMaintModalOpen,
     maintMode,

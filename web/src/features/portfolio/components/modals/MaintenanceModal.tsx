@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import Button from '../../../../components/ui/Button'
 import Input from '../../../../components/ui/Input'
@@ -7,6 +8,7 @@ import type { AccountFolder } from '../../types'
 import { accountLabel } from '../../lib/accountKey'
 import { getTodayLocalYmd } from '../../lib/dates'
 import type { MaintenanceState } from '../../hooks/useMaintenance'
+import HoldingPasteImport from './HoldingPasteImport'
 
 export default function MaintenanceModal({ maint, accountFolders }: { maint: MaintenanceState; accountFolders: AccountFolder[] }) {
   const {
@@ -35,6 +37,8 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
     maintLoading,
     runMaintenance,
   } = maint
+  // 2단계 입력 방식: 한 종목씩 칸에 적기 / 여러 종목을 메모장 형식으로 붙여넣기
+  const [entryMode, setEntryMode] = useState<'single' | 'paste'>('single')
   return (
     <Modal
       isOpen={maintModalOpen}
@@ -44,7 +48,8 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
         '보유 종목 수정'
       }
       onClose={() => setMaintModalOpen(false)}
-      size="sm"
+      size={maintMode === 'holdingrestore' && maintStep === 2 && entryMode === 'paste' ? 'lg' : 'sm'}
+      closeOnBackdrop={maintMode === 'liquidateall'}
     >
       {maintMode === 'liquidateall' && (
         <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
@@ -222,6 +227,25 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
             계좌: <strong>{[maintBrokerName, maintAccountName].filter(Boolean).join(' / ') || '미지정'}</strong>
             <br />추가할 종목의 매수 정보를 입력합니다.
           </div>
+          <div role="group" aria-label="입력 방식" style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+            <Button variant={entryMode === 'single' ? 'primary' : 'secondary'} aria-pressed={entryMode === 'single'} onClick={() => setEntryMode('single')}>한 종목씩</Button>
+            <Button variant={entryMode === 'paste' ? 'primary' : 'secondary'} aria-pressed={entryMode === 'paste'} onClick={() => setEntryMode('paste')}>여러 종목 붙여넣기</Button>
+          </div>
+        </>
+      )}
+
+      {maintMode === 'holdingrestore' && maintStep === 2 && entryMode === 'paste' && (
+        <>
+          <HoldingPasteImport maint={maint} />
+          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+            <Button variant="secondary" onClick={() => { setMaintError(null); setMaintStep(1) }}><ArrowLeft size={14} aria-hidden /> 계좌 수정</Button>
+            <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>닫기</Button>
+          </div>
+        </>
+      )}
+
+      {maintMode === 'holdingrestore' && maintStep === 2 && entryMode === 'single' && (
+        <>
           <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
             <label className="ui-label">종목코드</label>
             <StockSearchInput
