@@ -31,8 +31,8 @@ const STYLE = `<style>
   .rb-table th { text-align:center; white-space:normal; word-break:keep-all; line-height:1.3; }
   .rb-table td.rb-l { text-align:left; word-break:keep-all; white-space:normal; }
   .rb-table td.rb-n { white-space:nowrap; }
-  .rb-table tbody.rb-hold-row td { border-bottom:0; }
-  .rb-table tbody.rb-hold-row tr + tr td { border-top:0; border-bottom:1px solid #E1E5E2; padding-top:0; padding-bottom:8px; }
+  .rb-table tbody.rb-hold-row td { border-bottom:1px dashed #E1E5E2; padding-bottom:8px; }
+  .rb-table tbody.rb-hold-row tr + tr td { border-top:0; border-bottom:1px solid #C9D0CB; padding:8px 8px 10px; line-height:1.6; }
   @media print { .rb-wrap { overflow:visible; } .rb-table { font-size:11px; } .rb-table th, .rb-table td { padding:4px 5px; } }
   .rb-wrap { overflow-x:auto; }
   .rb-up { color:#C0392B; } .rb-down { color:#1F5FAF; }
