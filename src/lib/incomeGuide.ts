@@ -176,8 +176,13 @@ export type IncomeGuideSettings = {
   monthlyContribution?: number;
   /** 종목별 총보수(연 %) — 겹치는 종목을 합칠 때 싼 쪽을 남긴다. 없으면 보유금액이 큰 쪽 */
   feePctByCode?: Record<string, number>;
-  /** 증권 계좌 예수금(원). 보유 종목만으로는 현금을 알 수 없어서 따로 받아 현금성 바구니에 더한다 */
+  /** 증권 계좌 예수금(원) — 계좌를 정하지 않은 예전 입력값. 계좌별로 적으면 cashByAccount를 쓴다 */
   cashBalance?: number;
+  /**
+   * 계좌별 예수금(원, 증권사 앱의 D+2 예수금). 키는 보유 행의 accountKey("증권사|계좌").
+   * 분배금·매도 대금이 그 계좌로 들어오고 다시 사는 것도 그 계좌 안에서라, 살 수량은 계좌별로 계산한다.
+   */
+  cashByAccount?: Record<string, number>;
   /**
    * "hold"면 인컴(커버드콜·배당·리츠)을 사지도 팔지도 않고, 분배금을 지수·현금으로 보내 비중을 저절로 줄여 간다.
    * 인컴 목표 비중 대신 지금 비중을 목표로 두고, 현금 목표는 처음 채울 때까지 분배금·새 돈으로만 채운다(팔지 않음).
@@ -194,6 +199,12 @@ export type IncomeGuideSettings = {
 
 /** 예수금을 보유 행처럼 다룰 때 쓰는 코드 — 주문·세금·분배금 추정·계좌 배치에서는 뺀다 */
 export const CASH_BALANCE_CODE = "CASH";
+
+/** 예수금 합계 — 계좌 미지정 입력값 + 계좌별 입력값 */
+export function totalCashBalance(settings: Pick<IncomeGuideSettings, "cashBalance" | "cashByAccount">): number {
+  const byAccount = Object.values(settings.cashByAccount ?? {}).reduce((s, v) => s + Math.max(0, Number(v) || 0), 0);
+  return Math.max(0, Math.round((settings.cashBalance ?? 0) + byAccount));
+}
 
 export const DEFAULT_INCOME_GUIDE_SETTINGS: IncomeGuideSettings = {
   monthlyNeed: 500_000,
@@ -321,6 +332,17 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
   const monthlyContribution = optionalWon("monthlyContribution");
   const cashBalance = optionalWon("cashBalance");
   const incomeMode = "incomeMode" in input ? (input.incomeMode === "hold" ? "hold" : undefined) : current.incomeMode;
+  // 계좌별 예수금: 보낸 계좌만 고친다(부분 patch). ""·null·0 이하면 그 계좌를 지운다
+  const cashByAccount: Record<string, number> = { ...(current.cashByAccount ?? {}) };
+  const cashIn = input.cashByAccount as Record<string, unknown> | undefined;
+  if (cashIn && typeof cashIn === "object") {
+    for (const [key, v] of Object.entries(cashIn)) {
+      if (!key.includes("|") || key.length > 120) continue;
+      const n = Number(v);
+      if (v == null || v === "" || !Number.isFinite(n) || n <= 0) delete cashByAccount[key];
+      else cashByAccount[key] = Math.min(1e9, Math.round(n));
+    }
+  }
   // 인컴 목표 종목 수: 키가 없으면 그대로, ""·null·범위 밖이면 지운다(1~20 정수)
   let incomeKindsTarget = current.incomeKindsTarget;
   if ("incomeKindsTarget" in input) {
@@ -345,6 +367,7 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
     ...(Object.keys(roleKeepers).length ? { roleKeepers } : {}),
     ...(monthlyContribution != null ? { monthlyContribution } : {}),
     ...(cashBalance != null ? { cashBalance } : {}),
+    ...(Object.keys(cashByAccount).length ? { cashByAccount } : {}),
     ...(incomeMode ? { incomeMode } : {}),
     ...(Object.keys(fees).length ? { feePctByCode: fees } : {}),
     customTargets,
@@ -677,7 +700,7 @@ export function splitChange(
     holdings.push({ code: h.code, name: h.name, quantity: h.quantity, price, accountKey: "held", accountLabel: "그때 보유" });
   }
   // 지금 예수금은 "그때 보유"에 없던 돈이다 — 가만히 뒀다면 계산에서는 뺀다
-  const held = buildIncomeGuideView({ holdings, settings: { ...ctx.settings, cashBalance: undefined }, today: ctx.today });
+  const held = buildIncomeGuideView({ holdings, settings: { ...ctx.settings, cashBalance: undefined, cashByAccount: undefined }, today: ctx.today });
   if (held.total <= 0) return null;
   const baseD = distanceFromTarget(base.groups);
   const heldD = distanceFromTarget(held.groups);
@@ -872,7 +895,7 @@ export function buildIncomeGuideView(input: {
     });
   // 투자 종목만 — 분배금 추정·세금·계좌 배치는 예수금을 빼고 본다
   const investRows = [...rows];
-  const cashBalance = Math.max(0, Math.round(settings.cashBalance ?? 0));
+  const cashBalance = totalCashBalance(settings);
   if (cashBalance > 0) {
     rows.push({
       code: CASH_BALANCE_CODE,

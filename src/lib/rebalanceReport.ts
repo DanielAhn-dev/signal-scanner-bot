@@ -243,6 +243,8 @@ export type RebalanceReport = {
     target: { code: string; name: string; price: number } | null;
     hint: string;
     fromSells: number;
+    /** 이 계좌 예수금 중 현금 목표 몫을 뺀, 지금 살 데 쓸 돈 */
+    fromCash: number;
     monthlyDistribution: number;
     monthlyContribution: number;
     shares: number;
@@ -613,7 +615,10 @@ export function buildRebalanceReport(input: {
 
   const monthlyContribution = Math.max(0, Math.round(input.monthlyContribution ?? 0));
   const fromSells = sells.filter((s) => s.to && buyTarget && s.to.code === buyTarget.code).reduce((s, x) => s + x.net, 0);
-  const buyShares = buyTarget && buyTarget.price > 0 ? Math.floor(fromSells / buyTarget.price) : 0;
+  // 이 계좌 예수금 — 분배금·매도 대금이 쌓이는 곳이고 다시 사는 것도 이 계좌 안에서다
+  const idleRow = plan?.idleCash?.accounts.find((a) => a.accountKey === acc.key) ?? null;
+  const fromCash = buyTarget ? Math.max(0, idleRow?.spendable ?? 0) : 0;
+  const buyShares = buyTarget && buyTarget.price > 0 ? Math.floor((fromSells + fromCash) / buyTarget.price) : 0;
   const hasLoss = rows.some((r) => r.pnlPct != null && r.pnlPct < 0);
 
   // 맨 위 한 줄
@@ -628,6 +633,7 @@ export function buildRebalanceReport(input: {
 
   // 실행 순서 — 덧붙이는 말은 그 상황일 때만
   const steps: string[] = [];
+  let cashMerged = false;
   if (sells.length) {
     const sellAmount = sells.reduce((s, x) => s + x.amount, 0);
     const extra: string[] = [];
@@ -638,34 +644,42 @@ export function buildRebalanceReport(input: {
     if (sellAmount < Math.max(100_000, total * 0.005)) extra.push(`금액이 ${money(sellAmount)}으로 작아 급하지 않습니다. 다음 점검 때 함께 처리해도 됩니다.`);
     steps.push(`수익 구간 종목부터 팝니다: ${sells.map((x) => `${x.name} ${x.shares.toLocaleString("ko-KR")}주(${money(x.amount)})`).join(", ")}.${extra.length ? ` ${extra.join(" ")}` : ""}`);
     // 옮길 곳별로 묶는다 — 합치기 대금은 남길 인컴 종목으로, 나머지는 지수로
-    const byDest = new Map<string, { name: string; price: number; net: number }>();
+    const byDest = new Map<string, { name: string; price: number; net: number; cash: number }>();
     for (const x of sells) {
       if (!x.to) continue;
       const price = buyTarget && x.to.code === buyTarget.code ? buyTarget.price : held.find((h) => h.code === x.to!.code)?.price ?? 0;
-      const d = byDest.get(x.to.code) ?? { name: x.to.name, price, net: 0 };
+      const d = byDest.get(x.to.code) ?? { name: x.to.name, price, net: 0, cash: 0 };
       d.net += x.net;
       byDest.set(x.to.code, d);
+    }
+    // 판 대금이 지수로 가면 같은 계좌 예수금(현금 목표 몫 뺀 것)을 합쳐 한 번에 산다
+    const toIndex = buyTarget ? byDest.get(buyTarget.code) : undefined;
+    if (toIndex && fromCash > 0) {
+      toIndex.net += fromCash;
+      toIndex.cash = fromCash;
+      cashMerged = true;
     }
     const dests = [...byDest.values()].filter((d) => d.price > 0);
     const buyable = dests.filter((d) => d.net >= d.price);
     const short = dests.filter((d) => d.net < d.price);
+    const amountText = (d: { net: number; cash: number }) => (d.cash > 0 ? `판 대금 ${money(d.net - d.cash)} + 예수금 ${money(d.cash)}` : money(d.net));
     if (buyable.length)
-      steps.push(`판 날 같은 계좌에서 바로 삽니다: ${buyable.map((d) => `${d.name} 약 ${Math.floor(d.net / d.price).toLocaleString("ko-KR")}주(${money(d.net)})`).join(", ")}. 현금으로 들고 기다리지 않습니다.`);
+      steps.push(`판 날 같은 계좌에서 바로 삽니다: ${buyable.map((d) => `${d.name} 약 ${Math.floor(d.net / d.price).toLocaleString("ko-KR")}주(${amountText(d)})`).join(", ")}. 현금으로 들고 기다리지 않습니다.`);
     for (const d of short)
-      steps.push(`매도 대금 ${money(d.net)}이 ${d.name} 1주 값(${won(d.price)})보다 작습니다. 현금으로 두었다가 다음 분배금과 합쳐 ${d.name}를 삽니다.`);
+      steps.push(`${d.cash > 0 ? "매도 대금과 예수금을 합친" : "매도 대금"} ${money(d.net)}이 ${d.name} 1주 값(${won(d.price)})보다 작습니다. 현금으로 두었다가 다음 분배금과 합쳐 ${d.name}를 삽니다.`);
   }
-  // 입력한 예수금은 계좌를 모른다 — 전체 가이드가 고른 살 곳이 이 계좌에 있을 때만 이 계좌 몫으로 안내한다
-  const idle = plan?.idleCash;
-  if (idle && idle.spendable > 0 && plan?.buyTarget?.accountLabel === acc.label) {
-    const shares = buyTarget && buyTarget.price > 0 ? Math.floor(idle.spendable / buyTarget.price) : 0;
-    const keepText = idle.keep > 0 ? ` 현금 목표 ${idle.cashTargetPct.toFixed(0)}% 몫 ${money(idle.keep)}은 두고,` : "";
-    steps.push(
-      buyTarget && shares > 0
-        ? `예수금 ${money(idle.balance)} 중${keepText} 남는 ${money(idle.spendable)}으로 ${buyTarget.name} 약 ${shares.toLocaleString("ko-KR")}주(${money(shares * buyTarget.price)})를 삽니다. 이미 계좌에 있는 새 돈이라 기다리지 않습니다.`
-        : buyTarget
-          ? `현금 목표를 넘는 예수금 ${money(idle.spendable)}이 ${buyTarget.name} 1주 값(${won(buyTarget.price)})보다 작습니다. 다음 달 새 돈·분배금과 합쳐서 삽니다.`
-          : `현금 목표를 넘는 예수금 ${money(idle.spendable)}은 지수 ETF를 하나 정해 사는 데 씁니다. ${buyHint}`,
-    );
+  if (idleRow && !cashMerged) {
+    const keepText = idleRow.keep > 0 ? ` 현금 목표 몫 ${money(idleRow.keep)}은 두고,` : "";
+    const shares = buyTarget && buyTarget.price > 0 ? Math.floor(idleRow.spendable / buyTarget.price) : 0;
+    if (idleRow.spendable <= 0) steps.push(`이 계좌 예수금 ${money(idleRow.balance)}은 전체 현금 목표를 채우는 몫이라 그대로 둡니다.`);
+    else
+      steps.push(
+        buyTarget && shares > 0
+          ? `이 계좌 예수금 ${money(idleRow.balance)} 중${keepText} 남는 ${money(idleRow.spendable)}으로 ${buyTarget.name} 약 ${shares.toLocaleString("ko-KR")}주(${money(shares * buyTarget.price)})를 삽니다. 이미 계좌에 있는 새 돈이라 기다리지 않습니다.`
+          : buyTarget
+            ? `이 계좌 예수금 중 쓸 수 있는 ${money(idleRow.spendable)}이 ${buyTarget.name} 1주 값(${won(buyTarget.price)})보다 작습니다. 다음 분배금·새 돈과 합쳐서 삽니다.`
+            : `이 계좌 예수금 중 쓸 수 있는 ${money(idleRow.spendable)}은 지수 ETF를 하나 정해 사는 데 씁니다. ${buyHint}`,
+      );
   }
   const inflow: string[] = [];
   if (accountMonthlyNet >= 1_000) inflow.push(`분배금(월 약 ${money(accountMonthlyNet)})`);
@@ -740,7 +754,7 @@ export function buildRebalanceReport(input: {
     feeCompare,
     feeWhy,
     feeSwitch,
-    buy: { target: buyTarget, hint: buyHint, fromSells, monthlyDistribution: accountMonthlyNet, monthlyContribution, shares: buyShares },
+    buy: { target: buyTarget, hint: buyHint, fromSells, fromCash, monthlyDistribution: accountMonthlyNet, monthlyContribution, shares: buyShares },
     growth: plan ? { actualPct: plan.growth.actualPct, targetPct: plan.growth.targetPct, needByNewMoney: plan.growth.needByNewMoney, months: plan.growth.months } : null,
     compress: plan?.compress ? { ...plan.compress, moves: compressMoves } : null,
     headline,

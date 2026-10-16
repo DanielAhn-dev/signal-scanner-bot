@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView, sanitizeIncomeGuideSettings, type GuideHolding, type IncomeGuideSettings } from "../src/lib/incomeGuide";
+import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView, sanitizeIncomeGuideSettings, totalCashBalance, type GuideHolding, type IncomeGuideSettings } from "../src/lib/incomeGuide";
 import { buildRebalancePlan, holdingYieldPct, pickKeeper, strategyKey } from "../src/lib/rebalancePlan";
 
 // 2026-10-13 사용자 실계좌(일반 계좌 하나)
@@ -203,9 +203,11 @@ test("예수금(목표 비중대로): 현금 목표가 없으면 전부 살 곳 
   const idle = plan.idleCash!;
   assert.equal(idle.keep, 0);
   assert.equal(idle.spendable, 3_000_000);
-  assert.equal(plan.buyTarget?.code, "278530");
-  assert.equal(idle.shares, Math.floor(3_000_000 / 31_015));
-  assert.equal(idle.spend, idle.shares * 31_015);
+  const row = idle.accounts[0];
+  assert.equal(row.accountKey, null, "예전 입력값은 계좌 미지정");
+  assert.equal(row.buyTarget?.code, "278530");
+  assert.equal(row.shares, Math.floor(3_000_000 / 31_015));
+  assert.equal(idle.spend, row.shares * 31_015);
   const g = view.groups.find((x) => x.group === "growth")!;
   const t = g.targetPct / 100;
   assert.equal(plan.growth.needByNewMoney, Math.round((t * view.total - g.value - idle.spend) / (1 - t)));
@@ -216,13 +218,42 @@ test("예수금(목표 비중대로): 현금 목표를 채우는 몫은 두고 �
   const small = planWithCash({ cashBalance: 1_000_000, customTargets: { income: 65, cash: 10 } });
   assert.equal(small.plan.idleCash?.keep, 1_000_000);
   assert.equal(small.plan.idleCash?.spendable, 0);
-  assert.equal(small.plan.idleCash?.shares, 0);
+  assert.equal(small.plan.idleCash?.spend, 0);
 
   const big = planWithCash({ cashBalance: 20_000_000, customTargets: { income: 65, cash: 10 } });
   const idle = big.plan.idleCash!;
   assert.equal(idle.keep, Math.round(0.1 * big.view.total));
   assert.equal(idle.spendable, 20_000_000 - idle.keep);
-  assert.ok(idle.shares > 0);
+  assert.ok(idle.spend > 0);
+});
+
+test("예수금 계좌별: 현금 목표 몫은 일반 계좌부터 남기고, 남는 돈은 그 계좌의 지수를 산다", () => {
+  const holdings: GuideHolding[] = [
+    { ...H("278530", "KODEX 200TR", 30_000, 300), accountKey: "a", accountLabel: "키움 / 일반" },
+    { ...H("498400", "KODEX 200타겟위클리커버드콜", 18_000, 300), accountKey: "a", accountLabel: "키움 / 일반" },
+    { ...H("360750", "TIGER 미국S&P500", 20_000, 200), accountKey: "b", accountLabel: "미래 / ISA" },
+  ];
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 30, cash: 5 }, cashByAccount: { a: 300_000, b: 2_000_000 } };
+  const view = buildIncomeGuideView({ holdings, settings: s, today: "2026-10-16" });
+  const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan })!;
+  const idle = plan.idleCash!;
+  const a = idle.accounts.find((x) => x.accountKey === "a")!;
+  const b = idle.accounts.find((x) => x.accountKey === "b")!;
+  const keepTotal = Math.round(0.05 * view.total);
+  assert.equal(a.keep, 300_000, "일반 계좌 예수금이 먼저 현금 목표를 채운다");
+  assert.equal(a.spendable, 0);
+  assert.equal(b.keep, keepTotal - 300_000);
+  assert.equal(b.buyTarget?.code, "360750", "ISA 예수금은 ISA의 지수로");
+  assert.equal(b.shares, Math.floor((2_000_000 - b.keep) / 20_000));
+  assert.equal(b.accountLabel, "미래 / ISA");
+});
+
+test("sanitize: 계좌별 예수금은 보낸 계좌만 고치고 빈 값이면 지우며, 합계는 미지정 값과 더한다", () => {
+  const cur = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashBalance: 100_000, cashByAccount: { "키움|일반": 500_000, "미래|ISA": 200_000 } };
+  const next = sanitizeIncomeGuideSettings({ cashByAccount: { "키움|일반": "", "미래|ISA": 300_000.4, bad: 5 } }, cur);
+  assert.deepEqual(next.cashByAccount, { "미래|ISA": 300_000 });
+  assert.equal(next.cashBalance, 100_000);
+  assert.equal(totalCashBalance(next), 400_000);
 });
 
 test("예수금: hold면 idleCash 없이 기존 현금 규칙이 맡는다", () => {

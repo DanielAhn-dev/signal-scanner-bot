@@ -134,7 +134,11 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
   parts.push(section('4. 살 것 · 분배금 보낼 곳', `
     <p><b>${b.target ? e(b.target.name) : '지수 ETF (새로 정하기)'}</b> — ${e(r.feeSwitch ? r.feeSwitch.text : b.hint)}</p>
     <ul class="rb-list">
-      ${b.fromSells > 0 && b.target ? `<li>${b.shares > 0 ? `매도 대금 약 ${money(b.fromSells)} → 약 ${b.shares.toLocaleString('ko-KR')}주 (현재가 ${won(b.target.price)}), 판 날 바로 삽니다.` : `매도 대금 약 ${money(b.fromSells)}은 1주 값(${won(b.target.price)})보다 작아, 다음 분배금과 합쳐 삽니다.`}</li>` : ''}
+      ${(b.fromSells > 0 || (b.fromCash ?? 0) > 0) && b.target ? (() => {
+        const src = [b.fromSells > 0 ? `매도 대금 약 ${money(b.fromSells)}` : '', (b.fromCash ?? 0) > 0 ? `예수금 ${money(b.fromCash)}` : ''].filter(Boolean).join(' + ')
+        const sum = b.fromSells + (b.fromCash ?? 0)
+        return `<li>${b.shares > 0 ? `${src} → 약 ${b.shares.toLocaleString('ko-KR')}주 (현재가 ${won(b.target.price)}), ${b.fromSells > 0 ? '판 날' : '지금'} 바로 삽니다.` : `${src}${sum !== b.fromSells ? `(합계 ${money(sum)})` : ''}은 1주 값(${won(b.target.price)})보다 작아, 다음 분배금과 합쳐 삽니다.`}</li>`
+      })() : ''}
       ${b.monthlyDistribution >= 1_000 ? `<li>분배금 월 약 ${money(b.monthlyDistribution)}(세후 추정) → 들어오는 대로 ${b.target ? e(b.target.name) : '지수 ETF'}로.</li>` : ''}
       ${b.monthlyContribution > 0 ? `<li>새 돈 월 ${man(b.monthlyContribution)} → 같은 곳으로.</li>` : ''}
       ${r.growth && r.growth.needByNewMoney > 0 ? `<li>전체 성장 비중 ${r.growth.actualPct.toFixed(0)}% → 목표 ${r.growth.targetPct.toFixed(0)}%: 새 돈만으로 약 ${man(r.growth.needByNewMoney)} 필요${r.growth.months ? `, 지금 속도면 약 ${r.growth.months}개월` : ''}.</li>` : ''}

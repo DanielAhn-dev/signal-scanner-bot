@@ -107,6 +107,19 @@ export type PlanMerge = {
   taxedGain: boolean;
 };
 
+/** 계좌 하나의 예수금 안내. accountKey가 null이면 계좌를 정하지 않은 예전 입력값 */
+export type IdleCashAccount = {
+  accountKey: string | null;
+  accountLabel: string;
+  balance: number;
+  keep: number;
+  spendable: number;
+  /** 그 계좌에서 살 성장 ETF (일반 계좌는 TR형 먼저). 없으면 null */
+  buyTarget: { code: string; name: string; price: number } | null;
+  shares: number;
+  spend: number;
+};
+
 export type RebalancePlan = {
   /** 맨 위 한 줄 */
   headline: string;
@@ -160,15 +173,16 @@ export type RebalancePlan = {
   hold: boolean;
   /**
    * 입력한 예수금을 어떻게 할지 (hold가 아니고 예수금이 있을 때만). 현금 목표를 채우는 몫(keep)은 두고,
-   * 넘는 몫(spendable)은 새 돈처럼 buyTarget을 산다(C14 새 돈 먼저). spend는 1주 단위로 맞춘 실제 매수 금액.
+   * 넘는 몫(spendable)은 새 돈처럼 그 계좌의 성장 ETF를 산다(C14 새 돈 먼저). spend는 1주 단위로 맞춘 실제 매수 금액.
+   * 현금 목표 몫은 일반 계좌부터 남긴다 — ISA·연금의 현금은 생활비로 꺼내 쓰기 어렵다.
    */
   idleCash: {
     balance: number;
     cashTargetPct: number;
     keep: number;
     spendable: number;
-    shares: number;
     spend: number;
+    accounts: IdleCashAccount[];
   } | null;
   /**
    * 현금 목표 (hold일 때만). 처음엔 분배금·새 돈으로만 채우고(filling), 한 번 닿은 뒤에는 목표 ±band를 벗어날 때만
@@ -432,16 +446,43 @@ export function buildRebalancePlan(input: {
   // 예수금 (hold가 아닐 때) — 현금 목표를 채우는 몫은 두고, 넘는 몫은 이미 계좌에 와 있는 새 돈이라 지금 산다.
   // hold면 아래 현금 규칙(채우기·밴드)이 맡는다.
   let idleCash: RebalancePlan["idleCash"] = null;
-  const balance = Math.max(0, Math.round(settings.cashBalance ?? 0));
+  const cashEntries: Array<{ accountKey: string | null; balance: number }> = [
+    ...Object.entries(settings.cashByAccount ?? {}).map(([accountKey, v]) => ({ accountKey, balance: Math.max(0, Math.round(v)) })),
+    { accountKey: null, balance: Math.max(0, Math.round(settings.cashBalance ?? 0)) },
+  ].filter((e) => e.balance > 0);
+  const balance = cashEntries.reduce((s, e) => s + e.balance, 0);
   if (!hold && balance > 0) {
     const cp = input.cashPlan;
     const cashTargetPct = cp?.targetPct ?? 0;
     // 단기채·CD 같은 현금성 ETF가 목표를 먼저 채운다
     const otherCash = Math.max(0, (cp?.value ?? balance) - balance);
-    const keepAmount = Math.min(balance, Math.max(0, Math.round((cashTargetPct / 100) * total - otherCash)));
-    const spendable = balance - keepAmount;
-    const shares = buyTarget && buyTarget.price > 0 ? Math.floor(spendable / buyTarget.price) : 0;
-    idleCash = { balance, cashTargetPct, keep: keepAmount, spendable, shares, spend: buyTarget ? Math.round(shares * buyTarget.price) : 0 };
+    let keepLeft = Math.min(balance, Math.max(0, Math.round((cashTargetPct / 100) * total - otherCash)));
+    const labelOf = (key: string) => holdings.find((h) => h.accountKey === key)?.accountLabel ?? key.split("|").join(" / ");
+    const accounts = cashEntries.map((e) => ({ ...e, accountLabel: e.accountKey ? labelOf(e.accountKey) : "계좌 미지정" }));
+    // 현금 목표 몫: 계좌 미지정·일반 계좌(큰 순) → ISA·연금(큰 순)
+    const keepOrder = [...accounts].sort(
+      (a, b) =>
+        Number(a.accountKey != null && isTaxAdvantagedAccount(a.accountLabel)) - Number(b.accountKey != null && isTaxAdvantagedAccount(b.accountLabel)) ||
+        b.balance - a.balance,
+    );
+    const keepOf = new Map<(typeof accounts)[number], number>();
+    for (const a of keepOrder) {
+      const k = Math.min(a.balance, keepLeft);
+      keepOf.set(a, k);
+      keepLeft -= k;
+    }
+    const rows: IdleCashAccount[] = accounts.map((a) => {
+      // 그 계좌 안의 성장 ETF — 미지정이면 전체 기준 살 곳
+      const inAccount = a.accountKey == null ? growthRows : growthRows.filter((h) => h.accountKey === a.accountKey);
+      const pick = a.accountKey == null ? buy : (!isTaxAdvantagedAccount(a.accountLabel) ? inAccount.find((h) => /TR/i.test(h.name)) : undefined) ?? inAccount[0] ?? null;
+      const target = pick ? { code: pick.code, name: pick.name, price: pick.price } : null;
+      const keep = keepOf.get(a) ?? 0;
+      const spendable = a.balance - keep;
+      const shares = target && target.price > 0 ? Math.floor(spendable / target.price) : 0;
+      return { accountKey: a.accountKey, accountLabel: a.accountLabel, balance: a.balance, keep, spendable, buyTarget: target, shares, spend: target ? Math.round(shares * target.price) : 0 };
+    });
+    const sum = (k: "keep" | "spendable" | "spend") => rows.reduce((s, r) => s + r[k], 0);
+    idleCash = { balance, cashTargetPct, keep: sum("keep"), spendable: sum("spendable"), spend: sum("spend"), accounts: rows };
   }
   // 예수금으로 사는 만큼은 총액이 그대로인 채 성장이 늘어난다 — 남은 부족분만 새 돈으로 채운다
   const growthAfterCash = growthValue + (idleCash?.spend ?? 0);
@@ -527,7 +568,7 @@ export function buildRebalancePlan(input: {
     else if (cash?.state === "buy-index") parts.push(`현금이 ${cash.actualPct.toFixed(0)}%로 많습니다 — ${man(cash.amount)}으로 지수를 살 때`);
     else parts.push("분배금·새 돈은 지수로");
   } else if (surplus < 0) parts.push(`월 인컴이 목표보다 ${man(-surplus)} 적습니다 — 지금은 인컴 유지가 먼저입니다`);
-  if (idleCash && idleCash.shares > 0 && buyTarget) parts.push(`예수금 중 ${man(idleCash.spend)}으로 ${buyTarget.name} ${idleCash.shares.toLocaleString("ko-KR")}주`);
+  if (idleCash && idleCash.spend > 0) parts.push(`예수금 중 ${man(idleCash.spend)}으로 지수 매수`);
   if (merges.length > 0) parts.push(`겹치는 종목 ${merges.length}개를 합치면 ${codes.size}종 → ${remainingCodes.size}종`);
   if (compress) {
     parts.push(

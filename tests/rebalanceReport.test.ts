@@ -246,16 +246,23 @@ test("인컴 종목 압축: 목표 종목 수가 없으면 없고, 있으면 이
   assert.ok(r.steps.some((s) => s.includes("인컴 종목 압축")));
 });
 
-test("예수금: 살 곳이 이 계좌에 있으면 현금 목표를 넘는 몫으로 몇 주 살지 실행 순서에 넣고, 다른 계좌 리포트에는 넣지 않는다", () => {
+test("예수금: 그 계좌 예수금만 그 계좌 리포트에 — 판 대금이 지수로 가면 합쳐서 한 번에 산다", () => {
   const holdings = [
     H("278530", "KODEX 200TR", 15_000, 100, 14_000),
     H("498400", "KODEX 200타겟위클리커버드콜", 18_000, 100, 17_000),
     H("360750", "TIGER 미국S&P500", 20_000, 10, 19_000, "b"),
   ];
-  const r = reportFor(holdings, { cashBalance: 1_000_000 });
+  const r = reportFor(holdings, { cashByAccount: { a: 1_000_000 } });
   const step = r.steps.find((s) => s.includes("예수금"));
   assert.ok(step, "예수금 단계가 있다");
   assert.match(step!, /KODEX 200TR 약 66주/);
-  const other = reportFor(holdings, { cashBalance: 1_000_000 }, "b");
-  assert.ok(!other.steps.some((s) => s.includes("예수금")), "살 곳이 없는 계좌에는 안내하지 않는다");
+  assert.equal(r.buy.fromCash, 1_000_000);
+  const other = reportFor(holdings, { cashByAccount: { a: 1_000_000 } }, "b");
+  assert.ok(!other.steps.some((s) => s.includes("예수금")), "다른 계좌 예수금은 넣지 않는다");
+
+  // 개별주 +25% 절반을 TR로 팔 때 — 판 대금과 예수금을 합친 수량
+  const withSell = reportFor([H("278530", "KODEX 200TR", 15_000, 100, 14_000), H("005930", "삼성전자", 60_000, 10, 48_000)], { cashByAccount: { a: 100_000 } });
+  const buyStep = withSell.steps.find((s) => s.startsWith("판 날"))!;
+  assert.match(buyStep, /판 대금 .* \+ 예수금 10만원/);
+  assert.equal(withSell.buy.shares, Math.floor((withSell.buy.fromSells + 100_000) / 15_000));
 });
