@@ -248,6 +248,19 @@ export type RebalanceReport = {
     shares: number;
   };
   growth: { actualPct: number; targetPct: number; needByNewMoney: number; months: number | null } | null;
+  /** 인컴 종목 압축 (가이드 설정에 목표 종목 수가 있을 때만). 역할 표는 전체 실계좌 기준, moves는 이 계좌 것만 */
+  compress:
+    | (NonNullable<RebalancePlan["compress"]> & {
+        moves: Array<{
+          from: { code: string; name: string };
+          to: { code: string; name: string };
+          /** "now"면 수익 구간이라 지금, 아니면 손실 구간의 회복 조건 문구 */
+          when: string;
+          taxedGain: boolean;
+          monthlyIncomeDelta: number;
+        }>;
+      })
+    | null;
   headline: string;
   steps: string[];
   notes: string[];
@@ -409,10 +422,20 @@ export function buildRebalanceReport(input: {
   }
 
   // ② 겹치는 인컴 합치기 — 이 계좌 것만, 수익 구간이면 지금, 손실 구간이면 평단 회복 시
+  const compressMoves: NonNullable<RebalanceReport["compress"]>["moves"] = [];
   for (const m of plan?.merges ?? []) {
     const h = held.find((x) => x.code === m.from.code);
     if (!h) continue;
     const to = held.find((x) => x.code === m.to.code);
+    if (m.reason.startsWith("역할별 대표로 압축")) {
+      compressMoves.push({
+        from: { code: h.code, name: h.name },
+        to: { code: m.to.code, name: m.to.name },
+        when: inProfit(h) ? "now" : `평단 ${won(h.avgPrice!)} 회복 시`,
+        taxedGain: m.taxedGain,
+        monthlyIncomeDelta: m.monthlyIncomeDelta,
+      });
+    }
     if (inProfit(h)) {
       pushSell(h, h.quantity, `합치기: ${m.reason}`, to ? { code: to.code, name: to.name, price: to.price } : null);
       sellNote.set(h.code, `전량 팔아 ${m.to.name}로 합치기`);
@@ -644,6 +667,10 @@ export function buildRebalanceReport(input: {
   if (stopReasons.length && incomeValue > 0) steps.push(`인컴(커버드콜·배당) 추가매수를 멈춥니다 — ${stopReasons[0]}.`);
   if (conditionals.length)
     steps.push(`가격 조건부 ${conditionals.length}건은 월 1회 점검 때만 봅니다. 조건 가격에 닿은 종목만 실행하고, 매일 확인하지 않습니다.`);
+  if (compressMoves.length && plan?.compress)
+    steps.push(
+      `인컴 종목 압축: 역할별 대표로 ${compressMoves.length}종목을 옮깁니다(인컴 종목 ${plan.compress.before}종 → ${plan.compress.after}종, 목표 ${plan.compress.target}종). 서두를 필요는 없고, 한 번에 하나씩 같은 계좌에서 팔고 바로 사면 됩니다.`,
+    );
   const outGroups = view.groups.filter((g) => Math.abs(g.diffPct) > REBALANCE_BAND_PP);
   steps.push(
     outGroups.length
@@ -702,6 +729,7 @@ export function buildRebalanceReport(input: {
     feeSwitch,
     buy: { target: buyTarget, hint: buyHint, fromSells, monthlyDistribution: accountMonthlyNet, monthlyContribution, shares: buyShares },
     growth: plan ? { actualPct: plan.growth.actualPct, targetPct: plan.growth.targetPct, needByNewMoney: plan.growth.needByNewMoney, months: plan.growth.months } : null,
+    compress: plan?.compress ? { ...plan.compress, moves: compressMoves } : null,
     headline,
     steps,
     notes,

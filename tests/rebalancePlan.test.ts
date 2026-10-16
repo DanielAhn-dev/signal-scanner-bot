@@ -190,3 +190,65 @@ test("hold가 아니면 기존 동작 그대로 (현금 단계 없음)", () => {
   assert.equal(plan.hold, false);
   assert.equal(plan.cash, null);
 });
+
+test("압축: 목표 종목 수가 없으면 기존 동작 그대로(compress 없음)", () => {
+  const { plan } = planFor({});
+  assert.equal(plan.compress, null);
+});
+
+test("압축: 역할(지역×바구니)별 대표 하나로 합치고 같은 계좌 안에서만 옮긴다", () => {
+  const base = planFor({});
+  const { plan } = planFor({ incomeKindsTarget: 5 });
+  const c = plan.compress!;
+  assert.equal(c.before, 11);
+  assert.equal(c.after, 5);
+  assert.equal(c.reached, true);
+  // 앞 단계에서 이미 SOL·RISE를 받는 498400이 한국 커버드콜 대표, 0219E0은 거기로
+  const m = plan.merges.find((x) => x.from.code === "0219E0")!;
+  assert.equal(m.to.code, "498400");
+  assert.match(m.reason, /역할별 대표/);
+  // 한 종목을 두 번 팔지 않는다 (받는 쪽이 동시에 파는 쪽이 되지 않음)
+  const froms = new Set(plan.merges.map((x) => x.from.code));
+  for (const x of plan.merges) assert.ok(!froms.has(x.to.code), `${x.to.code}는 받는 쪽이면서 파는 쪽`);
+  // 인컴은 하한(50만원) 아래로 내려가지 않는다 — 분배율 높은 쪽으로 모으므로 줄지 않는다
+  assert.ok(c.incomeAfter >= Math.min(c.floor, plan.income.monthlyNet));
+  assert.ok(plan.mergeIncomeDelta >= base.plan.mergeIncomeDelta);
+  assert.ok(c.roles.some((r) => r.label === "한국 커버드콜" && r.merged.length > 0));
+});
+
+test("압축: 월 인컴 하한을 못 지키는 합치기는 막고 이유를 남긴다", () => {
+  // 실제 월 입금액이 하한과 같고, 직접 고른 대표가 분배율이 낮은 쪽이면 합치면 인컴이 줄어든다
+  const { plan } = planFor({ incomeKindsTarget: 4, actualMonthlyNet: 500_000, roleKeepers: { "kr|dividend": "161510" } });
+  const c = plan.compress!;
+  assert.ok(c.incomeAfter >= Math.min(c.floor, 500_000) - 1);
+  for (const b of c.blocked) assert.ok(b.reason.length > 0);
+});
+
+test("압축: 같은 계좌에 대표 종목이 없으면 계좌를 바꿔 합치지 않는다", () => {
+  const holdings = [
+    ...PORTFOLIO,
+    { ...H("251340", "KODEX 코스닥150", 12_000, 10), accountKey: "b", accountLabel: "키움 / ISA" },
+    { ...H("0219E0", "KODEX 200커버드콜액티브", 8_094, 100), accountKey: "b", accountLabel: "키움 / ISA" },
+  ];
+  const { plan } = planFor({ incomeKindsTarget: 4 }, holdings);
+  // ISA 계좌의 0219E0은 그 계좌에 498400이 없어 합치지 못한다 → 다른 계좌 것도 같은 종목이라 종목은 남는다
+  for (const x of plan.merges) {
+    const from = holdings.find((h) => h.code === x.from.code && h.accountLabel === x.from.accountLabel)!;
+    assert.equal(from.accountLabel, x.to.accountLabel);
+  }
+});
+
+test("sanitize: 인컴 목표 종목 수는 1~20 정수, 역할별 대표는 보낸 역할만 고친다", () => {
+  const cur = DEFAULT_INCOME_GUIDE_SETTINGS;
+  const a = sanitizeIncomeGuideSettings({ incomeKindsTarget: 6, roleKeepers: { "kr|covered_call": "498400" } }, cur);
+  assert.equal(a.incomeKindsTarget, 6);
+  assert.deepEqual(a.roleKeepers, { "kr|covered_call": "498400" });
+  const b = sanitizeIncomeGuideSettings({ roleKeepers: { "us|covered_call": "483290" } }, a);
+  assert.deepEqual(b.roleKeepers, { "kr|covered_call": "498400", "us|covered_call": "483290" });
+  const c = sanitizeIncomeGuideSettings({ roleKeepers: { "kr|covered_call": "" } }, b);
+  assert.deepEqual(c.roleKeepers, { "us|covered_call": "483290" });
+  assert.equal(sanitizeIncomeGuideSettings({ incomeKindsTarget: "" as unknown as number }, b).incomeKindsTarget, undefined);
+  assert.equal(sanitizeIncomeGuideSettings({ incomeKindsTarget: 99 }, b).incomeKindsTarget, undefined);
+  assert.equal(sanitizeIncomeGuideSettings({}, b).incomeKindsTarget, 6);
+  assert.equal(sanitizeIncomeGuideSettings({}, a).incomeKindsTarget, 6);
+});

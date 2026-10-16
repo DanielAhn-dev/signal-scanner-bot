@@ -223,3 +223,25 @@ test("같은 지수 다른 보유 상품: 보수가 0.05%p 이상 비싸면 수�
   assert.equal(down.conditionals.find((x) => x.code === "069500")!.triggerPrice, 60_000);
   assert.equal(down.rows.find((x) => x.code === "069500")!.action, "sell-later");
 });
+
+test("인컴 종목 압축: 목표 종목 수가 없으면 없고, 있으면 이 계좌의 이동과 표가 리포트에 들어간다", () => {
+  const holdings = [
+    H("069500", "KODEX 200", 100_000, 20, 90_000),
+    H("498400", "KODEX 200타겟위클리커버드콜", 18_820, 500, 15_000),
+    H("0219E0", "KODEX 200커버드콜액티브", 8_094, 400, 7_000),
+    H("0105E0", "SOL 코리아고배당", 12_963, 300, 12_000),
+    H("441800", "TIMEFOLIO Korea플러스배당액티브", 30_739, 40, 25_000),
+  ];
+  assert.equal(reportFor(holdings).compress, null);
+  const r = reportFor(holdings, { incomeKindsTarget: 2 });
+  const c = r.compress!;
+  assert.equal(c.target, 2);
+  assert.ok(c.after <= c.before);
+  assert.ok(c.moves.length > 0);
+  // 수익 구간이라 지금 옮기고, 매도 표에도 같은 종목이 있다
+  for (const m of c.moves) assert.ok(r.sells.some((s) => s.code === m.from.code) || r.conditionals.some((x) => x.code === m.from.code));
+  const html = renderRebalanceReportHtml(r, "2026-10-15 10:00");
+  assert.match(html, /인컴 종목 압축/);
+  assert.match(html, /역할/);
+  assert.ok(r.steps.some((s) => s.includes("인컴 종목 압축")));
+});

@@ -184,6 +184,10 @@ export type IncomeGuideSettings = {
    * 2026-10-13 사용자: 근무 중이라 분배금을 쓰지 않고 지수로 옮기며, 궁극 목표는 시드 증가.
    */
   incomeMode?: "hold";
+  /** 남기고 싶은 인컴 종목 수. 있으면 역할(지역×바구니)별 대표 하나로 더 합친다 (rebalancePlan.ts) */
+  incomeKindsTarget?: number;
+  /** 역할별로 직접 고른 대표 종목 — 키는 "kr|covered_call"처럼 지역|바구니. 비우면 자동 추천 */
+  roleKeepers?: Record<string, string>;
 };
 
 /** 예수금을 보유 행처럼 다룰 때 쓰는 코드 — 주문·세금·분배금 추정·계좌 배치에서는 뺀다 */
@@ -315,8 +319,26 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
   const monthlyContribution = optionalWon("monthlyContribution");
   const cashBalance = optionalWon("cashBalance");
   const incomeMode = "incomeMode" in input ? (input.incomeMode === "hold" ? "hold" : undefined) : current.incomeMode;
+  // 인컴 목표 종목 수: 키가 없으면 그대로, ""·null·범위 밖이면 지운다(1~20 정수)
+  let incomeKindsTarget = current.incomeKindsTarget;
+  if ("incomeKindsTarget" in input) {
+    const n = Math.round(Number(input.incomeKindsTarget));
+    incomeKindsTarget = input.incomeKindsTarget != null && input.incomeKindsTarget !== ("" as unknown) && Number.isFinite(n) && n >= 1 && n <= 20 ? n : undefined;
+  }
+  // 역할별 대표: 보낸 역할만 고친다(부분 patch). ""·null이면 자동 추천으로 되돌린다
+  const roleKeepers: Record<string, string> = { ...(current.roleKeepers ?? {}) };
+  const roleIn = input.roleKeepers as Record<string, unknown> | undefined;
+  if (roleIn && typeof roleIn === "object") {
+    for (const [role, v] of Object.entries(roleIn)) {
+      if (!/^(kr|us)\|[a-z_]+$/.test(role)) continue;
+      if (typeof v === "string" && /^[0-9A-Z]{6}$/.test(v)) roleKeepers[role] = v;
+      else delete roleKeepers[role];
+    }
+  }
   return {
     ...(actualMonthlyNet != null ? { actualMonthlyNet } : {}),
+    ...(incomeKindsTarget != null ? { incomeKindsTarget } : {}),
+    ...(Object.keys(roleKeepers).length ? { roleKeepers } : {}),
     ...(monthlyContribution != null ? { monthlyContribution } : {}),
     ...(cashBalance != null ? { cashBalance } : {}),
     ...(incomeMode ? { incomeMode } : {}),

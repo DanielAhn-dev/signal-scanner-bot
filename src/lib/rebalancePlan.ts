@@ -83,6 +83,13 @@ export function pickKeeper<T extends { code: string; value: number }>(members: T
   return { keeper, byFee };
 }
 
+const ROLE_BUCKET_LABEL: Record<string, string> = { dividend: "고배당·배당", covered_call: "커버드콜", reit_infra: "리츠·인프라" };
+/** 압축 역할 키("kr|covered_call")의 화면 이름 */
+export function roleLabel(role: string): string {
+  const [region, bucket] = role.split("|");
+  return `${region === "us" ? "해외" : "한국"} ${ROLE_BUCKET_LABEL[bucket] ?? bucket}`;
+}
+
 export type PlanMerge = {
   from: { code: string; name: string; accountLabel: string; shares: number; amount: number; realizedGain: number | null };
   to: { code: string; name: string; accountLabel: string; price: number; shares: number; amount: number };
@@ -119,6 +126,29 @@ export type RebalancePlan = {
   merges: PlanMerge[];
   kinds: { before: number; after: number };
   mergeIncomeDelta: number;
+  /** 인컴 종목 압축 (settings.incomeKindsTarget이 있을 때만). 역할(지역×바구니)별 대표 하나로 합친 결과 */
+  compress: {
+    /** 남기고 싶은 인컴 종목 수 */
+    target: number;
+    /** 인컴 종목 수 — 합치기 전/후 */
+    before: number;
+    after: number;
+    reached: boolean;
+    /** 압축 뒤 월 인컴(세후)과 하한 */
+    incomeAfter: number;
+    floor: number;
+    roles: Array<{
+      key: string;
+      label: string;
+      keeper: { code: string; name: string } | null;
+      byUser: boolean;
+      why: string;
+      kept: Array<{ code: string; name: string }>;
+      merged: Array<{ code: string; name: string }>;
+    }>;
+    /** 합치지 못한 종목과 이유 */
+    blocked: Array<{ code: string; name: string; role: string; reason: string }>;
+  } | null;
   /** 인컴을 분배금으로만 줄여 가는 중인지 (settings.incomeMode "hold") */
   hold: boolean;
   /**
@@ -189,6 +219,11 @@ export function buildRebalancePlan(input: {
   }
   const merges: PlanMerge[] = [];
   const mergedAway = new Set<PlanHolding>();
+  /** src 전량을 팔아 dst를 살 때 월 인컴(세후) 변화 */
+  const mergeDelta = (src: PlanHolding, dst: PlanHolding) => {
+    const amount = Math.round(src.quantity * src.price);
+    return netOf(dst, Math.floor(amount / dst.price) * dst.price) - netOf(src);
+  };
   const toMerge = (src: PlanHolding, dst: PlanHolding, reason: string) => {
     const amount = Math.round(src.quantity * src.price);
     const shares = Math.floor(amount / dst.price);
@@ -229,6 +264,111 @@ export function buildRebalancePlan(input: {
       if (m !== keeper && p < SMALL_HOLDING_PCT) toMerge(m, keeper, `소액(전체의 ${p.toFixed(1)}%) · 같은 종류 · ${keeperReason(keeper, byFee)}`);
     }
   }
+
+  // ②-b 인컴 종목 압축 — 목표 종목 수가 있으면 역할(지역×바구니)별 대표 하나로 더 합친다. 월 인컴 하한과 같은 계좌 안 이동은 지킨다.
+  const incomeKindsBefore = new Set(holdings.filter((h) => h.group === "income").map((h) => h.code)).size;
+  let compress: RebalancePlan["compress"] = null;
+  const target = settings.incomeKindsTarget;
+  if (target && target >= 1) {
+    const roleOf = (h: PlanHolding) => `${FOREIGN.test(h.name) ? "us" : "kr"}|${h.bucket}`;
+    const alive = (h: PlanHolding) => h.group === "income" && !mergedAway.has(h);
+    const roles = new Map<string, PlanHolding[]>();
+    for (const h of holdings.filter((x) => x.group === "income")) roles.set(roleOf(h), [...(roles.get(roleOf(h)) ?? []), h]);
+    const aliveCodes = () => new Set(holdings.filter(alive).map((h) => h.code));
+    const dstCodes = new Set(merges.map((m) => m.to.code));
+
+    // 역할별 대표 — 직접 고른 것(보유 중일 때만) → 월 인컴이 큰 상품 → 보수·금액 (pickKeeper)
+    const keeperOf = new Map<string, { code: string; byUser: boolean; why: string }>();
+    for (const [role, hs] of roles) {
+      const live = hs.filter(alive);
+      const byCode = new Map<string, { code: string; value: number }>();
+      for (const h of live) byCode.set(h.code, { code: h.code, value: (byCode.get(h.code)?.value ?? 0) + h.value });
+      const codesInRole = [...byCode.values()];
+      if (codesInRole.length === 0) continue;
+      const chosen = settings.roleKeepers?.[role];
+      if (chosen && byCode.has(chosen)) {
+        keeperOf.set(role, { code: chosen, byUser: true, why: "직접 고른 대표" });
+        continue;
+      }
+      let best = pickKeeper(codesInRole, fees).keeper;
+      let why = codesInRole.length > 1 ? "보유금액이 큰 쪽" : "";
+      const yieldOfCode = (code: string) => yieldOf(live.find((h) => h.code === code)!);
+      // 앞 단계에서 이미 다른 종목을 받아 주는 종목은 다시 팔 수 없으니 대표로 우선한다
+      const receiving = codesInRole.filter((c) => dstCodes.has(c.code)).sort((a, b) => b.value - a.value)[0];
+      if (receiving) {
+        best = receiving;
+        why = "이미 같은 상품을 합쳐 받는 쪽";
+      } else {
+        for (const c of codesInRole) {
+          if (c.code !== best.code && yieldOfCode(c.code) - yieldOfCode(best.code) >= 1) {
+            best = c;
+            why = "월 인컴(분배율)이 더 큰 쪽";
+          }
+        }
+      }
+      keeperOf.set(role, { code: best.code, byUser: false, why });
+    }
+
+    const blocked: NonNullable<RebalancePlan["compress"]>["blocked"] = [];
+    // 작은 종목부터 한 종목(코드) 단위로 — 그 종목이 있는 모든 계좌에서 같은 계좌의 대표로 옮길 수 있을 때만
+    const units: Array<{ role: string; code: string; value: number }> = [];
+    for (const [role, hs] of roles) {
+      const k = keeperOf.get(role);
+      if (!k) continue;
+      const byCode = new Map<string, number>();
+      for (const h of hs.filter(alive)) if (h.code !== k.code) byCode.set(h.code, (byCode.get(h.code) ?? 0) + h.value);
+      for (const [code, value] of byCode) units.push({ role, code, value });
+    }
+    units.sort((a, b) => a.value - b.value);
+    let delta = [...merges].reduce((s, m) => s + m.monthlyIncomeDelta, 0);
+    for (const u of units) {
+      if (aliveCodes().size <= target) break;
+      const k = keeperOf.get(u.role)!;
+      const srcs = holdings.filter((h) => alive(h) && h.code === u.code && roleOf(h) === u.role);
+      if (srcs.length === 0) continue;
+      const name = srcs[0].name;
+      if (dstCodes.has(u.code)) {
+        blocked.push({ code: u.code, name, role: u.role, reason: "이미 같은 상품을 합쳐 받는 종목이라 한 번에 두 번 옮길 수 없습니다 (먼저 합친 뒤 다시 확인)" });
+        continue;
+      }
+      const pairs = srcs.map((s) => ({ s, d: holdings.find((h) => alive(h) && h.code === k.code && h.accountKey === s.accountKey) }));
+      if (pairs.some((p) => !p.d)) {
+        blocked.push({ code: u.code, name, role: u.role, reason: "같은 계좌에 대표 종목이 없어 계좌를 바꾸지 않고는 합칠 수 없습니다" });
+        continue;
+      }
+      const unitDelta = pairs.reduce((s, p) => s + mergeDelta(p.s, p.d!), 0);
+      const now = monthlyNet + delta;
+      if (now + unitDelta < Math.min(floor, now)) {
+        blocked.push({ code: u.code, name, role: u.role, reason: `합치면 월 인컴이 ${man(floor)} 아래(${man(now + unitDelta)})로 내려갑니다` });
+        continue;
+      }
+      for (const p of pairs) {
+        delta += mergeDelta(p.s, p.d!);
+        toMerge(p.s, p.d!, `역할별 대표로 압축(${roleLabel(u.role)}) · ${k.byUser ? "직접 고른 대표" : k.why || "대표 종목"}`);
+      }
+    }
+
+    const outRoles: NonNullable<RebalancePlan["compress"]>["roles"] = [];
+    for (const [role, hs] of roles) {
+      const k = keeperOf.get(role);
+      const live = new Map(hs.filter(alive).map((h) => [h.code, h.name]));
+      const gone = new Map(hs.filter((h) => mergedAway.has(h) && !live.has(h.code)).map((h) => [h.code, h.name]));
+      const keeperName = hs.find((h) => h.code === k?.code)?.name ?? "";
+      outRoles.push({
+        key: role,
+        label: roleLabel(role),
+        keeper: k ? { code: k.code, name: keeperName } : null,
+        byUser: k?.byUser ?? false,
+        why: k?.why ?? "",
+        kept: [...live].map(([code, name]) => ({ code, name })),
+        merged: [...gone].map(([code, name]) => ({ code, name })),
+      });
+    }
+    outRoles.sort((a, b) => b.merged.length - a.merged.length || a.key.localeCompare(b.key));
+    const after = aliveCodes().size;
+    compress = { target, before: incomeKindsBefore, after, reached: after <= target, incomeAfter: Math.round(monthlyNet + delta), floor, roles: outRoles, blocked };
+  }
+
   merges.sort((a, b) => b.from.amount - a.from.amount);
   const mergeIncomeDelta = merges.reduce((s, m) => s + m.monthlyIncomeDelta, 0);
   const codes = new Set(holdings.map((h) => h.code));
@@ -334,6 +474,13 @@ export function buildRebalancePlan(input: {
     else parts.push("분배금·새 돈은 지수로");
   } else if (surplus < 0) parts.push(`월 인컴이 목표보다 ${man(-surplus)} 적습니다 — 지금은 인컴 유지가 먼저입니다`);
   if (merges.length > 0) parts.push(`겹치는 종목 ${merges.length}개를 합치면 ${codes.size}종 → ${remainingCodes.size}종`);
+  if (compress) {
+    parts.push(
+      compress.reached
+        ? `인컴 종목 ${compress.before}종 → ${compress.after}종 (목표 ${compress.target}종 · 월 인컴 ${man(compress.incomeAfter)})`
+        : `인컴 종목 ${compress.before}종 → ${compress.after}종까지만 줄일 수 있습니다 (목표 ${compress.target}종)`,
+    );
+  }
   if (needByNewMoney > 0 && !hold) parts.push(`성장 ${actualPct.toFixed(0)}% → 목표 ${targetPct.toFixed(0)}%`);
   const headline = parts.length ? parts.join(" · ") : "지금은 바꿀 것이 없습니다. 새 돈은 계속 성장 ETF 한 곳으로 넣으세요.";
 
@@ -346,6 +493,7 @@ export function buildRebalancePlan(input: {
     merges,
     kinds: { before: codes.size, after: remainingCodes.size },
     mergeIncomeDelta: Math.round(mergeIncomeDelta),
+    compress,
     hold,
     cash,
     trim,

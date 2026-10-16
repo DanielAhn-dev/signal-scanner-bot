@@ -147,6 +147,34 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
       <p class="rb-muted">월 1회 점검 때 조건 가격 이상인 종목만 실행합니다. 매일 확인하지 않습니다.</p>`))
   }
 
+  // 5-2. 인컴 종목 압축 (가이드 설정에 목표 종목 수가 있을 때만)
+  if (r.compress) {
+    const c = r.compress
+    const roleRows = c.roles
+      .map((x) => {
+        const mergedText = x.merged.length ? x.merged.map((m) => e(m.name)).join(', ') : '<span class="rb-muted">합칠 것 없음</span>'
+        const keptText = x.kept.length ? x.kept.map((k) => `${x.keeper && k.code === x.keeper.code ? '<b>' : ''}${e(k.name)}${x.keeper && k.code === x.keeper.code ? '</b>' : ''}`).join(', ') : '-'
+        return `<tr><td class="rb-l">${e(x.label)}</td><td class="rb-l">${keptText}${x.byUser ? ' <span class="rb-chip rb-hold">직접 고른 대표</span>' : x.why ? ` <span class="rb-muted">(${e(x.why)})</span>` : ''}</td><td class="rb-l">${mergedText}</td></tr>`
+      })
+      .join('')
+    const moveRows = c.moves
+      .map(
+        (m) => `<tr><td class="rb-l">${e(m.from.name)}</td><td class="rb-l">${e(m.to.name)}</td><td class="rb-l">${m.when === 'now' ? '지금' : e(m.when)}${m.taxedGain && m.when === 'now' ? ' <span class="rb-muted">(해외 기초 ETF 차익은 15.4% 과세)</span>' : ''}</td><td class="${tone(m.monthlyIncomeDelta)}">${won(m.monthlyIncomeDelta)}</td></tr>`,
+      )
+      .join('')
+    const blockedRows = c.blocked.length ? `<ul class="rb-list rb-muted">${c.blocked.map((b) => `<li>${e(b.name)}: ${e(b.reason)}</li>`).join('')}</ul>` : ''
+    parts.push(
+      section(
+        '5-2. 인컴 종목 압축',
+        `<p>인컴 종목 <b>${c.before}종 → ${c.after}종</b>(목표 ${c.target}종${c.reached ? '' : ', 목표까지는 못 줄임'}) · 압축 뒤 월 인컴 <b>${man(c.incomeAfter)}</b>(목표 ${man(c.floor)}${c.incomeAfter >= c.floor ? ' 이상' : ' 미만'}) · 시드는 같은 금액을 같은 계좌 안에서 옮기므로 주 단위 잔돈만 달라집니다.</p>
+        <div class="rb-wrap"><table class="rb-table"><thead><tr><th>역할</th><th>남는 종목</th><th>합쳐지는 종목</th></tr></thead><tbody>${roleRows}</tbody></table></div>
+        ${c.moves.length ? `<p class="rb-muted" style="margin-top:10px">이 계좌에서 옮길 것 — 수익 구간은 3번 표, 손실 구간은 5번 조건부 목록에도 같이 있습니다.</p><div class="rb-wrap"><table class="rb-table"><thead><tr><th>팔 종목</th><th>살 종목</th><th>시점</th><th>월 분배금 변화</th></tr></thead><tbody>${moveRows}</tbody></table></div>` : '<p class="rb-muted">이 계좌에서 옮길 종목은 없습니다(다른 계좌의 종목이거나 이미 대표만 있습니다).</p>'}
+        ${blockedRows}
+        <p class="rb-muted">역할은 지역(한국·해외)과 종류(고배당·커버드콜·리츠)로 나눕니다. 대표는 직접 고르지 않으면 이미 같은 상품을 받고 있는 종목 → 월 인컴이 더 큰 쪽 → 총보수·보유금액 순으로 정합니다. 합치면 월 인컴이 하한 아래로 내려가는 종목과 같은 계좌에 대표가 없는 종목은 합치지 않습니다. 해당 ETF는 팔 때 거래세가 없습니다.</p>`,
+      ),
+    )
+  }
+
   // 6. 종목별
   const holdingRows = r.rows
     .map((h) => `<tr>
