@@ -245,3 +245,17 @@ test("인컴 종목 압축: 목표 종목 수가 없으면 없고, 있으면 이
   assert.match(html, /역할/);
   assert.ok(r.steps.some((s) => s.includes("인컴 종목 압축")));
 });
+
+test("예수금: 살 곳이 이 계좌에 있으면 현금 목표를 넘는 몫으로 몇 주 살지 실행 순서에 넣고, 다른 계좌 리포트에는 넣지 않는다", () => {
+  const holdings = [
+    H("278530", "KODEX 200TR", 15_000, 100, 14_000),
+    H("498400", "KODEX 200타겟위클리커버드콜", 18_000, 100, 17_000),
+    H("360750", "TIGER 미국S&P500", 20_000, 10, 19_000, "b"),
+  ];
+  const r = reportFor(holdings, { cashBalance: 1_000_000 });
+  const step = r.steps.find((s) => s.includes("예수금"));
+  assert.ok(step, "예수금 단계가 있다");
+  assert.match(step!, /KODEX 200TR 약 66주/);
+  const other = reportFor(holdings, { cashBalance: 1_000_000 }, "b");
+  assert.ok(!other.steps.some((s) => s.includes("예수금")), "살 곳이 없는 계좌에는 안내하지 않는다");
+});

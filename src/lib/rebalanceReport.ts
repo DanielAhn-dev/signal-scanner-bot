@@ -654,6 +654,19 @@ export function buildRebalanceReport(input: {
     for (const d of short)
       steps.push(`매도 대금 ${money(d.net)}이 ${d.name} 1주 값(${won(d.price)})보다 작습니다. 현금으로 두었다가 다음 분배금과 합쳐 ${d.name}를 삽니다.`);
   }
+  // 입력한 예수금은 계좌를 모른다 — 전체 가이드가 고른 살 곳이 이 계좌에 있을 때만 이 계좌 몫으로 안내한다
+  const idle = plan?.idleCash;
+  if (idle && idle.spendable > 0 && plan?.buyTarget?.accountLabel === acc.label) {
+    const shares = buyTarget && buyTarget.price > 0 ? Math.floor(idle.spendable / buyTarget.price) : 0;
+    const keepText = idle.keep > 0 ? ` 현금 목표 ${idle.cashTargetPct.toFixed(0)}% 몫 ${money(idle.keep)}은 두고,` : "";
+    steps.push(
+      buyTarget && shares > 0
+        ? `예수금 ${money(idle.balance)} 중${keepText} 남는 ${money(idle.spendable)}으로 ${buyTarget.name} 약 ${shares.toLocaleString("ko-KR")}주(${money(shares * buyTarget.price)})를 삽니다. 이미 계좌에 있는 새 돈이라 기다리지 않습니다.`
+        : buyTarget
+          ? `현금 목표를 넘는 예수금 ${money(idle.spendable)}이 ${buyTarget.name} 1주 값(${won(buyTarget.price)})보다 작습니다. 다음 달 새 돈·분배금과 합쳐서 삽니다.`
+          : `현금 목표를 넘는 예수금 ${money(idle.spendable)}은 지수 ETF를 하나 정해 사는 데 씁니다. ${buyHint}`,
+    );
+  }
   const inflow: string[] = [];
   if (accountMonthlyNet >= 1_000) inflow.push(`분배금(월 약 ${money(accountMonthlyNet)})`);
   if (monthlyContribution > 0) inflow.push(`새 돈(월 ${money(monthlyContribution)})`);

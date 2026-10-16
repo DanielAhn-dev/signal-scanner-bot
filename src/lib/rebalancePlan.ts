@@ -121,7 +121,7 @@ export type RebalancePlan = {
   growth: {
     actualPct: number;
     targetPct: number;
-    /** 새 돈만으로 목표 비중까지 필요한 금액 (이미 넘었으면 0) */
+    /** 새 돈만으로 목표 비중까지 필요한 금액 (이미 넘었으면 0). 예수금으로 살 몫(idleCash.spend)은 뺀 뒤다 */
     needByNewMoney: number;
     monthlyInflow: number;
     months: number | null;
@@ -158,6 +158,18 @@ export type RebalancePlan = {
   } | null;
   /** 인컴을 분배금으로만 줄여 가는 중인지 (settings.incomeMode "hold") */
   hold: boolean;
+  /**
+   * 입력한 예수금을 어떻게 할지 (hold가 아니고 예수금이 있을 때만). 현금 목표를 채우는 몫(keep)은 두고,
+   * 넘는 몫(spendable)은 새 돈처럼 buyTarget을 산다(C14 새 돈 먼저). spend는 1주 단위로 맞춘 실제 매수 금액.
+   */
+  idleCash: {
+    balance: number;
+    cashTargetPct: number;
+    keep: number;
+    spendable: number;
+    shares: number;
+    spend: number;
+  } | null;
   /**
    * 현금 목표 (hold일 때만). 처음엔 분배금·새 돈으로만 채우고(filling), 한 번 닿은 뒤에는 목표 ±band를 벗어날 때만
    * 지수를 팔아 채우거나(take-profit, 규칙형 익절) 넘는 현금으로 지수를 산다(buy-index). C14 "새 돈 먼저 + 밴드 밖에서만 매매".
@@ -416,7 +428,24 @@ export function buildRebalancePlan(input: {
   const targetPct = g?.targetPct ?? 0;
   const t = targetPct / 100;
   const growthValue = g?.value ?? 0;
-  const needByNewMoney = t < 1 && t * total > growthValue ? Math.round((t * total - growthValue) / (1 - t)) : 0;
+
+  // 예수금 (hold가 아닐 때) — 현금 목표를 채우는 몫은 두고, 넘는 몫은 이미 계좌에 와 있는 새 돈이라 지금 산다.
+  // hold면 아래 현금 규칙(채우기·밴드)이 맡는다.
+  let idleCash: RebalancePlan["idleCash"] = null;
+  const balance = Math.max(0, Math.round(settings.cashBalance ?? 0));
+  if (!hold && balance > 0) {
+    const cp = input.cashPlan;
+    const cashTargetPct = cp?.targetPct ?? 0;
+    // 단기채·CD 같은 현금성 ETF가 목표를 먼저 채운다
+    const otherCash = Math.max(0, (cp?.value ?? balance) - balance);
+    const keepAmount = Math.min(balance, Math.max(0, Math.round((cashTargetPct / 100) * total - otherCash)));
+    const spendable = balance - keepAmount;
+    const shares = buyTarget && buyTarget.price > 0 ? Math.floor(spendable / buyTarget.price) : 0;
+    idleCash = { balance, cashTargetPct, keep: keepAmount, spendable, shares, spend: buyTarget ? Math.round(shares * buyTarget.price) : 0 };
+  }
+  // 예수금으로 사는 만큼은 총액이 그대로인 채 성장이 늘어난다 — 남은 부족분만 새 돈으로 채운다
+  const growthAfterCash = growthValue + (idleCash?.spend ?? 0);
+  const needByNewMoney = t < 1 && t * total > growthAfterCash ? Math.round((t * total - growthAfterCash) / (1 - t)) : 0;
   const monthlyInflow = Math.max(0, surplus + mergeIncomeDelta) + Math.max(0, settings.monthlyContribution ?? 0);
   const months = needByNewMoney > 0 && monthlyInflow > 0 ? Math.ceil(needByNewMoney / monthlyInflow) : null;
 
@@ -429,7 +458,7 @@ export function buildRebalancePlan(input: {
   if (c && needByNewMoney > 0 && !hold) {
     const perWon = netOf(c, 1);
     const room = surplus + mergeIncomeDelta;
-    const gap = Math.max(0, t * total - growthValue); // 팔아서 옮기면 총액은 그대로
+    const gap = Math.max(0, t * total - growthAfterCash); // 팔아서 옮기면 총액은 그대로
     const byFloor = perWon > 0 ? Math.max(0, room) / perWon : 0;
     const maxAmount = Math.max(0, Math.min(c.value, gap, byFloor));
     const maxShares = Math.floor(maxAmount / c.price);
@@ -498,6 +527,7 @@ export function buildRebalancePlan(input: {
     else if (cash?.state === "buy-index") parts.push(`현금이 ${cash.actualPct.toFixed(0)}%로 많습니다 — ${man(cash.amount)}으로 지수를 살 때`);
     else parts.push("분배금·새 돈은 지수로");
   } else if (surplus < 0) parts.push(`월 인컴이 목표보다 ${man(-surplus)} 적습니다 — 지금은 인컴 유지가 먼저입니다`);
+  if (idleCash && idleCash.shares > 0 && buyTarget) parts.push(`예수금 중 ${man(idleCash.spend)}으로 ${buyTarget.name} ${idleCash.shares.toLocaleString("ko-KR")}주`);
   if (merges.length > 0) parts.push(`겹치는 종목 ${merges.length}개를 합치면 ${codes.size}종 → ${remainingCodes.size}종`);
   if (compress) {
     parts.push(
@@ -520,6 +550,7 @@ export function buildRebalancePlan(input: {
     mergeIncomeDelta: Math.round(mergeIncomeDelta),
     compress,
     hold,
+    idleCash,
     cash,
     trim,
   };

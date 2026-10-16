@@ -189,6 +189,46 @@ test("hold가 아니면 기존 동작 그대로 (현금 단계 없음)", () => {
   const { plan } = planFor({});
   assert.equal(plan.hold, false);
   assert.equal(plan.cash, null);
+  assert.equal(plan.idleCash, null);
+});
+
+function planWithCash(settings: Partial<IncomeGuideSettings>) {
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 65 }, ...settings };
+  const view = buildIncomeGuideView({ holdings: PORTFOLIO, settings: s, today: "2026-10-13" });
+  return { view, plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan })! };
+}
+
+test("예수금(목표 비중대로): 현금 목표가 없으면 전부 살 곳 지수로, 성장 부족분은 산 만큼 줄어든다", () => {
+  const { view, plan } = planWithCash({ cashBalance: 3_000_000 });
+  const idle = plan.idleCash!;
+  assert.equal(idle.keep, 0);
+  assert.equal(idle.spendable, 3_000_000);
+  assert.equal(plan.buyTarget?.code, "278530");
+  assert.equal(idle.shares, Math.floor(3_000_000 / 31_015));
+  assert.equal(idle.spend, idle.shares * 31_015);
+  const g = view.groups.find((x) => x.group === "growth")!;
+  const t = g.targetPct / 100;
+  assert.equal(plan.growth.needByNewMoney, Math.round((t * view.total - g.value - idle.spend) / (1 - t)));
+  assert.match(plan.headline, /예수금 중/);
+});
+
+test("예수금(목표 비중대로): 현금 목표를 채우는 몫은 두고 넘는 몫만 산다", () => {
+  const small = planWithCash({ cashBalance: 1_000_000, customTargets: { income: 65, cash: 10 } });
+  assert.equal(small.plan.idleCash?.keep, 1_000_000);
+  assert.equal(small.plan.idleCash?.spendable, 0);
+  assert.equal(small.plan.idleCash?.shares, 0);
+
+  const big = planWithCash({ cashBalance: 20_000_000, customTargets: { income: 65, cash: 10 } });
+  const idle = big.plan.idleCash!;
+  assert.equal(idle.keep, Math.round(0.1 * big.view.total));
+  assert.equal(idle.spendable, 20_000_000 - idle.keep);
+  assert.ok(idle.shares > 0);
+});
+
+test("예수금: hold면 idleCash 없이 기존 현금 규칙이 맡는다", () => {
+  const { plan } = planWithCash({ cashBalance: 3_000_000, incomeMode: "hold", customTargets: { income: 70, cash: 10 } });
+  assert.equal(plan.idleCash, null);
+  assert.ok(plan.cash);
 });
 
 test("압축: 목표 종목 수가 없으면 기존 동작 그대로(compress 없음)", () => {
