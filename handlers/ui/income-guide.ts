@@ -23,10 +23,13 @@ import {
   withMonthlyEntry,
 } from '../../src/lib/incomeGuide'
 import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
+import { isTaxAdvantagedAccount, resolveYieldPct } from '../../src/lib/incomeGuide'
+import { MAX_RECEIPTS, monthSummary, projectNextMonth, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
 //   POST { ...설정 } — 가이드 설정 변경 / POST { action: 'record', note } — 오늘 비중을 점검 기록에 남김
+//   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
 // 이번 달 기록이 없으면 열 때 자동 기록을 하나 남긴다(매월 배치 scripts/income_guide_monthly.ts와 같은 규칙).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
@@ -62,7 +65,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const body = req.method === 'POST' ? ((typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) ?? {}) : {}
     const isRecord = req.method === 'POST' && body.action === 'record'
-    if (req.method === 'POST' && !isRecord) {
+    const isReceipt = req.method === 'POST' && (body.action === 'receipt-add' || body.action === 'receipt-delete')
+    if (isReceipt) {
+      const receipts = [...(file.receipts ?? [])]
+      if (body.action === 'receipt-add') {
+        const r = sanitizeReceipt(body.receipt, new Date().toISOString(), () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
+        if (typeof r === 'string') return res.status(400).json({ error: r })
+        // 같은 달·같은 종목을 다시 적으면 고친 것으로 본다(두 번 눌러 쌓이지 않게)
+        const i = receipts.findIndex((x) => x.month === r.month && x.code === r.code)
+        if (i >= 0) receipts[i] = { ...r, id: receipts[i].id }
+        else receipts.push(r)
+      } else {
+        const i = receipts.findIndex((x) => x.id === String(body.id ?? ''))
+        if (i < 0) return res.status(404).json({ error: '지울 기록이 없습니다.' })
+        receipts.splice(i, 1)
+      }
+      file = { ...file, receipts: receipts.slice(-MAX_RECEIPTS) }
+      const saveErr = await saveGuideFile(supabase, chatId, file)
+      if (saveErr) return res.status(500).json({ error: `분배금 기록 저장 실패: ${saveErr}` })
+    } else if (req.method === 'POST' && !isRecord) {
       file.settings = sanitizeIncomeGuideSettings(body, file.settings)
       const saveErr = await saveGuideFile(supabase, chatId, file)
       if (saveErr) return res.status(500).json({ error: `가이드 설정 저장 실패: ${saveErr}` })
@@ -90,12 +111,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // 자동 기록 저장이 실패해도 화면은 그대로 보여 준다 (다음에 열 때 다시 시도)
       if (next && !(await saveGuideFile(supabase, chatId, { ...file, history: next }))) history = next
     }
+    // 분배금 받은 기록 → 이번 달 합계와 다음 달 예상(기록 없는 종목은 분배율 추정, 일반 계좌는 15.4% 뗌)
+    const receipts = file.receipts ?? []
+    const estimateMonthlyNet = (code: string) =>
+      view.holdings
+        .filter((h) => h.code === code)
+        .reduce((s, h) => s + (h.value * resolveYieldPct(h.code, h.bucket, h.name, yieldPctByCode).pct) / 100 / 12 * (isTaxAdvantagedAccount(h.accountLabel) ? 1 : 0.846), 0)
+    const projection = projectNextMonth({ receipts, holdings: view.holdings, estimateMonthlyNet, today })
+    const month = today.slice(0, 7)
+    const prevMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()
+    // 받은 기록이 하나라도 있으면 월 인컴은 기록 기반 예상을 쓴다. 예전 '실제 월 분배금' 숫자 칸은 화면에서 없앴으므로(고칠 수 없는 값)
+    // 기록이 없을 때도 쓰지 않고 분배율 추정으로 둔다
+    const planSettings = { ...file.settings, actualMonthlyNet: projection.receiptCodes > 0 ? projection.total : undefined }
     const ctx = { settings: file.settings, today, priceOf: (code: string) => prices.get(code) }
     return res.status(200).json({
       ok: true,
       data: {
         ...view,
-        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan, yieldPctByCode }),
+        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: planSettings, cashPlan: view.cashPlan, yieldPctByCode }),
+        // 'distributions'(금융소득 상한)는 view에 이미 있다 — 이름을 따로 둔다
+        distributionReceipts: {
+          thisMonth: monthSummary(receipts, month),
+          lastMonth: monthSummary(receipts, prevMonth),
+          projection,
+          recent: receipts.filter((r) => r.month >= prevMonth).sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.localeCompare(a.createdAt)),
+        },
         priceFallbacks,
         history, comparison: compareWithHistory(view, history, ctx), health: healthTrend(view, history, ctx) },
     })

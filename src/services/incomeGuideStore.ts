@@ -6,6 +6,7 @@
 import { fetchRealtimePriceBatch, type RealtimeStockData } from "../utils/fetchRealtimePrice";
 import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
+import { sanitizeReceipts, type DistributionReceipt } from "../lib/distributionReceipts";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   sanitizeIncomeGuideSettings,
@@ -18,7 +19,12 @@ import {
 const BUCKET = "market-snapshots";
 const DIR = "income-guide";
 
-export type GuideFile = { settings: IncomeGuideSettings; history: GuideHistoryEntry[] };
+export type GuideFile = {
+  settings: IncomeGuideSettings;
+  history: GuideHistoryEntry[];
+  /** 실계좌 분배금 받은 기록(src/lib/distributionReceipts.ts) */
+  receipts?: DistributionReceipt[];
+};
 
 const pathOf = (chatId: string | number) => `${DIR}/${chatId}.json`;
 
@@ -27,11 +33,12 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
   const { data, error } = await supabase.storage.from(BUCKET).download(pathOf(chatId), { cacheNonce: String(Date.now()) });
   if (error || !data) return null;
   try {
-    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[] };
+    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown };
     if (!parsed.settings) return null;
     return {
       settings: sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS),
       history: Array.isArray(parsed.history) ? parsed.history : [],
+      receipts: sanitizeReceipts(parsed.receipts),
     };
   } catch {
     return null;
