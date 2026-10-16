@@ -8,6 +8,8 @@
  * 둘 다 켜지면 '강함'이다. 신호 뒤에도 상위 10%는 60거래일에 +40% 넘게 더 올랐다 → 전부 매도가 아니라
  * 비중 축소·추가매수 중단 안내로만 쓴다.
  */
+import { dailyVolatility } from "../lib/positionSizing";
+
 type SupabaseClientAny = any;
 
 export const OVERHEAT_MA200_GAP = 0.6;
@@ -50,6 +52,8 @@ export type WeightCautionResult = {
   fromHigh: number;
   evidence: WeightCautionEvidence | null;
   message: string | null;
+  /** 최근 60개 일간 로그수익률의 표준편차 — 담을 크기 안내(src/lib/positionSizing.ts)용 */
+  vol60: number | null;
 };
 
 function std(values: number[]): number {
@@ -91,7 +95,7 @@ export function computeWeightCaution(closes: number[]): WeightCautionResult | nu
     ? `${parts.join(" · ")} — 과거 같은 상태에서 3개월 안에 -20% 이상 빠진 비율 ${Math.round(evidence.drop20Prob * 100)}%` +
       `(평소 ${Math.round(evidence.baseDrop20Prob * 100)}%). 추가매수를 멈추고 비중을 줄일지 검토하세요.`
     : null;
-  return { level, overheat, volSpike, ma200Gap, volRatio, fromHigh, evidence, message };
+  return { level, overheat, volSpike, ma200Gap, volRatio, fromHigh, evidence, message, vol60: dailyVolatility(c) };
 }
 
 // 일별 종가로만 계산하므로 하루 안에서는 거의 바뀌지 않는다 → 종목별 30분 캐시(데이터 부족도 캐시)

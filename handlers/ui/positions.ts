@@ -188,7 +188,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 점수·눌림목 조회와 겹쳐서 돌린다
     const weightCautionPromise: Promise<Map<string, WeightCautionResult>> = codes.length > 0
       ? Promise.race([
-          fetchWeightCautions(supabase, codes).catch(() => new Map<string, WeightCautionResult>()),
+          // 담을 크기 배수의 분모로 KODEX 200 변동성도 함께 읽는다
+          fetchWeightCautions(supabase, [...codes, ETF_BENCHMARK_CODE]).catch(() => new Map<string, WeightCautionResult>()),
           new Promise<Map<string, WeightCautionResult>>((resolve) =>
             setTimeout(() => resolve(new Map()), POSITIONS_CAUTION_TIMEOUT_MS)),
         ])
@@ -539,6 +540,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return c && c.level !== 'none'
             ? { level: c.level, overheat: c.overheat, volSpike: c.volSpike, ma200Gap: c.ma200Gap, volRatio: c.volRatio, message: c.message }
             : null
+        })(),
+        // 담을 크기(C66): 이 종목 60일 변동성 ÷ KODEX 200 — 금액은 총평가액을 아는 화면이 계산한다
+        sizing_vol_ratio: (() => {
+          const v = weightCautionByCode.get(code)?.vol60
+          const b = weightCautionByCode.get(ETF_BENCHMARK_CODE)?.vol60
+          return v != null && b != null && b > 0 ? Math.round((v / b) * 100) / 100 : null
         })(),
         etf_key: (() => {
           const k = etfKeyByCode.get(code)
