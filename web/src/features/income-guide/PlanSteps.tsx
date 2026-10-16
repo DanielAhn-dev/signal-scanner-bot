@@ -40,6 +40,8 @@ export type RebalancePlan = {
   } | null
   /** 인컴을 분배금으로만 줄여 가는 중 (가이드 설정 incomeMode 'hold') */
   hold: boolean
+  /** 입력한 예수금 — 현금 목표 몫은 두고 넘는 몫으로 살 것 (hold가 아니고 예수금이 있을 때만) */
+  idleCash: { balance: number; cashTargetPct: number; keep: number; spendable: number; shares: number; spend: number } | null
   cash: {
     value: number
     actualPct: number
@@ -144,7 +146,7 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
   }
   const toWon = (v: string) => (v.trim() === '' ? '' : Number(v) * 10_000)
 
-  const { income, growth, merges, trim, buyTarget, hold, cash } = plan
+  const { income, growth, merges, trim, buyTarget, hold, cash, idleCash } = plan
   const growthBar = Math.min(100, Math.max(0, growth.actualPct))
   // 줄여 가는 중이면 월 인컴 목표는 생활비 하한이 아니다 — 모자람을 경고로 보이지 않는다
   const short = !hold && income.surplus < 0
@@ -278,6 +280,28 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
             내 계좌에 새로 넣는 돈과 목표({man(income.floor)})를 넘게 들어온 분배금은 <strong>{buyName}</strong>만 삽니다. 인컴 ETF는 더 사지 않습니다.
           </div>
         )}
+        {idleCash && (
+          <div style={{ marginTop: 6 }}>
+            {idleCash.spendable <= 0 ? (
+              <>
+                예수금 {wonOrMan(idleCash.balance)}은 현금 목표 {idleCash.cashTargetPct.toFixed(0)}%를 채우는 몫이라 <strong>그대로 둡니다</strong>.
+              </>
+            ) : idleCash.shares > 0 && buyTarget ? (
+              <>
+                예수금 {wonOrMan(idleCash.balance)} 중{idleCash.keep > 0 ? ` 현금 목표 ${idleCash.cashTargetPct.toFixed(0)}% 몫 ${wonOrMan(idleCash.keep)}은 두고,` : ''} 남는{' '}
+                {wonOrMan(idleCash.spendable)}으로 지금 <strong>{buyName} {idleCash.shares.toLocaleString('ko-KR')}주 (약 {wonOrMan(idleCash.spend)})</strong>를 삽니다. 이미 계좌에 와 있는 새
+                돈이라 기다리지 않습니다.
+              </>
+            ) : buyTarget ? (
+              <>
+                현금 목표를 넘는 예수금 {wonOrMan(idleCash.spendable)}이 {buyName} 1주 값({won(buyTarget.price)})보다 작습니다. 다음 달 새 돈·분배금과 합쳐서 삽니다.
+              </>
+            ) : (
+              <>현금 목표를 넘는 예수금 {wonOrMan(idleCash.spendable)}은 아래 안내대로 지수 ETF를 하나 정해 사는 데 씁니다.</>
+            )}
+            <div style={faint}>예수금이 다른 계좌에 있으면 그 계좌에서 가진 지수 ETF를 삽니다. 산 뒤에는 위 예수금 칸을 남은 금액으로 고쳐 주세요.</div>
+          </div>
+        )}
         <div style={faint}>{plan.buyHint}</div>
         <div style={inlineRow}>
           <span>내 계좌에 직접 넣는 돈 (매달)</span>
@@ -289,7 +313,7 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
         <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다. 봇 실험 계좌의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div>
         {hold ? null : growth.needByNewMoney > 0 ? (
           <div style={{ marginTop: 6 }}>
-            새 돈만으로 목표 {growth.targetPct.toFixed(0)}%까지 약 <strong>{man(growth.needByNewMoney)}</strong>
+            {idleCash && idleCash.spend > 0 ? '예수금으로 산 뒤에도 ' : ''}새 돈만으로 목표 {growth.targetPct.toFixed(0)}%까지 약 <strong>{man(growth.needByNewMoney)}</strong>
             {growth.months != null ? (
               <>
                 {' '}— 매달 {man(growth.monthlyInflow)}씩이면 약 <strong>{growth.months}개월</strong>
