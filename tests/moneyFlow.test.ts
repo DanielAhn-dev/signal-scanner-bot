@@ -719,3 +719,14 @@ test('예산 저장: 저축·투자는 저축 분류만 받고, 없으면 예전
   assert.equal(normalizeFlowCheck({ input: { ...input, saving: [{ categoryId: 'maintenance', amount: 1 }] } }, now), null)
   assert.equal(normalizeFlowCheck({ input: { ...input, fixed: [{ categoryId: 'save_isa', amount: 1 }] } }, now), null)
 })
+
+test('간편결제·쇼핑몰: 다른 단서가 없으면 묻지 않고 온라인 쇼핑, 아는 물건·가게면 원래 분류', () => {
+  assert.equal(classifyMemo('네이버페이 32000').categoryId, 'online_shop')
+  assert.equal(classifyMemo('쿠팡 운동화').categoryId, 'online_shop')
+  assert.equal(classifyMemo('쿠팡 물티슈').categoryId, 'hygiene')
+  assert.equal(classifyMemo('쿠팡이츠').categoryId, 'delivery')
+  assert.equal(classifyMemo('네이버플러스 멤버십').categoryId, 'sub_membership')
+  assert.equal(classifyMemo('쿠팡', [{ keyword: '쿠팡', categoryId: 'hygiene' }]).categoryId, 'hygiene')
+  assert.equal(classifyMemo('동네 분식').source, 'none')
+  assert.equal(categoryById('online_shop')?.kind, 'variable')
+})

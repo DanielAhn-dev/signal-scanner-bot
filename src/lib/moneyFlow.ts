@@ -57,6 +57,8 @@ export const FLOW_CATEGORIES: FlowCategory[] = [
   ...c("variable", "의료", "other", [["medical", "병원·약", "must"], ["supplement", "영양제", "trim"]]),
   ...c("variable", "꾸밈", "other", [["clothes", "옷·신발", "trim"], ["beauty", "미용", "trim"], ["cosmetics", "화장품", "trim"]]),
   ...c("variable", "여가", "other", [["hobby", "취미·운동", "trim"], ["culture", "문화·공연", "drop"], ["game", "게임·앱 결제", "drop"]]),
+  // 네이버페이·쿠팡처럼 뭐든 파는 곳: 무엇을 샀는지 몰라도 묻지 않고 한 덩어리로 본다(온라인으로 한 달에 얼마 쓰나)
+  ...c("variable", "온라인 쇼핑", "other", [["online_shop", "간편결제·쇼핑몰", "trim"]]),
   ...c("variable", "기타", "other", [["etc", "기타 생활", "trim"]]),
   // 월 합계 − 세부 기록 차액. 세부 기록에는 고르지 않고, 점검으로 넘길 때만 쓴다(무엇에 썼는지 몰라 줄일 수 있나는 기본값 trim)
   ...c("variable", "기타", "other", [["unrecorded", "세부 안 적음", "trim"]]),
@@ -83,6 +85,8 @@ const SAVING_LABEL_BY_ID = new Map(SAVING_CATEGORIES.map((category) => [category
 export const isSavingCategory = (id: string) => SAVING_LABEL_BY_ID.has(id);
 export const savingLabel = (id: string) => SAVING_LABEL_BY_ID.get(id);
 export const FALLBACK_CATEGORY_ID = "etc";
+/** 간편결제·종합 쇼핑몰 이름이 들어 있고 다른 단서가 없을 때 넣는 소분류 */
+export const ONLINE_CATEGORY_ID = "online_shop";
 
 export function categoryById(id: string): FlowCategory | undefined {
   return CATEGORY_BY_ID.get(id);
@@ -198,6 +202,9 @@ export function classifyMemo(memo: string, learned: LearnedRule[] = []): Classif
   if (learnedHit) return { categoryId: learnedHit[1], source: "learned", matched: learnedHit[0] };
   const dictHit = best(Object.entries(DICTIONARY).flatMap(([categoryId, words]) => words.map((word): [string, string] => [word, categoryId])));
   if (dictHit) return { categoryId: dictHit[1], source: "dictionary", matched: dictHit[0] };
+  // "네이버페이 32000", "쿠팡 운동화"처럼 산 물건을 모르거나 사전에 없으면 묻지 않고 온라인 쇼핑으로 본다
+  const online = PASS_THROUGH.find((word) => contains(text, word));
+  if (online) return { categoryId: ONLINE_CATEGORY_ID, source: "dictionary", matched: online };
   return { categoryId: FALLBACK_CATEGORY_ID, source: "none" };
 }
 

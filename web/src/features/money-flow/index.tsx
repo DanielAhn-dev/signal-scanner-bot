@@ -248,7 +248,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
       {d.amountGuessed && <p className="acc-warn mf-cut">"원"이 없고 숫자가 여러 개라 가장 큰 수를 금액으로 골랐습니다. 맞는지 확인해 주세요. 금액 뒤에 "원"을 붙이면 헷갈리지 않습니다.</p>}
       {d.askItem && d.amount >= SMALL_UNKNOWN_LIMIT && (
         <label className="acc-field mf-item">
-          <span>뭘 샀나요? 네이버페이·쿠팡처럼 뭐든 파는 곳은 이름만으로 분류할 수 없어요</span>
+          <span>뭘 샀는지 알면 적어 주세요(선택). 비워 두면 "온라인 쇼핑"으로 넣습니다</span>
           <input type="text" aria-label={`${d.baseMemo} 산 물건`} value={d.item} placeholder="예: 물티슈, 운동화" onChange={(event) => setDraftItem(d, event.target.value)} />
         </label>
       )}
@@ -317,7 +317,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
                 onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !text.includes('\n')) { event.preventDefault(); readInput() } }}
               />
             </label>
-            <More label="쓰는 법과 예시 보기"><p className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 누가 적고 누구 카드로 냈든 기본은 집 공용입니다. 배우자만 쓴 건 앞이든 중간이든 "배우자"를 넣으면 됩니다(예: 배우자 교통카드 62000원, 모두의카드 배우자 환급 23000원).</p></More>
+            <More label="쓰는 법과 예시 보기"><p className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡 같은 온라인 결제는 그대로 적으면 "온라인 쇼핑"으로 들어갑니다(큰 금액은 산 물건을 붙이면 더 정확하지만 안 해도 됩니다). 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 누가 적고 누구 카드로 냈든 기본은 집 공용입니다. 배우자만 쓴 건 앞이든 중간이든 "배우자"를 넣으면 됩니다(예: 배우자 교통카드 62000원, 모두의카드 배우자 환급 23000원).</p></More>
             <div className="mf-row">
               <label className="acc-field mf-date"><span>날짜 (줄 앞에 날짜가 없을 때)</span><input type="date" value={date} max={today} onChange={(event) => setDate(event.target.value)} /></label>
               <button type="button" className="acc-primary" onClick={readInput} disabled={!text.trim()}>읽기</button>
