@@ -307,7 +307,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
           <MonthTotals month={month} thisMonth={thisMonth} today={today} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} cardDetail={monthDetail.card} cashDetail={monthDetail.cash} records={monthEntries} plan={checkForMonth(checks, month)?.input ?? null} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
 
           <details className="acc-card mf-detail">
-            <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">어디에 썼는지까지 보고 싶을 때만. 한 결제를 품목까지 나눌 필요는 없어요.</span></summary>
+            <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">현금·계좌이체로 낸 돈과 환급만 적으면 계산은 끝납니다. 나머지는 쓰고 싶을 때만 — 아까웠던 지출만 적어도 다음 달에 줄일 곳이 보입니다.</span></summary>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
               <small className="acc-note">가게 이름과 금액만 적어도 됩니다. 자세한 규칙은 아래 "쓰는 법"에서 봅니다.</small>
