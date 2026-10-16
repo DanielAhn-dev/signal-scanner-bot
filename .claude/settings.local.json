@@ -43,7 +43,9 @@
       "Bash(pnpm -s tsx /tmp/check_labels.ts)",
       "Bash(pnpm -s tsx scripts/ops/_tmp_check_labels.ts)",
       "Bash(pnpm test *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Read(//c/Users/daeyo/.claude/projects/D--Work-dev-github-signal-scanner-bot/memory/**)",
+      "Bash(echo \"- 2026-10-16 정기 점검: 24h 실패 없음, 최신일 10/15\\(직전 거래일\\), 일일 배치 36m55s, 스킵 'other' 없음. 09-22 088350 동일 행 2건은 과거분\\(관찰만\\).\")"
     ]
   }
 }
