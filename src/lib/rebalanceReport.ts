@@ -11,8 +11,8 @@
  *   - 커버드콜 일부를 지수로 (rebalancePlan trim — 월 인컴 하한을 지키는 최대치, hold 모드면 없음)
  * 근거 문장은 판정 등록부(docs/investment-idea-registry-2026-10-07.md)의 C48·C54와 블로그 3편 수치만 쓴다.
  */
-import { BUCKET_LABEL, CASH_BALANCE_CODE, REBALANCE_BAND_PP, isTaxAdvantagedAccount, type AssetBucket, type BucketGroup, type IncomeGuideView } from "./incomeGuide";
-import { FEE_TIE_PP, holdingYieldPct, strategyKey, type RebalancePlan } from "./rebalancePlan";
+import { BUCKET_LABEL, CASH_BALANCE_CODE, REBALANCE_BAND_PP, isTaxAdvantagedAccount, resolveYieldPct, type AssetBucket, type BucketGroup, type IncomeGuideView } from "./incomeGuide";
+import { FEE_TIE_PP, strategyKey, type RebalancePlan } from "./rebalancePlan";
 import { KRX_SELL_TAX_RATE, resolveOtherEtfGainTax, resolveSellTaxRate } from "./securitiesTax";
 
 /** 매도 수수료 가정 (온라인 기준) */
@@ -292,7 +292,7 @@ export function buildRebalanceReport(input: {
   const total = held.reduce((s, h) => s + h.value, 0);
   const yieldOf = (code: string, bucket: AssetBucket, name: string) => {
     const ttm = etf.get(code)?.yieldTtm;
-    return ttm != null && ttm >= 0 ? { pct: ttm, source: "ttm" as const } : { pct: holdingYieldPct(bucket, name), source: "assumed" as const };
+    return resolveYieldPct(code, bucket, name, ttm != null ? { [code]: ttm } : null);
   };
   const monthlyOf = (code: string, bucket: AssetBucket, name: string, value: number) => ((value * yieldOf(code, bucket, name).pct) / 100 / 12) * keep;
 

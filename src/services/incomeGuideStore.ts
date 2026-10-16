@@ -4,12 +4,15 @@
  * 계좌 보유 = virtual_positions 중 증권사·계좌명이 있는 행("계좌/보유 추가"로 입력). 봇 가상 계좌는 넣지 않는다.
  */
 import { fetchRealtimePriceBatch, type RealtimeStockData } from "../utils/fetchRealtimePrice";
+import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
+import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   sanitizeIncomeGuideSettings,
   type GuideHistoryEntry,
   type GuideHolding,
   type IncomeGuideSettings,
+  type YieldPctByCode,
 } from "../lib/incomeGuide";
 
 const BUCKET = "market-snapshots";
@@ -118,4 +121,23 @@ export function toGuideHoldings(
     };
   });
   return { holdings, priceFallbacks };
+}
+
+/**
+ * ETF 종목별 최근 12개월 실제 분배율(네이버) — 가이드·할 일·리포트가 같은 값을 쓰게 한다(resolveYieldPct).
+ * 느리거나 실패하면 빈 값을 돌려주고 상품 유형별 가정으로 계산된다(화면을 막지 않는다).
+ */
+export async function fetchYieldPctByCode(holdings: Array<{ code: string; name: string }>, timeoutMs = 5_000): Promise<YieldPctByCode> {
+  const codes = holdings.filter((h) => isExchangeTradedProduct(h.code, h.name)).map((h) => h.code);
+  if (!codes.length) return {};
+  type Indicators = Awaited<ReturnType<typeof fetchEtfKeyIndicators>>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const map = await Promise.race<Indicators>([
+    fetchEtfKeyIndicators(codes).catch(() => new Map()),
+    new Promise<Indicators>((resolve) => { timer = setTimeout(() => resolve(new Map()), timeoutMs); }),
+  ]);
+  if (timer) clearTimeout(timer);
+  const out: YieldPctByCode = {};
+  for (const [code, k] of map) if (k?.yieldTtm != null) out[code] = k.yieldTtm;
+  return out;
 }

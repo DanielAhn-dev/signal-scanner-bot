@@ -4,7 +4,7 @@ import { denyIfUnauthorizedRead } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { kstDateKey } from '../../src/services/virtualAutoTradeTiming'
 import { loadGoalFile } from '../../src/services/goalTracker'
-import { fetchGuidePrices, loadAccountPositionRows, loadGuideFile, toGuideHoldings } from '../../src/services/incomeGuideStore'
+import { fetchGuidePrices, fetchYieldPctByCode, loadAccountPositionRows, loadGuideFile, toGuideHoldings } from '../../src/services/incomeGuideStore'
 import { fetchEtfKeyIndicators, type EtfKeyIndicator } from '../../src/services/etfKeyIndicator'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
@@ -70,8 +70,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { holdings } = toGuideHoldings(rows, prices, realtimeHits)
     const today = kstDateKey()
     const pastCashPcts = (file.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
-    const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts })
-    const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan })
+    // 가이드 화면과 같은 분배율(최근 12개월 실제값 → 없으면 가정)로 계산해야 월 인컴이 화면마다 갈리지 않는다
+    const yieldPctByCode = await fetchYieldPctByCode(holdings)
+    const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts, yieldPctByCode })
+    const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan, yieldPctByCode })
 
     const etfCodes = holdings.filter((h) => h.accountKey === accountKey).filter((h) => isExchangeTradedProduct(h.code, h.name)).map((h) => h.code)
     const [etfMap, drop] = await Promise.all([

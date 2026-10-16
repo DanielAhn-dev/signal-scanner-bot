@@ -224,20 +224,20 @@ test("buildIncomeGuideView: 직접 정한 목표 비중이 단계 기본값보�
 test("buildIncomeGuideView: 일반 계좌 분배금만 금융소득 상한에 세고, 커버드콜이 상한을 빨리 채운다고 알린다", () => {
   const view = buildIncomeGuideView({
     holdings: [
-      h("475720", "RISE 200위클리커버드콜", 100_000_000), // 일반: 8.5% → 850만
+      h("475720", "RISE 200위클리커버드콜", 100_000_000), // 일반: 위클리 가정 12% → 1,200만 (실제 분배율이 없을 때 상품 유형별 가정)
       h("161510", "PLUS 고배당주", 40_000_000), // 일반: 4.5% → 180만
       h("402970", "ACE 미국배당다우존스", 50_000_000, "미래에셋 / ISA"), // 절세: 4.5% → 225만
     ],
     settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS },
     today: "2026-10-01",
   });
-  assert.equal(view.distributions.taxableAnnual, 10_300_000);
+  assert.equal(view.distributions.taxableAnnual, 13_800_000);
   assert.equal(view.distributions.shelteredAnnual, 2_250_000);
-  assert.equal(view.distributions.headroom, -300_000);
+  assert.equal(view.distributions.headroom, -3_800_000);
   assert.equal(view.distributions.headroomAsDividendCapital, 0);
-  assert.equal(view.distributions.taxableFromCoveredCall, 8_500_000);
+  assert.equal(view.distributions.taxableFromCoveredCall, 12_000_000);
   assert.ok(view.warnings.some((w) => w.level === "warn" && w.title.includes("상한 1,000만원 초과")));
-  assert.ok(view.warnings.some((w) => w.title.startsWith("일반 계좌 커버드콜 분배금 연 850만원")));
+  assert.ok(view.warnings.some((w) => w.title.startsWith("일반 계좌 커버드콜 분배금 연 1,200만원")));
   // 상한을 3천만으로 올리면 초과 경고는 사라지고 여유를 고배당 금액으로 환산한다
   const roomy = buildIncomeGuideView({
     holdings: [h("161510", "PLUS 고배당주", 40_000_000)],

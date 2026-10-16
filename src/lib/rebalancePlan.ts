@@ -7,13 +7,14 @@
  * 바구니 목표 비중만 보는 주문안(buildIncomeGuideView의 rebalance)은 "인컴 하한"을 몰라서 생활비 분배금을 깎는 매도를
  * 낼 수 있었다. 여기서는 하한을 먼저 지키고, 성장 비중은 새 돈으로 채우는 것을 기본으로 둔다(2026-10-13 사용자 요청).
  *
- * 분배율은 상품 유형별 가정(holdingYieldPct)이다. 사용자가 실제 월 입금액(settings.actualMonthlyNet)을 넣으면
+ * 분배율은 종목별 최근 12개월 실제값, 없으면 상품 유형별 가정(resolveYieldPct)이다. 사용자가 실제 월 입금액(settings.actualMonthlyNet)을 넣으면
  * 종목별 추정을 같은 비율로 맞춰서 쓴다 — 매도로 줄어드는 인컴도 그 비율로 계산된다.
  */
 import {
-  BUCKET_YIELD_PCT,
   REBALANCE_BAND_PP,
   isTaxAdvantagedAccount,
+  resolveYieldPct,
+  type YieldPctByCode,
   type IncomeGuideView,
   type AssetBucket,
   type BucketGroup,
@@ -42,18 +43,8 @@ export type PlanHolding = {
   avgPrice?: number | null;
 };
 
-/**
- * 연 분배율 가정 % — 상품 유형별. 목표 분배율을 내건 "타겟" 커버드콜은 국내 연 15%, 미국 연 10% 안팎을 공시하고,
- * 위클리 커버드콜은 그보다 낮다. 나머지는 바구니 가정(BUCKET_YIELD_PCT). 실제 입금액을 넣으면 그 비율로 보정된다.
- */
-export function holdingYieldPct(bucket: AssetBucket, name: string): number {
-  if (bucket === "covered_call") {
-    const us = FOREIGN.test(name);
-    if (/타겟/.test(name)) return us ? 10 : 15;
-    if (/위클리/.test(name)) return 12;
-  }
-  return BUCKET_YIELD_PCT[bucket];
-}
+/** 상품 유형별 분배율 가정 — 정의는 incomeGuide(resolveYieldPct의 대체값)로 옮겼다 */
+export { holdingYieldPct } from "./incomeGuide";
 
 /** 같은 기초자산·같은 운용 방식이면 사실상 같은 상품이다 (예: KODEX·SOL 200타겟위클리커버드콜) */
 export function strategyKey(name: string): string {
@@ -169,13 +160,16 @@ export function buildRebalancePlan(input: {
   groups: GroupRow[];
   settings: IncomeGuideSettings;
   cashPlan?: IncomeGuideView["cashPlan"];
+  /** 종목별 최근 12개월 실제 분배율 — 없으면 상품 유형별 가정 */
+  yieldPctByCode?: YieldPctByCode | null;
 }): RebalancePlan | null {
   const { holdings, total, groups, settings } = input;
   const hold = settings.incomeMode === "hold";
   if (total <= 0 || holdings.length === 0) return null;
   const fees = settings.feePctByCode ?? {};
   const keep = (h: PlanHolding) => (isTaxAdvantagedAccount(h.accountLabel) ? 1 : 1 - DISTRIBUTION_TAX);
-  const rawNet = (h: PlanHolding, value = h.value) => (value * holdingYieldPct(h.bucket, h.name)) / 100 / 12 * keep(h);
+  const yieldOf = (h: PlanHolding) => resolveYieldPct(h.code, h.bucket, h.name, input.yieldPctByCode).pct;
+  const rawNet = (h: PlanHolding, value = h.value) => (value * yieldOf(h)) / 100 / 12 * keep(h);
 
   // 인컴: 추정 → 실제 입금액이 있으면 그 비율로 보정
   const estimateNet = holdings.reduce((s, h) => s + (h.code === "CASH" ? 0 : rawNet(h)), 0);
@@ -264,7 +258,7 @@ export function buildRebalancePlan(input: {
   // ③ 팔아서 옮길 후보 — 합치고 남은 커버드콜 중 분배율이 가장 낮은 것(같은 돈을 팔 때 인컴이 가장 덜 준다)
   const candidates = holdings
     .filter((h) => h.bucket === "covered_call" && !mergedAway.has(h))
-    .sort((a, b) => holdingYieldPct(a.bucket, a.name) - holdingYieldPct(b.bucket, b.name) || b.value - a.value);
+    .sort((a, b) => yieldOf(a) - yieldOf(b) || b.value - a.value);
   const c = candidates[0];
   let trim: RebalancePlan["trim"] = null;
   if (c && needByNewMoney > 0 && !hold) {

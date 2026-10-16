@@ -215,6 +215,54 @@ export const BUCKET_YIELD_PCT: Record<AssetBucket, number> = {
 /** 분배금 과세율(배당소득세, 지방세 포함) */
 const DISTRIBUTION_TAX = 0.154;
 
+const FOREIGN_NAME = /(미국|나스닥|S&P|다우존스|글로벌|선진|중국|차이나|일본|인도|베트남|유럽)/i;
+
+/**
+ * 연 분배율 가정 % — 상품 유형별. 목표 분배율을 내건 "타겟" 커버드콜은 국내 연 15%, 미국 연 10% 안팎을 공시하고,
+ * 위클리 커버드콜은 그보다 낮다. 나머지는 바구니 가정(BUCKET_YIELD_PCT). 실제 분배율을 모를 때만 쓴다(resolveYieldPct).
+ */
+export function holdingYieldPct(bucket: AssetBucket, name: string): number {
+  if (bucket === "covered_call") {
+    const us = FOREIGN_NAME.test(name);
+    if (/타겟/.test(name)) return us ? 10 : 15;
+    if (/위클리/.test(name)) return 12;
+  }
+  return BUCKET_YIELD_PCT[bucket];
+}
+
+/** 종목별 연 분배율(%) 실제값 — 네이버 최근 12개월 분배금 ÷ 현재가(etfKeyIndicator.yieldTtm). 핸들러가 채워 넘긴다 */
+export type YieldPctByCode = Record<string, number>;
+
+/**
+ * 분배율: 최근 12개월 실제값이 있으면 그것(평가금 × 분배율 = 보유 수량 × 지난 12개월 주당 분배금), 없으면 상품 유형별 가정.
+ * 2026-10-16 화면마다 바구니 가정·상품 가정·실제값을 따로 써서 월 인컴이 20.6만/28만/32만으로 갈렸다 → 이 함수 하나로 통일.
+ * 상장 1년이 안 된 상품은 실제값이 1년치보다 적게 잡혀 낮게 나올 수 있다.
+ */
+export function resolveYieldPct(
+  code: string,
+  bucket: AssetBucket,
+  name: string,
+  yields?: YieldPctByCode | null,
+): { pct: number; source: "ttm" | "assumed" } {
+  const ttm = yields?.[code];
+  return ttm != null && Number.isFinite(ttm) && ttm >= 0 ? { pct: ttm, source: "ttm" } : { pct: holdingYieldPct(bucket, name), source: "assumed" };
+}
+
+/** 종목별 평가금 × 분배율(resolveYieldPct)로 낸 연 세전 분배금과 월 세후 추정 */
+export function estimateDistributionRows(
+  rows: Array<{ code: string; name: string; bucket: AssetBucket; value: number }>,
+  yields?: YieldPctByCode | null,
+): IncomeGuideView["distribution"] {
+  let annualGross = 0;
+  for (const r of rows) annualGross += r.value * (resolveYieldPct(r.code, r.bucket, r.name, yields).pct / 100);
+  return {
+    annualGross: Math.round(annualGross),
+    monthlyNet: Math.round((annualGross * (1 - DISTRIBUTION_TAX)) / 12),
+    taxRate: DISTRIBUTION_TAX,
+    isEstimate: true,
+  };
+}
+
 /** 바구니별 평가금에 분배율 가정을 곱한 연 세전 분배금과 월 세후 추정 */
 export function estimateDistribution(byBucket: Map<AssetBucket, number>): IncomeGuideView["distribution"] {
   let annualGross = 0;
@@ -354,7 +402,7 @@ export type IncomeGuideView = {
   groups: GroupRow[];
   growthSplit: { krValue: number; globalValue: number; globalPct: number; targetGlobalPct: number };
   buckets: Array<{ bucket: AssetBucket; label: string; value: number; pct: number }>;
-  /** 보유 바구니별 분배율 가정(BUCKET_YIELD_PCT)으로 낸 추정 — 실제 입금액이 아니다. 실제 기록이 있으면 그것을 우선한다 */
+  /** 종목별 최근 12개월 분배율(없으면 상품 유형별 가정)로 낸 추정 — 실제 입금액이 아니다. 실제 기록이 있으면 그것을 우선한다 */
   distribution: { annualGross: number; monthlyNet: number; taxRate: number; isEstimate: true };
   rebalance: {
     needed: boolean;
@@ -786,6 +834,8 @@ export function buildIncomeGuideView(input: {
   contribution?: number;
   /** 지난 점검 기록의 현금성 비중들 — 현금 목표에 한 번이라도 닿았는지 판단용 */
   pastCashPcts?: number[];
+  /** 종목별 최근 12개월 실제 분배율 — 없으면 상품 유형별 가정 */
+  yieldPctByCode?: YieldPctByCode | null;
 }): IncomeGuideView {
   const { settings, today } = input;
   const rows = input.holdings
@@ -1075,7 +1125,7 @@ export function buildIncomeGuideView(input: {
   let shelteredAnnual = 0;
   let taxableFromCoveredCall = 0;
   for (const r of investRows) {
-    const d = (r.value * BUCKET_YIELD_PCT[r.bucket]) / 100;
+    const d = (r.value * resolveYieldPct(r.code, r.bucket, r.name, input.yieldPctByCode).pct) / 100;
     if (isTaxAdvantagedAccount(r.accountLabel)) shelteredAnnual += d;
     else {
       taxableAnnual += d;
@@ -1125,9 +1175,7 @@ export function buildIncomeGuideView(input: {
     },
     groups,
     growthSplit: { krValue, globalValue, globalPct, targetGlobalPct: settings.overseasPct },
-    distribution: estimateDistribution(
-      investRows.reduce((m, r) => m.set(r.bucket, (m.get(r.bucket) ?? 0) + r.value), new Map<AssetBucket, number>()),
-    ),
+    distribution: estimateDistributionRows(investRows, input.yieldPctByCode),
     buckets: [...byBucket.entries()]
       .map(([bucket, value]) => ({ bucket, label: BUCKET_LABEL[bucket], value, pct: pct(value) }))
       .sort((a, b) => b.value - a.value),
