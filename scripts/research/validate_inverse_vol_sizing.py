@@ -37,6 +37,10 @@ for i in range(1, T):
     if dates[i][4:6] in ("01", "04", "07", "10") and dates[i][4:6] != dates[i - 1][4:6]:
         if i >= 250 and i + HOLD < T:
             qstarts.append(i)
+# 앱 안내용 기준 배수(판정 외): 분기마다 상위 200 종목 60일 변동성 ÷ 같은 창 KODEX 200 변동성의 중앙값 → 분기 중앙값
+kx = {r[0]: r[1] for r in json.load(open(f"{CACHE}/allweather/kr_069500.json"))}
+KX = np.array([kx.get(d, np.nan) for d in dates], float)
+ref_ratios = []
 rows = []  # (진입일, 균등수익, 역변동수익, 균등낙폭, 역변동낙폭)
 for e in qstarts:
     hist = P[e - 250:e]
@@ -47,6 +51,12 @@ for e in qstarts:
     seg = P[e - LOOK - 1:e]
     r = np.diff(np.log(seg), axis=0)
     vol = np.nanstd(r, axis=0)
+    kseg = KX[e - LOOK - 1:e]
+    if np.all(np.isfinite(kseg)):
+        kv = np.std(np.diff(np.log(kseg)))
+        uv = vol[univ]; uv = uv[np.isfinite(uv) & (uv > 0)]
+        if kv > 0 and len(uv):
+            ref_ratios.append(np.median(uv) / kv)
     # 보유 구간: 끊기면 마지막 종가로 동결
     H = P[e:e + HOLD + 1].copy()
     for t in range(1, len(H)):
@@ -67,6 +77,8 @@ for e in qstarts:
 A = np.array([r[1:] for r in rows])
 D = np.array([r[0] for r in rows])
 print(f"진입 분기 {len(qstarts)}개 ({dates[qstarts[0]]}~{dates[qstarts[-1]]}), 바구니 {len(rows)}개")
+
+print(f"앱 기준 배수(상위200 종목 변동성 ÷ KODEX 200, 분기 {len(ref_ratios)}개): 중앙 {np.median(ref_ratios):.2f}, 범위 {min(ref_ratios):.2f}~{max(ref_ratios):.2f}")
 
 
 def summ(mask, label):
