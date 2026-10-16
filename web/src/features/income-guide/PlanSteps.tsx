@@ -85,7 +85,9 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
   const savingRef = useRef(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [contribMan, setContribMan] = useState(settings.monthlyContribution ? String(Math.round(settings.monthlyContribution / 10_000)) : '')
-  const [cashMan, setCashMan] = useState(settings.cashBalance ? String(Math.round(settings.cashBalance / 10_000)) : '')
+  // 예수금은 증권사 앱에 보이는 그대로 원 단위로 받는다(만원 칸에 원 금액을 넣어 1만 배로 저장된 일이 있었다)
+  const [cashWon, setCashWon] = useState(settings.cashBalance ? Math.round(settings.cashBalance).toLocaleString('ko-KR') : '')
+  const cashWonValue = cashWon.replace(/[^\d]/g, '')
   const [fees, setFees] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(settings.feePctByCode ?? {}).map(([k, v]) => [k, String(v)])),
   )
@@ -178,10 +180,26 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
         </div>
         <div style={inlineRow}>
           <span>증권 계좌 예수금</span>
-          <UnitInput unit="만원" width={120} inputMode="numeric" placeholder="0" aria-label="증권 계좌 예수금" value={cashMan} onChange={(e) => setCashMan(e.target.value)} />
-          <Button size="sm" variant="secondary" onClick={() => void save({ cashBalance: toWon(cashMan) }, '예수금을 현금에 넣어 다시 계산했습니다.')}>
+          <UnitInput
+            unit="원"
+            width={150}
+            inputMode="numeric"
+            placeholder="0"
+            aria-label="증권 계좌 예수금(원)"
+            value={cashWon}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/[^\d]/g, '')
+              setCashWon(digits ? Number(digits).toLocaleString('ko-KR') : '')
+            }}
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void save({ cashBalance: cashWonValue === '' ? '' : Number(cashWonValue) }, `예수금 ${cashWonValue ? man(Number(cashWonValue)) : '0원'}을 현금에 넣어 다시 계산했습니다.`)}
+          >
             반영
           </Button>
+          {cashWonValue !== '' && <span style={faint}>= 약 {man(Number(cashWonValue))}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
           <span>커버드콜·배당 줄이는 방식</span>
