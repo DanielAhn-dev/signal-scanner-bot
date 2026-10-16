@@ -28,6 +28,8 @@ test('시드 월 기록은 정수 금액과 허용된 큰 카테고리만 받는
   assert.equal(normalizeRecord({ ...record, extraIncome: { incentive: 300000 }, expenses: { ...record.expenses, water: 80000, gas: 120000 } })?.extra_income.incentive, 300000)
   assert.equal(normalizeRecord({ ...record, extraIncome: { incentive: -1 } }), null)
   assert.equal(normalizeRecord({ ...record, extraIncome: { unknown: 1 } }), null)
+  // 만기 예·적금 중 그달 투자금에 넣은 금액
+  assert.equal(normalizeRecord({ ...record, extraIncome: { maturity: 12_400_000 } })?.extra_income.maturity, 12_400_000)
   assert.equal(normalizeRecord({ ...record, expenses: { ...record.expenses, propertyTax: -1 } }), null)
 })
 

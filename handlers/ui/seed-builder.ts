@@ -5,7 +5,8 @@ import { resolveUiUserContext } from './_userContext'
 
 // fixedCost·variableCost·emergencyRefill = 돈 흐름·점검에서 가져온 세 줄(+ 비상금 채우기). 나머지는 예전 항목별 입력
 const expenseKeys = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other', 'fixedCost', 'variableCost', 'irregularFund', 'emergencyRefill', 'card', 'water', 'gas', 'residentTax', 'propertyTax', 'vehicleTax', 'taxAdjustment'] as const
-const extraIncomeKeys = ['incentive', 'vacation', 'taxRefund', 'other'] as const
+// maturity: 만기 예·적금 중 그달 투자금에 넣기로 한 금액(일시 수입)
+const extraIncomeKeys = ['incentive', 'vacation', 'taxRefund', 'other', 'maturity'] as const
 const households = ['solo', 'single-income', 'dual-income'] as const
 const maxAmount = 100_000_000_000
 const maxBreakdownLength = 16_000
