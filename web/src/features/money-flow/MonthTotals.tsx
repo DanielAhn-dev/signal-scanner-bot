@@ -4,7 +4,7 @@ import { apiFetch } from '../../lib/api'
 import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, fixedOutsideCardOf, matchesIrregular, monthSpending, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
 
 /** 서버가 주는 월 합계 한 칸. mine = 내가 적은 칸(배우자 칸은 읽기만) */
-export type MonthTotalRow = { month: string; label: string; kind: TotalKind; amount: number; mine: boolean }
+export type MonthTotalRow = { month: string; label: string; kind: TotalKind; amount: number; mine: boolean; updatedAt?: string }
 type Slot = { key: string; label: string; kind: TotalKind; amount: string }
 /** 이 달 세부 기록(비정기 실제 금액을 찾고 고치는 데 쓴다) */
 export type MonthRecord = { id: string; date: string; amount: number; memo: string; categoryId: string; payment: Payment; forWhom?: string; paidWith?: 'card' | 'cash'; cut: string | null; mustPart: number | null }
@@ -14,8 +14,9 @@ const newKey = () => Math.random().toString(36).slice(2)
 const KIND_LABEL: Record<TotalKind, string> = { cash: '카드·현금', point: '포인트' }
 
 /**
- * 이 달 합계 칸. 카드 앱의 '이번 달 이용금액'(이용월 기준)을 칸별로 옮겨 적는다.
- * 세부 기록은 원할 때만 — 합계와의 차액은 '세부 안 적음'으로 남고 0을 맞추지 않아도 저장된다.
+ * 이 달 합계 칸. 결제월 기준 — 그 달 통장에서 빠져나간 카드 결제금액을 칸별로 적는다(투자 가능액은 실제로 남는 돈 기준).
+ * 다음 달 칸은 카드 앱의 '다음 결제 예정금액'을 미리 적고 볼 때마다 고친다. 결제일이 지나면 그대로 그 달 확정 금액이다.
+ * 세부 기록은 원할 때만 — 카드 세부를 안 적는 달은 '세부 안 적음'을 보여 주지 않는다.
  */
 export default function MonthTotals({ month, thisMonth, today, setMonth, totals, cardDetail, cashDetail, records, plan, partnerShared, ready, onSaved }: {
   month: string; thisMonth: string; today: string; setMonth: (m: string) => void
@@ -35,6 +36,8 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
   useEffect(() => setSlots(toSlots()), [slotsKey])
   // 이번 달 나가는 비정기: 1년 예산 중 이 달 몫(예상)과 실제 낸 금액. 실제는 항목 이름으로 세부 기록에 저장한다
   const monthNo = Number(month.slice(5))
+  const upcoming = month > thisMonth
+  const lastEdited = mine.filter((t) => t.month === month && t.updatedAt).map((t) => t.updatedAt!).sort().pop()
   const irregular = irregularForMonth(plan, monthNo, records)
   const toActual = () => Object.fromEntries(irregular.rows.map((r) => [r.label, r.actual === null ? '' : String(r.actual)]))
   const actualKey = `${month}|${irregular.rows.map((r) => `${r.label}:${r.actual}`).join('|')}`
@@ -113,12 +116,15 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
     <section className="acc-card">
       <div className="mf-month-nav">
         <button type="button" aria-label="이전 달" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={18} /></button>
-        <h2>{month.replace('-', '년 ')}월 합계</h2>
-        <button type="button" aria-label="다음 달" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth}><ChevronRight size={18} /></button>
+        <h2>{month.replace('-', '년 ')}월 {upcoming ? '결제 예정' : '합계'}</h2>
+        <button type="button" aria-label="다음 달" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= shiftMonth(thisMonth, 1)}><ChevronRight size={18} /></button>
       </div>
       {!ready ? <p className="acc-note">합계 칸은 준비 중입니다(서버 설정 대기). 아래 세부 기록은 그대로 쓸 수 있습니다.</p> : (
         <>
-          <p className="acc-note">{Number(month.slice(5))}월에 쓴 돈을 적는 칸입니다. 다음 달 중순에 나가는 카드 결제 대금(명세서)이 대개 이 달 이용분이라, 명세서를 받으면 쓴 달 칸에 적으세요(예: 10월 13일 결제 대금 → 9월 칸). 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다. 계좌이체·현금으로 내는 돈이 있을 때만 "현금" 칸에 넣으세요. 세부는 적을 수 있을 때만 적고, 나머지는 "세부 안 적음"으로 남겨도 됩니다.</p>
+          {upcoming
+            ? <p className="acc-note">{monthNo}월에 빠져나갈 카드값입니다. 카드 앱의 "다음 결제 예정금액"을 칸별로 적고, 앱을 볼 때마다 고쳐 저장하세요. 결제일이 지나면 그 금액이 그대로 {monthNo}월 결제금액이 됩니다. 아래 투자 가능액은 예상입니다.</p>
+            : <p className="acc-note">{monthNo}월에 통장에서 빠져나간 카드 결제금액(명세서 결제금액)을 적는 칸입니다. 지난달에 쓴 돈이 이 달에 나가므로, 이 달 수입에서 빼야 실제로 남는 돈이 나옵니다. 다음 달 예정금액은 오른쪽 화살표로 넘어가 미리 적을 수 있습니다. 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다.</p>}
+          {lastEdited && <p className="acc-note">마지막 수정 {lastEdited.slice(5, 10).replace('-', '/')}</p>}
           <div className="mf-slots" role="group" aria-label="합계 칸">
             {slots.map((s, i) => (
               <div key={s.key} className="mf-slot">
@@ -143,7 +149,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
                 <div key={r.label} className="mf-irregular-row">
                   <span>{r.label}</span>
                   <small>예상 {krw(r.expected)}</small>
-                  <input type="number" inputMode="numeric" min="1" aria-label={`${r.label} 실제`} value={actual[r.label] ?? ''} placeholder="실제 안 적음" onChange={(e) => setActual((cur) => ({ ...cur, [r.label]: e.target.value }))} />
+                  {!upcoming && <input type="number" inputMode="numeric" min="1" aria-label={`${r.label} 실제`} value={actual[r.label] ?? ''} placeholder="실제 안 적음" onChange={(e) => setActual((cur) => ({ ...cur, [r.label]: e.target.value }))} />}
                 </div>
               ))}
               <p className="acc-note">매달 1/12씩 떼어 둔 돈에서 내는 것으로 봅니다. 실제 금액을 적으면 그 이름으로 세부 기록에 남아 작년과 비교되고, 안 적으면 예상 금액으로 계산합니다. 예산에 없는 비정기(경조사 등)는 자세히 적기에서 분류를 골라 적으면 함께 빠집니다.</p>
@@ -151,11 +157,12 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
           )}
           <dl className="acc-facts mf-reconcile" aria-label="합계와 세부 기록">
             <div><dt>카드 합계</dt><dd>{krw(total)}</dd></div>
-            <div><dt>카드 세부 기록</dt><dd>{krw(detailTotal)}{total > 0 && ` (${Math.round((Math.min(detailTotal, total) / total) * 100)}%)`}</dd></div>
-            <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd></div>
+            {/* 카드 세부를 안 적는 달은 비교할 게 없어 숨긴다 */}
+            {detailTotal > 0 && <div><dt>카드 세부 기록</dt><dd>{krw(detailTotal)}{total > 0 && ` (${Math.round((Math.min(detailTotal, total) / total) * 100)}%)`}</dd></div>}
+            {detailTotal > 0 && <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd></div>}
             <div><dt>현금으로 낸 돈</dt><dd>{krw(preview.cashPaid)}{cashRecords.length > 0 && ` (${cashRecords.length}건)`}</dd></div>
             {preview.outsideCard > 0 && <div><dt>카드 밖 고정비</dt><dd>{krw(preview.outsideCard)}</dd></div>}
-            <div><dt>이 달 지출</dt><dd>{krw(preview.cash)}</dd></div>
+            <div><dt>{upcoming ? '이 달 지출(예상)' : '이 달 지출'}</dt><dd>{krw(preview.cash)}</dd></div>
             {rest !== null && <div><dt>고정 · 비정기</dt><dd>{krw(fixed!)} · {krw(irregularPreview)}</dd></div>}
             {rest !== null && <div><dt>나머지(변동)</dt><dd>{krw(rest)}</dd></div>}
           </dl>

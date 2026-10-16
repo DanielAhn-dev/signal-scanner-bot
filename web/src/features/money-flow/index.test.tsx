@@ -257,6 +257,25 @@ describe('월 합계 칸', () => {
     expect(postBodies()[0]).toEqual({ action: 'save-month-totals', month, totals: [{ label: 'A카드', kind: 'cash', amount: 1_200_000 }] })
   })
 
+  it('다음 달로 넘어가 결제 예정금액을 미리 적고, 그 뒤 달로는 못 넘어간다. 카드 세부가 없으면 세부 안 적음을 숨긴다', async () => {
+    const next = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7)
+    apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true }) : Promise.resolve({
+      entries: [], rules: [], checks: [],
+      totals: [{ month, label: 'A카드', kind: 'cash', amount: 900_000, mine: true, updatedAt: `${month}-03T01:00:00Z` }],
+    }))
+    renderPage()
+    await screen.findByText(`${month.replace('-', '년 ')}월 합계`)
+    expect(screen.getByLabelText('합계와 세부 기록').textContent).not.toContain('세부 안 적음')
+    fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
+    await screen.findByText(`${next.replace('-', '년 ')}월 결제 예정`)
+    expect((screen.getByRole('button', { name: '다음 달' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/다음 결제 예정금액/)).toBeTruthy()
+    fireEvent.change(await screen.findByLabelText('A카드 금액'), { target: { value: '400000' } })
+    fireEvent.click(screen.getByRole('button', { name: '합계 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    expect(postBodies()[0]).toEqual({ action: 'save-month-totals', month: next, totals: [{ label: 'A카드', kind: 'cash', amount: 400_000 }] })
+  })
+
   it('겹치는 칸 이름은 저장 전에 막는다', async () => {
     renderPage()
     await screen.findByText('아직 기록이 없습니다.')

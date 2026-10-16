@@ -566,7 +566,7 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
         <h3>{monthLabel(month)}</h3>
         {!loading && (
           <div className="mf-invest" aria-label="이 달 투자 가능액">
-            <span>투자 가능액</span>
+            <span>{month > thisMonth ? '투자 가능액(예상 — 카드 결제 예정금액 기준)' : '투자 가능액'}</span>
             {invest !== null && plan && variable !== null
               ? <><strong className={invest < 0 ? 'is-negative' : ''}>{krw(invest)}</strong><small>수입 {krw(plan.monthlyIncome)}{savingCashOf(plan) > 0 && ` − 저축·투자 ${krw(savingCashOf(plan))}`} − 고정 {krw(fixedCashOf(plan))} − 변동 {krw(variable)} − 비정기 적립 {krw(irregularFundOf(plan))} − 비상금 적립 {krw(plan.reserveMonthly)}</small></>
               : <small>{plan ? '이 달 카드 합계를 적으면 계산됩니다.' : '예산을 설정하면 계산됩니다.'}</small>}
@@ -576,7 +576,7 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
           <>
             <dl className="acc-tiles">
               <div className="is-main"><dt>현금 지출</dt><dd>{krw(rec.cash)}</dd>{(hasTotals || refunds > 0) && <small>{[hasTotals ? '칸 합계 기준' : '', refunds > 0 ? `돌려받은 ${krw(refunds)}을 뺀 금액` : ''].filter(Boolean).join(', ')}</small>}</div>
-              {hasTotals && <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd><small>세부 기록 {krw(rec.detailedCash + rec.detailedPoint)} 밖, 어디에 썼는지 모르는 금액</small></div>}
+              {hasTotals && rec.detailedCash + rec.detailedPoint > 0 && <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd><small>세부 기록 {krw(rec.detailedCash + rec.detailedPoint)} 밖, 어디에 썼는지 모르는 금액</small></div>}
               {rec.cashPaid > 0 && <div><dt>현금으로 낸 돈</dt><dd>{krw(rec.cashPaid)}</dd><small>세부 기록에서 현금으로 표시한 것, 카드 합계에 더함</small></div>}
               {emergency > 0 && <div><dt>비상금에서 나간 돈</dt><dd>{krw(emergency)}</dd><small>1년 예산에 없던 비정기 — 다음 달 비상금 적립에 더해 채워 넣기</small></div>}
               <div><dt>생활 소비(포인트 포함)</dt><dd>{krw(rec.consumption)}</dd></div>
