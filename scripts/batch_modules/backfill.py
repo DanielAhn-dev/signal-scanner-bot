@@ -126,6 +126,7 @@ def plan_stock_daily_gap_heal(
     priority_codes: Optional[set[str]] = None,
     recent_days: int = 20,
     stale_days: int = 5,
+    retry_old: bool = True,
 ) -> dict:
     """
     복구 계획을 세운다(순수 함수).
@@ -135,6 +136,8 @@ def plan_stock_daily_gap_heal(
       2) 최근 recent_days 거래일 안에 구멍이 있는 종목 — 이동평균·신호에 바로 쓰인다(최근 구멍부터)
       3) 오래된 구멍만 있는 종목 — 코드순을 날짜 기반 오프셋으로 회전(상태 저장 없이 며칠에 걸쳐 한 바퀴)
       4) 최근 stale_days 거래일 내내 행이 없는 종목(거래정지 추정) — 영구 누락이 할당량을 독차지하지 않게 맨 뒤
+    retry_old=False면 3)·4)는 고르지 않는다(주 1회만 재시도). 거래정지·거래량 0일처럼 KRX에도 행이 없는 구멍은
+    매일 다시 받아도 채워지지 않아, 같은 종목을 날마다 조회하며 시간과 차단 위험만 늘렸다(2026-10 012510·309710·000500·000880).
     """
     priority_codes = priority_codes or set()
     missing_by_code: dict[str, list[str]] = {}
@@ -171,7 +174,7 @@ def plan_stock_daily_gap_heal(
     tier_priority.sort(key=by_recent_gap, reverse=True)
     tier_recent.sort(key=by_recent_gap, reverse=True)
 
-    ordered = tier_priority + tier_recent + rotate(tier_old) + rotate(tier_stale)
+    ordered = tier_priority + tier_recent + (rotate(tier_old) + rotate(tier_stale) if retry_old else [])
     picked: list[str] = ordered[:max_tickers] if max_tickers > 0 else []
 
     picked_dates = [d for code in picked for d in missing_by_code[code]]
@@ -181,6 +184,7 @@ def plan_stock_daily_gap_heal(
         "codes": picked,
         "priority_picked": [c for c in picked if c in priority_codes],
         "remaining_tickers": max(0, len(ordered) - len(picked)),
+        "deferred_tickers": 0 if retry_old else len(tier_old) + len(tier_stale),
         "start": min(picked_dates) if picked_dates else None,
         "end": max(picked_dates) if picked_dates else None,
     }
@@ -219,6 +223,14 @@ def fetch_priority_codes(supabase: Client) -> set[str]:
     return codes
 
 
+def is_first_trading_day_of_week(trading_dt, calendar: list[str]) -> bool:
+    """calendar(YYYYMMDD, trading_dt 전날까지)의 마지막 거래일이 다른 주면 trading_dt가 그 주 첫 거래일이다."""
+    if not calendar:
+        return True
+    prev = datetime.strptime(calendar[-1], "%Y%m%d").date()
+    return prev.isocalendar()[:2] != trading_dt.isocalendar()[:2]
+
+
 def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
     """
     stock_daily 종목 단위 구멍을 하루 할당량만큼만 복구한다.
@@ -249,12 +261,17 @@ def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
         print("   Gap heal skipped: empty universe")
         return False
     present = fetch_present_pairs(supabase, codes, start_dt.isoformat(), trading_dt.isoformat())
+    # 오래된 구멍·거래정지 추정 종목은 그 주 첫 거래일에만 다시 시도한다(월요일이 휴장이면 화요일)
+    retry_old = is_first_trading_day_of_week(trading_dt, calendar)
     plan = plan_stock_daily_gap_heal(
-        calendar, present, max_tickers, trading_dt.toordinal(), priority_codes=fetch_priority_codes(supabase)
+        calendar, present, max_tickers, trading_dt.toordinal(), priority_codes=fetch_priority_codes(supabase), retry_old=retry_old
     )
 
     if not plan["codes"]:
-        print(f"   Gap heal: no missing (ticker,date) in last {window_days}d across {len(codes)} tickers")
+        if plan["deferred_tickers"]:
+            print(f"   Gap heal: 오래된 구멍·거래정지 추정 {plan['deferred_tickers']}종목({plan['missing_pairs']}건)은 주 첫 거래일에만 재시도 — 오늘은 건너뜀")
+        else:
+            print(f"   Gap heal: no missing (ticker,date) in last {window_days}d across {len(codes)} tickers")
         return False
 
     print(
