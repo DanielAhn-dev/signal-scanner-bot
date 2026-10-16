@@ -1,9 +1,8 @@
 name: ETL - Credit & Short Data
 
 on:
-  schedule:
-    # 장 마감 후: 매주 월~금 08:30 UTC (한국시간 17:30, 장 마감 30분 후)
-    - cron: '30 8 * * 1-5'
+  # 정기 실행 중단(2026-10-16): 공매도(KRX 차단)·신용(Naver SPA 전환) 모두 기본 스킵이라 매일 0건 저장 경고만 남겼다.
+  # 신용·공매도는 daily_data.yml 배치 안(scripts/batch_modules/credit_short.py, KRX MDC_OUT + KIS 보충)에서 수집한다. 수동 실행만 남긴다.
   workflow_dispatch:
     inputs:
       date:
