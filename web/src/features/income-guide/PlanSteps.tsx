@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
+import UnitInput from '../../components/ui/UnitInput'
 
 /** 서버 src/lib/rebalancePlan.ts의 RebalancePlan */
 export type RebalancePlan = {
@@ -74,7 +75,7 @@ const card: React.CSSProperties = {
 const stepTitle: React.CSSProperties = { fontSize: 15, fontWeight: 700, display: 'block', marginBottom: 4 }
 const muted: React.CSSProperties = { color: 'var(--color-text-secondary)' }
 const faint: React.CSSProperties = { color: 'var(--color-text-tertiary)', fontSize: 12 }
-const smallInput: React.CSSProperties = { width: 80, marginRight: 4 }
+const inlineRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }
 
 /**
  * 리밸런싱 첫 화면 — "그래서 뭘 하면 되는지"만 쉬운 말로. 숫자 근거·바구니 표는 아래 "자세히 보기"에 둔다.
@@ -175,10 +176,9 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
             ? '아래 받은 분배금 기록(최근 주당 분배금 × 지금 수량, 기록 없는 종목은 추정)으로 낸 다음 달 예상입니다.'
             : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 아래에 받은 분배금을 적으면 실제 기준으로 바뀝니다.'}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+        <div style={inlineRow}>
           <span>증권 계좌 예수금</span>
-          <input style={smallInput} inputMode="numeric" placeholder="만원" value={cashMan} onChange={(e) => setCashMan(e.target.value)} />
-          만원
+          <UnitInput unit="만원" width={120} inputMode="numeric" placeholder="0" aria-label="증권 계좌 예수금" value={cashMan} onChange={(e) => setCashMan(e.target.value)} />
           <Button size="sm" variant="secondary" onClick={() => void save({ cashBalance: toWon(cashMan) }, '예수금을 현금에 넣어 다시 계산했습니다.')}>
             반영
           </Button>
@@ -220,10 +220,9 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
           </div>
         )}
         <div style={faint}>{plan.buyHint}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-          내 계좌에 직접 넣는 돈 (매달)
-          <input style={smallInput} inputMode="numeric" placeholder="만원" value={contribMan} onChange={(e) => setContribMan(e.target.value)} />
-          만원
+        <div style={inlineRow}>
+          <span>내 계좌에 직접 넣는 돈 (매달)</span>
+          <UnitInput unit="만원" width={120} inputMode="numeric" placeholder="0" aria-label="내 계좌에 매달 직접 넣는 돈" value={contribMan} onChange={(e) => setContribMan(e.target.value)} />
           <Button size="sm" variant="secondary" onClick={() => void save({ monthlyContribution: toWon(contribMan) }, '내 계좌에 넣는 돈을 저장했습니다.')}>
             저장
           </Button>
@@ -324,22 +323,26 @@ export default function PlanSteps({ plan, settings, saveSettings, receiptsSlot }
                 <div style={{ marginTop: 8 }}>
                   <strong style={{ fontSize: 12 }}>총보수(연 %, 선택)</strong>
                   <div style={faint}>둘 다 넣으면 0.05%p 이상 싼 쪽을 남기고, 비슷하거나 비어 있으면 보유금액이 큰 쪽을 남깁니다.</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                  <div className="ig-fee-grid">
                     {feeCodes.map((code) => {
                       const name = merges.find((m) => m.from.code === code)?.from.name ?? merges.find((m) => m.to.code === code)?.to.name ?? code
                       return (
-                        <label key={code} style={{ fontSize: 12 }}>
-                          {name}{' '}
-                          <input
-                            style={{ width: 60 }}
+                        <label key={code} className="ig-fee-item">
+                          <span className="ig-fee-name" title={name}>{name}</span>
+                          <UnitInput
+                            unit="%"
+                            width={84}
                             inputMode="decimal"
-                            placeholder="%"
+                            placeholder="0.00"
+                            aria-label={`${name} 총보수`}
                             value={fees[code] ?? ''}
                             onChange={(e) => setFees((f) => ({ ...f, [code]: e.target.value }))}
                           />
                         </label>
                       )
                     })}
+                  </div>
+                  <div style={{ marginTop: 8 }}>
                     <Button
                       size="sm"
                       variant="secondary"

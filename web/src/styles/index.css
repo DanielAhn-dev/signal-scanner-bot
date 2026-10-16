@@ -8523,5 +8523,15 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 }
 .ig-trade-tag--sell { color: var(--color-stock-down); background: var(--color-stock-down-bg); }
 .ig-trade-tag--buy  { color: var(--color-stock-up);   background: var(--color-stock-up-bg); }
+/* ── 리밸런싱 가이드 · 총보수 입력 — '이름 + 칸'을 한 칸으로 묶어 칸끼리 간격을 같게 ── */
+.ig-fee-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+}
+.ig-fee-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; font-size: 12px; }
+.ig-fee-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ig-fee-item .ui-unit-input { flex-shrink: 0; }
 /* 리밸런싱 가이드의 접기 카드 — 위 카드(인라인 box, 여백 8px 12px)와 같은 폭·모서리로 맞춘다 */
 .collapsible.ig-collapsible { margin: 8px 12px; padding: 12px 14px; border-radius: 8px; }
