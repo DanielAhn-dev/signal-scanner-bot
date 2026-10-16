@@ -14,6 +14,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ClipboardList, Save, Undo2, Redo2, Star, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus, LayoutDashboard, ScanSearch, BarChart2, FlaskConical, BriefcaseBusiness, FileText, Globe2, Newspaper, Bell, User, Settings, Database, Shield, ShieldCheck, Wrench, Zap, History, Search, PieChart, Activity, Target, Eye, List, PiggyBank, Sprout, Flag, ClipboardCheck, Blend, Baby, Copy, RotateCcw, Scale, Rocket, Receipt, HeartHandshake, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useDetailed, useViewModeStore } from '../stores/viewModeStore'
@@ -104,6 +105,25 @@ const CONTROL_RIBBON_GROUPS: RibbonGroup[] = [
     { key: 'control-maintenance', label: '유지보수', icon: <Wrench size={20}/>,      route: 'control?tab=maintenance' },
   ]},
 ]
+
+// 쿼리가 없을 때 화면이 쓰는 기본값 (관제는 tab이 없으면 검산)
+const RIBBON_QUERY_DEFAULTS: Record<string, Record<string, string>> = {
+  control: { tab: 'audit' },
+}
+
+// 같은 화면의 다른 탭 버튼이 함께 켜지지 않도록 경로 + 쿼리까지 비교한다
+function isRibbonBtnActive(route: string | undefined, activeRoute: string, search: string): boolean {
+  if (!route) return false
+  const [base, query = ''] = route.split('?')
+  if (base !== activeRoute) return false
+  if (!query) return true
+  const current = new URLSearchParams(search)
+  const defaults = RIBBON_QUERY_DEFAULTS[base] ?? {}
+  for (const [key, value] of new URLSearchParams(query)) {
+    if ((current.get(key) ?? defaults[key]) !== value) return false
+  }
+  return true
+}
 
 function getRibbonGroups(tab: RibbonTabKey, sections: MenuSection[]): RibbonGroup[] {
   if (tab === 'control') return CONTROL_RIBBON_GROUPS
@@ -291,6 +311,7 @@ export default function ExcelShell({
   rightPanel,
 }: Props) {
   useVisualViewportVars()
+  const location = useLocation()
   const { authName, authEmail, isSignedIn } = useAuthStore()
   const profile = useProfileStore(s => s.profile)
   const [ribbonTab, setRibbonTab] = useState<RibbonTabKey>('home')
@@ -844,7 +865,7 @@ export default function ExcelShell({
                   {g.buttons.map(btn => (
                     <button
                       key={btn.key}
-                      className={`ribbon-btn excel-tooltip-target${btn.route?.split('?')[0] === activeRoute ? ' ribbon-btn--active' : ''}`}
+                      className={`ribbon-btn excel-tooltip-target${isRibbonBtnActive(btn.route, activeRoute, location.search) ? ' ribbon-btn--active' : ''}`}
                       onClick={() => btn.route && onNavigate(btn.route)}
                       data-tooltip={btn.label}
                     >
