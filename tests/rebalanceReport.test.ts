@@ -143,20 +143,21 @@ test("sameIndexKey: 운용사만 다른 같은 상품", () => {
   assert.equal(sameIndexKey("KODEX"), null);
 });
 
-test("같은 지수 상품 총보수가 0.01%p 이상 낮으면 새 돈은 그쪽으로, 기존 보유는 그대로", () => {
+test("같은 지수 상품 총보수가 0.05%p 이상 낮으면 새 돈은 그쪽으로, 기존 보유는 수익 구간이면 옮긴다", () => {
   const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 65 } };
   const holdings = [H("278530", "KODEX 200TR", 15_000, 100, 14_000), H("005930", "삼성전자", 60_000, 10, 48_000)];
   const view = buildIncomeGuideView({ holdings, settings: s, today: "2026-10-15" });
   const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan });
-  const etf = new Map([["278530", { yieldTtm: 0, fee: 0.05 }]]);
+  const etf = new Map([["278530", { yieldTtm: 0, fee: 0.09 }]]);
   const r = buildRebalanceReport({ view, plan, accountKey: "a", etf, feeAlternatives: [{ code: "999999", name: "TIGER 200TR", price: 12_000, fee: 0.02 }] })!;
   assert.equal(r.buy.target?.code, "999999");
   assert.equal(r.sells[0].to?.code, "999999", "매도 대금도 싼 쪽으로");
-  assert.match(r.feeSwitch!.text, /1천만원당 연 약 3,000원/);
-  assert.equal(r.rows.find((x) => x.code === "278530")!.action, "hold");
+  assert.match(r.feeSwitch!.text, /1천만원당 연 약 7,000원/);
+  assert.equal(r.rows.find((x) => x.code === "278530")!.action, "sell", "수익 구간이라 싼 쪽으로 옮긴다");
   assert.equal(r.feeCompare.length, 2);
   // 차이가 기준보다 작으면 바꾸지 않는다
   const same = buildRebalanceReport({ view, plan, accountKey: "a", etf, feeAlternatives: [{ code: "999999", name: "TIGER 200TR", price: 12_000, fee: 0.045 }] })!;
+  assert.equal(same.rows.find((x) => x.code === "278530")!.action, "buy");
   assert.equal(same.buy.target?.code, "278530");
   assert.equal(same.feeSwitch, null);
 });
@@ -171,7 +172,7 @@ test("pickIndexProduct: 보수가 같으면 1년 수익률·시가총액으로, 
     c("K", "KIWOOM 200TR", 0.01, 500, 92.3), // 작음
     c("S", "SOL 200TR", 0.01, 9_000, 91.7), // 수익률 0.6%p 낮음
     c("R", "RISE 200TR", 0.012, 12_000, 92.2, 1.5), // 괴리율 큼
-    c("X", "KODEX 200TR", 0.05, 61_000, 92.0),
+    c("X", "TIGER 200TR", 0.09, 61_000, 92.0),
   ];
   const pick = pickIndexProduct(pool, "X")!;
   assert.equal(pick.chosen.code, "P", "ACE(첫 번째)가 아니라 조건을 모두 통과한 것 중 가장 큰 PLUS");
@@ -182,4 +183,43 @@ test("pickIndexProduct: 보수가 같으면 1년 수익률·시가총액으로, 
   assert.equal(pick.notes.get("A"), "조건은 같고 시가총액이 더 작음");
   // 가진 상품이 최선 묶음이면 바꾸지 않는다
   assert.equal(pickIndexProduct(pool, "A")!.chosen.code, "A");
+  // 가진 상품 보수가 최저보다 0.05%p 미만 비싸면 그대로(KODEX 200TR 0.05% vs 0.01%)
+  const withKodex = [...pool, c("D", "KODEX 200TR", 0.05, 61_000, 92.0)];
+  assert.equal(pickIndexProduct(withKodex, "D")!.chosen.code, "D");
+  // 가진 게 여럿이면 앞(큰 것)부터 — 비싼 X는 못 남지만 이미 옮겨 산 S는 수익률이 낮아도 그대로(날마다 바뀌지 않게)
+  assert.equal(pickIndexProduct(pool, ["X", "S"])!.chosen.code, "S");
+});
+
+test("같은 지수 다른 보유 상품: 보수가 0.05%p 이상 비싸면 수익 구간에 옮기고, 손실이면 평단 회복 시, 차이 작으면 그대로", () => {
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 65 } };
+  const mk = (kodexAvg: number) => {
+    const holdings = [
+      H("278530", "KODEX 200TR", 15_000, 100, 14_000),
+      H("069500", "KODEX 200", 50_000, 30, kodexAvg),
+      H("102110", "TIGER 200", 50_000, 10, 45_000),
+      H("498400", "KODEX 200타겟위클리커버드콜", 10_000, 400, 9_000),
+    ];
+    const view = buildIncomeGuideView({ holdings, settings: s, today: "2026-10-15" });
+    const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan });
+    const etf = new Map([
+      ["278530", { yieldTtm: 0, fee: 0.05 }],
+      ["069500", { yieldTtm: 1.5, fee: 0.15 }],
+      ["102110", { yieldTtm: 1.5, fee: 0.05 }],
+    ]);
+    // 실제 상황: 0.01%짜리 다른 운용사 TR이 있어도 차이 0.04%p라 가진 KODEX 200TR을 계속 산다
+    return buildRebalanceReport({ view, plan, accountKey: "a", etf, feeAlternatives: [{ code: "294400", name: "KIWOOM 200TR", price: 20_000, fee: 0.01 }] })!;
+  };
+  const up = mk(45_000);
+  assert.equal(up.buy.target?.code, "278530");
+  assert.equal(up.feeSwitch, null);
+  const move = up.sells.find((x) => x.code === "069500")!;
+  assert.equal(move.to?.code, "278530");
+  assert.equal(move.shares, 30);
+  assert.match(move.reason, /0.15% → 0.05%/);
+  assert.match(up.rows.find((x) => x.code === "102110")!.actionText, /그대로 둡니다 — KODEX 200TR와 같은 지수/);
+  assert.ok(!up.sells.some((x) => x.code === "498400"), "커버드콜은 지수 옮기기 대상이 아니다");
+  const down = mk(60_000);
+  assert.ok(!down.sells.some((x) => x.code === "069500"));
+  assert.equal(down.conditionals.find((x) => x.code === "069500")!.triggerPrice, 60_000);
+  assert.equal(down.rows.find((x) => x.code === "069500")!.action, "sell-later");
 });

@@ -12,7 +12,7 @@
  * 근거 문장은 판정 등록부(docs/investment-idea-registry-2026-10-07.md)의 C48·C54와 블로그 3편 수치만 쓴다.
  */
 import { BUCKET_LABEL, CASH_BALANCE_CODE, REBALANCE_BAND_PP, isTaxAdvantagedAccount, type AssetBucket, type BucketGroup, type IncomeGuideView } from "./incomeGuide";
-import { holdingYieldPct, type RebalancePlan } from "./rebalancePlan";
+import { FEE_TIE_PP, holdingYieldPct, strategyKey, type RebalancePlan } from "./rebalancePlan";
 import { KRX_SELL_TAX_RATE, resolveOtherEtfGainTax, resolveSellTaxRate } from "./securitiesTax";
 
 /** 매도 수수료 가정 (온라인 기준) */
@@ -66,9 +66,10 @@ const eok = (v: number) => (v >= 1e12 ? `${(v / 1e12).toFixed(1)}조` : `${Math.
  *   ② 총보수: 가장 싼 보수에서 0.01%p 안
  *   ③ 1년 수익률: 같은 지수라 차이 = 숨은 비용(기타·매매비용)과 추적 차이. 최고치에서 0.2%p 안 (1년 안 된 상품은 통과)
  *   ④ 시가총액이 가장 큰 것
- *   이미 가진 상품(keepCode)이 ③까지 남으면 바꾸지 않는다 — 비슷한 상품을 늘리지 않는다.
+ *   단, 이미 가진 상품(keepCodes, 큰 것부터)이 ①을 통과하고 총보수가 최저보다 FEE_TIE_PP(0.05%p, 남길 종목 규칙과 같은 값) 안이면
+ *   그대로 산다 — 1년 수익률은 매일 바뀌므로 그걸로 보유 상품을 바꾸면 추천이 날마다 흔들리고 같은 지수 상품만 늘어난다.
  */
-export function pickIndexProduct(pool: IndexCandidate[], keepCode?: string | null): IndexPick | null {
+export function pickIndexProduct(pool: IndexCandidate[], keepCodes?: string | string[] | null): IndexPick | null {
   if (pool.length === 0) return null;
   const notes = new Map<string, string>();
   const anyBig = pool.some((c) => (c.marketCap ?? 0) >= MIN_MARKET_CAP);
@@ -85,6 +86,19 @@ export function pickIndexProduct(pool: IndexCandidate[], keepCode?: string | nul
   });
   const base = eligible.length ? eligible : pool;
   const minFee = Math.min(...base.map((c) => c.fee));
+  const keepList = keepCodes == null ? [] : Array.isArray(keepCodes) ? keepCodes : [keepCodes];
+  const keepHeld = keepList
+    .map((code) => base.find((c) => c.code === code))
+    .find((c): c is IndexCandidate => c != null && c.fee - minFee < FEE_TIE_PP - 1e-9);
+  if (keepHeld) {
+    for (const c of pool) if (c !== keepHeld && !notes.has(c.code)) notes.set(c.code, `보수 차이 ${Math.max(0, keepHeld.fee - c.fee).toFixed(3)}%p로 작아 가진 상품을 그대로 삼`);
+    notes.set(keepHeld.code, "이미 보유 중 — 보수 차이가 0.05%p 미만이라 그대로");
+    return {
+      chosen: keepHeld,
+      notes,
+      why: `이미 가진 ${keepHeld.name}를 그대로 삽니다. 같은 지수 상품 중 가장 싼 보수(${minFee}%)와 차이가 ${FEE_TIE_PP}%p 미만이라 바꿔도 이득이 작고 종류만 늘어납니다.`,
+    };
+  }
   const feeBand = base.filter((c) => {
     const ok = c.fee - minFee < FEE_SWITCH_PP - 1e-9;
     if (!ok) notes.set(c.code, `총보수가 최저(${minFee}%)보다 높음`);
@@ -97,7 +111,7 @@ export function pickIndexProduct(pool: IndexCandidate[], keepCode?: string | nul
     if (!ok) notes.set(c.code, `보수는 같지만 1년 수익률이 ${(maxRet! - c.return1y!).toFixed(2)}%p 낮음(숨은 비용·추적 차이)`);
     return ok;
   });
-  const keep = keepCode ? retBand.find((c) => c.code === keepCode) : undefined;
+  const keep = keepList.map((code) => retBand.find((c) => c.code === code)).find((c) => c != null);
   const chosen = keep ?? [...retBand].sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0))[0];
   for (const c of retBand) if (c !== chosen && !notes.has(c.code)) notes.set(c.code, "조건은 같고 시가총액이 더 작음");
   notes.set(chosen.code, keep ? "이미 보유 중이고 조건도 최선 묶음" : "선정");
@@ -305,7 +319,10 @@ export function buildRebalanceReport(input: {
         return { code: c.code, name: c.name, price: c.price, fee: feeOf(c.code) ?? -1, marketCap: k?.marketCap ?? null, return1y: k?.return1y ?? null, deviation: k?.deviation ?? null };
       })
       .filter((c) => c.fee >= 0);
-    const pick = pool.length >= 2 ? pickIndexProduct(pool, buyRow.code) : null;
+    // 같은 지수 상품을 이 계좌에 여럿 가졌으면 모두 '가진 상품'으로 본다(큰 것부터) — 한 번 옮겨 산 상품이 다음 달 또 바뀌지 않게
+    const heldSame = held.filter((h) => key != null && sameIndexKey(h.name) === key).sort((a, b) => b.value - a.value).map((h) => h.code);
+    const keepCodes = [buyRow.code, ...heldSame.filter((c) => c !== buyRow.code)];
+    const pick = pool.length >= 2 ? pickIndexProduct(pool, keepCodes) : null;
     const currentFee = feeOf(buyRow.code);
     if (pick && pick.chosen.code !== buyRow.code) {
       const to = pick.chosen;
@@ -419,6 +436,33 @@ export function buildRebalanceReport(input: {
       }
     }
   }
+  // ④ 같은 지수(예: 코스피200 일반·TR, 운용사만 다름)의 다른 보유 상품 — 살 곳보다 총보수가 0.05%p 이상 비싸면
+  //    수익 구간일 때 팔아 살 곳으로 옮기고(손실 구간이면 평단 회복 시), 차이가 작으면 그대로 두고 더 사지 않는다.
+  const sameNote = new Map<string, string>();
+  if (buyTarget) {
+    const target = buyTarget;
+    const targetFee = feeOf(target.code);
+    for (const h of held) {
+      if (h.group !== "growth" || h.code === target.code || sellNote.has(h.code) || laterNote.has(h.code)) continue;
+      if (strategyKey(h.name) !== strategyKey(target.name)) continue;
+      const fee = feeOf(h.code);
+      const gap = fee != null && targetFee != null ? fee - targetFee : null;
+      if (gap == null || gap < FEE_TIE_PP - 1e-9) {
+        sameNote.set(h.code, `그대로 둡니다 — ${target.name}와 같은 지수라 더 사지 않고 새 돈은 그쪽으로`);
+        continue;
+      }
+      const perTenMillion = Math.round((gap / 100) * 10_000_000).toLocaleString("ko-KR");
+      const why = `같은 지수 · 총보수 ${fee}% → ${targetFee}% (1천만원당 연 약 ${perTenMillion}원)`;
+      if (inProfit(h)) {
+        pushSell(h, h.quantity, `옮기기: ${why}. 수익 구간이라 지금 옮깁니다(같은 날 팔고 사면 시장 노출은 그대로).`, target);
+        sellNote.set(h.code, `전량 팔아 ${target.name}로 옮기기 (보수 ${fee}% → ${targetFee}%)`);
+      } else {
+        conditionals.push({ code: h.code, name: h.name, triggerPrice: Math.ceil(h.avgPrice!), price: h.price, shares: h.quantity, reason: `평단 회복 시 ${target.name}로 옮기기 (${why})` });
+        laterNote.set(h.code, `손실 구간 — 평단 ${won(h.avgPrice!)} 회복 시 ${target.name}로 옮기기`);
+      }
+    }
+  }
+
   sells.sort((a, b) => b.amount - a.amount);
   conditionals.sort((a, b) => a.triggerPrice / a.price - b.triggerPrice / b.price);
 
@@ -456,6 +500,8 @@ export function buildRebalanceReport(input: {
       } else if (laterNote.has(h.code)) {
         action = "sell-later";
         actionText = laterNote.get(h.code)!;
+      } else if (sameNote.has(h.code)) {
+        actionText = sameNote.get(h.code)!;
       } else if (feeSwitch && h.code === feeSwitch.from.code) {
         actionText = `그대로 둡니다 — 새 돈은 총보수가 낮은 ${feeSwitch.to.name}로`;
       } else if (buyTarget && h.code === buyTarget.code) {
