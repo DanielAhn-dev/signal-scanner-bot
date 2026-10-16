@@ -310,7 +310,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
           month, status: 'recorded', household: household.household, ownIncome: household.ownIncome, partnerIncome,
           ownPayday: cur?.ownPayday ?? household.ownPayday, partnerPayday: dual ? cur?.partnerPayday ?? household.partnerPayday : null,
           expenses: { card: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0, ...seed },
-          extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, ...cur?.extraIncome }, reserve: input.reserveMonthly, plan: Number(cur?.plan ?? 0),
+          extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, maturity: 0, ...cur?.extraIncome }, reserve: input.reserveMonthly, plan: Number(cur?.plan ?? 0),
         }),
       })
       setNotice('이번 달 투자금 이번 달 기록에 반영했습니다.')

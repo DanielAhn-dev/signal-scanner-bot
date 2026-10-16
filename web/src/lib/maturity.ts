@@ -23,6 +23,9 @@ export type Maturity = {
   horizon: MaturityHorizon
   /** 만기금을 이미 처리했다 */
   done?: boolean
+  /** 이번 달 투자금에 넣기로 한 달(YYYY-MM)과 금액. 만기금 − 넣은 금액은 투자금에서 빼고 넘긴 몫(다시 예·적금 등). 0이면 넣지 않고 넘김 */
+  investedMonth?: string
+  investedAmount?: number
 }
 
 export type MaturityState = { items: Maturity[] }
@@ -54,7 +57,13 @@ export function sanitizeMaturityState(raw: unknown): MaturityState {
     if (!id || seen.has(id) || !name || !Number.isFinite(amount) || amount <= 0 || amount > MAX_AMOUNT) continue
     if (!validDate(r.date) || typeof r.horizon !== 'string' || !HORIZONS.has(r.horizon)) continue
     seen.add(id)
-    items.push({ id, name, amount, date: r.date, horizon: r.horizon as MaturityHorizon, ...(r.done === true ? { done: true } : {}) })
+    const invested = Math.round(Number(r.investedAmount))
+    const decided = typeof r.investedMonth === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(r.investedMonth) && Number.isFinite(invested) && invested >= 0 && invested <= amount
+    items.push({
+      id, name, amount, date: r.date, horizon: r.horizon as MaturityHorizon,
+      ...(r.done === true || decided ? { done: true } : {}),
+      ...(decided ? { investedMonth: r.investedMonth as string, investedAmount: invested } : {}),
+    })
     if (items.length >= MAX_ITEMS) break
   }
   return { items }
@@ -119,6 +128,23 @@ export function adviceFor(horizon: MaturityHorizon): MaturityAdvice {
     ],
     why: '시점을 맞추는 것은 검증에서 효과가 없었고(C2·C3·C4) 일시금이 평균적으로 낫습니다. 일반계좌에서는 TR이 분배금 과세를 미뤄 세후 연 0.4%p 정도 유리했습니다.',
   }
+}
+
+/** 안내에 맞춘 '투자금에 넣을 금액' 기본값: 5년 넘게 안 쓸 돈은 전부, 3~5년은 절반(만원 단위), 3년 안에 쓸 돈은 0 */
+export function suggestedInvest(item: Maturity): number {
+  if (item.horizon === 'over5') return item.amount
+  if (item.horizon === '3to5') return Math.round(item.amount / 2 / 10_000) * 10_000
+  return 0
+}
+
+/** 그 달(YYYY-MM)까지 만기가 왔는데 아직 처리하지 않은 것 — 이번 달 투자금에서 넣을지 정한다 */
+export function maturitiesDue(items: Maturity[], month: string): Maturity[] {
+  return sortMaturities(items).filter((i) => !i.done && i.date.slice(0, 7) <= month)
+}
+
+/** 그 달 투자금에서 넣을지 정한 것(넣지 않고 넘긴 것 포함) — 되돌리기용 */
+export function maturitiesDecidedIn(items: Maturity[], month: string): Maturity[] {
+  return items.filter((i) => i.investedMonth === month)
 }
 
 export function summarizeUpcoming(items: Maturity[]): { count: number; amount: number; next: Maturity | null } {

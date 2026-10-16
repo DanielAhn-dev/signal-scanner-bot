@@ -8,12 +8,13 @@ import { HOUSEHOLDS, useHouseholdIncome, type Household, type HouseholdIncome } 
 import { seedExpenseTotal, seedPlanFromFlow, type FlowCheckInput, type SeedPlan } from '../../../../src/lib/moneyFlow'
 import SeedPlanLines, { PLAN_LABELS, type PlanKey } from './SeedPlanLines'
 import MaturityTab from '../money-flow/MaturityTab'
+import MaturityInbox from './MaturityInbox'
 import '../accumulate/accumulate.css'
 import '../money-flow/money-flow.css'
 import './seed-builder.css'
 
 type ExpenseKey = 'food' | 'housing' | 'vehicle' | 'education' | 'tax' | 'subscriptions' | 'other' | 'fixedCost' | 'variableCost' | 'irregularFund' | 'emergencyRefill' | 'card' | 'water' | 'gas' | 'residentTax' | 'propertyTax' | 'vehicleTax' | 'taxAdjustment'
-type ExtraIncomeKey = 'incentive' | 'vacation' | 'taxRefund' | 'other'
+type ExtraIncomeKey = 'incentive' | 'vacation' | 'taxRefund' | 'other' | 'maturity'
 type Entry = { id: string; date: string; amount: number; deposited: number; memo: string; cancelled: boolean }
 type MonthRecord = {
   status: 'recorded' | 'skipped'
@@ -55,12 +56,13 @@ const extraIncomeLabels: Array<{ key: ExtraIncomeKey; label: string }> = [
   { key: 'vacation', label: '휴가비' },
   { key: 'taxRefund', label: '연말정산 환급' },
   { key: 'other', label: '그 밖의 수입' },
+  { key: 'maturity', label: '예·적금 만기' },
 ]
 
 const emptyRecord = (): MonthRecord => ({
   status: 'recorded', household: 'solo', ownIncome: 0, partnerIncome: 0, ownPayday: null, partnerPayday: null,
   expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: 0, fixedCost: 0, variableCost: 0, irregularFund: 0, emergencyRefill: 0, card: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0 },
-  extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0 },
+  extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, maturity: 0 },
   reserve: 0, plan: 0, breakdown: null,
 })
 
@@ -319,19 +321,20 @@ export default function SeedBuilderPage() {
     setNotice('지난달 반복 항목(수입·급여일·생활비류)을 채웠습니다. 카드대금·세금·추가 수입·목표는 채우지 않았으니 이번 달 금액을 직접 입력하세요.')
   }
 
-  const save = async (): Promise<boolean> => {
+  const save = async (override?: MonthRecord): Promise<boolean> => {
     if (!clientId || loading || loadError) return false
-    if ([draft.ownIncome, draft.partnerIncome, draft.reserve, draft.plan, ...Object.values(draft.expenses), ...Object.values(draft.extraIncome)].some((amount) => !Number.isSafeInteger(amount) || amount < 0)
-      || [draft.ownPayday, draft.partnerPayday].some((day) => day !== null && (!Number.isInteger(day) || day < 1 || day > 31))) {
+    const rec = override ?? draft
+    if ([rec.ownIncome, rec.partnerIncome, rec.reserve, rec.plan, ...Object.values(rec.expenses), ...Object.values(rec.extraIncome)].some((amount) => !Number.isSafeInteger(amount) || amount < 0)
+      || [rec.ownPayday, rec.partnerPayday].some((day) => day !== null && (!Number.isInteger(day) || day < 1 || day > 31))) {
       setNotice('금액은 0원 이상의 정수로 입력해 주세요.')
       return false
     }
     setSaving(true)
     setNotice('')
     try {
-      const toSave: MonthRecord = { ...draft, status: 'recorded' }
+      const toSave: MonthRecord = { ...rec, status: 'recorded' }
       await apiFetch('/api/ui/seed-builder', { method: 'PUT', body: JSON.stringify({ month: selectedMonth, ...toSave }), cacheMs: 0 })
-      setRecords((current) => ({ ...current, [selectedMonth]: { ...toSave, expenses: { ...draft.expenses }, extraIncome: { ...draft.extraIncome } } }))
+      setRecords((current) => ({ ...current, [selectedMonth]: { ...toSave, expenses: { ...rec.expenses }, extraIncome: { ...rec.extraIncome } } }))
       setDraft(toSave)
       setNotice('이번 달 기록을 저장했습니다.')
       return true
@@ -341,6 +344,13 @@ export default function SeedBuilderPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // 만기 예·적금을 이 달 투자금에 넣거나(+) 되돌린다(−). 일시 수입 '예·적금 만기' 칸에 더하고 바로 저장한다(저장이 성공해야 만기 쪽도 처리됨으로 바꾼다)
+  const applyMaturity = (delta: number) => {
+    const next: MonthRecord = { ...draft, extraIncome: { ...draft.extraIncome, maturity: Math.max(0, (draft.extraIncome.maturity ?? 0) + delta) } }
+    setDraft(next)
+    return save(next)
   }
 
   const toggleMask = () => { setMasked((current) => { writeStore('seed-builder-mask', current ? '0' : '1'); return !current }) }
@@ -446,6 +456,8 @@ export default function SeedBuilderPage() {
           <button type="button" className="seed-link-button" onClick={() => setPendingOffset(null)}>취소</button>
         </div>
       </div>}
+
+      {selectedMonth === monthKey(new Date()) && !loading && !loadError && <MaturityInbox month={selectedMonth} onApply={applyMaturity} krw={krw} />}
 
       <section className="seed-overview" aria-label="시드 현황">
         <div><span>{isFuture ? '계획 (예정)' : '이번 달 계획'}</span><strong>{krw(records[selectedMonth]?.plan ?? 0)}</strong></div>

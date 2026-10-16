@@ -156,4 +156,16 @@
 .seed-plan-line > label .seed-amount input { width: 100%; flex: 1 1 auto; min-width: 0; }
 /* 모아 둔 시드(예·적금 만기) — 이번 달 투자금 아래 */
 .seed-maturity { margin-top: 28px; }
+.seed-inbox { margin: 16px 0; padding: 16px; border: 1px solid var(--color-brand); border-radius: 8px; display: flex; flex-direction: column; gap: 12px; }
+.seed-inbox h2 { font-size: 16px; margin: 0; }
+.seed-inbox-item { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-border-default); }
+.seed-inbox-item:first-of-type { border-top: 0; padding-top: 0; }
+.seed-inbox-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; word-break: keep-all; }
+.seed-inbox-head small { color: var(--color-text-secondary); }
+.seed-inbox-guide { margin: 0; color: var(--color-text-secondary); line-height: 1.5; word-break: keep-all; }
+.seed-inbox-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.seed-inbox-split label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--color-text-secondary); }
+.seed-inbox-split input { min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; font: inherit; color: var(--color-text-primary); background: var(--color-bg-surface); }
+.seed-inbox-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.seed-inbox-done { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--color-text-secondary); word-break: keep-all; }
 .seed-maturity > h2 { font-size: 18px; margin: 0 0 8px; }

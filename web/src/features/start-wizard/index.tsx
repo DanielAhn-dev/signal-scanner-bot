@@ -207,7 +207,7 @@ export default function StartWizardPage() {
           month, status: 'recorded', household: form.household, ownIncome: num(form.income), partnerIncome,
           ownPayday: cur?.ownPayday ?? null, partnerPayday: dual ? cur?.partnerPayday ?? null : null,
           expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0, ...(keepDetails ? details : {}), other: keepDetails ? fixedTotal - detailSum : fixedTotal, card: num(form.card) },
-          extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, ...cur?.extraIncome }, reserve: Number(cur?.reserve ?? 0), plan: Math.round(monthly),
+          extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, maturity: 0, ...cur?.extraIncome }, reserve: Number(cur?.reserve ?? 0), plan: Math.round(monthly),
         }, 'PUT')
       }
       writeUserState('investorProfile', { tolerance: form.tolerance, horizon: form.horizon, emergency: form.emergency } satisfies InvestorProfile)

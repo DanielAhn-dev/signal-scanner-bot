@@ -111,7 +111,10 @@ export default function MaturityTab() {
                       </button>
                     </span>
                     <span className="mf-maturity-actions">
-                      <button type="button" className={`mf-chip-btn${item.done ? '' : ' is-primary'}`} onClick={() => toggleDone(item.id)}>{item.done ? '처리 취소' : '처리했어요'}</button>
+                      {/* 투자금에 넣을지 정한 건 그 달 투자금 화면에서만 되돌린다(넣은 금액도 함께 빼야 해서) */}
+                      {item.investedMonth
+                        ? <span className="mf-maturity-status">{Number(item.investedMonth.slice(5))}월 투자금 {item.investedAmount ? formatKrwMan(item.investedAmount) : '넣지 않음'}</span>
+                        : <button type="button" className={`mf-chip-btn${item.done ? '' : ' is-primary'}`} onClick={() => toggleDone(item.id)}>{item.done ? '처리 취소' : '처리했어요'}</button>}
                       <button type="button" className="mf-icon mf-icon-quiet" aria-label={`${item.name} 삭제`} onClick={() => remove(item.id)}><Trash2 size={16} /></button>
                     </span>
                   </div>
