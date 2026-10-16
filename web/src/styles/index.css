@@ -8484,3 +8484,5 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
   .ig-receipt-form { grid-template-columns: 8rem minmax(0, 2fr) repeat(3, minmax(0, 1fr)) auto; }
   .ig-receipt-code { grid-column: auto; }
 }
+/* 리밸런싱 가이드의 접기 카드 — 위 카드(인라인 box, 여백 8px 12px)와 같은 폭·모서리로 맞춘다 */
+.collapsible.ig-collapsible { margin: 8px 12px; padding: 12px 14px; border-radius: 8px; }

@@ -518,21 +518,12 @@ input[type='radio']:focus-visible { @apply outline-none; box-shadow: var(--shado
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
-  padding-right: 24px;
   cursor: pointer;
   list-style: none;
   position: relative;
 }
 .collapsible__summary::-webkit-details-marker { display: none; }
-.collapsible__summary::after {
-  content: '▾';
-  position: absolute;
-  right: 4px;
-  top: 0;
-  color: var(--color-text-tertiary);
-  transition: transform var(--duration-fast, 0.15s);
-}
-.collapsible[open] > .collapsible__summary::after { transform: rotate(180deg); }
+/* 화살표는 전역 details > summary::before(왼쪽 ›) 하나만 쓴다 — 예전 오른쪽 ▾와 겹쳐 두 개로 보였다 */
 .collapsible__hint { font-size: var(--font-size-sm); }
 .collapsible__body { margin-top: var(--space-3, 12px); }
 

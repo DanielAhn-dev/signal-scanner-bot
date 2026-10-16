@@ -395,6 +395,7 @@ export default function IncomeGuidePage() {
           </div>
 
           <Collapsible
+            className="ig-collapsible"
             title="자세히 보기"
             hint={`바구니별 비중 · 목표 비중 주문안 · 분배금 · 기록${view.warnings.length ? ` · 확인할 것 ${view.warnings.length}건` : ''}`}
           >
@@ -736,7 +737,7 @@ export default function IncomeGuidePage() {
         </>
       )}
 
-      <Collapsible title="설정" hint={`단계: ${view.stage.title} · 월 목표 인컴 ${man(view.settings.monthlyNeed)} · 목표 비중`} defaultOpen={view.holdingCount === 0}>
+      <Collapsible className="ig-collapsible" title="설정" hint={`단계: ${view.stage.title} · 월 목표 인컴 ${man(view.settings.monthlyNeed)} · 목표 비중`} defaultOpen={view.holdingCount === 0}>
         {settingsBox}
       </Collapsible>
 
