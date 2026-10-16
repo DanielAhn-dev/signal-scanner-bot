@@ -8499,9 +8499,13 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 .ig-receipt-form > .ui-field + .ui-field { margin-top: 0; min-width: 0; }
 .ig-receipt-form .ui-label { word-break: keep-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ig-receipt-code { grid-column: 1 / -1; }
+/* '직접 찾기'를 고르면 종목 바로 다음 줄 전체 폭으로 검색 칸 */
+.ig-receipt-manual { grid-column: 1 / -1; }
+.ig-receipt-picked { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-height: 2.75rem; }
 .ig-receipt-submit { display: flex; justify-content: flex-end; }
 @media (min-width: 720px) {
-  .ig-receipt-form { grid-template-columns: 8rem minmax(0, 2fr) repeat(3, minmax(0, 1fr)) auto; }
+  /* dense: 검색 칸이 다음 줄을 차지해도 수량·주당·세후·적기는 첫 줄 빈칸에 그대로 */
+  .ig-receipt-form { grid-template-columns: 8rem minmax(0, 2fr) repeat(3, minmax(0, 1fr)) auto; grid-auto-flow: row dense; }
   .ig-receipt-code { grid-column: auto; }
 }
 /* ── 리밸런싱 가이드 · 겹치는 종목 합치기 — 팔기(파랑)·사기(빨강) 태그, 줄 사이 얇은 구분선 ── */

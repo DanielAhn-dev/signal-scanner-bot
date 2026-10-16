@@ -155,7 +155,8 @@ function OrdersTable({ orders, th, td }: { orders: Order[]; th: React.CSSPropert
 function receiptHoldings(holdings: View['holdings']) {
   const m = new Map<string, { code: string; name: string; quantity: number; value: number }>()
   for (const h of holdings) {
-    if (/TR$/i.test(h.name.trim()) || !(h.quantity > 0)) continue
+    // 예수금(CASH)은 분배금이 없다 — 서버 incomeGuide의 CASH_BALANCE_CODE
+    if (h.code === 'CASH' || /TR$/i.test(h.name.trim()) || !(h.quantity > 0)) continue
     const cur = m.get(h.code)
     m.set(h.code, { code: h.code, name: h.name, quantity: (cur?.quantity ?? 0) + h.quantity, value: (cur?.value ?? 0) + h.value })
   }

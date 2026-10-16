@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
+import StockSearchInput from '../../components/StockSearchInput'
 
 /** 서버 src/lib/distributionReceipts.ts (handlers/ui/income-guide.ts의 distributionReceipts) */
 export type Receipt = { id: string; month: string; code: string; name: string; quantity: number; perShare: number; net: number | null; createdAt: string }
@@ -58,7 +59,9 @@ const recentMonths = (n: number) =>
     d.setMonth(d.getMonth() - i)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
-const monthLabel = (m: string, i: number) => `${Number(m.slice(5))}월${i === 0 ? ' (이번 달)' : i === 1 ? ' (지난달)' : ''}`
+/** 종목 선택의 '직접 찾기' 값 — 6자리 종목 코드와 겹치지 않는다 */
+const MANUAL = '__manual'
+const monthLabel =(m: string, i: number) => `${Number(m.slice(5))}월${i === 0 ? ' (이번 달)' : i === 1 ? ' (지난달)' : ''}`
 
 /**
  * 받은 분배금 — 종목·받은 수량·주당 분배금(·세후 입금액)을 적으면 이번 달 실제 합계와
@@ -72,6 +75,21 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
   const months = useMemo(() => recentMonths(3), [])
   const [form, setForm] = useState({ month: months[0], code: '', quantity: '', perShare: '', net: '' })
   const holdingOf = useMemo(() => new Map(holdings.map((h) => [h.code, h])), [holdings])
+  // 고를 수 있는 종목 = 지금 보유 + 팔았지만 예전에 받은 기록이 있는 종목 + 직접 찾은 종목
+  const [manualMode, setManualMode] = useState(false)
+  const [manualText, setManualText] = useState('')
+  const [manualPick, setManualPick] = useState<{ code: string; name: string } | null>(null)
+  const candidates = useMemo(() => {
+    const list: Array<{ code: string; name: string; quantity: number }> = [...holdings]
+    const seen = new Set(list.map((h) => h.code))
+    for (const r of data.recent) {
+      if (seen.has(r.code)) continue
+      seen.add(r.code)
+      list.push({ code: r.code, name: r.name, quantity: 0 })
+    }
+    return list
+  }, [holdings, data.recent])
+  const nameOf = (code: string) => candidates.find((c) => c.code === code)?.name ?? (manualPick?.code === code ? manualPick.name : null)
   const { thisMonth, projection } = data
   const delta = projection.total - thisMonth.net
   const notYet = holdings.filter((h) => !thisMonth.items.some((r) => r.code === h.code) && projection.rows.some((p) => p.code === h.code)).length
@@ -84,12 +102,21 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
       : data.recent.filter((r) => r.month === form.month)
     return new Set(monthItems.map((r) => r.code))
   }, [form.month, data])
-  const todo = holdings.filter((h) => !doneCodes.has(h.code))
-  const done = holdings.filter((h) => doneCodes.has(h.code))
+  const todo = candidates.filter((h) => !doneCodes.has(h.code))
+  const done = candidates.filter((h) => doneCodes.has(h.code))
 
   const pick = (code: string) => {
+    if (code === MANUAL) {
+      setManualMode(true)
+      setManualPick(null)
+      setManualText('')
+      setForm((f) => ({ ...f, code: '', quantity: '' }))
+      return
+    }
+    setManualMode(false)
+    // 지금 없는 종목(팔았음)은 받은 수량을 직접 적는다
     const h = holdingOf.get(code)
-    setForm((f) => ({ ...f, code, quantity: h ? String(h.quantity) : f.quantity }))
+    setForm((f) => ({ ...f, code, quantity: h ? String(h.quantity) : '' }))
   }
   const run = async (body: Record<string, unknown>, done: string) => {
     if (busy.current) return false
@@ -106,13 +133,18 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
     }
   }
   const add = async () => {
-    const h = holdingOf.get(form.code)
-    if (!h) return setMsg('종목을 골라 주세요.')
+    const name = form.code ? nameOf(form.code) : null
+    if (!name) return setMsg(manualMode ? '종목을 검색해서 골라 주세요.' : '종목을 골라 주세요.')
     const ok = await run(
-      { action: 'receipt-add', receipt: { month: form.month, code: h.code, name: h.name, quantity: form.quantity, perShare: form.perShare, net: form.net } },
-      `${h.name} 분배금을 적었습니다.`,
+      { action: 'receipt-add', receipt: { month: form.month, code: form.code, name, quantity: form.quantity, perShare: form.perShare, net: form.net } },
+      `${name} 분배금을 적었습니다.`,
     )
-    if (ok) setForm((f) => ({ ...f, code: '', quantity: '', perShare: '', net: '' }))
+    if (ok) {
+      setForm((f) => ({ ...f, code: '', quantity: '', perShare: '', net: '' }))
+      setManualMode(false)
+      setManualPick(null)
+      setManualText('')
+    }
   }
 
   return (
@@ -156,20 +188,45 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
         </label>
         <label className="ui-field ig-receipt-code">
           <span className="ui-label">종목</span>
-          <select value={form.code} onChange={(e) => pick(e.target.value)}>
+          <select value={manualMode ? MANUAL : form.code} onChange={(e) => pick(e.target.value)}>
             <option value="">{todo.length > 0 ? `골라 주세요 (남은 ${todo.length}종목)` : '모두 적었습니다'}</option>
             {todo.map((h) => (
-              <option key={h.code} value={h.code}>{h.name}</option>
+              <option key={h.code} value={h.code}>{h.name}{h.quantity > 0 ? '' : ' (지금 없음)'}</option>
             ))}
+            <option value={MANUAL}>직접 찾기 (팔아서 지금 없는 종목)</option>
             {done.length > 0 && (
               <optgroup label={`이미 적음 ${done.length}종목 (다시 적으면 고침)`}>
                 {done.map((h) => (
-                  <option key={h.code} value={h.code}>{h.name}</option>
+                  <option key={h.code} value={h.code}>{h.name}{h.quantity > 0 ? '' : ' (지금 없음)'}</option>
                 ))}
               </optgroup>
             )}
           </select>
         </label>
+        {manualMode && (
+          <div className="ui-field ig-receipt-manual">
+            <span className="ui-label">종목 찾기</span>
+            {manualPick ? (
+              <div className="ig-receipt-picked">
+                <strong>{manualPick.name}</strong> <span style={faint}>({manualPick.code})</span>
+                <Button size="sm" variant="ghost" onClick={() => { setManualPick(null); setForm((f) => ({ ...f, code: '' })) }}>
+                  다시 찾기
+                </Button>
+              </div>
+            ) : (
+              <StockSearchInput
+                value={manualText}
+                onChange={setManualText}
+                onSelect={(s) => {
+                  setManualPick({ code: s.code, name: s.name })
+                  setManualText('')
+                  setForm((f) => ({ ...f, code: s.code, quantity: '' }))
+                }}
+                placeholder="ETF 이름이나 코드"
+              />
+            )}
+          </div>
+        )}
         <label className="ui-field">
           <span className="ui-label">받은 수량(주)</span>
           <input className="ui-text" inputMode="numeric" autoComplete="off" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} placeholder="주" />
