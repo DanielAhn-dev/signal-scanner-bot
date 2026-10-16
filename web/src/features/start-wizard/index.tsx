@@ -24,6 +24,7 @@ import { userScopedKey, writeUserState } from '../../lib/userState'
 import { HOUSEHOLDS, useHouseholdIncome, type Household } from '../../lib/householdIncome'
 import { START_DONE_EVENT } from '../../lib/useStartGate'
 import { cashEffect, seedExpenseTotal, type FlowCheckInput, type FlowItem } from '../../../../src/lib/moneyFlow'
+import RetirementLayers from './RetirementLayers'
 import './start-wizard.css'
 
 // 월수입·대출 같은 민감한 입력이라 사용자별 키로만 보관하고 로그아웃 때 지운다 (lib/userState.ts)
@@ -79,6 +80,8 @@ export default function StartWizardPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  // 예산에 연금 저축(IRP·연금저축)을 적어 뒀으면 노후 3층 점검의 '개인연금'을 미리 '있음'으로
+  const [hasPersonalPension, setHasPersonalPension] = useState(false)
   const set = (patch: Partial<Form>) => setForm((cur) => ({ ...cur, ...patch }))
   // 가구 형태·수입은 '우리 집 수입'(돈 흐름 점검·시드 만들기와 같은 값) — 고치는 즉시 저장해 시작을 끝내지 않아도 남는다
   const incomeStore = useHouseholdIncome()
@@ -130,6 +133,7 @@ export default function StartWizardPage() {
       .catch(() => null)
       .then((check: { input?: FlowCheckInput } | null) => {
         if (check?.input) {
+          if (check.input.saving?.some((item) => item.categoryId === 'save_pension')) setHasPersonalPension(true)
           const w = wizardFromCheck(check.input)
           fillEmpty({ otherFixed: str(w.otherFixed), card: str(w.card) })
           return
@@ -320,6 +324,8 @@ export default function StartWizardPage() {
         {!hasAccount && <label className="start-check"><input type="checkbox" checked={enableBot} onChange={(e) => setEnableBot(e.target.checked)} /> 봇 자동매매도 바로 켜기 (가상 계좌에서만 움직입니다)</label>}
         {error && <p className="start-warn" role="alert">저장 실패: {error}</p>}
       </section>}
+
+      {step === 3 && <RetirementLayers initial={hasPersonalPension ? { personal: 'yes' } : {}} />}
 
       <div className="start-actions">
         {(step > 0) && <button type="button" className="start-link" onClick={() => (step === 1 && q > 0 ? setQ(q - 1) : setStep(step - 1))}>이전</button>}

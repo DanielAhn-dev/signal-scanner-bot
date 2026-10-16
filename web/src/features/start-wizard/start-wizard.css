@@ -36,3 +36,10 @@
 .start-link { border: 0; background: none; color: var(--color-text-secondary); font: inherit; cursor: pointer; text-decoration: underline; }
 .start-done { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding-top: 40px; }
 .start-done p { color: var(--color-text-secondary); line-height: 1.6; }
+/* 노후 준비 3층 점검: 층마다 이름 + 있음/없음 두 버튼, 고르면 아래에 안내 한 줄 */
+.start-layer { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--color-border-default); word-break: keep-all; }
+.start-layer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+.start-layer .start-segment { grid-template-columns: repeat(2, minmax(5.5em, auto)); }
+.start-layer .start-segment button { padding: 6px 12px; }
+.start-question small { font-weight: 400; color: var(--color-text-tertiary); }
+.start-basis { font-size: 12px; color: var(--color-text-tertiary); }
