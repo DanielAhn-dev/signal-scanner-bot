@@ -53,6 +53,26 @@ describe('예산', () => {
     expect(body.input.fixed[0].key).toBeUndefined()
   })
 
+  it('저축·투자는 지출 합계와 따로 더하고 투자 가능액에서만 빼며, 저장할 때 saving으로 보낸다', async () => {
+    const withSaving = { ...savedInput, saving: [{ categoryId: 'save_isa', amount: 1_000_000, label: 'ISA' }] }
+    apiFetchMock.mockImplementation((_p: string, o?: { method?: string }) => Promise.resolve(o?.method === 'POST' ? { ok: true } : { entries: [], rules: [], checks: [{ id: 'c1', date: '2026-09-30', label: '', input: withSaving }] }))
+    renderCheck()
+    const result = await screen.findByLabelText('점검 결과')
+    expect(result).toHaveTextContent('지금 투자 가능액(월)1,283,000원')
+    expect(result).toHaveTextContent('지출 합계1,517,000원')
+    expect(result).toHaveTextContent('저축·투자1,000,000원저축률 25%')
+    // 저축 줄에는 지출 분류가 없고, 새 줄은 저축 분류로 시작한다
+    const select = screen.getByLabelText('ISA 분류') as HTMLSelectElement
+    expect([...select.options].map((o) => o.value)).toEqual(['save_pension', 'save_isa', 'save_deposit'])
+    fireEvent.click(screen.getByRole('button', { name: '+ 저축·투자 추가' }))
+    expect((screen.getByLabelText('저축 2 분류') as HTMLSelectElement).value).toBe('save_pension')
+    fireEvent.click(screen.getByRole('button', { name: '예산 저장' }))
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/money-flow', expect.objectContaining({ method: 'POST' })))
+    const body = JSON.parse(apiFetchMock.mock.calls.find(([, o]) => o?.method === 'POST')![1].body)
+    expect(body.input.saving).toEqual([{ categoryId: 'save_isa', amount: 1_000_000, label: 'ISA' }])
+    expect(body.input.fixed.some((r: { categoryId: string }) => r.categoryId.startsWith('save_'))).toBe(false)
+  })
+
   it('기록한 달의 지출로 변동·비정기 줄을 채운다', async () => {
     apiFetchMock.mockResolvedValue({
       rules: [], checks: [],

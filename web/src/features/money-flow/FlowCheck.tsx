@@ -7,7 +7,7 @@ import { MAX_CHILDREN, sanitizeChildState, type Child, type ChildGiftState } fro
 import { useUserState } from '../../lib/userState'
 import { EMPTY_HOUSEHOLD_INCOME, HOUSEHOLDS, householdTotal, useHouseholdIncome, withHousehold, type HouseholdIncome } from '../../lib/householdIncome'
 import {
-  FLOW_CATEGORIES, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, fixedHistory, irregularForMonth, irregularHistory, reconcileMonth, summarizeItems, toSeedExpenses,
+  FLOW_CATEGORIES, SAVING_CATEGORIES, SAVING_MAJOR, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, fixedHistory, irregularForMonth, irregularHistory, reconcileMonth, summarizeItems, toSeedExpenses,
   type CutLevel, type MonthTotal as MonthTotalBase, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
 } from '../../../../src/lib/moneyFlow'
 
@@ -53,17 +53,22 @@ export function rowsFromEntries(entries: Entry[]): { fixed: Row[]; variable: Row
   return out
 }
 
-function CatSelect({ kind, value, onChange, label }: { kind: FlowKind; value: string; onChange: (id: string) => void; label: string }) {
+/** 예산 줄 종류: 지출 셋 + 저축·투자(지출이 아니라 따로 합산) */
+type RowKind = FlowKind | 'saving'
+const optionsOf = (kind: RowKind) => kind === 'saving' ? SAVING_CATEGORIES.map((c) => ({ ...c, major: SAVING_MAJOR })) : catsOf(kind)
+const KIND_NAME: Record<'fixed' | 'variable' | 'saving', string> = { fixed: '고정지출', variable: '변동지출', saving: '저축·투자' }
+
+function CatSelect({ kind, value, onChange, label }: { kind: RowKind; value: string; onChange: (id: string) => void; label: string }) {
   return (
     <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
-      {catsOf(kind).map((c) => <option key={c.id} value={c.id}>{c.major} · {c.label}</option>)}
+      {optionsOf(kind).map((c) => <option key={c.id} value={c.id}>{c.major} · {c.label}</option>)}
     </select>
   )
 }
 
 type Kids = { list: Child[]; add: (alias: string, birth: string) => string | null }
 
-function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'variable'; rows: Row[]; setRows: (rows: Row[]) => void; actual?: Actual; kids?: Kids }) {
+function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'variable' | 'saving'; rows: Row[]; setRows: (rows: Row[]) => void; actual?: Actual; kids?: Kids }) {
   const [adding, setAdding] = useState<string | null>(null)
   const [kidAlias, setKidAlias] = useState('')
   const [kidBirth, setKidBirth] = useState('')
@@ -87,7 +92,7 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
     <div className="mf-check-rows">
       {rows.map((r, i) => {
         const level = r.cut ?? categoryById(r.categoryId)?.cut ?? 'trim'
-        const name = r.label || `${kind === 'fixed' ? '고정' : '변동'} ${i + 1}`
+        const name = r.label || `${kind === 'fixed' ? '고정' : kind === 'saving' ? '저축' : '변동'} ${i + 1}`
         return (
           <div key={r.key} className="mf-check-row">
             <input className="mf-check-name" aria-label={`${name} 이름`} value={r.label ?? ''} placeholder="이름(선택)" maxLength={40} onChange={(e) => update(r.key, { label: e.target.value })} />
@@ -96,10 +101,13 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
             <select aria-label={`${name} 줄일 수 있나`} value={level} onChange={(e) => update(r.key, { cut: e.target.value as CutLevel })}>
               {(['must', 'trim', 'drop'] as const).map((l) => <option key={l} value={l}>{CUT_LABEL[l]}</option>)}
             </select>
-            {level !== 'must' && <input type="number" inputMode="numeric" min="0" aria-label={`${name} 못 줄이는 몫`} value={r.mustPart || ''} placeholder="이 중 못 줄이는 몫(선택)" onChange={(e) => update(r.key, { mustPart: Math.min(num(e.target.value), r.amount) || undefined })} />}
-            <select aria-label={`${name} 결제 수단`} value={r.payment ?? 'cash'} onChange={(e) => update(r.key, { payment: e.target.value as Payment })}>
-              {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
+            {level !== 'must' && kind !== 'saving' && <input type="number" inputMode="numeric" min="0" aria-label={`${name} 못 줄이는 몫`} value={r.mustPart || ''} placeholder="이 중 못 줄이는 몫(선택)" onChange={(e) => update(r.key, { mustPart: Math.min(num(e.target.value), r.amount) || undefined })} />}
+            {/* 저축·투자는 계좌에서 바로 나가는 돈이라 결제 수단·카드 밖을 고르지 않는다 */}
+            {kind === 'saving'
+              ? <span className="mf-cash-check">계좌 자동이체</span>
+              : <select aria-label={`${name} 결제 수단`} value={r.payment ?? 'cash'} onChange={(e) => update(r.key, { payment: e.target.value as Payment })}>
+                  {PAYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>}
             {/* 대출 원리금처럼 통장에서 바로 나가는 고정비 — 카드 합계에 없으니 그달 지출에 자동으로 더한다 */}
             {kind === 'fixed' && (r.payment ?? 'cash') === 'cash' && (
               <label className="mf-cash-check"><input type="checkbox" aria-label={`${name} 카드 밖`} checked={!!r.outsideCard} onChange={(e) => update(r.key, { outsideCard: e.target.checked || undefined })} />카드 밖(계좌 자동이체)</label>
@@ -137,7 +145,7 @@ function ItemRows({ kind, rows, setRows, actual, kids }: { kind: 'fixed' | 'vari
           </div>
         )
       })}
-      <button type="button" className="acc-add" onClick={() => setRows([...rows, { key: newKey(), categoryId: catsOf(kind)[0].id, amount: 0, label: '' }])}>+ {kind === 'fixed' ? '고정지출' : '변동지출'} 추가</button>
+      <button type="button" className="acc-add" onClick={() => setRows([...rows, { key: newKey(), categoryId: optionsOf(kind)[0].id, amount: 0, label: '' }])}>+ {KIND_NAME[kind]} 추가</button>
     </div>
   )
 }
@@ -188,6 +196,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
   const [householdLoaded, setHouseholdLoaded] = useState(false)
   const [reserve, setReserve] = useState(latest ? String(latest.input.reserveMonthly) : '')
   const [fixed, setFixed] = useState<Row[]>(() => withKeys(latest?.input.fixed))
+  const [savingRows, setSavingRows] = useState<Row[]>(() => withKeys(latest?.input.saving))
   const [variable, setVariable] = useState<Row[]>(() => withKeys(latest?.input.variable))
   const [irregular, setIrregular] = useState<IrrRow[]>(() => withKeys(latest?.input.irregular))
   const [notice, setNotice] = useState('')
@@ -259,7 +268,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     monthlyIncome: householdTotal(household), reserveMonthly: num(reserve),
     fixed: stripKeys(fixed).filter((r) => r.amount > 0), variable: stripKeys(variable).filter((r) => r.amount > 0),
     irregular: stripKeys(irregular).filter((r) => r.yearlyAmount > 0),
-  }), [household, reserve, fixed, variable, irregular])
+    saving: stripKeys(savingRows).filter((r) => r.amount > 0),
+  }), [household, reserve, fixed, variable, irregular, savingRows])
   const result = useMemo(() => evaluateFlowCheck(input), [input])
   const prev = latest && saved ? checks[1] ?? null : latest
   const history = useMemo(() => fixedHistory(checks), [checks])
@@ -344,6 +354,12 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
         <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} kids={kids} />
       </section>
 
+      <section className="acc-card">
+        <h2>저축·투자</h2>
+        <p className="acc-note">IRP·연금저축·ISA·적금처럼 매달 계좌로 옮겨 모으는 돈. 쓴 돈이 아니라 지출 합계·지출 통계에는 넣지 않고, 남는 돈을 셀 때만 뺍니다. 빠른 기록이나 카드 합계에는 적지 않아도 됩니다.</p>
+        <ItemRows kind="saving" rows={savingRows} setRows={setSavingRows} kids={kids} />
+      </section>
+
       {history.months.length >= 2 && (
         <section className="acc-card">
           <h2>고정비 바뀐 기록</h2>
@@ -416,7 +432,9 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
         <section className="acc-card" aria-label="점검 결과">
           <h2>결과</h2>
           <dl className="acc-tiles">
-            <div className="is-main"><dt>지금 투자 가능액(월)</dt><dd>{krw(result.available)}</dd><small>수입 − 현금 지출 − 비상자금 적립</small></div>
+            <div className="is-main"><dt>지금 투자 가능액(월)</dt><dd>{krw(result.available)}</dd><small>수입 − {result.saving > 0 ? '저축·투자 − ' : ''}현금 지출 − 비상자금 적립</small></div>
+            <div><dt>지출 합계</dt><dd>{krw(result.summary.cash)}</dd><small>고정 + 변동 + 비정기(월 환산), 현금 기준</small></div>
+            {result.saving > 0 && <div><dt>저축·투자</dt><dd>{krw(result.saving)}</dd>{result.savingRate !== null && <small>저축률 {Math.round(result.savingRate * 100)}% (수입 대비)</small>}</div>}
             <div><dt>최대로 줄이면</dt><dd>{krw(result.maxIfCut)}</dd><small>못 줄이는 지출만 남길 때</small></div>
             <div><dt>줄일 여지</dt><dd>{krw(result.room)}</dd></div>
             <div><dt>고정지출 비율</dt><dd>{result.fixedRatio === null ? '-' : `${Math.round(result.fixedRatio * 100)}%`}</dd></div>

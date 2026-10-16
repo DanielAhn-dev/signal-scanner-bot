@@ -4,7 +4,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, fixedOutsideCardOf, investableOf, irregularForMonth, classifyMemo, compareSummaries, detectPayment, isRefund, monthSpending, needsItemName, parseQuickLines, splitCashWord, splitPartnerWord, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, UNRECORDED_CATEGORY_ID, categoryById, checkForMonth, fixedCashOf, fixedOutsideCardOf, investableOf, irregularFundOf, savingCashOf, irregularForMonth, classifyMemo, compareSummaries, detectPayment, isRefund, monthSpending, needsItemName, parseQuickLines, splitCashWord, splitPartnerWord, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
@@ -445,6 +445,7 @@ function BudgetSummary({ check, loading }: { check: SavedCheck | null; loading: 
         <div><dt>수입</dt><dd>{krw(check.input.monthlyIncome)}</dd></div>
         <div><dt>고정비</dt><dd>{krw(fixedCashOf(check.input))}</dd></div>
         <div><dt>비정기 적립</dt><dd>{krw(fund)}</dd></div>
+        {savingCashOf(check.input) > 0 && <div><dt>저축·투자</dt><dd>{krw(savingCashOf(check.input))}</dd></div>}
       </dl>
       <Link to="/budget" className="acc-secondary">예산 고치기</Link>
     </section>
@@ -567,7 +568,7 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
           <div className="mf-invest" aria-label="이 달 투자 가능액">
             <span>투자 가능액</span>
             {invest !== null && plan && variable !== null
-              ? <><strong className={invest < 0 ? 'is-negative' : ''}>{krw(invest)}</strong><small>수입 {krw(plan.monthlyIncome)} − 고정 {krw(fixedCashOf(plan))} − 변동 {krw(variable)} − 비정기 적립 {krw(plan.monthlyIncome - fixedCashOf(plan) - plan.reserveMonthly - investableOf(plan, 0))} − 비상금 적립 {krw(plan.reserveMonthly)}</small></>
+              ? <><strong className={invest < 0 ? 'is-negative' : ''}>{krw(invest)}</strong><small>수입 {krw(plan.monthlyIncome)}{savingCashOf(plan) > 0 && ` − 저축·투자 ${krw(savingCashOf(plan))}`} − 고정 {krw(fixedCashOf(plan))} − 변동 {krw(variable)} − 비정기 적립 {krw(irregularFundOf(plan))} − 비상금 적립 {krw(plan.reserveMonthly)}</small></>
               : <small>{plan ? '이 달 카드 합계를 적으면 계산됩니다.' : '예산을 설정하면 계산됩니다.'}</small>}
           </div>
         )}
