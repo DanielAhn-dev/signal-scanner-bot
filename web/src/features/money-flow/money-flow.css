@@ -129,7 +129,9 @@
 .mf-cash-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; cursor: pointer; }
 .mf-cash-check input { width: 16px; height: 16px; accent-color: var(--color-brand); }
 /* 한 화면 세 구역(예산 설정 · 지출 기록 · 이번 달 보기): 제목 바로 아래 내용과 버튼 */
-.mf-section-title { margin: 20px 0 8px; font-size: 18px; font-weight: 700; color: var(--color-text-primary); }
+/* .acc h2 { margin: 0 }보다 우선하도록 .acc를 붙인다. 위 카드와 떨어지게 위 여백을 넉넉히, 맨 위 제목만 0 */
+.acc .mf-section-title { margin: 32px 0 10px; font-size: 18px; font-weight: 700; color: var(--color-text-primary); }
+.acc .mf-section-title:first-child { margin-top: 0; }
 .mf-budget { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .mf-budget .acc-facts { flex: 1 1 260px; margin: 0; }
 /* 이 달 투자 가능액: 한눈에 보이는 결과 */
