@@ -27,6 +27,7 @@ import { useAccountPolicies } from './hooks/useAccountPolicies'
 import { useAdvisorPerformance } from './hooks/useAdvisorPerformance'
 import { usePortfolioView } from './hooks/usePortfolioView'
 import { useTradeModal } from './hooks/useTradeModal'
+import { useAccountAliases } from './hooks/useAccountAliases'
 import { useMaintenance } from './hooks/useMaintenance'
 import { useShare } from './hooks/useShare'
 import { realHoldingTotal } from './lib/stockSizing'
@@ -57,6 +58,7 @@ export default function Portfolio() {
     policyLoading, policySaving, policyDraft, setPolicyDraft, policyByKey, savePolicyDraft, policyAccordionOpen, setPolicyAccordionOpen,
   } = useAccountPolicies({ selectedAccountKey, load })
   const { advisorPerf, advisorPerfLoading } = useAdvisorPerformance()
+  const { aliases, rename: renameAccount } = useAccountAliases()
 
   // 파생값
   const {
@@ -101,6 +103,7 @@ export default function Portfolio() {
         onOpenMaintenance={openMaintenanceModal}
         selectedAccountKey={selectedAccountKey} onSelectAccount={(key) => { setSelectedAccountKey(key); setPage(1) }}
         accountFolders={accountFolders} virtualCount={virtualHoldingRows.length} realCount={realCount}
+        aliases={aliases} onRenameAccount={renameAccount}
         summaryCount={summaryRows.length} totalInvested={totalInvested} adjustedUnrealized={adjustedUnrealized}
         selectedAccountLabel={selectedAccountLabel} serverTotal={serverTotal}
         includeCost={includeCost} totalTradeCost={totalTradeCost}

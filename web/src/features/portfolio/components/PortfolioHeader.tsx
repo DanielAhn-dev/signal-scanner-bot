@@ -5,6 +5,12 @@ import SheetHeaderBar from '../../../components/SheetHeaderBar'
 import { formatKrwCompact } from '../../../lib/format'
 import type { AccountFolder } from '../types'
 import { accountLabel } from '../lib/accountKey'
+import {
+  ACCOUNT_SHEET_THRESHOLD, ALIAS_MAX_LENGTH, DEFAULT_TOP_LABEL, accountDotColor, aliasTaken, cleanAlias, displayAccountName,
+  type AccountAliases,
+} from '../lib/accountAliases'
+import Modal from '../../../components/Modal'
+import Input from '../../../components/ui/Input'
 import type { HoldingRow } from '../types'
 import { useToast } from '../../../components/ToastProvider'
 import { buildQuantityText, COPY_GROUP_OPTIONS, type CopyGroupMode } from '../lib/share'
@@ -22,7 +28,16 @@ function AccountTab({ active, onClick, title, children }: { active: boolean; onC
   )
 }
 
+const pickerRowStyle = (active: boolean): React.CSSProperties => ({
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 48, padding: '0 var(--space-3)',
+  border: 'none', borderBottom: '1px solid var(--color-border)', background: active ? 'var(--color-bg-secondary)' : 'transparent',
+  color: 'var(--color-text-primary)', fontWeight: active ? 'var(--font-weight-bold)' : 'normal', fontSize: 'var(--font-size-sm)',
+  textAlign: 'left', cursor: 'pointer',
+})
+
 type PortfolioHeaderProps = {
+  aliases: AccountAliases
+  onRenameAccount: (key: string, name: string) => void
   subtitle: string
   onNavigateToCalendar: () => void
   loading: boolean
@@ -61,6 +76,8 @@ export default function PortfolioHeader({
   selectedAccountKey,
   onSelectAccount,
   accountFolders,
+  aliases,
+  onRenameAccount,
   virtualCount,
   realCount,
   summaryCount,
@@ -72,6 +89,40 @@ export default function PortfolioHeader({
   totalTradeCost,
 }: PortfolioHeaderProps) {
   const toast = useToast()
+  const [pickerOpen, setPickerOpen] = React.useState(false)
+  const [renameKey, setRenameKey] = React.useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = React.useState('')
+  const [renameError, setRenameError] = React.useState('')
+  const useSheet = accountFolders.length >= ACCOUNT_SHEET_THRESHOLD
+  const selectedFolder = accountFolders.find((f) => f.key === selectedAccountKey) ?? null
+  const folderName = (f: { key: string; brokerName: string; accountName: string }) => displayAccountName(aliases, f.key, f.brokerName, f.accountName)
+  // 이름 바꾸기 대상: 실험 계좌 → 'virtual', 폴더 선택 → 그 폴더, 그 외 → 위쪽 '내 계좌' 탭
+  const renameTargetKey = selectedAccountKey === 'virtual' ? 'virtual' : selectedFolder ? selectedFolder.key : 'real'
+  const defaultNameOf = (key: string) => {
+    if (key === 'real' || key === 'virtual') return DEFAULT_TOP_LABEL[key]
+    const f = accountFolders.find((x) => x.key === key)
+    return f ? accountLabel(f.brokerName, f.accountName) : ''
+  }
+  const openRename = (key: string) => {
+    setRenameKey(key)
+    setRenameDraft(aliases[key] || '')
+    setRenameError('')
+  }
+  const saveRename = () => {
+    if (!renameKey) return
+    const labels: Record<string, string> = { real: DEFAULT_TOP_LABEL.real, virtual: DEFAULT_TOP_LABEL.virtual }
+    for (const f of accountFolders) labels[f.key] = accountLabel(f.brokerName, f.accountName)
+    // 위쪽 탭끼리, 폴더끼리 겹치지 않게 같은 묶음 안에서만 비교한다
+    const group = renameKey === 'real' || renameKey === 'virtual'
+      ? { real: labels.real, virtual: labels.virtual }
+      : Object.fromEntries(accountFolders.map((f) => [f.key, labels[f.key]]))
+    if (aliasTaken(aliases, renameKey, renameDraft, group)) {
+      setRenameError('같은 이름의 계좌가 이미 있습니다. 다른 이름을 써 주세요')
+      return
+    }
+    onRenameAccount(renameKey, cleanAlias(renameDraft))
+    setRenameKey(null)
+  }
   const [copyMode, setCopyMode] = React.useState<CopyGroupMode>(() => {
     try {
       const saved = localStorage.getItem('portfolio.copyMode')
@@ -150,10 +201,10 @@ export default function PortfolioHeader({
         <tr className="xls-row">
           <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
             <div className="portfolio-account-tabs" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
-              <AccountTab active={selectedAccountKey !== 'virtual'} onClick={() => onSelectAccount('real')}>내 계좌(실제) ({realCount})</AccountTab>
-              <AccountTab active={selectedAccountKey === 'virtual'} onClick={() => onSelectAccount('virtual')}>실험 계좌 ({virtualCount})</AccountTab>
+              <AccountTab active={selectedAccountKey !== 'virtual'} onClick={() => onSelectAccount('real')}>{aliases.real || DEFAULT_TOP_LABEL.real} ({realCount})</AccountTab>
+              <AccountTab active={selectedAccountKey === 'virtual'} onClick={() => onSelectAccount('virtual')}>{aliases.virtual || DEFAULT_TOP_LABEL.virtual} ({virtualCount})</AccountTab>
             </div>
-            {selectedAccountKey !== 'virtual' && accountFolders.length > 1 && (
+            {selectedAccountKey !== 'virtual' && accountFolders.length > 1 && !useSheet && (
             <div className="portfolio-account-tabs portfolio-account-tabs--sub" role="group" aria-label="실제 계좌 고르기" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
               <AccountTab active={selectedAccountKey === 'real'} onClick={() => onSelectAccount('real')}>전부</AccountTab>
               {accountFolders.map((account) => (
@@ -161,13 +212,84 @@ export default function PortfolioHeader({
                   key={account.key}
                   active={selectedAccountKey === account.key}
                   onClick={() => onSelectAccount(account.key)}
-                  title={`${accountLabel(account.brokerName, account.accountName)} (${account.count})`}
+                  title={`${folderName(account)} (${account.count})`}
                 >
-                  {accountLabel(account.brokerName, account.accountName)} ({account.count})
+                  <span aria-hidden style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: accountDotColor(account.key), marginRight: 6 }} />
+                  {folderName(account)} ({account.count})
                 </AccountTab>
               ))}
             </div>
             )}
+            {selectedAccountKey !== 'virtual' && accountFolders.length > 1 && useSheet && (
+              <button
+                type="button"
+                className="portfolio-account-picker"
+                aria-haspopup="dialog"
+                onClick={() => setPickerOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', minHeight: 44, marginTop: 'var(--space-2)', padding: '0 var(--space-3)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--color-text-primary)', fontSize: 'var(--font-size-sm)', cursor: 'pointer' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedFolder && <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: accountDotColor(selectedFolder.key), flexShrink: 0 }} />}
+                  {selectedFolder ? `${folderName(selectedFolder)} (${selectedFolder.count})` : `전부 (${realCount})`}
+                </span>
+                <span className="caption muted" style={{ flexShrink: 0 }}>계좌 {accountFolders.length}개 · 고르기</span>
+              </button>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+              <Button variant="secondary" size="sm" onClick={() => openRename(renameTargetKey)}>
+                이름 바꾸기
+              </Button>
+            </div>
+            <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title="계좌 고르기" size="sm">
+              <div role="listbox" aria-label="실제 계좌" style={{ display: 'flex', flexDirection: 'column', maxHeight: '60vh', overflowY: 'auto' }}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selectedAccountKey === 'real'}
+                  onClick={() => { onSelectAccount('real'); setPickerOpen(false) }}
+                  style={pickerRowStyle(selectedAccountKey === 'real')}
+                >
+                  <span>전부</span><span className="caption muted">{realCount}</span>
+                </button>
+                {accountFolders.map((account) => (
+                  <div key={account.key} style={{ display: 'flex', alignItems: 'stretch' }}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={selectedAccountKey === account.key}
+                      onClick={() => { onSelectAccount(account.key); setPickerOpen(false) }}
+                      style={{ ...pickerRowStyle(selectedAccountKey === account.key), flex: 1, minWidth: 0 }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <span aria-hidden style={{ width: 10, height: 10, borderRadius: '50%', background: accountDotColor(account.key), flexShrink: 0 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folderName(account)}</span>
+                      </span>
+                      <span className="caption muted">{account.count}</span>
+                    </button>
+                    <Button variant="secondary" size="sm" onClick={() => { setPickerOpen(false); openRename(account.key) }}>이름</Button>
+                  </div>
+                ))}
+              </div>
+            </Modal>
+            <Modal isOpen={renameKey !== null} onClose={() => setRenameKey(null)} title="계좌 이름 바꾸기" size="sm" closeOnBackdrop={false}>
+              <div style={{ padding: 'var(--space-3)' }}>
+                <div className="muted" style={{ marginBottom: 'var(--space-2)', wordBreak: 'keep-all' }}>
+                  화면에 보이는 이름만 바뀝니다. 보유 종목과 증권사·계좌명 기록은 그대로입니다.
+                </div>
+                <Input
+                  label="표시 이름"
+                  value={renameDraft}
+                  maxLength={ALIAS_MAX_LENGTH}
+                  placeholder={renameKey ? defaultNameOf(renameKey) : ''}
+                  onChange={(e: any) => { setRenameDraft(String(e?.target?.value || '')); setRenameError('') }}
+                />
+                {renameError && <div className="negative caption" style={{ marginTop: 4 }}>{renameError}</div>}
+                <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
+                  <Button variant="secondary" onClick={() => { if (renameKey) { onRenameAccount(renameKey, ''); setRenameKey(null) } }}>기본 이름으로</Button>
+                  <Button onClick={saveRename}>저장</Button>
+                </div>
+              </div>
+            </Modal>
             {selectedAccountKey === 'virtual' && (
               <div className="caption muted" style={{ padding: '4px var(--space-3) 0', wordBreak: 'keep-all' }}>
                 실험 계좌는 봇이 &lsquo;내 계획&rsquo;대로 사고팝니다. 내가 직접 매매하는 계좌와 합치지 않습니다.
