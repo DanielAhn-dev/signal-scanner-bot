@@ -2,6 +2,7 @@ import { toKstDateKey } from "../../src/lib/krxCalendar";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { fetchCreditShortSnapshot } from "../../src/utils/fetchCreditShortData";
+import { selectPaged } from "../../src/services/supabasePaging";
 
 export const config = {
   maxDuration: 120,
@@ -26,22 +27,16 @@ async function loadTargetCodes(universeFilter = "core,extended"): Promise<string
     .map((v) => v.trim())
     .filter(Boolean);
 
-  let query = supabase
-    .from("stocks")
-    .select("code")
-    .eq("is_active", true);
+  const data = await selectPaged<{ code: string }>(
+    async (from, to) => {
+      let query = supabase.from("stocks").select("code").eq("is_active", true);
+      if (universes.length > 0) query = query.in("universe_level", universes);
+      return await query.order("code", { ascending: true }).range(from, to);
+    },
+    { logLabel: "dailyDataSync.target_codes" }
+  );
 
-  if (universes.length > 0) {
-    query = query.in("universe_level", universes);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to load target codes: ${error.message}`);
-  }
-
-  const codes = (data || [])
+  const codes = data
     .map((row: any) => {
       const code = String(row.code || "").trim().replace(/^A/i, "").padStart(6, "0");
       return /^\d{6}$/.test(code) ? code : null;

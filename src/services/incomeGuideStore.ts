@@ -5,6 +5,7 @@
  */
 import { fetchRealtimePriceBatch, type RealtimeStockData } from "../utils/fetchRealtimePrice";
 import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
+import { selectPaged } from "./supabasePaging";
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import { sanitizeReceipts, type DistributionReceipt } from "../lib/distributionReceipts";
 import {
@@ -67,15 +68,21 @@ type PositionRow = {
 
 /** 계좌 보유 행 — chatId를 주면 그 사용자만, 안 주면 계좌 보유가 있는 모든 사용자 */
 export async function loadAccountPositionRows(supabase: any, chatId?: string | number): Promise<PositionRow[]> {
-  let q = supabase
-    .from("virtual_positions")
-    .select("chat_id, code, quantity, buy_price, status, broker_name, account_name, stock:stocks(name, close)")
-    .gt("quantity", 0)
-    .or("broker_name.not.is.null,account_name.not.is.null");
-  if (chatId != null) q = q.eq("chat_id", chatId);
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as PositionRow[]).filter((r) => String(r.status ?? "holding") !== "closed");
+  // 1000행에서 조용히 잘리면 일부 종목이 빠진 채 비중이 계산되므로 끝까지 받는다
+  const rows = await selectPaged<PositionRow>(
+    async (from, to) => {
+      let q = supabase
+        .from("virtual_positions")
+        .select("id, chat_id, code, quantity, buy_price, status, broker_name, account_name, stock:stocks(name, close)")
+        .gt("quantity", 0)
+        .or("broker_name.not.is.null,account_name.not.is.null")
+        .order("id", { ascending: true });
+      if (chatId != null) q = q.eq("chat_id", chatId);
+      return await q.range(from, to);
+    },
+    { logLabel: "incomeGuide.account_positions" }
+  );
+  return rows.filter((r) => String(r.status ?? "holding") !== "closed");
 }
 
 /** 종목 시세 — 실시간가(장 마감 뒤엔 종가) → stocks.close 순. ETF는 stocks.close가 비어 있는 경우가 많다 */
@@ -86,8 +93,13 @@ export async function fetchGuidePrices(supabase: any, codes: string[]): Promise<
   const realtimeHits = new Set<string>();
   if (!unique.length) return { prices, names, realtimeHits };
   const realtime = await fetchRealtimePriceBatch(unique).catch(() => ({}) as Record<string, RealtimeStockData>);
-  const { data } = await supabase.from("stocks").select("code, name, close").in("code", unique);
-  const byCode = new Map(((data ?? []) as Array<{ code: string; name: string | null; close: number | null }>).map((s) => [String(s.code), s]));
+  // .in()에 큰 배열을 한 번에 넘기면 URL이 커져 실패하므로 나눠서 조회한다
+  const stockRows: Array<{ code: string; name: string | null; close: number | null }> = [];
+  for (let i = 0; i < unique.length; i += 150) {
+    const { data } = await supabase.from("stocks").select("code, name, close").in("code", unique.slice(i, i + 150));
+    stockRows.push(...((data ?? []) as typeof stockRows));
+  }
+  const byCode = new Map(stockRows.map((s) => [String(s.code), s]));
   for (const code of unique) {
     const rt = Number(realtime[code]?.price);
     const close = Number(byCode.get(code)?.close);

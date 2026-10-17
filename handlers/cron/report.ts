@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { selectPaged } from "../../src/services/supabasePaging";
 import { sendDocument, tg } from "../../src/telegram/api";
 import { createWeeklyReportPdf } from "../../src/services/weeklyReportService";
 
@@ -29,12 +30,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const { data: users, error: usersError } = await supabase
-      .from("users")
-      .select("tg_id")
-      .eq("is_active", true);
-
-    if (usersError) {
+    // 1000행에서 조용히 잘리지 않도록 끝까지 받는다
+    let users: Array<{ tg_id: number }> | null = null;
+    try {
+      users = await selectPaged<{ tg_id: number }>(
+        async (from, to) =>
+          await supabase.from("users").select("tg_id").eq("is_active", true).order("tg_id", { ascending: true }).range(from, to),
+        { logLabel: "report.active_users" }
+      );
+    } catch (usersError) {
       console.error("사용자 조회 실패:", usersError);
     }
 

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { supaAdmin, isAuthorized, ok, bad, UpdateResult } from "../../src/lib/apiUpdateShared";
+import { selectPaged } from "../../src/services/supabasePaging";
 import * as XLSX from "xlsx";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -141,9 +142,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await supa.from("sectors").upsert(sectorSeedRows, { onConflict: "id" });
     }
 
-    const { data: existing } = await supa.from("stocks").select("code,name,sector_id");
-
-    const existingRows: ExistingStockRow[] = existing ?? [];
+    // 전 종목은 1000행을 넘으므로 끝까지 받아야 신규·변경 건수가 맞는다
+    const existingRows: ExistingStockRow[] = await selectPaged<ExistingStockRow>(
+      async (from, to) => await supa.from("stocks").select("code,name,sector_id").order("code", { ascending: true }).range(from, to),
+      { logLabel: "updateStocks.existing" }
+    );
     const existByCode = new Map(existingRows.map((r: ExistingStockRow) => [r.code, r]));
 
     let inserted = 0;

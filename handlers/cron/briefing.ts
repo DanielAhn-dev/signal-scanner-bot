@@ -5,6 +5,7 @@ import { createDailyCandidatePlanningReportResult } from "../../src/services/mar
 import { buildAutoCyclePreviewText } from "../../src/services/autoCycleBriefingService";
 import { tg } from "../../src/telegram/api";
 import { createClient } from "@supabase/supabase-js";
+import { selectPaged } from "../../src/services/supabasePaging";
 import { getUserInvestmentPrefs } from "../../src/services/userService";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../../src/bot/messages/layout";
 import { buildOpsStatusDigest } from "../../src/services/opsStatusService";
@@ -87,12 +88,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 활성 사용자 목록 조회
-    const { data: users, error: usersError } = await supabase
-      .from("users")
-      .select("tg_id, prefs")
-      .eq("is_active", true);
-
-    if (usersError) {
+    // 1000행에서 조용히 잘리지 않도록 끝까지 받는다
+    let users: Array<{ tg_id: number; prefs?: Record<string, unknown> | null }> | null = null;
+    try {
+      users = await selectPaged<{ tg_id: number; prefs?: Record<string, unknown> | null }>(
+        async (from, to) =>
+          await supabase.from("users").select("tg_id, prefs").eq("is_active", true).order("tg_id", { ascending: true }).range(from, to),
+        { logLabel: "briefing.active_users" }
+      );
+    } catch (usersError) {
       console.error("사용자 조회 실패:", usersError);
     }
 
