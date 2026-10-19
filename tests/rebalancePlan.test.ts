@@ -262,6 +262,15 @@ test("예수금: hold면 idleCash 없이 기존 현금 규칙이 맡는다", () 
   assert.ok(plan.cash);
 });
 
+test("예수금: hold인데 현금 목표가 0이면 현금 규칙이 꺼지므로 예수금은 지수로 산다(놀리지 않음)", () => {
+  const { plan } = planWithCash({ cashBalance: 3_000_000, incomeMode: "hold", customTargets: { income: 70 } });
+  assert.equal(plan.cash, null);
+  const idle = plan.idleCash!;
+  assert.equal(idle.keep, 0);
+  assert.equal(idle.spendable, 3_000_000);
+  assert.ok(idle.spend > 0);
+});
+
 test("압축: 목표 종목 수가 없으면 기존 동작 그대로(compress 없음)", () => {
   const { plan } = planFor({});
   assert.equal(plan.compress, null);

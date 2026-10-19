@@ -443,15 +443,16 @@ export function buildRebalancePlan(input: {
   const t = targetPct / 100;
   const growthValue = g?.value ?? 0;
 
-  // 예수금 (hold가 아닐 때) — 현금 목표를 채우는 몫은 두고, 넘는 몫은 이미 계좌에 와 있는 새 돈이라 지금 산다.
-  // hold면 아래 현금 규칙(채우기·밴드)이 맡는다.
+  // 예수금 — 현금 목표를 채우는 몫은 두고, 넘는 몫은 이미 계좌에 와 있는 새 돈이라 지금 산다.
+  // hold이면서 현금 목표가 있으면 아래 현금 규칙(채우기·밴드)이 맡는다. 현금 목표가 0이면 그 규칙이 꺼지므로 여기서 맡는다(예수금이 놀지 않게).
+  const holdCashRule = hold && (input.cashPlan?.targetPct ?? 0) > 0;
   let idleCash: RebalancePlan["idleCash"] = null;
   const cashEntries: Array<{ accountKey: string | null; balance: number }> = [
     ...Object.entries(settings.cashByAccount ?? {}).map(([accountKey, v]) => ({ accountKey, balance: Math.max(0, Math.round(v)) })),
     { accountKey: null, balance: Math.max(0, Math.round(settings.cashBalance ?? 0)) },
   ].filter((e) => e.balance > 0);
   const balance = cashEntries.reduce((s, e) => s + e.balance, 0);
-  if (!hold && balance > 0) {
+  if (!holdCashRule && balance > 0) {
     const cp = input.cashPlan;
     const cashTargetPct = cp?.targetPct ?? 0;
     // 단기채·CD 같은 현금성 ETF가 목표를 먼저 채운다
