@@ -64,6 +64,7 @@ export default function DistributionInbox({ month, invested, onApply, krw }: Pro
           리밸런싱 가이드에 적은 {slice.count}종목 세후 합계입니다{slice.estimated > 0 ? `(세후를 안 적은 ${slice.estimated}건은 15.4%를 떼고 계산)` : ''}.
           {' '}<Link to="/income-guide#receipts">받은 분배금 더 적기·고치기</Link>
           {' '}재투자는 {slice.buyName ? <strong>{slice.buyName}</strong> : '성장 지수 ETF'} 한 곳으로 — 커버드콜·배당 ETF를 더 사지 않습니다.
+          {' '}이 칸은 이번 달 투자금 기록용입니다. 예수금·보유를 증권사 앱 숫자로 고친다면 넣지 않아도 되고, 매수에 쓰인 몫은 리밸런싱 가이드가 예수금 변화로 계산합니다.
         </p>
         {gap > 0 ? (
           <div className="seed-inbox-actions">

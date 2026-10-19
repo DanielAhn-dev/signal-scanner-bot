@@ -22,7 +22,13 @@ export type DistributionReceiptsData = {
   lastMonth: MonthSum
   projection: { total: number; fromReceipts: number; fromEstimate: number; receiptCodes: number; rows: ProjectionRow[] }
   recent: Receipt[]
+  /** 받은 분배금 중 매수에 쓰인 몫 — 서버 estimateReinvest(예수금 변화로 거꾸로 추정) */
+  reinvest?: ReinvestEstimate | null
 }
+type ReinvestEstimate =
+  | { status: 'ok'; month: string; received: number; baselineDate: string; cashThen: number; cashNow: number; reinvested: number; kept: number; baselineApprox: boolean }
+  | { status: 'stale-cash'; month: string; received: number; cashUpdatedAt: string | null }
+  | { status: 'no-baseline'; month: string; received: number }
 
 type Props = {
   data: DistributionReceiptsData
@@ -92,6 +98,27 @@ function DeltaWon({ v }: { v: number }) {
       {v > 0 ? '+' : '−'}
       {Math.abs(Math.round(v)).toLocaleString('ko-KR')}원
     </span>
+  )
+}
+
+const shortDate = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
+/** 재투자 한 줄 — 어느 돈으로 샀는지 적지 않아도 예수금 변화로 매수에 쓰인 몫을 보여 준다. 판단 문구 없이 나눠만 보인다 */
+function ReinvestLine({ r }: { r: ReinvestEstimate | null }) {
+  if (!r) return null
+  if (r.status === 'no-baseline') return <div style={faint}>재투자 몫은 지난달 점검 기록이 생긴 다음 달부터 계산합니다.</div>
+  if (r.status === 'stale-cash')
+    return <div style={faint}>분배금을 적은 뒤 예수금을 아직 고치지 않았습니다. &lsquo;증권 계좌 예수금&rsquo; 칸에 지금 숫자를 반영하면 매수에 쓰인 몫을 계산합니다.</div>
+  const change = r.cashNow - r.cashThen
+  return (
+    <div style={{ marginTop: 2 }}>
+      매수에 쓰임 <strong>약 {smallWon(r.reinvested)}</strong>
+      <span style={muted}> · 현금으로 남음 약 {smallWon(r.kept)}</span>
+      <div style={faint}>
+        {shortDate(r.baselineDate)} 기록 뒤 예수금 변화({change === 0 ? '그대로' : `${change > 0 ? '+' : '−'}${smallWon(Math.abs(change))}`})로 거꾸로 계산한
+        추정입니다{r.baselineApprox ? '(그때 예수금은 현금 비중으로 되짚은 값)' : ''}.
+        그사이 월급 입금·출금이 있으면 달라집니다. 따로 적거나 버튼을 누르지 않아도 됩니다.
+      </div>
+    </div>
   )
 }
 
@@ -197,6 +224,7 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
         {thisMonth.items.length > 0 && <span style={muted}> · {thisMonth.items.length}종목{notYet > 0 ? ` · 아직 안 적은 종목 ${notYet}개` : ''}</span>}
         {thisMonth.estimatedCount > 0 && <span style={faint}> (세후를 안 적은 {thisMonth.estimatedCount}건은 15.4%를 떼고 계산)</span>}
       </div>
+      <ReinvestLine r={data.reinvest ?? null} />
       {/* 세전(수량×주당)과 나란히 — 세후 칸에 세전을 넣었는지 비율로 바로 보인다(고배당 약 85%, 국내 커버드콜은 더 높을 수 있음) */}
       {thisMonth.gross > 0 && thisMonth.items.length > 0 && thisMonth.estimatedCount === 0 && (
         <div style={faint}>
