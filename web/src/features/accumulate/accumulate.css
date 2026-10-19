@@ -27,7 +27,7 @@
 .acc-field > span { color: var(--color-text-secondary); font-size: 13px; }
 /* 금액 입력칸 아래 '= 1억원' (components/ui/AmountHint) */
 .amount-hint { color: var(--color-text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
-.acc-field input, .acc-field select { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
+.acc-field input, .acc-field select { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background-color: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
 .acc-field input[type='range'] { padding: 0; accent-color: var(--color-brand); }
 .acc-field input:focus, .acc-field select:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
 .acc-summary { padding: 12px; border-radius: 6px; background: var(--color-bg-sunken); line-height: 1.55; }
@@ -93,7 +93,8 @@
 .acc-period-presets button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }
 .acc-period-range { display: flex; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 10px; }
 .acc-period-range label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--color-text-secondary); }
-.acc-period-range select { padding: 6px 8px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; }
+/* 공통 select(controls.css)가 화살표를 배경 그림·오른쪽 2rem 여백으로 그린다 — background 단축·padding 덮어쓰기는 화살표를 지우고 글자를 자른다 */
+.acc-period-range select { width: auto; flex: none; min-height: 0; padding: 6px 2rem 6px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background-color: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; }
 .acc-view-toggle { margin-bottom: 12px; }
 /* 4번 '더 빨리 닿는 선택지' (GoalReachOptions) — 채움 카드 대신 얇은 테두리 */
 .acc-reach { display: flex; flex-direction: column; gap: 10px; }
@@ -126,3 +127,4 @@
 .acc-tip { position: absolute; width: 184px; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 2px; pointer-events: none; font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgb(0 0 0 / .12); }
 .acc-tip i { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; }
 .acc-plan-save { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.acc-field select { padding-right: 2rem; }
