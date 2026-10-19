@@ -895,7 +895,9 @@ export async function createWeeklyReportPdf(
         const { data, error } = await supabase
           .from("virtual_positions")
           .select("code, buy_price, quantity")
-          .eq("chat_id", chatId);
+          .eq("chat_id", chatId)
+          .is("broker_name", null)
+          .is("account_name", null);
 
         if (error) {
           throw new WeeklyReportError("watchlist_query", `watchlist 조회 실패: ${error.message}`, error);
@@ -1006,6 +1008,8 @@ export async function createWeeklyReportPdf(
         .from("virtual_trades")
         .select("side, code, price, quantity, pnl_amount, traded_at")
         .eq("chat_id", chatId)
+        .is("broker_name", null)
+        .is("account_name", null)
         .gte("traded_at", tradeSince)
         .order("traded_at", { ascending: false })
         .limit(300)
@@ -1016,6 +1020,8 @@ export async function createWeeklyReportPdf(
         .from("virtual_positions")
         .select("code, buy_price, quantity, invested_amount, status, stock:stocks(code,name,close)")
         .eq("chat_id", chatId)
+        .is("broker_name", null)
+        .is("account_name", null)
         .returns<WatchlistRow[]>()
     ),
     runReportStep("sector_query", () =>
@@ -1089,6 +1095,8 @@ export async function createWeeklyReportPdf(
         .from("virtual_positions")
         .select("code, target_horizon, planned_review_at, horizon_reason")
         .eq("chat_id", chatId)
+        .is("broker_name", null)
+        .is("account_name", null)
         .returns<PositionHorizonRow[]>();
 
       if (error) return new Map<string, PositionHorizonRow>();

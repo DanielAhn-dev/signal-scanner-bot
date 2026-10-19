@@ -245,6 +245,8 @@ async function handleMonthlyReportCommand(
       .from("virtual_trades")
       .select("side, code, price, quantity, pnl_amount, traded_at, memo")
       .eq("chat_id", ctx.chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
       .gte("traded_at", range.startIso)
       .lt("traded_at", range.endIso)
       .order("traded_at", { ascending: false })
@@ -272,7 +274,9 @@ async function handleMonthlyReportCommand(
         stock:stocks!inner ( close, rsi14 )
       `
       )
-      .eq("chat_id", ctx.chatId);
+      .eq("chat_id", ctx.chatId)
+      .is("broker_name", null)
+      .is("account_name", null);
 
     const watchItems = (watchRows ?? []) as Array<{
       code: string;
