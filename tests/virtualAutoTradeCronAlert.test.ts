@@ -35,6 +35,35 @@ test("buildAutoTradeCronAlertMessage: duplicate_window 임계치 이상이면 �
   assert.match(message, /수동 실행\/중복 호출 여부를 확인하세요/);
 });
 
+test("buildAutoTradeCronAlertMessage: 호출 전체가 이미 처리된 회차면(늦게 온 백업 호출) 알리지 않는다", () => {
+  const message = buildAutoTradeCronAlertMessage(
+    makeSummary({
+      totalUsers: 4,
+      processedUsers: 4,
+      buyCount: 0,
+      sellCount: 0,
+      skippedCount: 4,
+      skipReasonStats: [{ code: "duplicate_window", label: "동일 실행창 중복 스킵", count: 4 }],
+    })
+  );
+  assert.equal(message, null);
+});
+
+test("buildAutoTradeCronAlertMessage: 호출 전체 중복이어도 오류가 있으면 알린다", () => {
+  const message = buildAutoTradeCronAlertMessage(
+    makeSummary({
+      totalUsers: 4,
+      processedUsers: 4,
+      buyCount: 0,
+      sellCount: 0,
+      skippedCount: 4,
+      errorCount: 1,
+      skipReasonStats: [{ code: "duplicate_window", label: "동일 실행창 중복 스킵", count: 4 }],
+    })
+  );
+  assert.ok(message);
+});
+
 test("buildAutoTradeCronAlertMessage: 거래일 장외 실행이나 오류도 즉시 알린다", () => {
   const outOfSessionMessage = buildAutoTradeCronAlertMessage(
     makeSummary({

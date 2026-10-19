@@ -21,8 +21,17 @@ export function buildAutoTradeCronAlertMessage(
     ? findSkipReasonCount(summary, "out_of_session")
     : 0;
   const hasErrors = summary.errorCount > 0;
+  // 호출 하나가 통째로 이미 처리된 회차였으면(백업 경로가 늦게 도착한 경우) 매매가 없으니 알리지 않는다.
+  // 계정 수만큼 스킵이 쌓여 계정이 3개만 넘어도 늦은 호출 하나에 경보가 울렸다(2026-10-19).
+  const wholeCallDuplicate =
+    summary.processedUsers > 0 &&
+    duplicateWindowCount >= summary.processedUsers &&
+    summary.buyCount === 0 &&
+    summary.sellCount === 0;
   const shouldAlert =
-    hasErrors || outOfSessionCount > 0 || duplicateWindowCount >= duplicateWindowThreshold;
+    hasErrors ||
+    outOfSessionCount > 0 ||
+    (!wholeCallDuplicate && duplicateWindowCount >= duplicateWindowThreshold);
 
   if (!shouldAlert) return null;
 
