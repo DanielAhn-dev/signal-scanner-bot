@@ -1565,6 +1565,8 @@ async function buildRealHoldingResponseSnippet(input: {
     .from("virtual_positions")
     .select("code,buy_price,quantity,invested_amount,stock:stocks!inner(name,close)")
     .eq("chat_id", input.chatId)
+    // "실보유" 요약이므로 실계좌 입력 행만 — 가상 자동매매 보유를 실보유처럼 보여 주지 않는다
+    .or("broker_name.not.is.null,account_name.not.is.null")
     .order("created_at", { ascending: true })
     .limit(30);
 
@@ -1619,7 +1621,7 @@ async function buildRealHoldingResponseSnippet(input: {
                 ? "익절검토"
                 : "보유관찰";
       const weightNote = weightPct ? ` · 비중 ${weightPct}%` : "";
-      return `- ${name}: ${row.name}(${row.code}) ${row.quantity}주 · 손익 ${row.pnlPct.toFixed(1)}%${weightNote} · ${action}`;
+      return `- ${row.name}(${row.code}) ${row.quantity}주 · 손익 ${row.pnlPct.toFixed(1)}%${weightNote} · ${action}`;
     });
 
   const lines: string[] = ["[실보유 대응 요약]", ...topLines];
@@ -7466,6 +7468,8 @@ export async function generateAutoTradeDiagnosticReport(
       .from("virtual_positions")
       .select("code, quantity, buy_price, invested_amount")
       .eq("chat_id", chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
       .gt("quantity", 0),
     generateAutoTradeBacktestReportForChat({ chatId, months: 3 }).catch(() => null),
   ]);
@@ -7494,13 +7498,8 @@ export async function generateAutoTradeDiagnosticReport(
     return sum + Math.max(investedAmount, fallback);
   }, 0);
 
-  const prefsResult = await supabase
-    .from("user_investment_prefs")
-    .select("virtual_cash, virtual_seed_capital, capital_krw, virtual_realized_pnl, virtual_shadow_mode")
-    .eq("tg_id", chatId)
-    .maybeSingle();
-
-  const prefs = (prefsResult.data ?? {}) as Record<string, unknown>;
+  // 예전엔 없는 테이블(user_investment_prefs)을 읽어 늘 빈 값 → 가용현금이 추정치로, 섀도우가 늘 OFF로 나왔다
+  const prefs = (await getUserInvestmentPrefs(chatId)) as Record<string, unknown>;
   const storedCash = toNumber(prefs.virtual_cash, 0);
   const seedCapital = toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0));
   const realizedPnl = toNumber(prefs.virtual_realized_pnl, 0);
