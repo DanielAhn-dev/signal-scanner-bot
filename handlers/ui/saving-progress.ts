@@ -11,7 +11,7 @@ import { classifyHolding, resolveYieldPct, totalCashBalance } from '../../src/li
 import { accountKind, distributionTaxSaved, isTotalReturnEtf } from '../../src/lib/savingProgress'
 
 // 홈·모아가기 "내 모으기" (계산 src/lib/savingProgress.ts)
-//   GET → { ok, data } 실계좌 원금·예수금·평가금, 순매수 있었던 달, 분배금 기록, 세금으로 아끼는 돈(추정), 목표, 내 계획, 시장 고점 대비
+//   GET → { ok, data } 실계좌 원금·예수금·평가금, 순매수 있었던 달, 이번 달 실계좌 매수(monthBuys), 분배금 기록, 세금으로 아끼는 돈(추정), 목표, 내 계획, 시장 고점 대비
 // 읽기만 한다. 체크인(이번 달 넣었어요)은 웹의 user-state 'accumulate'.deposits에 저장한다.
 
 /** 같은 지수 일반형 분배율을 TR형 절세 추정에 쓴다 */
@@ -55,11 +55,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 순매수가 있었던 달 — 수량 고침(ADJUST)은 넣은 돈이 아니라 빼고, 매수 − 매도 > 0인 달만
     const owner = [user.clientId ? `client_id.eq.${user.clientId}` : null, chatId ? `chat_id.eq.${chatId}` : null].filter(Boolean).join(',')
-    const trades = await selectPaged<{ side: string; price: number; quantity: number; traded_at: string }>(
+    const trades = await selectPaged<{ side: string; price: number; quantity: number; traded_at: string; code: string; broker_name: string | null; account_name: string | null; memo: string | null }>(
       async (from, to) =>
         await supabase
           .from('virtual_trades')
-          .select('side, price, quantity, traded_at')
+          .select('side, price, quantity, traded_at, code, broker_name, account_name, memo')
           .or(owner)
           .not('account_name', 'is', null)
           .in('side', ['BUY', 'SELL'])
@@ -75,6 +75,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       netByMonth.set(ym, (netByMonth.get(ym) ?? 0) + (t.side === 'BUY' ? amount : -amount))
     }
     const buyMonths = [...netByMonth.entries()].filter(([, v]) => v > 0).map(([ym]) => ym).sort()
+    // 이번 달 실계좌 매수 — 홈 '이번 달 할 일'이 포트폴리오에서 먼저 적은 매수를 알아보고 중복 기록을 막는다
+    const thisYm = kstYm(new Date().toISOString())
+    const monthBuys = trades
+      .filter((t) => t.side === 'BUY' && kstYm(t.traded_at) === thisYm)
+      .map((t) => ({ code: t.code, quantity: Number(t.quantity), price: Number(t.price), tradedAt: t.traded_at, broker: t.broker_name, account: t.account_name, memo: t.memo }))
 
     // 분배금 받은 기록(리밸런싱 가이드에서 적은 것)
     const receipts = guide?.receipts ?? []
@@ -137,6 +142,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         value: { holdings: Math.round(value), total: Math.round(value + cash), pnlPct: cost > 0 ? ((value - cost) / cost) * 100 : null },
         holdingCount: holdings.length,
         buyMonths,
+        monthBuys,
         receipts: { total: Math.round(receiptTotal), months: receiptMonths.length, since: receiptMonths[0] ?? null },
         tax: {
           pensionMonthly,
