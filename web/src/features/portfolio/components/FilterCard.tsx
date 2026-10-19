@@ -87,6 +87,7 @@ export default function FilterCard({
         aria-expanded={filterAccordionOpen}
         style={{
           display: 'flex',
+          flex: 1,
           alignItems: 'center',
           justifyContent: 'space-between',
           width: '100%',
@@ -98,7 +99,7 @@ export default function FilterCard({
           borderBottom: filterAccordionOpen ? '1px solid var(--color-border)' : 'none',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', flex: 1, minWidth: 0, alignItems: 'center', gap: 'var(--space-2)' }}>
           <span className="title-md" style={{ margin: 0 }}>필터 & 옵션</span>
           {(selectedSector || holdingStateFilter !== 'all' || gradeFilter !== 'all' || search || includeCost) && (
             <span className="caption" style={{ 
@@ -118,7 +119,7 @@ export default function FilterCard({
             </span>
           )}
         </div>
-        <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }} aria-hidden>
+        <span style={{ display: 'inline-flex', flexShrink: 0, alignItems: 'center', gap: '2px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }} aria-hidden>
           {filterAccordionOpen ? <>접기 <ChevronUp size={14} aria-hidden /></> : <>펼치기 <ChevronDown size={14} aria-hidden /></>}
         </span>
       </button>
