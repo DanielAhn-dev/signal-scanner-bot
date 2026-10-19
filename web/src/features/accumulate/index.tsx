@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import More from '../../components/ui/More'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan } from '../../lib/format'
@@ -102,6 +102,21 @@ export default function AccumulatePage() {
   // 입력은 화면 상태 — 저장하는 것은 기록(분배금·적립·평가금)과 대상 선택뿐이다
   const [freq, setFreq] = useState<Freq>('month')
   const [amount, setAmount] = useState('500000')
+  // 계산기 처음 값은 '내 계획' 매달 금액(계획이 없거나 0이면 50만원). 사용자가 고친 뒤에는 계획이 바뀌어도 덮지 않는다
+  const [planMonthly, setPlanMonthly] = useState(0)
+  const amountTouched = useRef(false)
+  const onPlanMonthly = useCallback((m: number) => {
+    setPlanMonthly(m)
+    if (m > 0 && !amountTouched.current) {
+      setAmount(String(m))
+      setFreq('month')
+    }
+  }, [])
+  const resetToPlan = () => {
+    amountTouched.current = false
+    setAmount(String(planMonthly))
+    setFreq('month')
+  }
   const [years, setYears] = useState(10)
   const [mode, setMode] = useState<'direct' | 'income'>('direct')
   // 3번 카드 보기: 모든 시작 시점 분포 / 기간 하나를 골라 실제 경로
@@ -191,7 +206,7 @@ export default function AccumulatePage() {
 
       <SavingProgressCard variant="full" />
       <div id="my-plan">
-        <MyPlanCard goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} />
+        <MyPlanCard goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} onPlanMonthly={onPlanMonthly} />
       </div>
 
       <section className="acc-card" aria-labelledby="acc-target">
@@ -233,6 +248,12 @@ export default function AccumulatePage() {
 
       <section className="acc-card" aria-labelledby="acc-amount">
         <h2 id="acc-amount">2. 얼마를 모을까</h2>
+        <p className="acc-note">
+          아래 계산용 금액입니다. 여기서 바꿔도 위 '내 계획'은 바뀌지 않습니다.
+          {mode === 'direct' && planMonthly > 0 && (num(amount) !== planMonthly || freq !== 'month') && (
+            <> <button type="button" className="acc-link" onClick={resetToPlan}>내 계획({man(planMonthly)})으로 되돌리기</button></>
+          )}
+        </p>
         <div className="acc-seg" role="radiogroup" aria-label="금액 기준">
           {([['direct', '직접 입력'], ['income', '인컴 분배금을 성장으로']] as const).map(([m, label]) => (
             <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'is-active' : ''} onClick={() => setMode(m)}>{label}</button>
@@ -240,9 +261,9 @@ export default function AccumulatePage() {
         </div>
         {mode === 'direct' ? (
           <div className="acc-row">
-            <label className="acc-field"><span>금액</span><input type="number" inputMode="numeric" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
+            <label className="acc-field"><span>금액</span><input type="number" inputMode="numeric" min="0" value={amount} onChange={(e) => { amountTouched.current = true; setAmount(e.target.value) }} /></label>
             <label className="acc-field"><span>주기</span>
-              <select value={freq} onChange={(e) => setFreq(e.target.value as Freq)}>
+              <select value={freq} onChange={(e) => { amountTouched.current = true; setFreq(e.target.value as Freq) }}>
                 <option value="day">매일</option><option value="week">매주</option><option value="month">매달</option>
               </select>
             </label>

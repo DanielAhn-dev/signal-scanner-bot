@@ -31,7 +31,8 @@ function summary(plan: Plan): string {
 /** 목표 진행 — 대시보드가 이미 불러온 목표 트래커 값을 넘긴다 (같은 요청을 두 번 하지 않게) */
 export type PlanGoal = { progressPct: number; gapPct: number }
 
-export default function MyPlanCard({ goal }: { goal?: PlanGoal | null }) {
+/** onPlanMonthly: 계획을 읽거나 저장할 때마다 매달 금액을 알린다 — 모아가기 계산기 처음 값이 계획과 같게 */
+export default function MyPlanCard({ goal, onPlanMonthly }: { goal?: PlanGoal | null; onPlanMonthly?: (monthly: number) => void }) {
   const navigate = useNavigate()
   const chatId = useCurrentChatId()
   const isAdmin = useProfileStore((st) => st.isAdmin)
@@ -47,6 +48,7 @@ export default function MyPlanCard({ goal }: { goal?: PlanGoal | null }) {
   const apply = (data: any) => {
     if (!data?.plan) return
     setPlan(data.plan as Plan)
+    onPlanMonthly?.(Number((data.plan as Plan).monthly) || 0)
     setDeposit({ next_deposit_date: data.next_deposit_date ?? null, total_deposited: data.total_deposited ?? null, deposit_log: Array.isArray(data.deposit_log) ? data.deposit_log : [] })
   }
 

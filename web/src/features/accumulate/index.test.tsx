@@ -13,7 +13,17 @@ vi.mock('../../stores/profileStore', () => ({
 }))
 // 화면 위 '내 모으기'·'내 계획'·목표는 각자 테스트가 있다 — 이 화면 테스트의 대상이 아니다
 vi.mock('../saving-progress/SavingProgressCard', () => ({ default: () => null }))
-vi.mock('../my-plan/MyPlanCard', () => ({ default: () => null }))
+// '내 계획'은 매달 금액만 알린다(onPlanMonthly) — 계산기 처음 값 테스트용
+const planMock = vi.hoisted(() => ({ monthly: 0 }))
+vi.mock('../my-plan/MyPlanCard', async () => {
+  const { useEffect } = await import('react')
+  return {
+    default: ({ onPlanMonthly }: { onPlanMonthly?: (m: number) => void }) => {
+      useEffect(() => { if (planMock.monthly) onPlanMonthly?.(planMock.monthly) }, [onPlanMonthly])
+      return null
+    },
+  }
+})
 vi.mock('../goal-tracker/useGoalTracker', () => ({ useGoalTracker: () => ({ view: null }) }))
 // 종목 검색 입력은 이 화면 테스트의 대상이 아니다
 vi.mock('../../components/StockSearchInput', () => ({ default: () => <input aria-label="종목 검색" /> }))
@@ -24,6 +34,7 @@ function candles(n: number, close: (i: number) => number) {
 }
 
 beforeEach(() => {
+  planMock.monthly = 0
   window.localStorage.clear()
   apiFetchMock.mockReset()
   apiFetchMock.mockImplementation((path: string) => {
@@ -36,6 +47,26 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><AccumulatePage /></MemoryRouter>)
 
 describe('모아가기', () => {
+  it('계산기 처음 값은 내 계획 금액, 고치면 되돌리기 링크', async () => {
+    planMock.monthly = 1_220_000
+    renderPage()
+    await screen.findByText('추천')
+    const input = screen.getByLabelText('금액') as HTMLInputElement
+    expect(input.value).toBe('1220000')
+    expect(screen.getByText(/위 '내 계획'은 바뀌지 않습니다/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /으로 되돌리기/ })).not.toBeInTheDocument()
+    fireEvent.change(input, { target: { value: '500000' } })
+    fireEvent.click(screen.getByRole('button', { name: '내 계획(122만원)으로 되돌리기' }))
+    expect(input.value).toBe('1220000')
+  })
+
+  it('계획이 없으면 50만원 그대로, 되돌리기 링크 없음', async () => {
+    renderPage()
+    await screen.findByText('추천')
+    expect((screen.getByLabelText('금액') as HTMLInputElement).value).toBe('500000')
+    expect(screen.queryByRole('button', { name: /으로 되돌리기/ })).not.toBeInTheDocument()
+  })
+
   it('추천 상품과 과거 시뮬레이션 결과를 보여 준다', async () => {
     renderPage()
     expect(await screen.findByText('추천')).toBeInTheDocument()
