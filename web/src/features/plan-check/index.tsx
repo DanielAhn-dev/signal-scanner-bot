@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import AmountHint from '../../components/ui/AmountHint'
 import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
@@ -175,7 +176,7 @@ function SplitCard() {
     <section className="acc-card">
       <h2>한 번에 넣을까, 나눠 넣을까</h2>
       <p className="acc-note"><strong>나눠 넣는다고 더 벌지는 않습니다.</strong> 오히려 평균적으로는 조금 덜 법니다. 대신 넣자마자 떨어지는 장면을 덜 보게 해 주는 "후회 보험"입니다. 보험료가 얼마인지 아래에서 비교하세요.</p>
-      <label className="acc-field"><span>넣을 목돈 (만원)</span><input type="number" inputMode="numeric" min="0" value={amountMan} onChange={(e) => setAmountMan(e.target.value)} /></label>
+      <label className="acc-field"><span>넣을 목돈 (만원)</span><input type="number" inputMode="numeric" min="0" value={amountMan} onChange={(e) => setAmountMan(e.target.value)} /><AmountHint value={amountMan} unit="man" /></label>
       <table className="acc-table plan-table">
         <thead><tr><th>방식</th><th>평균 비용(5년 뒤)</th><th>첫해 최저 평가 (나쁜 10%)</th></tr></thead>
         <tbody>
@@ -221,7 +222,7 @@ function SavingCard() {
       <h2>목표 금액까지 매달 얼마가 필요한가</h2>
       <p className="acc-note">금액은 <strong>오늘 물가로 환산한 가치</strong>이고, 월 적립액도 오늘 가치로 고정했습니다. 단일 숫자 대신 시작 시점의 운에 따른 범위를 보여 드립니다.</p>
       <div className="acc-row">
-        <label className="acc-field"><span>목표 금액 (만원)</span><input type="number" inputMode="numeric" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /></label>
+        <label className="acc-field"><span>목표 금액 (만원)</span><input type="number" inputMode="numeric" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /><AmountHint value={targetMan} unit="man" /></label>
         <label className="acc-field">
           <span>기간</span>
           <select value={years} onChange={(e) => setYears(Number(e.target.value))}>
@@ -337,8 +338,8 @@ function IncomeCard() {
       <h2>인컴 계좌, 매달 얼마나 들어올까</h2>
       <p className="acc-note">커버드콜과 고배당을 섞어 매달 분배금을 받는 계좌의 <strong>낮은 해·보통·높은 해</strong> 범위를 보여 줍니다. 분배금은 이자처럼 일정하지 않고 시장 변동성에 따라 움직입니다.</p>
       <div className="acc-row">
-        <label className="acc-field"><span>인컴 계좌 원금 (만원)</span><input type="number" inputMode="numeric" min="0" value={principalMan} onChange={(e) => setPrincipalMan(e.target.value)} /></label>
-        <label className="acc-field"><span>월 실수령 목표 (만원)</span><input type="number" inputMode="numeric" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /></label>
+        <label className="acc-field"><span>인컴 계좌 원금 (만원)</span><input type="number" inputMode="numeric" min="0" value={principalMan} onChange={(e) => setPrincipalMan(e.target.value)} /><AmountHint value={principalMan} unit="man" /></label>
+        <label className="acc-field"><span>월 실수령 목표 (만원)</span><input type="number" inputMode="numeric" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /><AmountHint value={targetMan} unit="man" /></label>
       </div>
       <label className="acc-field">
         <span>커버드콜 유형</span>
@@ -427,8 +428,8 @@ function TaxShelterCard() {
             <option value="high">총급여 5,500만원 초과</option>
           </select>
         </label>
-        <label className="acc-field"><span>올해 연금저축 납입 (만원)</span><input type="number" inputMode="numeric" min="0" value={savingMan} onChange={(e) => setSavingMan(e.target.value)} /></label>
-        <label className="acc-field"><span>올해 IRP 납입 (만원)</span><input type="number" inputMode="numeric" min="0" value={irpMan} onChange={(e) => setIrpMan(e.target.value)} /></label>
+        <label className="acc-field"><span>올해 연금저축 납입 (만원)</span><input type="number" inputMode="numeric" min="0" value={savingMan} onChange={(e) => setSavingMan(e.target.value)} /><AmountHint value={savingMan} unit="man" /></label>
+        <label className="acc-field"><span>올해 IRP 납입 (만원)</span><input type="number" inputMode="numeric" min="0" value={irpMan} onChange={(e) => setIrpMan(e.target.value)} /><AmountHint value={irpMan} unit="man" /></label>
       </div>
       <dl className="acc-tiles">
         <div className="is-main"><dt>연말정산 환급</dt><dd>{manRound(plan.refundWon)}</dd></div>
@@ -479,8 +480,8 @@ function RetireCard() {
       <h2>월 생활비를 계좌에서 꺼내 쓴다면</h2>
       <p className="acc-note">"월 얼마 받고 싶다"를 <strong>세금·건강보험료를 낸 뒤 손에 남는 돈</strong>으로 받아, 계좌에서 실제로 얼마를 꺼내야 하는지 거꾸로 계산합니다. 인출이 크면 중간에 바닥날 위험이 커집니다.</p>
       <div className="acc-row">
-        <label className="acc-field"><span>굴릴 금융자산 (만원)</span><input type="number" inputMode="numeric" min="0" value={assetsMan} onChange={(e) => setAssetsMan(e.target.value)} /></label>
-        <label className="acc-field"><span>월 실수령 목표 (만원)</span><input type="number" inputMode="numeric" min="0" value={netMan} onChange={(e) => setNetMan(e.target.value)} /></label>
+        <label className="acc-field"><span>굴릴 금융자산 (만원)</span><input type="number" inputMode="numeric" min="0" value={assetsMan} onChange={(e) => setAssetsMan(e.target.value)} /><AmountHint value={assetsMan} unit="man" /></label>
+        <label className="acc-field"><span>월 실수령 목표 (만원)</span><input type="number" inputMode="numeric" min="0" value={netMan} onChange={(e) => setNetMan(e.target.value)} /><AmountHint value={netMan} unit="man" /></label>
         <label className="acc-field"><span>국민연금 등 월 수령액 (만원, 선택)</span><input type="number" inputMode="numeric" min="0" value={pensionMan} placeholder="0" onChange={(e) => setPensionMan(e.target.value)} /></label>
       </div>
       <div className="acc-row">
@@ -546,7 +547,7 @@ function AdminLab() {
       <h2>관리자 · 연구 원자료</h2>
       <p className="acc-note">시작 연도 범위를 바꿔 필요 월 적립액의 분포 전체를 봅니다(미국 주식 100% 실질). 시대에 따라 결과가 얼마나 달라지는지 확인하는 용도입니다.</p>
       <div className="acc-row">
-        <label className="acc-field"><span>목표 (만원)</span><input type="number" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /></label>
+        <label className="acc-field"><span>목표 (만원)</span><input type="number" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /><AmountHint value={targetMan} unit="man" /></label>
         <label className="acc-field"><span>기간(년)</span><input type="number" min="5" max="40" value={years} onChange={(e) => setYears(Number(e.target.value) || 20)} /></label>
         <label className="acc-field"><span>시작 연도 ~부터</span><input type="number" min="1926" max="2023" value={from} onChange={(e) => setFrom(Number(e.target.value) || 1926)} /></label>
         <label className="acc-field"><span>~까지</span><input type="number" min="1926" max="2023" value={to} onChange={(e) => setTo(Number(e.target.value) || 2003)} /></label>

@@ -23,6 +23,8 @@
 .acc-row--single { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .acc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .acc-field > span { color: var(--color-text-secondary); font-size: 13px; }
+/* 금액 입력칸 아래 '= 1억원' (components/ui/AmountHint) */
+.amount-hint { color: var(--color-text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .acc-field input, .acc-field select { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
 .acc-field input[type='range'] { padding: 0; accent-color: var(--color-brand); }
 .acc-field input:focus, .acc-field select:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }

@@ -69,7 +69,7 @@ describe('모아가기', () => {
     planMock.monthly = 1_220_000
     renderPage()
     await screen.findByText('추천')
-    const input = screen.getByLabelText('금액') as HTMLInputElement
+    const input = screen.getByLabelText(/^금액($|=)/) as HTMLInputElement
     expect(input.value).toBe('1220000')
     expect(screen.getByText(/위 '내 계획'은 바뀌지 않습니다/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /으로 되돌리기/ })).not.toBeInTheDocument()
@@ -81,7 +81,7 @@ describe('모아가기', () => {
   it('계획이 없으면 50만원 그대로, 되돌리기 링크 없음', async () => {
     renderPage()
     await screen.findByText('추천')
-    expect((screen.getByLabelText('금액') as HTMLInputElement).value).toBe('500000')
+    expect((screen.getByLabelText(/^금액($|=)/) as HTMLInputElement).value).toBe('500000')
     expect(screen.queryByRole('button', { name: /으로 되돌리기/ })).not.toBeInTheDocument()
   })
 

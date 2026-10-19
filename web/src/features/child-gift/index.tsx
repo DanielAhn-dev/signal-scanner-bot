@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import AmountHint from '../../components/ui/AmountHint'
 import More from '../../components/ui/More'
 import { CHILD_ETF_DEFAULTS, childEtfCheck } from '../../lib/childEtf'
 import {
@@ -129,7 +130,7 @@ function GiftsCard({ child, today, full, onAdd, onToggle, onRemove }: { child: C
       <p className="acc-note">자녀 계좌로 돈을 보낸 날이 증여일입니다. 용돈이어도 저축·투자로 돌린 돈은 기록해 두세요. 한 번에 모아서 넣으면 신고도 한 번이면 됩니다.</p>
       <div className="acc-row">
         <label className="acc-field"><span>증여한 날</span><input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} /></label>
-        <label className="acc-field"><span>금액 (만원)</span><input type="number" inputMode="numeric" min="0" value={amountMan} placeholder="2000" onChange={(e) => setAmountMan(e.target.value)} /></label>
+        <label className="acc-field"><span>금액 (만원)</span><input type="number" inputMode="numeric" min="0" value={amountMan} placeholder="2000" onChange={(e) => setAmountMan(e.target.value)} /><AmountHint value={amountMan} unit="man" /></label>
       </div>
       {plan && (
         <p className={plan.withinLimit ? 'acc-summary' : 'acc-warn'}>
@@ -189,7 +190,7 @@ function ProjectionCard({ child, today }: { child: Child; today: string }) {
       <h2>오래 두면 어느 정도가 될까</h2>
       <p className="acc-note">지수 ETF에 넣어 두고 건드리지 않는다고 가정했을 때, 과거 모든 시작 시점에서의 결과 범위입니다. 금액은 <strong>오늘의 물가로 환산한 가치</strong>입니다.</p>
       <div className="acc-row">
-        <label className="acc-field"><span>지금 넣는 금액 (만원)</span><input type="number" inputMode="numeric" min="0" value={lumpMan} onChange={(e) => setLumpMan(e.target.value)} /></label>
+        <label className="acc-field"><span>지금 넣는 금액 (만원)</span><input type="number" inputMode="numeric" min="0" value={lumpMan} onChange={(e) => setLumpMan(e.target.value)} /><AmountHint value={lumpMan} unit="man" /></label>
         <label className="acc-field"><span>매달 적립 (만원, 선택)</span><input type="number" inputMode="numeric" min="0" value={monthlyMan} placeholder="0" onChange={(e) => setMonthlyMan(e.target.value)} /></label>
         <label className="acc-field">
           <span>얼마 동안 (자녀 {age}세 → {age + years}세)</span>

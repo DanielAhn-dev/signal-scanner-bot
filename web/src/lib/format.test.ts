@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatKrwCompact, formatKstDateTime } from './format'
+import { formatKrwCompact, formatKrwReadable, formatKstDateTime } from './format'
 
 describe('formatKrwCompact', () => {
   it('uses readable Korean units and preserves direction when requested', () => {
@@ -29,5 +29,16 @@ describe('formatKstDateTime', () => {
   it('uses a dash for missing or invalid timestamps', () => {
     expect(formatKstDateTime(null)).toBe('—')
     expect(formatKstDateTime('not-a-date')).toBe('—')
+  })
+})
+
+describe('formatKrwReadable', () => {
+  it('반올림 없이 억·만·원으로 읽어 준다', () => {
+    expect(formatKrwReadable(100_000_000)).toBe('1억원')
+    expect(formatKrwReadable(624_744)).toBe('62만 4,744원')
+    expect(formatKrwReadable(1_220_000)).toBe('122만원')
+    expect(formatKrwReadable(200_030_000)).toBe('2억 3만원')
+    expect(formatKrwReadable(12_345_678_901)).toBe('123억 4,567만 8,901원')
+    expect(formatKrwReadable(0)).toBe('0원')
   })
 })

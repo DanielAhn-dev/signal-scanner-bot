@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AmountHint from '../../components/ui/AmountHint'
 import More from '../../components/ui/More'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan } from '../../lib/format'
@@ -298,7 +299,7 @@ export default function AccumulatePage() {
         </div>
         {mode === 'direct' ? (
           <div className="acc-row">
-            <label className="acc-field"><span>금액</span><input type="number" inputMode="numeric" min="0" value={amount} onChange={(e) => { amountTouched.current = true; setAmount(e.target.value) }} /></label>
+            <label className="acc-field"><span>금액</span><input type="number" inputMode="numeric" min="0" value={amount} onChange={(e) => { amountTouched.current = true; setAmount(e.target.value) }} /><AmountHint value={amount} /></label>
             <label className="acc-field"><span>주기</span>
               <select value={freq} onChange={(e) => { amountTouched.current = true; setFreq(e.target.value as Freq) }}>
                 <option value="day">매일</option><option value="week">매주</option><option value="month">매달</option>
@@ -326,7 +327,7 @@ export default function AccumulatePage() {
         )}
         <div className="acc-row">
           <label className="acc-field"><span>기간: {years}년</span><input type="range" min="1" max="15" value={years} onChange={(e) => setYears(Number(e.target.value))} /></label>
-          <label className="acc-field"><span>이미 가진 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" placeholder="0" value={lumpText} onChange={(e) => setLumpText(e.target.value)} onBlur={() => update({ lump: num(lumpText) })} /></label>
+          <label className="acc-field"><span>이미 가진 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" placeholder="0" value={lumpText} onChange={(e) => setLumpText(e.target.value)} onBlur={() => update({ lump: num(lumpText) })} /><AmountHint value={lumpText} /></label>
         </div>
         <p className="acc-summary">매달 <strong>{won(monthly)}</strong> × {years}년 = 총 납입 <strong>{man(monthly * years * 12 + lump)}</strong></p>
       </section>
@@ -386,7 +387,7 @@ export default function AccumulatePage() {
 
       <section className="acc-card" aria-labelledby="acc-goal">
         <h2 id="acc-goal">4. 목표 금액에서 거꾸로</h2>
-        <label className="acc-field"><span>{years}년 뒤 갖고 싶은 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} /></label>
+        <label className="acc-field"><span>{years}년 뒤 갖고 싶은 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} /><AmountHint value={goalAmount} /></label>
         {goalNeed ? (
           <dl className="acc-facts">
             <div><dt>보통의 경우(중앙값)</dt><dd>매달 {won(goalNeed.typical)}</dd></div>
@@ -426,8 +427,8 @@ export default function AccumulatePage() {
         <p className="acc-note">입금액은 증권사 앱에 보이는 세후 금액 그대로 적습니다. 분배금은 월초·중순·월말에 나눠 들어오니 그달 합계를 적고, 진행 중인 달은 평균에서 제외됩니다.</p>
         <div className="acc-row">
           <label className="acc-field"><span>월</span><input type="month" value={recMonth} onChange={(e) => setRecMonth(e.target.value)} /></label>
-          <label className="acc-field"><span>받은 분배금(세후)</span><input type="number" inputMode="numeric" min="0" value={recReceived} onChange={(e) => setRecReceived(e.target.value)} placeholder={state.received.find(([m]) => m === recMonth)?.[1]?.toString() ?? ''} /></label>
-          <label className="acc-field"><span>적립한 금액</span><input type="number" inputMode="numeric" min="0" value={recDeposit} onChange={(e) => setRecDeposit(e.target.value)} placeholder={state.deposits.find(([m]) => m === recMonth)?.[1]?.toString() ?? ''} /></label>
+          <label className="acc-field"><span>받은 분배금(세후)</span><input type="number" inputMode="numeric" min="0" value={recReceived} onChange={(e) => setRecReceived(e.target.value)} placeholder={state.received.find(([m]) => m === recMonth)?.[1]?.toString() ?? ''} /><AmountHint value={recReceived} /></label>
+          <label className="acc-field"><span>적립한 금액</span><input type="number" inputMode="numeric" min="0" value={recDeposit} onChange={(e) => setRecDeposit(e.target.value)} placeholder={state.deposits.find(([m]) => m === recMonth)?.[1]?.toString() ?? ''} /><AmountHint value={recDeposit} /></label>
         </div>
         <button type="button" className="acc-primary" disabled={!recMonth || (!num(recReceived) && !num(recDeposit))} onClick={saveRecord}>이 달 기록 저장</button>
         {(state.received.length > 0 || state.deposits.length > 0) && (
@@ -447,7 +448,7 @@ export default function AccumulatePage() {
         )}
         {/* 위 '이 달 기록 저장'과 같은 규칙: 입력칸 줄 아래에 버튼 (같은 줄 grid에 넣으면 버튼이 라벨 높이만큼 어긋났다) */}
         <div className="acc-row acc-row--single">
-          <label className="acc-field"><span>증권사 앱의 현재 평가금</span><input type="number" inputMode="numeric" min="0" value={valueText} onChange={(e) => setValueText(e.target.value)} placeholder={state.valuation ? String(state.valuation.value) : ''} /></label>
+          <label className="acc-field"><span>증권사 앱의 현재 평가금</span><input type="number" inputMode="numeric" min="0" value={valueText} onChange={(e) => setValueText(e.target.value)} placeholder={state.valuation ? String(state.valuation.value) : ''} /><AmountHint value={valueText} /></label>
         </div>
         <button type="button" className="acc-primary" disabled={!num(valueText)} onClick={() => { update({ valuation: { ym, value: num(valueText) } }); setValueText('') }}>평가금 저장</button>
         {track.value != null && (

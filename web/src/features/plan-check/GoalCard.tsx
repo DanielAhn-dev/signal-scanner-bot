@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import AmountHint from '../../components/ui/AmountHint'
 import More from '../../components/ui/More'
 import { GLIDE_PROFILES, MAX_GOALS, TOLERANCE_OPTIONS, capFromTolerance, glidePlan, sanitizeGoalState, type AccountGoal, type GlideProfile } from '../../lib/accountGoals'
 import { todayKst } from '../../lib/dropPlan'
@@ -83,7 +84,7 @@ function AddGoal({ today, onAdd }: { today: string; onAdd: (g: AccountGoal) => v
         <label className="acc-field"><span>쓸 날짜</span><input type="date" value={targetDate} min={today} onChange={(e) => setTargetDate(e.target.value)} /></label>
       </div>
       <div className="acc-row">
-        <label className="acc-field"><span>지금 평가액 (만원)</span><input type="number" inputMode="numeric" min="0" value={valueMan} onChange={(e) => setValueMan(e.target.value)} /></label>
+        <label className="acc-field"><span>지금 평가액 (만원)</span><input type="number" inputMode="numeric" min="0" value={valueMan} onChange={(e) => setValueMan(e.target.value)} /><AmountHint value={valueMan} unit="man" /></label>
         <label className="acc-field"><span>주식(지수) 비중 %</span><input type="number" inputMode="numeric" min="0" max="100" value={stockPct} onChange={(e) => setStockPct(e.target.value)} /></label>
         <ToleranceSelect value={tolerance} onChange={setTolerance} />
       </div>

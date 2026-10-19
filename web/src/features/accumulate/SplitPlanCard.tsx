@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import AmountHint from '../../components/ui/AmountHint'
 import More from '../../components/ui/More'
 import { SPLIT_PLAN_META, SPLIT_PLAN_STATS } from '../../data/splitPlans'
 import { formatKrwMan } from '../../lib/format'
@@ -25,7 +26,7 @@ export default function SplitPlanCard() {
       <h2 id="acc-split">목돈 나눠 넣기</h2>
       <p className="acc-note">더 오르기 전에 많이 담고 싶은 마음과, 담은 뒤 더 떨어질까 하는 걱정 사이에서 정하는 방식입니다. 날짜를 미리 정해 두면 그날 가격과 상관없이 기계적으로 넣을 수 있습니다.</p>
       <div className="acc-row">
-        <label className="acc-field"><span>넣을 돈(만원)</span><input type="number" inputMode="numeric" min="0" value={totalMan} onChange={(e) => setTotalMan(e.target.value)} /></label>
+        <label className="acc-field"><span>넣을 돈(만원)</span><input type="number" inputMode="numeric" min="0" value={totalMan} onChange={(e) => setTotalMan(e.target.value)} /><AmountHint value={totalMan} unit="man" /></label>
         <label className="acc-field"><span>첫 매수일</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value || todayKst())} /></label>
       </div>
       <div className="acc-seg" role="radiogroup" aria-label="나눠 넣는 방식">

@@ -39,6 +39,18 @@ export function formatKrwMan(value: number): string {
   return rest ? `${sign}${eok.toLocaleString('ko-KR')}억 ${rest.toLocaleString('ko-KR')}만원` : `${sign}${eok.toLocaleString('ko-KR')}억원`
 }
 
+/** 입력 확인용으로 반올림 없이 읽어 주기 — 100000000 → 1억원, 624744 → 62만 4,744원, 1220000 → 122만원 */
+export function formatKrwReadable(value: number): string {
+  if (!Number.isFinite(value)) return ''
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.round(Math.abs(value))
+  const eok = Math.trunc(abs / 100_000_000)
+  const man = Math.trunc((abs % 100_000_000) / 10_000)
+  const rest = abs % 10_000
+  const parts = [eok ? `${eok.toLocaleString('ko-KR')}억` : '', man ? `${man.toLocaleString('ko-KR')}만` : '', rest ? rest.toLocaleString('ko-KR') : ''].filter(Boolean)
+  return parts.length ? `${sign}${parts.join(' ')}원` : '0원'
+}
+
 export function formatKstDateTime(value: unknown, options: Intl.DateTimeFormatOptions = {}): string {
   if (value == null || value === '') return '—'
   // 숫자(밀리초 시각)는 문자열로 바꾸면 Date가 못 읽어 늘 '—'가 됐다
