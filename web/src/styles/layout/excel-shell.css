@@ -4045,6 +4045,9 @@
   .xls-content-inner {
     width: 100%;
     min-width: 100%;
+    /* 화면 끝 여백 — 포트폴리오·설정처럼 바깥 여백을 0으로 평탄화한 화면은 마지막 카드가 하단 탭바에 붙었다.
+       border-box라 min-height(100%) 안에 포함돼 짧은 화면에 쓸데없는 스크롤이 생기지 않는다 */
+    padding-bottom: 32px;
   }
   .xls-content-inner > * {
     width: 100%;
