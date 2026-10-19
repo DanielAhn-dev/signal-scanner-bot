@@ -3,6 +3,7 @@ import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
 import GoalCard from './GoalCard'
+import WholeChoiceCard from './WholeChoiceCard'
 import { EARLY_WITHDRAWAL_TAX_RATE, PENSION_SAVING_LIMIT_WON, PENSION_TOTAL_LIMIT_WON, TAX_RULES_YEAR, compareAccounts, creditRate, planTaxShelter, type IncomeBand } from '../../lib/taxShelter'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, ccDownturnCase, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
@@ -68,7 +69,7 @@ export default function PlanCheckPage() {
           ))}
         </div>
       </section>
-      {tab === 'first' && <><ToleranceCard /><MarketPickCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
+      {tab === 'first' && <><WholeChoiceCard /><ToleranceCard /><MarketPickCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
       {tab === 'goal' && <GoalCard basis={<Basis id="glide" />} />}
       {tab === 'income' && <IncomeCard />}

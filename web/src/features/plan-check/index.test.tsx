@@ -10,6 +10,17 @@ describe('계획 점검', () => {
     expect(screen.getByText('40%', { selector: 'dd' })).toBeTruthy()
   })
 
+  it('한꺼번에 보기: 조합을 바꾸면 모든 시작 달 범위와 반대 방식의 후회 몫을 같이 보여준다', () => {
+    render(<PlanCheckPage />)
+    expect(screen.getByText('내 선택 한꺼번에 보기')).toBeTruthy()
+    expect(screen.getByText(/좋은 사례만 보면 이 숫자가 보입니다/)).toBeTruthy()
+    expect(screen.getByText('12개월 나눠 넣었다면 끝이 더 좋았던 경우')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '12개월 나눠' }))
+    expect(screen.getByText('한 번에 넣었다면 도중 손실이 덜 깊었던 경우')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '10년' }))
+    expect(screen.getByText(/10년 뒤 넣은 돈 대비/)).toBeTruthy()
+  })
+
   it('분할 표는 분할이 더 벌어 주는 게 아니라고 말하고 월 1회 확인을 권한다', () => {
     render(<PlanCheckPage />)
     expect(screen.getByText(/나눠 넣는다고 더 벌지는 않습니다/)).toBeTruthy()
@@ -40,8 +51,8 @@ describe('계획 점검', () => {
 
   it('모든 표에는 자료 기준(기간·표본·한계)이 붙는다', () => {
     const { container } = render(<PlanCheckPage />)
-    // 처음 넣는 법 탭: 감내 낙폭·시장 비교·재미 몫·분할·확인 빈도 = 5개
-    expect(container.querySelectorAll('.plan-basis').length).toBe(5)
+    // 처음 넣는 법 탭: 한꺼번에 보기·감내 낙폭·시장 비교·재미 몫·분할·확인 빈도 = 6개
+    expect(container.querySelectorAll('.plan-basis').length).toBe(6)
     fireEvent.click(screen.getByRole('tab', { name: '필요 월 적립' }))
     expect(container.querySelectorAll('.plan-basis').length).toBe(1)
     fireEvent.click(screen.getByRole('tab', { name: '인컴 점검' }))
