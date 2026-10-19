@@ -117,7 +117,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (body.notify_channel !== 'telegram' && body.notify_channel !== 'push') {
           return res.status(400).json({ error: 'notify_channel must be telegram or push' })
         }
-        const { data: chRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const { data: chRow, error: chReadError } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        if (chReadError) return res.status(500).json({ error: chReadError.message })
         const chPrefs = { ...((chRow?.prefs as Record<string, unknown>) || {}), notify_channel: body.notify_channel }
         const { error: chError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: chPrefs }, { onConflict: 'tg_id' })
         if (chError) return res.status(500).json({ error: chError.message })
@@ -129,7 +130,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const lp = (body.life_profile ?? {}) as { birthMonth?: unknown; retireAge?: unknown }
         const parsed = sanitizeLifeInput(lp, toKstDateKey())
         if (!parsed.ok) return res.status(400).json({ error: parsed.error })
-        const { data: lifeRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const { data: lifeRow, error: lifeReadError } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        if (lifeReadError) return res.status(500).json({ error: lifeReadError.message })
         const lifePrefs: Record<string, unknown> = { ...((lifeRow?.prefs as Record<string, unknown>) || {}) }
         if (parsed.value) {
           lifePrefs.life_birth_month = parsed.value.birthMonth
@@ -147,7 +149,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.manual_deposit !== undefined && body.virtual_seed_capital === undefined) {
         const amount = normalizeManualDeposit(body.manual_deposit)
         if (amount === null) return res.status(400).json({ error: '입금액은 1만원 이상 10억원 이하로 입력하세요' })
-        const { data: manRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const { data: manRow, error: manReadError } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        if (manReadError) return res.status(500).json({ error: manReadError.message })
         const current = ((manRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>
         // 시드가 없으면 입금할 계좌가 없다 — 입금이 시드를 새로 만들어 버리지 않게 막는다
         if (!(Number(current.virtual_seed_capital) > 0) || current.virtual_cash == null) {
@@ -191,11 +194,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Merge into existing prefs
-      const { data: userRow } = await supabase
+      // 읽기 실패를 빈 prefs로 보면 나머지 설정을 지우고 현금을 시드로 되돌린다 — 저장하지 않는다
+      const { data: userRow, error: readError } = await supabase
         .from('users')
         .select('prefs')
         .eq('tg_id', targetChatId)
         .maybeSingle()
+      if (readError) return res.status(500).json({ error: readError.message })
 
       const currentPrefs = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>
       const updatedPrefs: Record<string, unknown> = {

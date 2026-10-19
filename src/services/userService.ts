@@ -306,11 +306,17 @@ export async function setUserInvestmentPrefs(
   tgId: number,
   patch: InvestmentPrefs
 ): Promise<{ ok: boolean; prefs?: InvestmentPrefs; message?: string }> {
-  const { data: userRow } = await supabase
+  const { data: userRow, error: readError } = await supabase
     .from("users")
     .select("prefs")
     .eq("tg_id", tgId)
-    .single();
+    .maybeSingle();
+
+  // 읽기 실패를 빈 prefs로 보면 patch만 남기고 나머지(현금·시드·알림 채널…)를 통째로 지운다
+  if (readError) {
+    console.error("setUserInvestmentPrefs read error:", readError);
+    return { ok: false, message: "투자금 설정을 불러오지 못해 저장하지 않았습니다." };
+  }
 
   const currentPrefs = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<
     string,
