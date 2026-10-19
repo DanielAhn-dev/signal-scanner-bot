@@ -24,6 +24,7 @@ import {
 } from '../../src/lib/incomeGuide'
 import { buildGuidePlanSnapshot } from '../../src/services/guidePlanSnapshot'
 import { buildAdherence } from '../../src/lib/guideAdherence'
+import { readOwnUserState } from './user-state'
 import { MAX_RECEIPTS, estimateReinvest, monthSummary, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
@@ -140,6 +141,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const prevMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()
     const yearAgoMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 12 ? `${y}-01` : `${y - 1}-${String(m + 1).padStart(2, '0')}` })()
     const ctx = { settings: file.settings, today, priceOf: (code: string) => prices.get(code) }
+    // 이번 달 월입금 — 모아가기 '이번 달 넣었어요' 체크인(user-state 'accumulate'.deposits). 받은 분배금이 있을 때만 읽는다
+    let deposit: number | null = 0
+    if (monthSummary(receipts, month).net > 0) {
+      const state = await readOwnUserState(supabase, user).catch(() => null)
+      const deposits = (state?.accumulate?.value as { deposits?: Array<[string, number]> } | null | undefined)?.deposits
+      deposit = state == null ? null : Number((Array.isArray(deposits) ? deposits : []).find((d) => Array.isArray(d) && d[0] === month)?.[1]) || 0
+    }
     return res.status(200).json({
       ok: true,
       data: {
@@ -153,7 +161,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // 최근 12개월 — 화면이 달별로 묶어 지난달 대비 증감을 보여 준다
           recent: receipts.filter((r) => r.month >= yearAgoMonth).sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.localeCompare(a.createdAt)),
           // 받은 분배금 중 매수에 쓰인 몫 — 예수금 변화로 거꾸로 추정(따로 적지 않아도 되게)
-          reinvest: estimateReinvest({ receipts, history, cashNow: view.cashPlan.balance, cashUpdatedAt: file.settings.cashUpdatedAt, today }),
+          reinvest: estimateReinvest({ receipts, history, cashNow: view.cashPlan.balance, cashUpdatedAt: file.settings.cashUpdatedAt, deposit, today }),
         },
         // 가이드 따름 기록 — 안내와 다음 기록의 보유 변화 비교 (내 선택 돌아보기)
         adherence: buildAdherence({ history, today, priceOf: (code) => prices.get(code), receipts, excluded: file.adherenceExcluded }),

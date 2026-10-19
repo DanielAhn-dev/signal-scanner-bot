@@ -180,13 +180,19 @@ export type ReinvestEstimate =
       month: string;
       /** 이번 달 받은 분배금(세후) */
       received: number;
+      /** 이번 달 새로 넣은 돈(모아가기 '이번 달 넣었어요' 체크인). 없으면 0 */
+      deposit: number;
+      /** 월입금을 읽지 못했다(조회 실패) — 0으로 계산했으니 재투자가 적게 보일 수 있다 */
+      depositUnknown: boolean;
       /** 기준 기록 날짜(지난달 마지막 점검 기록) */
       baselineDate: string;
       cashThen: number;
       cashNow: number;
-      /** 매수에 쓰인 것으로 보이는 몫 = 받은 분배금 − 늘어난 예수금(0~받은 분배금) */
+      /** 들어온 돈(분배금 + 월입금) 중 매수에 쓰인 것으로 보이는 금액 = 들어온 돈 − 늘어난 예수금(0~들어온 돈) */
+      bought: number;
+      /** 그중 분배금 몫 — 돈은 섞여 구분할 수 없으니 들어온 비율대로 나눈다 */
       reinvested: number;
-      /** 현금으로 남은 몫 = 받은 분배금 − reinvested */
+      /** 분배금 중 현금으로 남은 몫 = 받은 분배금 − reinvested */
       kept: number;
       /** 기준 예수금을 현금 비중으로 되짚었다(예수금을 저장하기 전의 기록) */
       baselineApprox: boolean;
@@ -198,14 +204,16 @@ export type ReinvestEstimate =
 
 /**
  * 분배금 재투자 추정 — 예수금과 보유를 증권사 앱 숫자로 덮어쓰는 사람은 "어느 돈으로 샀는지"를 따로 적지 않는다(2026-10-19 사용자).
- * 그래서 거꾸로 계산한다: 지난달 마지막 기록 뒤 예수금이 받은 분배금만큼 늘지 않았다면 그 차이는 매수에 쓰인 것으로 본다.
- * 그사이 월급 입금은 예수금을 늘려 재투자를 적게, 출금은 많게 보이게 하므로 추정치다.
+ * 그래서 거꾸로 계산한다: 지난달 마지막 기록 뒤 들어온 돈(분배금 + 이번 달 월입금)만큼 예수금이 늘지 않았다면 그 차이는 매수에 쓰인 것으로 본다.
+ * 월입금은 사용자가 따로 넣은 돈만 체크인한다. 체크인하지 않은 입금·출금이 있으면 틀어지므로 추정치다.
  */
 export function estimateReinvest(input: {
   receipts: DistributionReceipt[];
   history: Array<{ date: string; total: number; cash?: number; groups: Array<{ group: string; actualPct: number }> }>;
   cashNow: number;
   cashUpdatedAt?: string | null;
+  /** 이번 달 월입금(원). null = 읽지 못함 */
+  deposit?: number | null;
   today: string;
 }): ReinvestEstimate | null {
   const month = input.today.slice(0, 7);
@@ -221,6 +229,10 @@ export function estimateReinvest(input: {
   const baselineApprox = base.cash == null;
   const cashThen = base.cash ?? Math.round((base.total * (base.groups.find((g) => g.group === "cash")?.actualPct ?? 0)) / 100);
   const cashNow = Math.round(input.cashNow);
-  const kept = Math.min(received, Math.max(0, cashNow - cashThen));
-  return { status: "ok", month, received, baselineDate: base.date, cashThen, cashNow, reinvested: received - kept, kept, baselineApprox };
+  const depositUnknown = input.deposit === null;
+  const deposit = Math.max(0, Math.round(input.deposit ?? 0));
+  const inflow = received + deposit;
+  const bought = Math.min(inflow, Math.max(0, inflow - (cashNow - cashThen)));
+  const reinvested = Math.round((bought * received) / inflow);
+  return { status: "ok", month, received, deposit, depositUnknown, baselineDate: base.date, cashThen, cashNow, bought, reinvested, kept: received - reinvested, baselineApprox };
 }

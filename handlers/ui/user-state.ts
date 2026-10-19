@@ -43,6 +43,20 @@ export async function readUserStateFor(supabase: any, clientId: string): Promise
   return parseState(data?.body_text)
 }
 
+/** 요청한 사용자 본인의 저장 상태(이 파일 GET과 같은 키). 조회 실패는 null — '없음'과 구분한다 */
+export async function readOwnUserState(supabase: any, user: { chatId: number | null; clientId: string | null }): Promise<StateMap | null> {
+  if (!user.chatId && !user.clientId) return {}
+  const { data, error } = await supabase
+    .from(REPORT_SNAPSHOT_TABLE)
+    .select('body_text')
+    .eq('topic', TOPIC)
+    .eq('audience_key', buildAudienceKey({ chatId: user.chatId, clientId: user.clientId }))
+    .eq('report_date', FIXED_DATE)
+    .maybeSingle()
+  if (error) return error.message.includes('Could not find the table') ? {} : null
+  return parseState(data?.body_text)
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)

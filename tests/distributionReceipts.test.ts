@@ -73,7 +73,7 @@ test("estimateReinvest: 예수금이 분배금만큼 늘지 않은 몫을 매수
   ];
   const base = { receipts, history, today: "2026-10-19" };
   const ok = estimateReinvest({ ...base, cashNow: 1_020_000, cashUpdatedAt: "2026-10-18" });
-  assert.deepEqual(ok, { status: "ok", month: "2026-10", received: 300_000, baselineDate: "2026-09-30", cashThen: 1_000_000, cashNow: 1_020_000, reinvested: 280_000, kept: 20_000, baselineApprox: false });
+  assert.deepEqual(ok, { status: "ok", month: "2026-10", received: 300_000, deposit: 0, depositUnknown: false, baselineDate: "2026-09-30", cashThen: 1_000_000, cashNow: 1_020_000, bought: 280_000, reinvested: 280_000, kept: 20_000, baselineApprox: false });
   // 예수금이 분배금보다 더 늘면 전부 현금, 줄었으면 전부 매수 — 받은 분배금 범위를 넘지 않는다
   const kept = estimateReinvest({ ...base, cashNow: 2_000_000, cashUpdatedAt: "2026-10-18" });
   assert.equal(kept?.status === "ok" && kept.reinvested, 0);
@@ -105,4 +105,21 @@ test("estimateReinvest: 받은 기록이 없으면 null, 지난달 기록이 없
   assert.equal(approx.cashThen, 1_000_000);
   assert.equal(approx.kept, 50_000);
   assert.equal(approx.baselineApprox, true);
+});
+
+test("estimateReinvest: 체크인한 월입금은 들어온 돈에 더하고, 산 금액은 들어온 비율대로 분배금 몫을 나눈다", () => {
+  const history = [{ date: "2026-09-30", total: 1, cash: 1_000_000, groups: [] }];
+  const base = { receipts: [R({ net: 300_000 })], history, cashUpdatedAt: "2026-10-18", today: "2026-10-19" };
+  // 분배금 30만 + 월입금 90만 = 120만 들어옴, 예수금 +12만 → 108만 매수, 분배금 몫 108만 × 30/120 = 27만
+  const r = estimateReinvest({ ...base, cashNow: 1_120_000, deposit: 900_000 });
+  assert.ok(r?.status === "ok");
+  assert.equal(r.bought, 1_080_000);
+  assert.equal(r.reinvested, 270_000);
+  assert.equal(r.kept, 30_000);
+  // 월입금을 빼먹으면(0) 그 입금이 '남은 현금'으로 잡혀 재투자가 0으로 보인다 — 체크인이 필요한 이유
+  const missing = estimateReinvest({ ...base, cashNow: 1_900_000, deposit: 0 });
+  assert.equal(missing?.status === "ok" && missing.reinvested, 0);
+  // 읽지 못하면 0으로 계산하고 표시한다
+  const unknown = estimateReinvest({ ...base, cashNow: 1_000_000, deposit: null });
+  assert.equal(unknown?.status === "ok" && unknown.depositUnknown, true);
 });

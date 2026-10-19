@@ -26,7 +26,20 @@ export type DistributionReceiptsData = {
   reinvest?: ReinvestEstimate | null
 }
 type ReinvestEstimate =
-  | { status: 'ok'; month: string; received: number; baselineDate: string; cashThen: number; cashNow: number; reinvested: number; kept: number; baselineApprox: boolean }
+  | {
+      status: 'ok'
+      month: string
+      received: number
+      deposit: number
+      depositUnknown: boolean
+      baselineDate: string
+      cashThen: number
+      cashNow: number
+      bought: number
+      reinvested: number
+      kept: number
+      baselineApprox: boolean
+    }
   | { status: 'stale-cash'; month: string; received: number; cashUpdatedAt: string | null }
   | { status: 'no-baseline'; month: string; received: number }
 
@@ -111,12 +124,18 @@ function ReinvestLine({ r }: { r: ReinvestEstimate | null }) {
   const change = r.cashNow - r.cashThen
   return (
     <div style={{ marginTop: 2 }}>
-      매수에 쓰임 <strong>약 {smallWon(r.reinvested)}</strong>
+      분배금 중 매수에 쓰임 <strong>약 {smallWon(r.reinvested)}</strong>
       <span style={muted}> · 현금으로 남음 약 {smallWon(r.kept)}</span>
       <div style={faint}>
-        {shortDate(r.baselineDate)} 기록 뒤 예수금 변화({change === 0 ? '그대로' : `${change > 0 ? '+' : '−'}${smallWon(Math.abs(change))}`})로 거꾸로 계산한
-        추정입니다{r.baselineApprox ? '(그때 예수금은 현금 비중으로 되짚은 값)' : ''}.
-        그사이 월급 입금·출금이 있으면 달라집니다. 따로 적거나 버튼을 누르지 않아도 됩니다.
+        {shortDate(r.baselineDate)} 기록 뒤 들어온 돈(분배금 {smallWon(r.received)}
+        {r.deposit > 0 ? ` + 이번 달 넣은 돈 ${smallWon(r.deposit)}` : ''}) 중 예수금 변화({change === 0 ? '그대로' : `${change > 0 ? '+' : '−'}${smallWon(Math.abs(change))}`})를 뺀
+        {' '}{smallWon(r.bought)}을 매수로 보고{r.deposit > 0 ? ', 분배금 몫은 들어온 비율대로 나눈' : ''} 추정입니다
+        {r.baselineApprox ? '(그때 예수금은 현금 비중으로 되짚은 값)' : ''}.
+        {r.depositUnknown
+          ? ' 이번 달 넣은 돈을 불러오지 못해 0원으로 계산했습니다.'
+          : r.deposit > 0
+            ? ''
+            : " 이번 달 따로 입금한 돈이 있으면 모아가기의 '이번 달 넣었어요'에 그 금액만 적어 주세요. 안 적으면 그 입금이 현금으로 남은 것으로 보입니다."}
       </div>
     </div>
   )
