@@ -401,10 +401,11 @@ export default function AccumulatePage() {
             </tbody>
           </table>
         )}
-        <div className="acc-row">
+        {/* 위 '이 달 기록 저장'과 같은 규칙: 입력칸 줄 아래에 버튼 (같은 줄 grid에 넣으면 버튼이 라벨 높이만큼 어긋났다) */}
+        <div className="acc-row acc-row--single">
           <label className="acc-field"><span>증권사 앱의 현재 평가금</span><input type="number" inputMode="numeric" min="0" value={valueText} onChange={(e) => setValueText(e.target.value)} placeholder={state.valuation ? String(state.valuation.value) : ''} /></label>
-          <button type="button" className="acc-primary" disabled={!num(valueText)} onClick={() => { update({ valuation: { ym, value: num(valueText) } }); setValueText('') }}>평가금 저장</button>
         </div>
+        <button type="button" className="acc-primary" disabled={!num(valueText)} onClick={() => { update({ valuation: { ym, value: num(valueText) } }); setValueText('') }}>평가금 저장</button>
         {track.value != null && (
           <p className="acc-summary">누적 납입 {man(track.paid)} → 평가금 {man(track.value)} ({state.valuation?.ym} 확인) · <strong>{track.gainPct != null ? `${track.gainPct >= 0 ? '+' : ''}${track.gainPct.toFixed(1)}%` : '-'}</strong></p>
         )}

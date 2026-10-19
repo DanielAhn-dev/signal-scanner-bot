@@ -19,6 +19,8 @@
 .acc-warn { color: var(--color-error); line-height: 1.55; }
 .acc-note strong, .acc-warn strong { color: var(--color-text-primary); }
 .acc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; }
+/* 입력칸이 하나뿐인 줄도 위 줄들과 같은 칸 폭 — auto-fit이면 혼자 줄 전체로 늘어난다 */
+.acc-row--single { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .acc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .acc-field > span { color: var(--color-text-secondary); font-size: 13px; }
 .acc-field input, .acc-field select { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
