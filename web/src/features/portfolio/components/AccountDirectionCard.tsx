@@ -40,7 +40,7 @@ export default function AccountDirectionCard({ accountName }: { accountName: str
       <ul className="portfolio-direction-list">
         <li>
           <strong>내 계획을 따릅니다</strong>{direction ? ` — ${direction}` : ''}.
-          {' '}<button type="button" className="portfolio-direction-link" onClick={() => navigate('/dashboard')}>내 계획 바꾸기 <ChevronRight size={12} aria-hidden /></button>
+          {' '}<button type="button" className="portfolio-direction-link" onClick={() => navigate('/accumulate#my-plan')}>내 계획 바꾸기 <ChevronRight size={12} aria-hidden /></button>
         </li>
         <li>
           날짜가 정해진 돈(전세금·학자금 등)이면 사용 시점을 정해 두세요. 날짜에 맞춰 주식 비중을 줄이는 안내가 나옵니다.

@@ -7,8 +7,14 @@ const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
 vi.mock('../../stores/profileStore', () => ({
   useCurrentClientId: () => 'test-user',
+  useCurrentChatId: () => null,
+  useProfileStore: (sel: (st: { isAdmin: boolean }) => unknown) => sel({ isAdmin: false }),
   getCurrentClientIdFromStore: () => 'test-user',
 }))
+// 화면 위 '내 모으기'·'내 계획'·목표는 각자 테스트가 있다 — 이 화면 테스트의 대상이 아니다
+vi.mock('../saving-progress/SavingProgressCard', () => ({ default: () => null }))
+vi.mock('../my-plan/MyPlanCard', () => ({ default: () => null }))
+vi.mock('../goal-tracker/useGoalTracker', () => ({ useGoalTracker: () => ({ view: null }) }))
 // 종목 검색 입력은 이 화면 테스트의 대상이 아니다
 vi.mock('../../components/StockSearchInput', () => ({ default: () => <input aria-label="종목 검색" /> }))
 

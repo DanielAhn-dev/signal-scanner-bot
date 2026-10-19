@@ -1,0 +1,41 @@
+/* 내 모으기 — 큰 숫자는 넣은 원금 하나, 나머지는 타이포 위계로 구분 (채움 카드·컬러 바 없이) */
+.sp { width: calc(100% - 24px); margin: 8px 12px; padding: 12px 14px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-elevated); color: var(--color-text-primary); font-size: 12px; word-break: keep-all; display: grid; gap: 10px; }
+.sp--muted { color: var(--color-text-secondary); }
+.sp--full { width: 100%; margin: 0 0 16px; }
+.sp__head { display: flex; align-items: baseline; gap: 8px; }
+.sp__title { font-weight: 700; font-size: 13px; }
+.sp__muted { color: var(--color-text-secondary); }
+.sp__label { color: var(--color-text-secondary); }
+.sp__principal { display: grid; gap: 2px; }
+.sp__big { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.sp__goal { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.sp__bar { display: inline-block; width: 120px; height: 6px; border-radius: 3px; background: var(--color-bg-tertiary); overflow: hidden; }
+.sp__bar > span { display: block; height: 100%; min-width: 2px; background: var(--color-brand); }
+.sp__month { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.sp__primary { padding: 6px 14px; border: 0; border-radius: 4px; background: var(--color-brand); color: var(--color-text-inverse); font: inherit; font-weight: 600; cursor: pointer; }
+.sp__secondary { padding: 4px 10px; border: 1px solid var(--color-border-default); border-radius: 4px; background: transparent; color: var(--color-text-primary); font: inherit; cursor: pointer; }
+.sp__secondary:disabled { opacity: 0.5; cursor: default; }
+.sp__other { display: inline-flex; align-items: center; gap: 6px; }
+.sp__other input { width: 120px; padding: 4px 6px; border: 1px solid var(--color-border-default); border-radius: 4px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; }
+.sp__link { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: transparent; color: var(--color-brand); font: inherit; cursor: pointer; }
+.sp__done { display: inline-flex; align-items: center; gap: 6px; color: var(--color-success); font-weight: 600; }
+.sp__done .sp__link { font-weight: 400; margin-left: 4px; }
+.sp__streak { display: grid; gap: 6px; }
+.sp__year { display: flex; align-items: center; gap: 8px; }
+.sp__strip { display: inline-grid; grid-template-columns: repeat(12, 14px); gap: 3px; }
+.sp__cell { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--color-border-default); background: transparent; }
+.sp__cell--done { background: var(--color-brand); border-color: var(--color-brand); }
+.sp__cell--pending { border: 1px dashed var(--color-brand); }
+.sp__cell--missed { background: var(--color-bg-tertiary); }
+.sp__cell--before { border-color: var(--color-border-subtle); opacity: 0.5; }
+.sp__cell--future { border-color: var(--color-border-subtle); opacity: 0.35; }
+.sp__drop { margin: 0; color: var(--color-text-secondary); line-height: 1.5; }
+.sp__row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; width: 100%; padding: 0; border: 0; background: transparent; color: var(--color-text-primary); font: inherit; text-align: left; cursor: pointer; }
+.sp__more { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; color: var(--color-brand); }
+.sp__subtitle { font-weight: 600; margin-bottom: 6px; }
+.sp__tax p { margin: 6px 0 0; line-height: 1.5; }
+.sp__table { width: 100%; border-collapse: collapse; }
+.sp__table th, .sp__table td { padding: 5px 6px; border-top: 1px solid var(--color-border-subtle); text-align: left; vertical-align: top; font-weight: 400; }
+.sp__table td:nth-child(2) { white-space: nowrap; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sp__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-top: 8px; border-top: 1px solid var(--color-border-subtle); color: var(--color-text-tertiary); font-size: 11px; }
+.sp__links { display: inline-flex; gap: 12px; margin-left: auto; font-size: 12px; }

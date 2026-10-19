@@ -467,7 +467,7 @@ export default function Settings(){
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>내 계획 (실험 계좌)</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
               <div className="muted" style={{ whiteSpace: 'normal', wordBreak: 'keep-all' }}>
-                매달 투자할 돈·넣는 날·개별주 몫은 대시보드의 &lsquo;내 계획&rsquo; 한 곳에서 바꿉니다. 실험 계좌가 그 계획을 그대로 따라 하고, 내가 직접 매매하는 계좌에는 입금·자동매매가 걸리지 않습니다.
+                매달 투자할 돈·넣는 날·개별주 몫은 모아가기 화면의 &lsquo;내 계획&rsquo; 한 곳에서 바꿉니다. 실험 계좌가 그 계획을 그대로 따라 하고, 내가 직접 매매하는 계좌에는 입금·자동매매가 걸리지 않습니다.
               </div>
               {deposit && (
                 <div className="text-xs mt-2" style={{ lineHeight: 1.6 }}>
@@ -488,7 +488,7 @@ export default function Settings(){
                 </div>
               )}
               <div className="mt-2">
-                <Button variant="secondary" onClick={() => navigate('/dashboard')}>내 계획 바꾸러 가기</Button>
+                <Button variant="secondary" onClick={() => navigate('/accumulate#my-plan')}>내 계획 바꾸러 가기</Button>
               </div>
               {strategyMode === 'stock' && Number(seedCapital) > 0 && Number(seedCapital) < SMALL_SEED_LIMIT && (
                 <div className="text-xs mt-1" style={{ color: '#c0392b', whiteSpace: 'normal', wordBreak: 'keep-all' }}>
@@ -511,7 +511,7 @@ export default function Settings(){
                 <Checkbox label="활성화" checked={!!settings?.is_enabled} onChange={(v) => setSettings({...settings, is_enabled: v})} />
               </div>
               <div className="text-xs muted mt-1">
-                순서: ① 시드 자본금 저장 → ② 대시보드 &lsquo;내 계획&rsquo;에서 매달 투자할 돈 정하기(선택) → ③ 활성화 후 저장. 시드를 정하기 전에는 켤 수 없습니다.
+                순서: ① 시드 자본금 저장 → ② 모아가기 화면 &lsquo;내 계획&rsquo;에서 매달 투자할 돈 정하기(선택) → ③ 활성화 후 저장. 시드를 정하기 전에는 켤 수 없습니다.
               </div>
               <Detail>
               <div className="mt-2 grid-two">

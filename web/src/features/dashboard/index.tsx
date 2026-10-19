@@ -10,8 +10,7 @@ import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { FLOW_STEPS } from '../../navigation'
 import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
-import MyPlanCard from '../my-plan/MyPlanCard'
-import { useGoalTracker } from '../goal-tracker/useGoalTracker'
+import SavingProgressCard from '../saving-progress/SavingProgressCard'
 import { useJourney, type EntryPath } from '../../lib/journey'
 import { useToast } from '../../components/ToastProvider'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
@@ -175,7 +174,6 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const isAdmin = useProfileStore((s) => s.isAdmin)
   const detailed = useDetailed()
   const showMarketDetail = detailed && isAdmin
-  const { view: goalView } = useGoalTracker()
   // 일반 사용자: '다음 할 일' 길잡이(lib/journey.ts) — 내 돈 점검 → 시작하기 → 매달 넣기 → 떨어질 때 할 일 → 월 1회 확인.
   // 끝난 단계는 ✓, 지금 할 단계에는 왜 하는지까지 붙인다
   const journey = useJourney(!isAdmin)
@@ -298,7 +296,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
   return (
     <div ref={sheetRef} className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
-      <MyPlanCard goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} />
+      {/* 내 계획(MyPlanCard)은 모아가기 화면으로 옮겼다 — 홈은 '내 모으기' 요약 하나 */}
+      <SavingProgressCard variant="home" />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>{colWidths.map((width, index) => (
           <col key={index} style={width == null ? undefined : { width }} />

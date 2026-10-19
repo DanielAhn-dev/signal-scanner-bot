@@ -202,7 +202,7 @@ export function personalSetup(p: InvestorProfile, monthly: number, usedSuggestio
     `매달 가상 적립: ${Math.round(monthly).toLocaleString('ko-KR')}원${p.emergency === 'none' && usedSuggestion ? ' (비상금이 없어 기본 제안을 절반으로 낮췄습니다)' : ''}`,
   ]
   if (tolerance != null) {
-    summary.push(`버틸 하락 −${tolerance}% → 주식 비중 ${stockCapFor(tolerance).recommended}%부터 (내 계획에 저장, 대시보드에서 바꿀 수 있습니다)`)
+    summary.push(`버틸 하락 −${tolerance}% → 주식 비중 ${stockCapFor(tolerance).recommended}%부터 (내 계획에 저장, 모아가기 화면에서 바꿀 수 있습니다)`)
   }
   summary.push(`종목 봇으로 바꿀 때의 기본값: ${level === 'safe' ? '안전형 (손절 4%, 최대 6종목)' : '균형형 (손절 4%, 최대 8종목)'}`)
   return { strategyMode: 'index_hold', level, preset: level === 'safe' ? SAFE_PRESET : BALANCED_PRESET, summary }

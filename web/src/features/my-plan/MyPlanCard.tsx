@@ -8,7 +8,7 @@ import { useCurrentChatId, useProfileStore } from '../../stores/profileStore'
 import './my-plan.css'
 
 /**
- * 홈 "내 계획" — 방향(매달 투자할 돈·넣는 날·버틸 하락폭·개별주 몫)을 바꾸는 유일한 곳.
+ * 모아가기 화면 "내 계획" (2026-10-19 홈에서 옮김, 홈은 "내 모으기" 요약) — 방향(매달 투자할 돈·넣는 날·버틸 하락폭·개별주 몫)을 바꾸는 유일한 곳.
  * 실험(가상) 계좌는 이 계획을 그대로 따른다. 실제 계좌에는 입금·자동매매를 걸지 않는다.
  * 저장은 /api/ui/investment-prefs의 plan 하나로만 한다 (src/services/userPlan.ts).
  */

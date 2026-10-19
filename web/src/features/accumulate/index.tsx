@@ -29,6 +29,10 @@ import {
   type SimResult,
 } from '../../lib/accumulate'
 import SplitPlanCard from './SplitPlanCard'
+import SavingProgressCard from '../saving-progress/SavingProgressCard'
+import MyPlanCard from '../my-plan/MyPlanCard'
+import { useGoalTracker } from '../goal-tracker/useGoalTracker'
+import { useLocation } from 'react-router-dom'
 import PeriodSim from './PeriodSim'
 import './accumulate.css'
 
@@ -77,6 +81,22 @@ export default function AccumulatePage() {
   const state: AccumulateState = { ...EMPTY_STATE, ...(value ?? {}) }
   const update = (patch: Partial<AccumulateState>) => set({ ...state, ...patch })
   const ym = currentYmKst()
+  const { view: goalView } = useGoalTracker()
+  // 홈에서 '계획 바꾸기'·'자세히'로 오면 해당 칸으로 내린다 — 카드가 데이터를 받은 뒤에 생기므로 잠깐 기다린다
+  const location = useLocation()
+  useEffect(() => {
+    const id = location.hash.replace('#', '')
+    if (!id) return
+    let tries = 0
+    const timer = window.setInterval(() => {
+      const el = document.getElementById(id)
+      if (el || ++tries > 20) {
+        window.clearInterval(timer)
+        el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 150)
+    return () => window.clearInterval(timer)
+  }, [location.hash])
 
   // 입력은 화면 상태 — 저장하는 것은 기록(분배금·적립·평가금)과 대상 선택뿐이다
   const [freq, setFreq] = useState<Freq>('month')
@@ -166,6 +186,11 @@ export default function AccumulatePage() {
         <h1>꾸준히 모으면 어떻게 되나</h1>
         <p>증권사 앱의 모아가기로 직접 사는 지수 ETF를, 과거 실제 가격으로 시뮬레이션합니다. 주문은 내지 않습니다. 미래 예측이 아니라 "그때 시작했다면"의 분포입니다.</p>
       </header>
+
+      <SavingProgressCard variant="full" />
+      <div id="my-plan">
+        <MyPlanCard goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} />
+      </div>
 
       <section className="acc-card" aria-labelledby="acc-target">
         <h2 id="acc-target">1. 무엇으로 모을까</h2>
