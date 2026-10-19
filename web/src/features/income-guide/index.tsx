@@ -388,6 +388,7 @@ export default function IncomeGuidePage() {
                   holdings={receiptHoldings(view.holdings)}
                   buyName={reinvestLabel(reinvestTargets(view.plan, view.distributionReceipts.thisMonth.items.map((r) => r.code), view.holdings))}
                   submit={submitReceipt}
+                  monthlyGoal={view.settings.monthlyNeed}
                 />
               ) : null}
             />

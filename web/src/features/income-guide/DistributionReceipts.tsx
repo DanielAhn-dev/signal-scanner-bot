@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import StockSearchInput from '../../components/StockSearchInput'
+import IncomeBars, { incomeBarSeries } from './IncomeBars'
 
 /** 서버 src/lib/distributionReceipts.ts (handlers/ui/income-guide.ts의 distributionReceipts) */
 export type Receipt = { id: string; month: string; code: string; name: string; quantity: number; perShare: number; net: number | null; createdAt: string }
@@ -50,6 +51,8 @@ type Props = {
   buyName: string | null
   /** 서버에 보내고 성공하면 null, 실패하면 이유 */
   submit: (body: Record<string, unknown>) => Promise<string | null>
+  /** 목표 월 인컴(세후, settings.monthlyNeed) — 막대 그래프의 목표선 */
+  monthlyGoal?: number | null
 }
 
 const man = formatKrwMan
@@ -149,7 +152,7 @@ const monthLabel =(m: string, i: number) => `${Number(m.slice(5))}월${i === 0 ?
  * 받은 분배금 — 종목·받은 수량·주당 분배금(·세후 입금액)을 적으면 이번 달 실제 합계와
  * '최근 주당 × 지금 수량 × 실제 세후 비율'로 다음 달 예상을 보여 준다. 월 인컴(위 요약)도 이 예상을 쓴다.
  */
-export default function DistributionReceipts({ data, holdings, buyName, submit }: Props) {
+export default function DistributionReceipts({ data, holdings, buyName, submit, monthlyGoal }: Props) {
   const busy = useRef(false)
   const cardRef = useRef<HTMLDivElement>(null)
   // 이번 달 투자금의 '받은 분배금 더 적기' 링크(#receipts)로 오면 이 카드로 내려 준다
@@ -271,6 +274,7 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
         {projection.receiptCodes > 0 ? ` (기록 ${projection.receiptCodes}종목 ${man(projection.fromReceipts)} + 추정 ${man(projection.fromEstimate)})` : ''}.
         달마다 주당 분배금이 바뀌니 예상치입니다. 위 요약의 월 인컴도 이 값을 씁니다.
       </div>
+      <IncomeBars bars={incomeBarSeries(monthGroups, thisMonth.month, projection.total)} goal={monthlyGoal ?? null} />
 
       {/* 적기 — 공통 입력 스타일(ui-field·ui-text), 모바일 2열·넓으면 한 줄 */}
       <div className="ig-receipt-form">
