@@ -291,3 +291,24 @@ test("해외 비중이 ±20%p 벗어나면 리포트도 가이드처럼 벗어�
   assert.match(last, /해외 비중을 0으로/);
   assert.equal(r.sells.length, 0);
 });
+
+test("내 계획 구성이 여러 지수면 리포트 할 일에 이 계좌가 맡은 몫 한 줄 (가이드 ①·홈 할 일과 같은 나누기)", async () => {
+  const { planMixLines } = await import("../src/lib/planMixGuide");
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 65 } };
+  const holdings = [H("278530", "KODEX 200TR", 15_000, 100, 14_000)];
+  const view = buildIncomeGuideView({ holdings, settings: s, today: "2026-10-15" });
+  const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan });
+  const lines = planMixLines({
+    mix: [
+      { index: "kospi200", weight: 0.5, product: null, account: { broker: "키움", account: "일반" } },
+      { index: "sp500", weight: 0.5, product: { code: "360750", name: "TIGER 미국S&P500" }, account: { broker: "미래", account: "ISA" } },
+    ],
+    monthly: 1_000_000,
+    held: view.holdings.map((h) => ({ code: h.code, name: h.name, accountKey: h.accountKey })),
+  });
+  const r = buildRebalanceReport({ view, plan, accountKey: "a", planMixLines: lines })!;
+  assert.ok(r.steps.some((x) => /내 계획 구성\(코스피200 50% · S&P500 50%\)에서 이 계좌에 정한 지수는 없습니다/.test(x)), r.steps.join("\n"));
+  // 구성이 없으면 줄이 없다
+  const none = buildRebalanceReport({ view, plan, accountKey: "a" })!;
+  assert.ok(!none.steps.some((x) => x.includes("내 계획 구성")));
+});

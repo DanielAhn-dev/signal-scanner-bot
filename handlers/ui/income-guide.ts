@@ -9,11 +9,12 @@ import {
   fetchYieldPctByCode,
   loadAccountPositionRows,
   loadGuideFile,
-  loadPlanOverseasPct,
+  loadGuidePlan,
   withPlanOverseas,
   saveGuideFile,
   toGuideHoldings,
 } from '../../src/services/incomeGuideStore'
+import { planMixLines } from '../../src/lib/planMixGuide'
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   appendHistory,
@@ -124,7 +125,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pastCashPcts = (file.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
     const yieldPctByCode = await fetchYieldPctByCode(holdings)
     // 내 계획 구성을 정했으면 해외 비중 목표는 구성을 따른다 — 계산에만 쓰고 저장 파일은 그대로
-    const planOverseasPct = await loadPlanOverseasPct(supabase, chatId).catch(() => null)
+    const guidePlan = await loadGuidePlan(supabase, chatId).catch(() => null)
+    const planOverseasPct = guidePlan?.overseasPct ?? null
     const settings = withPlanOverseas(file.settings, planOverseasPct)
     const view = buildIncomeGuideView({ holdings, settings, today, contribution, pastCashPcts, yieldPctByCode })
     // 계획(같은 지수 상품 비교 포함)과 그달 안내 — 기록에 안내·가격을 같이 남긴다(월 배치와 같은 계산)
@@ -160,6 +162,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         plan,
         // 해외 비중 목표가 내 계획 구성에서 온 값이면 그 값(%) — 화면은 이 칸을 고치지 않고 모아가기 1번으로 보낸다
         overseasFromPlan: planOverseasPct,
+        // ① 새 돈 — 내 계획 구성이 여러 지수면 지수마다 한 줄(홈 '이번 달 할 일'과 같은 나누기). 아니면 null(성장 ETF 한 곳)
+        planMix: planMixLines({ mix: guidePlan?.mix, monthly: guidePlan?.monthly ?? 0, held: view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name, accountKey: h.accountKey })) }),
         // 'distributions'(금융소득 상한)는 view에 이미 있다 — 이름을 따로 둔다
         distributionReceipts: {
           thisMonth: monthSummary(receipts, month),

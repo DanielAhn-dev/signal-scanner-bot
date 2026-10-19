@@ -8,7 +8,7 @@ import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
 import { selectPaged } from "./supabasePaging";
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import { sanitizeReceipts, type DistributionReceipt } from "../lib/distributionReceipts";
-import { overseasPctOfMix, readInvestPlan } from "./userPlan";
+import { overseasPctOfMix, readInvestPlan, type MixEntry } from "./userPlan";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   sanitizeIncomeGuideSettings,
@@ -55,9 +55,18 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
  * 구성이 없거나 prefs를 못 읽으면 null — 가이드에 적어 둔 값을 그대로 쓴다(읽기 실패로 목표를 바꾸지 않는다).
  */
 export async function loadPlanOverseasPct(supabase: any, chatId: string | number): Promise<number | null> {
+  return (await loadGuidePlan(supabase, chatId))?.overseasPct ?? null;
+}
+
+/** 가이드·리포트가 읽는 내 계획 — 구성(새 돈 나누기 src/lib/planMixGuide.ts)·매달 금액·해외 몫. prefs를 못 읽으면 null */
+export async function loadGuidePlan(
+  supabase: any,
+  chatId: string | number
+): Promise<{ overseasPct: number | null; mix: MixEntry[] | null; monthly: number } | null> {
   const { data, error } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
   if (error || !data) return null;
-  return overseasPctOfMix(readInvestPlan(((data as any).prefs ?? {}) as Record<string, unknown>).mix);
+  const plan = readInvestPlan(((data as any).prefs ?? {}) as Record<string, unknown>);
+  return { overseasPct: overseasPctOfMix(plan.mix), mix: plan.mix, monthly: plan.monthly };
 }
 
 /** 계산용 설정 — 저장 파일은 건드리지 않는다 */

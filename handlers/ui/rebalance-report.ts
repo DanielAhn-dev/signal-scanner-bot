@@ -4,7 +4,8 @@ import { denyIfUnauthorizedRead } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { kstDateKey } from '../../src/services/virtualAutoTradeTiming'
 import { loadGoalFile } from '../../src/services/goalTracker'
-import { fetchGuidePrices, fetchYieldPctByCode, loadAccountPositionRows, loadGuideFile, loadPlanOverseasPct, toGuideHoldings, withPlanOverseas } from '../../src/services/incomeGuideStore'
+import { fetchGuidePrices, fetchYieldPctByCode, loadAccountPositionRows, loadGuideFile, loadGuidePlan, toGuideHoldings, withPlanOverseas } from '../../src/services/incomeGuideStore'
+import { planMixLines } from '../../src/lib/planMixGuide'
 import { fetchEtfKeyIndicators } from '../../src/services/etfKeyIndicator'
 import { loadIndexAlternatives, toEtfYield } from '../../src/services/indexAlternatives'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
@@ -69,7 +70,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 가이드 화면과 같은 분배율(최근 12개월 실제값 → 없으면 가정)로 계산해야 월 인컴이 화면마다 갈리지 않는다
     const yieldPctByCode = await fetchYieldPctByCode(holdings)
     // 가이드 화면과 같은 해외 비중 목표(내 계획 구성이 있으면 그 값)
-    file = { ...file, settings: withPlanOverseas(file.settings, await loadPlanOverseasPct(supabase, chatId).catch(() => null)) }
+    const guidePlan = await loadGuidePlan(supabase, chatId).catch(() => null)
+    file = { ...file, settings: withPlanOverseas(file.settings, guidePlan?.overseasPct ?? null) }
     const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts, yieldPctByCode })
     // 같은 지수 상품 비교 — 가이드 화면과 같은 자료·같은 함수(indexProductChoice)라 살 곳이 화면마다 갈리지 않는다
     const indexAlt = await loadIndexAlternatives(supabase, view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name })))
@@ -89,6 +91,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       market: drop ? { asOf: drop.asOf, changePct: drop.changePct, fromHighPct: drop.fromHighPct } : null,
       // 매달 넣는 돈은 계좌별로 나뉘어 있지 않아, 가장 큰 계좌에만 붙인다
       monthlyContribution: view.accounts[0]?.key === accountKey ? file.settings.monthlyContribution : 0,
+      // 내 계획 구성 — 이 계좌가 맡은 지수 몫을 한 줄로 (가이드 ①·홈 할 일과 같은 나누기)
+      planMixLines: planMixLines({ mix: guidePlan?.mix, monthly: guidePlan?.monthly ?? 0, held: view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name, accountKey: h.accountKey })) }),
     }
     const report = buildRebalanceReport({ ...baseInput, feeAlternatives: indexAlt.alternatives })
     if (!report) return res.status(404).json({ error: '이 계좌에 입력된 보유가 없습니다.' })

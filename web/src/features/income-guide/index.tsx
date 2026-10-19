@@ -9,6 +9,7 @@ import PlanSteps, { type RebalancePlan } from './PlanSteps'
 import DistributionReceipts, { type DistributionReceiptsData } from './DistributionReceipts'
 import { reinvestLabel, reinvestTargets } from './reinvestTarget'
 import WeightHistory from './WeightHistory'
+import type { PlanMixLine } from '../../../../src/lib/planMixGuide'
 
 type Group = 'growth' | 'income' | 'satellite' | 'cash'
 type Warning = { level: 'info' | 'warn' | 'alert'; title: string; text: string }
@@ -89,6 +90,8 @@ type View = {
   growthSplit: { krValue: number; globalValue: number; globalPct: number; targetGlobalPct: number }
   /** 해외 비중 목표가 내 계획 구성(모아가기 1번)에서 온 값이면 그 %. 배포 전 API에는 없다 */
   overseasFromPlan?: number | null
+  /** 내 계획 구성대로 새 돈을 나눈 줄 (배포 전 API에는 없다) */
+  planMix?: PlanMixLine[] | null
   buckets: Array<{ bucket: string; label: string; value: number; pct: number }>
   npsReference?: Array<{ label: string; actualPct: number; refPct: number; diffPp: number }> | null
   rebalance: {
@@ -387,6 +390,7 @@ export default function IncomeGuidePage() {
               settings={view.settings}
               saveSettings={saveSettings}
               accounts={view.accounts}
+              planMix={view.planMix ?? null}
               receiptsSlot={view.distributionReceipts ? (
                 <DistributionReceipts
                   data={view.distributionReceipts}

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
+import type { PlanMixLine } from '../../../../src/lib/planMixGuide'
 import UnitInput from '../../components/ui/UnitInput'
 import { useToast } from '../../components/ToastProvider'
 
@@ -104,6 +105,8 @@ type Props = {
   accounts: Array<{ key: string; label: string }>
   /** 요약 바로 아래에 넣을 '받은 분배금' 카드 */
   receiptsSlot?: React.ReactNode
+  /** 내 계획 구성(여러 지수)이면 새 돈을 지수마다 나눈 줄 — 홈 '이번 달 할 일'과 같은 나누기(src/lib/planMixGuide.ts). 없으면 한 곳 */
+  planMix?: PlanMixLine[] | null
 }
 
 const man = formatKrwMan
@@ -149,7 +152,7 @@ const inlineRow: React.CSSProperties = { display: 'flex', alignItems: 'center', 
  * 리밸런싱 첫 화면 — "그래서 뭘 하면 되는지"만 쉬운 말로. 숫자 근거·바구니 표는 아래 "자세히 보기"에 둔다.
  * ① 새 돈은 한 곳으로 ② 겹치는 종목 합치기 ③ 파는 건 인컴 하한을 지키는 만큼만
  */
-export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot }: Props) {
+export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot, planMix }: Props) {
   const savingRef = useRef(false)
   const [saving, setSaving] = useState(false)
   // 결과는 토스트로 — 저장하면 설정이 바뀌어 이 컴포넌트가 새로 마운트되므로(key=settings) 안의 상태 메시지는 사라진다
@@ -313,7 +316,21 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
 
       {/* ① 새 돈 */}
       <div style={card}>
-        <span style={stepTitle}>{filling ? '① 분배금·새 돈은 현금으로 (목표까지)' : '① 새 돈은 한 곳으로'}</span>
+        <span style={stepTitle}>{filling ? '① 분배금·새 돈은 현금으로 (목표까지)' : planMix ? '① 새 돈은 내 계획 구성대로' : '① 새 돈은 한 곳으로'}</span>
+        {planMix && !filling && (
+          <div style={{ marginBottom: 6 }}>
+            매달 넣는 돈은 모아가기에서 정한 구성대로 나눠 넣습니다 — 홈 &lsquo;이번 달 할 일&rsquo;과 같은 비율입니다.
+            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+              {planMix.map((l) => (
+                <li key={l.index}>
+                  {l.label} {l.weightPct}% · 매달 {man(l.monthly)} → <strong>{l.product ? l.product.name : '모아가기 1번 추천 상품'}</strong>
+                  {l.accountLabel ? ` · ${l.accountLabel}에서` : ''}
+                </li>
+              ))}
+            </ul>
+            <div style={faint}>분배금·예수금은 그 계좌 안에서 아래 안내대로 삽니다. 구성은 모아가기 1번에서 바꿉니다.</div>
+          </div>
+        )}
         {filling && cash ? (
           <div>
             현금 목표 {cash.targetPct.toFixed(0)}%까지 <strong>{man(cash.amount)}</strong> 남았습니다. 그때까지 분배금과 새 돈은 사지 말고 계좌에 현금으로 두고,

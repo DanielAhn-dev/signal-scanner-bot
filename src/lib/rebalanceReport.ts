@@ -11,6 +11,7 @@
  *   - 커버드콜 일부를 지수로 (rebalancePlan trim — 월 인컴 하한을 지키는 최대치, hold 모드면 없음)
  * 근거 문장은 판정 등록부(docs/investment-idea-registry-2026-10-07.md)의 C48·C54와 블로그 3편 수치만 쓴다.
  */
+import { planMixLineForAccount, type PlanMixLine } from "./planMixGuide";
 import { BUCKET_LABEL, CASH_BALANCE_CODE, REBALANCE_BAND_PP, isTaxAdvantagedAccount, resolveYieldPct, type AssetBucket, type BucketGroup, type IncomeGuideView } from "./incomeGuide";
 import { FEE_TIE_PP, strategyKey, type RebalancePlan } from "./rebalancePlan";
 import { KRX_SELL_TAX_RATE, resolveOtherEtfGainTax, resolveSellTaxRate } from "./securitiesTax";
@@ -201,6 +202,8 @@ export function buildRebalanceReport(input: {
   monthlyContribution?: number;
   /** 살 곳과 같은 지수의 다른 상품들 — 총보수가 더 낮으면 새 돈·분배금을 그쪽으로 */
   feeAlternatives?: FeeAlternative[];
+  /** 내 계획 구성(여러 지수) — 이 계좌가 맡은 몫을 할 일에 한 줄로 (src/lib/planMixGuide.ts). 없으면 예전처럼 한 곳 */
+  planMixLines?: PlanMixLine[] | null;
 }): RebalanceReport | null {
   const { view, plan, accountKey } = input;
   const etf = input.etf ?? new Map<string, EtfYield>();
@@ -603,6 +606,7 @@ export function buildRebalanceReport(input: {
     steps.push(
       `현금이 ${cashRule.actualPct.toFixed(1)}%로 목표보다 ${cashRule.bandPp.toFixed(0)}%p 넘게 많습니다. 넘는 ${money(cashRule.amount)}으로 ${buyTarget ? buyTarget.name : "지수 ETF"}를 삽니다.`,
     );
+  if (input.planMixLines?.length) steps.push(planMixLineForAccount(input.planMixLines, accountKey));
   if (stopReasons.length && incomeValue > 0) steps.push(`인컴(커버드콜·배당) 추가매수를 멈춥니다 — ${stopReasons[0]}.`);
   if (conditionals.length)
     steps.push(`가격 조건부 ${conditionals.length}건은 월 1회 점검 때만 봅니다. 조건 가격에 닿은 종목만 실행하고, 매일 확인하지 않습니다.`);

@@ -82,15 +82,9 @@ export function monthTaskView(input: {
 
 /**
  * 계획 금액을 구성 비중대로 나눈다 — 만원 아래는 버리고, 나머지는 마지막 줄이 받아 합이 계획과 같다.
- * (1/3씩처럼 나누어떨어지지 않는 비중도 합이 어긋나지 않게)
+ * 리밸런싱 가이드·리포트와 같은 함수(src/lib/planMixGuide.ts)를 그대로 쓴다.
  */
-export function splitAmount(total: number, weights: number[]): number[] {
-  if (!(total > 0) || weights.length === 0) return weights.map(() => 0)
-  const sum = weights.reduce((a, w) => a + w, 0) || 1
-  const parts = weights.map((w) => Math.floor((total * w) / sum / 10_000) * 10_000)
-  parts[parts.length - 1] = Math.round(total - parts.slice(0, -1).reduce((a, v) => a + v, 0))
-  return parts
-}
+export { splitAmount } from '../../../src/lib/planMixGuide'
 
 /** '[실제] 11월' 같은 짧은 달 이름 */
 export function monthLabel(ym: string): string {
