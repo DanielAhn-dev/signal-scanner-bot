@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
+  applyTradeToCash,
   buildIncomeGuideView,
   buildNpsReference,
   NPS_REFERENCE,
@@ -390,4 +391,27 @@ test("sanitizeIncomeGuideSettings: 예수금 저장일(cashUpdatedAt)은 다른 
   assert.equal(sanitizeIncomeGuideSettings({ monthlyNeed: 1 } as never, current).cashUpdatedAt, "2026-10-18");
   // 입력으로는 바꿀 수 없다(서버가 예수금 칸 저장 때만 찍는다)
   assert.equal(sanitizeIncomeGuideSettings({ cashUpdatedAt: "2099-01-01" } as never, current).cashUpdatedAt, "2026-10-18");
+});
+
+test("applyTradeToCash: 실계좌 매수는 그 계좌 예수금에서 빼고 매도는 더한다", () => {
+  const key = "키움|인컴계좌(일반)";
+  const base = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashByAccount: { [key]: 1_150_210, "키움|ISA": 300_000 }, cashUpdatedAt: "2026-10-18" };
+  const buy = applyTradeToCash(base, { accountKey: key, side: "BUY", netAmount: 500_075, tradeDate: "2026-10-19" });
+  assert.deepEqual(buy && { before: buy.before, after: buy.after }, { before: 1_150_210, after: 650_135 });
+  assert.equal(buy?.settings.cashByAccount?.["키움|ISA"], 300_000);
+  assert.equal(buy?.settings.cashUpdatedAt, "2026-10-18");
+  const sell = applyTradeToCash(base, { accountKey: key, side: "SELL", netAmount: 99_700, tradeDate: "2026-10-19" });
+  assert.equal(sell?.after, 1_249_910);
+  // 다 쓰면 칸을 비운다
+  const all = applyTradeToCash(base, { accountKey: key, side: "BUY", netAmount: 2_000_000, tradeDate: "2026-10-19" });
+  assert.equal(all?.after, 0);
+  assert.equal(all?.settings.cashByAccount?.[key], undefined);
+});
+
+test("applyTradeToCash: 예수금을 적지 않은 계좌·체결 뒤에 적은 예수금은 건드리지 않는다", () => {
+  const base = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashByAccount: { "키움|ISA": 300_000 }, cashUpdatedAt: "2026-10-19" };
+  assert.equal(applyTradeToCash(base, { accountKey: "키움|일반", side: "BUY", netAmount: 1000, tradeDate: "2026-10-19" }), null);
+  // 10/17 체결을 10/19에 늦게 기록 — 10/19에 적은 예수금엔 이미 들어 있다
+  assert.equal(applyTradeToCash(base, { accountKey: "키움|ISA", side: "BUY", netAmount: 1000, tradeDate: "2026-10-17" }), null);
+  assert.equal(applyTradeToCash(base, { accountKey: "키움|ISA", side: "BUY", netAmount: 1000, tradeDate: "2026-10-19" })?.after, 299_000);
 });

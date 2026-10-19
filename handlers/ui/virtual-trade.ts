@@ -5,6 +5,8 @@ import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { resolveBaseSellTaxRate, resolveSellTaxRate } from '../../src/lib/securitiesTax'
 import { getUserInvestmentPrefs } from '../../src/services/userService'
+import { loadGuideFile, saveGuideFile } from '../../src/services/incomeGuideStore'
+import { applyTradeToCash } from '../../src/lib/incomeGuide'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setUiCorsHeaders(req, res, 'GET,POST,OPTIONS')
@@ -166,7 +168,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rejected = /insufficient (holdings|virtual cash)/.test(tradeErr.message)
       return res.status(rejected ? 422 : 500).json({ error: tradeErr.message })
     }
-    return res.status(200).json({ ok: true, trade })
+    // 실계좌 기록이면 리밸런싱 가이드의 그 계좌 예수금도 맞춘다 — 실패해도 체결 기록은 그대로 둔다
+    let cashAdjust: { before: number; after: number } | null = null
+    if (!isBotAccount) {
+      try {
+        const file = await loadGuideFile(supabase, user.chatId)
+        const applied = file && applyTradeToCash(file.settings, {
+          accountKey: `${brokerName ?? ''}|${accountName ?? ''}`,
+          side: sideUpper as 'BUY' | 'SELL',
+          netAmount,
+          tradeDate,
+        })
+        if (file && applied && !(await saveGuideFile(supabase, user.chatId, { ...file, settings: applied.settings }))) {
+          cashAdjust = { before: applied.before, after: applied.after }
+        }
+      } catch (e) {
+        console.warn('[virtual-trade] 예수금 반영 실패', e)
+      }
+    }
+    return res.status(200).json({ ok: true, trade, cashAdjust })
   } catch (e: any) {
     return res.status(500).json({ error: String(e) })
   }

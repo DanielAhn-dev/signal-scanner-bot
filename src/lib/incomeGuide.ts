@@ -209,6 +209,29 @@ export function totalCashBalance(settings: Pick<IncomeGuideSettings, "cashBalanc
   return Math.max(0, Math.round((settings.cashBalance ?? 0) + byAccount));
 }
 
+/**
+ * 실계좌 매수·매도 기록을 그 계좌 예수금에 반영한다 — 매수는 (대금+수수료)만큼 빼고, 매도는 (대금−수수료−세금)만큼 더한다.
+ * 2026-10-19 사용자: 추가매수를 기록해도 예수금이 그대로라 매번 고쳐야 했다.
+ * 예수금을 적은 적 없는 계좌는 건드리지 않는다(모르는 값을 0에서 빼거나 만들지 않음).
+ * 예수금을 적은 날(cashUpdatedAt)이 체결일보다 뒤면 이미 반영된 숫자라 건드리지 않는다(지난 날짜 기록).
+ * 반영할 게 없으면 null.
+ */
+export function applyTradeToCash(
+  settings: IncomeGuideSettings,
+  trade: { accountKey: string; side: "BUY" | "SELL"; netAmount: number; tradeDate: string },
+): { settings: IncomeGuideSettings; before: number; after: number } | null {
+  const before = settings.cashByAccount?.[trade.accountKey];
+  if (before == null || !(before > 0) || !(trade.netAmount > 0)) return null;
+  if (settings.cashUpdatedAt && settings.cashUpdatedAt > trade.tradeDate) return null;
+  const after = Math.max(0, Math.round(trade.side === "BUY" ? before - trade.netAmount : before + trade.netAmount));
+  const cashByAccount = { ...settings.cashByAccount };
+  // 0이 되면 칸을 비운다(sanitize가 0 이하를 지우는 것과 같은 규칙)
+  if (after > 0) cashByAccount[trade.accountKey] = Math.min(1e9, after);
+  else delete cashByAccount[trade.accountKey];
+  const { cashByAccount: _drop, ...rest } = settings;
+  return { settings: { ...rest, ...(Object.keys(cashByAccount).length ? { cashByAccount } : {}) }, before, after };
+}
+
 export const DEFAULT_INCOME_GUIDE_SETTINGS: IncomeGuideSettings = {
   monthlyNeed: 500_000,
   satelliteCapPct: 10,

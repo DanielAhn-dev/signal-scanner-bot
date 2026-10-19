@@ -57,7 +57,13 @@ export function useTradeModal({ load }: { load: (opts?: { soft?: boolean; force?
       if (json?.error) {
         setTradeError(String(json?.error || '거래 실행 실패'))
       } else {
-        toast.show(`${modalSide === 'buy' ? '매수' : '매도'} 등록 완료`)
+        // 실계좌면 서버가 리밸런싱 가이드의 그 계좌 예수금도 맞춘다(applyTradeToCash)
+        const adj = json?.cashAdjust as { before: number; after: number } | null | undefined
+        toast.show(
+          `${modalSide === 'buy' ? '매수' : '매도'} 등록 완료`
+            + (adj ? ` · 계좌 예수금 ${adj.before.toLocaleString('ko-KR')}원 → ${adj.after.toLocaleString('ko-KR')}원` : ''),
+          adj ? 6000 : 3500,
+        )
         invalidateCache('/api/ui/positions')
         setModalOpen(false)
         await load({ soft: true, force: true })
