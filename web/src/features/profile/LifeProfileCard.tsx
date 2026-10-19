@@ -108,7 +108,8 @@ export default function LifeProfileCard({ onSaved, compact = false }: { onSaved?
           inputMode="numeric"
           min={RETIRE_AGE_MIN}
           max={RETIRE_AGE_MAX}
-          style={{ width: 90 }}
+          // .profile-field-row .ui-text가 flex: 1이라 width만 주면 남은 폭을 다 먹는다 — 나이 두세 자리에 맞춘 고정 폭
+          style={{ width: 90, flex: '0 0 90px' }}
           value={retireAge}
           disabled={!loaded || busy}
           onChange={(e) => setRetireAge(e.target.value)}

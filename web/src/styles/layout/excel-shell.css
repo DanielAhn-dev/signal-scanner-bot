@@ -4276,6 +4276,17 @@
     white-space: normal;
     overflow-wrap: anywhere;
   }
+  /* 일반 사용자 화면의 카드 속 작은 표(2~6열)는 block이면 내용 폭으로 쪼그라들어 카드 오른쪽이 빈다 — 꽉 채우고 폭 안에서 줄바꿈 */
+  .xls-content-inner table:is(.acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) {
+    display: table;
+    width: 100%;
+    overflow-x: visible;
+  }
+  .xls-content-inner table:is(.acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) :is(th, td) {
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
   /* 라벨 칸과 입력 칸이 6열을 나눠 쓰면 좁은 화면에서 입력 칸이 너무 좁다 — 라벨을 위, 내용을 아래로 쌓는다 */
   .xls-content-inner table.xls-fit--stack,
   .xls-content-inner table.xls-fit--stack tbody,
