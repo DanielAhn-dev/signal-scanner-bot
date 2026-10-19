@@ -56,6 +56,7 @@ import choiceReview from '../handlers/ui/choice-review'
 import followReport from '../handlers/ui/follow-report'
 import invites from '../handlers/ui/invites'
 import incomeGuide from '../handlers/ui/income-guide'
+import indexEtfMetrics from '../handlers/ui/index-etf-metrics'
 import rebalanceReport from '../handlers/ui/rebalance-report'
 import savingProgress from '../handlers/ui/saving-progress'
 import summary from '../handlers/ui/summary'
@@ -124,6 +125,7 @@ const ROUTES: Record<string, UiHandler> = {
   'choice-review': choiceReview,
   'follow-report': followReport,
   'income-guide': incomeGuide,
+  'index-etf-metrics': indexEtfMetrics,
   'rebalance-report': rebalanceReport,
   'saving-progress': savingProgress,
   invites,
