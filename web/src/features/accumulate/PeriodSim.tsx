@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import { KOSPI_HISTORY, simulatePeriod, type PeriodResult } from '../../lib/accumulate'
 
@@ -12,36 +12,110 @@ const PRESETS: Array<{ label: string; start: string }> = [
   { label: '2026년 6월 고점', start: '202606' },
 ]
 
+const pctOf = (value: number, paid: number) => (paid > 0 ? (value / paid - 1) * 100 : 0)
+const signed = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`
+
+function niceStep(range: number): number {
+  const raw = Math.max(range, 1) / 5
+  const mag = 10 ** Math.floor(Math.log10(raw))
+  return [1, 2, 5, 10].map((k) => k * mag).find((s) => s >= raw) ?? 10 * mag
+}
+
+/**
+ * 고른 기간 그래프 — 3번 위 그래프와 같은 기준으로 세로축은 "넣은 돈 대비 %"(0% = 원금).
+ * 금액 축이면 매달 넣는 돈이 쌓여 어느 기간이든 오른쪽 위로 올라가 보여서, 원금 아래로 빠진 기간이 묻혔다.
+ * 화면 폭에 맞춰 그리고, 짚은 달의 값은 툴팁으로 본다.
+ */
 function PeriodChart({ r }: { r: PeriodResult }) {
-  const W = 640, H = 260, L = 56, R = 12, T = 12, B = 28
+  const H = 260
+  const PAD = { l: 44, r: 12, t: 12, b: 28 }
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [W, setW] = useState(640)
+  const [hover, setHover] = useState<number | null>(null)
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width)
+      if (w > 0) setW(w)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const n = r.months
-  const maxY = Math.max(...r.value, ...r.paid) * 1.05 || 1
-  const x = (i: number) => L + ((W - L - R) * i) / n
-  const y = (v: number) => T + (H - T - B) * (1 - v / maxY)
-  const line = (arr: number[]) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => maxY * f)
-  // 가로축은 1월마다 연도 — 길면 2~3년 걸러, 너무 짧아 1월이 없으면 시작·끝 월
-  const every = n > 120 ? 3 : n > 60 ? 2 : 1
+  // 처음 가진 돈이 없으면 0개월째는 넣은 돈이 0이라 %가 없다 — 넣은 돈이 생긴 달부터 그린다
+  const first = Math.max(0, r.paid.findIndex((v) => v > 0))
+  const steps = Array.from({ length: n - first + 1 }, (_, k) => k + first)
+  const pcts = steps.map((i) => pctOf(r.value[i], r.paid[i]))
+  const all = [...pcts, 0]
+  const step = niceStep(Math.max(...all) - Math.min(...all))
+  const minY = Math.floor(Math.min(...all) / step) * step
+  const maxY = Math.ceil(Math.max(...all) / step) * step
+  const x = (i: number) => PAD.l + ((W - PAD.l - PAD.r) * i) / n
+  const y = (v: number) => PAD.t + (H - PAD.t - PAD.b) * (1 - (v - minY) / (maxY - minY || 1))
+  const path = pcts.map((v, k) => `${k ? 'L' : 'M'}${x(steps[k]).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
+  const ticks: number[] = []
+  for (let t = minY; t <= maxY + 1e-9; t += step) ticks.push(Math.round(t))
+  const zeroY = y(0)
+  // 가로축은 1월마다 연도 — 길거나 화면이 좁으면 걸러서, 너무 짧아 1월이 없으면 시작·끝 월
+  const every = n > 120 || W < 420 ? 3 : n > 60 ? 2 : 1
   const jan = r.labels.map((m, i) => ({ m, i })).filter(({ m }) => m.endsWith('01')).filter((_, k) => k % every === 0)
   const yearMarks = jan.length >= 2 ? jan.map(({ m, i }) => ({ i, text: m.slice(0, 4) })) : [{ i: 0, text: ymLabel(r.labels[0]) }, { i: n, text: ymLabel(r.labels[n]) }]
+  const trough = r.trough && r.trough.step >= first ? { cx: x(r.trough.step), cy: y(pctOf(r.value[r.trough.step], r.paid[r.trough.step])) } : null
+
+  const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const px = ((e.clientX - rect.left) / rect.width) * W
+    const i = Math.round(((px - PAD.l) / (W - PAD.l - PAD.r)) * n)
+    setHover(Math.min(n, Math.max(first, i)))
+  }
+  const k = hover == null ? -1 : hover - first
+  const tipLeft = hover == null ? 0 : x(hover) > W * 0.6 ? x(hover) - 196 : x(hover) + 12
+
   return (
-    <svg className="acc-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="고른 기간의 실제 평가금과 납입액">
-      {ticks.map((t) => (
-        <g key={t}>
-          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className="acc-grid" />
-          <text x={L - 6} y={y(t) + 4} textAnchor="end" className="acc-axis">{man(t)}</text>
-        </g>
-      ))}
-      {yearMarks.map(({ i, text }) => <text key={i} x={x(i)} y={H - 8} textAnchor={i === 0 && jan.length < 2 ? 'start' : i === n && jan.length < 2 ? 'end' : 'middle'} className="acc-axis">{text}</text>)}
-      <path d={line(r.paid)} className="acc-line acc-paid" />
-      <path d={line(r.value)} className="acc-line acc-median" />
-      {r.trough && (
-        <g>
-          <circle cx={x(r.trough.step)} cy={y(r.value[r.trough.step])} r={4} className="acc-trough" />
-          <text x={x(r.trough.step)} y={y(r.value[r.trough.step]) + 18} textAnchor="middle" className="acc-axis">{ymLabel(r.trough.ym)} {r.trough.pct.toFixed(0)}%</text>
-        </g>
+    <div className="acc-chart-wrap" ref={wrapRef}>
+      <svg
+        className="acc-chart"
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label="고른 기간의 평가금: 넣은 돈 대비 %"
+        onPointerMove={onMove}
+        onPointerDown={onMove}
+        onPointerLeave={() => setHover(null)}
+      >
+        {/* 원금 아래 = 손해 구간 */}
+        {minY < 0 && <rect x={PAD.l} y={zeroY} width={W - PAD.l - PAD.r} height={y(minY) - zeroY} className="acc-loss-zone" />}
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className={t === 0 ? 'acc-zero' : 'acc-grid'} />
+            <text x={PAD.l - 6} y={y(t) + 4} textAnchor="end" className="acc-axis">{t === 0 ? '원금' : signed(t)}</text>
+          </g>
+        ))}
+        {yearMarks.map(({ i, text }) => <text key={i} x={x(i)} y={H - 8} textAnchor={i === 0 && jan.length < 2 ? 'start' : i === n && jan.length < 2 ? 'end' : 'middle'} className="acc-axis">{text}</text>)}
+        <path d={path} className="acc-line acc-median" />
+        {trough && r.trough && (
+          <g>
+            <circle cx={trough.cx} cy={trough.cy} r={4} className="acc-trough" />
+            <text x={trough.cx} y={Math.min(H - PAD.b - 4, trough.cy + 18)} textAnchor="middle" className="acc-axis">{ymLabel(r.trough.ym)} {r.trough.pct.toFixed(0)}%</text>
+          </g>
+        )}
+        {hover != null && (
+          <g>
+            <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={H - PAD.b} className="acc-crosshair" />
+            <circle cx={x(hover)} cy={y(pcts[k])} r={4} className="acc-dot acc-dot--median" />
+          </g>
+        )}
+      </svg>
+      {hover != null && (
+        <div className="acc-tip" style={{ left: tipLeft, top: PAD.t }} role="status">
+          <strong>{ymLabel(r.labels[hover])} · 넣은 돈 {man(r.paid[hover])}</strong>
+          <span><i className="acc-k-median" />평가금 {man(r.value[hover])} ({signed(pcts[k])})</span>
+        </div>
       )}
-    </svg>
+    </div>
   )
 }
 
@@ -118,7 +192,7 @@ export default function PeriodSim({ monthly, lump, drag, years, series = KOSPI_H
             <div><dt>원금 회복까지</dt><dd>{!r.trough ? '-' : r.recoveryMonths != null ? `${r.recoveryMonths}개월` : '기간 안에 못 돌아옴'}</dd></div>
           </dl>
           <PeriodChart r={r} />
-          <p className="acc-legend"><i className="acc-k-median" />실제 평가금 <i className="acc-k-paid" />납입</p>
+          <p className="acc-legend"><i className="acc-k-median" />넣은 돈 대비 평가금 (0% = 원금, 붉은 칸은 원금 아래)</p>
           <p className="acc-note">
             {r.peers >= 10
               ? <>이 기간은 같은 길이({r.months}개월)로 시작할 수 있었던 {r.peers}가지 중, 이보다 결과가 나빴던 경우가 <strong>{r.worsePct.toFixed(0)}%</strong>입니다. 한 기간은 우연이 커서 이것만으로 앞날을 판단하지 않습니다.</>

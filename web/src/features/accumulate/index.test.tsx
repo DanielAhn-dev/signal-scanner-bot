@@ -103,7 +103,7 @@ describe('모아가기', () => {
     expect(screen.getByRole('button', { name: '2008 금융위기 직전' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('끝 평가금')).toBeInTheDocument()
     expect(screen.getByText('가장 깊었던 손실')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /고른 기간의 실제 평가금/ })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /고른 기간의 평가금/ })).toBeInTheDocument()
     expect(screen.getByText(/이보다 결과가 나빴던 경우가/)).toBeInTheDocument()
     // 분포 화면의 TR 비교표는 기간 보기에서 숨긴다
     expect(screen.queryByText('KODEX 200 vs KODEX 200TR')).not.toBeInTheDocument()
