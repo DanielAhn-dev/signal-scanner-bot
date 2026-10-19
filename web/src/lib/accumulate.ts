@@ -1,5 +1,6 @@
 import { ACCUMULATE_ASOF, INDEX_ETF_CANDIDATES, KODEX200_MONTHLY, type IndexEtfCandidate } from '../data/accumulateData'
 import { MIX_ASOF, MIX_ASSETS } from '../data/mixData'
+import type { MonthTaskRecord } from './monthTask'
 
 /**
  * 모아가기(적립) 계산 — 과거 실제 가격으로 "그렇게 모았다면"의 분포를 보여 준다. 미래 예측이 아니다.
@@ -455,6 +456,8 @@ export type AccumulateState = {
   valuation: { ym: string; value: number } | null
   /** 성장 자산을 얼마나 이미 갖고 있는지 */
   lump: number
+  /** 홈 '이번 달 할 일'에 답한 기록 [YYYY-MM → 답] (lib/monthTask.ts). 예전 기록에는 없다 */
+  tasks?: Record<string, MonthTaskRecord>
 }
 
 export const EMPTY_STATE: AccumulateState = { goal: 'growth', target: null, received: [], deposits: [], valuation: null, lump: 0 }

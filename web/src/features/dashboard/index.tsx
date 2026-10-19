@@ -10,6 +10,8 @@ import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { FLOW_STEPS } from '../../navigation'
 import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
+import AccountTag from '../../components/ui/AccountTag'
+import MonthTaskCard from '../month-task/MonthTaskCard'
 import SavingProgressCard from '../saving-progress/SavingProgressCard'
 import { useJourney, type EntryPath } from '../../lib/journey'
 import { useToast } from '../../components/ToastProvider'
@@ -79,7 +81,7 @@ type PortfolioSummary = {
 // 종목 선별 흐름(FLOW_STEPS 1~7)은 '종목 연구' 탭과 각 화면 위 n/7 안내에 남기고 여기서는 링크 하나로 줄였다.
 const ADMIN_TODO_STEPS: Array<{ key: string; label: string; desc: string; route?: string }> = [
   { key: 'control-audit', route: 'control?tab=audit', label: '관제 검산', desc: '어젯밤 배치·기록에 이상이 없는지 먼저 확인' },
-  { key: 'portfolio', label: '비중 경고', desc: '아래 내 계좌(실제) 줄의 대응 필요(한도 초과분 KODEX 200으로)를 처리했는지 확인' },
+  { key: 'portfolio', label: '비중 경고', desc: '아래 내 계좌 [실제] 줄의 대응 필요(한도 초과분 KODEX 200으로)를 처리했는지 확인' },
   { key: 'goal-tracker', label: '적립 진행', desc: '이번 달 입금이 들어갔고 계획선을 따라가는지 확인' },
   { key: 'market', label: `종목 연구 (${FLOW_STEPS.length}단계)`, desc: '매일 볼 필요 없음 — 봇 판단 근거를 따질 때만 1 시장부터' },
 ]
@@ -299,7 +301,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
   return (
     <div ref={sheetRef} className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
-      {/* 내 계획(MyPlanCard)은 모아가기 화면으로 옮겼다 — 홈은 '내 모으기' 요약 하나 */}
+      {/* 내 계획(MyPlanCard)은 모아가기 화면으로 옮겼다 — 홈은 [실제] 이번 달 할 일 + '내 모으기' 요약 */}
+      <MonthTaskCard />
       <SavingProgressCard variant="home" />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>{colWidths.map((width, index) => (
@@ -463,7 +466,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           {/* ── 요약 세 줄: 실제 계좌 · 실험 계좌 · 오늘 시장. 자세한 건 각 페이지에서 ── */}
           <tr className="xls-row xls-row--even">
             <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>내 계좌(실제)</td>
+            <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>내 계좌 <AccountTag kind="real" /></td>
             <td className="xls-cell" colSpan={3} style={S.summary}>
               {realHoldings == null ? '불러오는 중…' : realHoldings.length === 0 ? (
                 <span style={{ color: 'var(--color-text-secondary)' }}>직접 매매하는 계좌를 입력하면 종목별 대응을 알려드려요</span>
@@ -491,7 +494,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>실험 계좌</td>
+            <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>가상 계좌 <AccountTag kind="virtual" /></td>
             <td className="xls-cell" colSpan={3} style={S.summary}>
               {portfolio ? (
                 <>평가손익 <strong style={{ color: pnlColor }}>{fmtPnl(pnl)}</strong> · {posCount}종목</>

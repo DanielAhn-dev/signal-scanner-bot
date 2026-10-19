@@ -1,0 +1,19 @@
+/* 홈 '이번 달 할 일' — 내 모으기(.sp)와 같은 틀, 할 일일 때만 브랜드 테두리 */
+.mt { width: calc(100% - 24px); margin: 8px 12px; padding: 12px 14px; border: 1px solid var(--color-brand); border-radius: 6px; background: var(--color-bg-elevated); color: var(--color-text-primary); font-size: 13px; word-break: keep-all; display: grid; gap: 8px; }
+.mt--line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 14px; border-color: var(--color-border-default); font-size: 12px; }
+.mt__head { display: flex; align-items: center; gap: 8px; }
+.mt__main { margin: 0; font-size: 15px; }
+.mt__muted { margin: 0; color: var(--color-text-secondary); line-height: 1.5; }
+.mt__link { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: transparent; color: var(--color-brand); font: inherit; cursor: pointer; }
+.mt__row { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; align-items: end; }
+.mt__field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mt__field > span { color: var(--color-text-secondary); font-size: 12px; }
+.mt__field input, .mt__field select { min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 4px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
+.mt__actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mt__primary { padding: 7px 16px; border: 0; border-radius: 4px; background: var(--color-brand); color: var(--color-text-inverse); font: inherit; font-weight: 600; cursor: pointer; }
+.mt__secondary { padding: 6px 12px; border: 1px solid var(--color-border-default); border-radius: 4px; background: transparent; color: var(--color-text-primary); font: inherit; cursor: pointer; }
+.mt__primary:disabled, .mt__secondary:disabled { opacity: 0.5; cursor: default; }
+.mt__error { margin: 0; color: var(--color-error); }
+.mt__foot { margin: 0; padding-top: 8px; border-top: 1px solid var(--color-border-subtle); color: var(--color-text-tertiary); font-size: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.mt__foot .mt__link { margin-left: auto; }
+.mt .amount-hint { color: var(--color-text-tertiary); font-size: 12px; }

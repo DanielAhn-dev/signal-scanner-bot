@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import AccountTag from '../../components/ui/AccountTag'
 import { Check, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan } from '../../lib/format'
 import { useUserState } from '../../lib/userState'
 import { useCurrentChatId, useCurrentClientId } from '../../stores/profileStore'
-import { EMPTY_STATE, currentYmKst, upsertMonth, type AccumulateState } from '../../lib/accumulate'
+import { EMPTY_STATE, currentYmKst, type AccumulateState } from '../../lib/accumulate'
 import {
   DISTRIBUTION_TAX_RATE,
   doneMonths,
@@ -59,11 +60,8 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
   const clientId = useCurrentClientId()
   const [data, setData] = useState<SavingProgressData | null>(null)
   const [loadError, setLoadError] = useState(false)
-  const { value: accRaw, set: setAcc } = useUserState<AccumulateState>('accumulate')
+  const { value: accRaw } = useUserState<AccumulateState>('accumulate')
   const acc: AccumulateState = { ...EMPTY_STATE, ...(accRaw ?? {}) }
-  const [otherOpen, setOtherOpen] = useState(false)
-  const [otherText, setOtherText] = useState('')
-  const savingRef = useRef(false)
   const ym = currentYmKst()
 
   useEffect(() => {
@@ -84,17 +82,8 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
   const grid = monthGrid(done, ym, variant === 'full' ? 2 : 1)
   const thisMonth = acc.deposits.find(([m]) => m === ym)?.[1] ?? 0
   const boughtThisMonth = data.buyMonths.includes(ym)
-  const planMonthly = data.plan?.monthly ?? 0
+  const monthTask = acc.tasks?.[ym] ?? null
 
-  const checkIn = (amount: number) => {
-    if (savingRef.current || !(amount > 0)) return
-    savingRef.current = true
-    setAcc({ ...acc, deposits: upsertMonth(acc.deposits, ym, amount) })
-    setOtherOpen(false)
-    setOtherText('')
-    savingRef.current = false
-  }
-  const undo = () => setAcc({ ...acc, deposits: upsertMonth(acc.deposits, ym, 0) })
 
   const pension = data.tax.pensionMonthly != null ? pensionCredit(data.tax.pensionMonthly * 12) : null
   const dist = data.tax.distribution
@@ -108,6 +97,7 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
     <section className={`sp sp--${variant}`} aria-label="내 모으기">
       <div className="sp__head">
         <span className="sp__title">내 모으기</span>
+        <AccountTag kind="real" />
         <span className="sp__muted">{ym.replace('-', '.')}</span>
       </div>
 
@@ -116,7 +106,7 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
         <span className="sp__label">넣은 원금</span>
         <strong className="sp__big">{noHoldings ? '아직 없음' : man(data.principal.total)}</strong>
         <span className="sp__muted">
-          {noHoldings ? '내 계좌에 보유를 입력하면 여기에 쌓입니다' : `보유 매수금액 ${man(data.principal.cost)}${data.principal.cash > 0 ? ` + 예수금 ${man(data.principal.cash)}` : ''} · 시장이 빠져도 줄지 않는 숫자`}
+          {noHoldings ? '내 계좌에 보유를 입력하면 여기에 쌓입니다. 봇이 사는 가상 계좌는 여기서 세지 않습니다' : `보유 매수금액 ${man(data.principal.cost)}${data.principal.cash > 0 ? ` + 예수금 ${man(data.principal.cash)}` : ''} · 시장이 빠져도 줄지 않는 숫자`}
         </span>
       </div>
       {data.goal && goalPct != null && (
@@ -127,33 +117,22 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
         </div>
       )}
 
-      {/* 2. 이번 달 — 체크인 하나가 주 행동 */}
+      {/* 2. 이번 달 — 기록은 홈 '이번 달 할 일' 한 곳에서만 (예전 체크인 버튼과 두 번 기록하지 않게) */}
       <div className="sp__month">
-        {thisMonth > 0 ? (
-          <span className="sp__done">
-            <Check size={14} aria-hidden /> 이번 달 넣었어요 · {man(thisMonth)}
-            <button type="button" className="sp__link" onClick={undo}>취소</button>
-          </span>
-        ) : (
+        {monthTask?.status === 'bought' ? (
+          <span className="sp__done"><Check size={14} aria-hidden /> 이번 달 샀어요 · {monthTask.name ?? ''} {monthTask.qty}주</span>
+        ) : monthTask?.status === 'skipped' ? (
+          <span className="sp__muted">이번 달은 건너뛰었어요</span>
+        ) : monthTask?.status === 'later' ? (
+          <span className="sp__muted">내 계좌는 다음 달부터 시작해요</span>
+        ) : thisMonth > 0 ? (
+          <span className="sp__done"><Check size={14} aria-hidden /> 이번 달 넣었어요 · {man(thisMonth)}</span>
+        ) : variant === 'full' ? (
           <>
-            {planMonthly > 0 ? (
-              <button type="button" className="sp__primary" onClick={() => checkIn(planMonthly)}>
-                이번 달 넣었어요 ({man(planMonthly)})
-              </button>
-            ) : (
-              <span className="sp__muted">이번 달 넣은 금액을 적어 주세요</span>
-            )}
-            {(otherOpen || planMonthly <= 0) ? (
-              <span className="sp__other">
-                <input type="number" inputMode="numeric" min="0" placeholder="금액(원)" value={otherText} onChange={(e) => setOtherText(e.target.value)} aria-label="이번 달 넣은 금액" />
-                <button type="button" className="sp__secondary" disabled={!(Number(otherText) > 0)} onClick={() => checkIn(Math.round(Number(otherText)))}>기록</button>
-              </span>
-            ) : (
-              <button type="button" className="sp__link" onClick={() => setOtherOpen(true)}>다른 금액</button>
-            )}
-            {data.plan && <span className="sp__muted">넣는 날 매달 {data.plan.depositDay}일{boughtThisMonth ? ' · 이번 달 매수 기록 있음' : ''}</span>}
+            <span className="sp__muted">{data.plan ? `넣는 날 매달 ${data.plan.depositDay}일` : '이번 달 기록 없음'}{boughtThisMonth ? ' · 이번 달 매수 기록 있음' : ''}</span>
+            <button type="button" className="sp__link" onClick={() => navigate('/')}>이번 달 할 일은 홈에서 <ChevronRight size={12} aria-hidden /></button>
           </>
-        )}
+        ) : null}
       </div>
 
       {/* 3. 이어서 넣은 달 */}

@@ -1,0 +1,4 @@
+/* [실제]/[가상] — 채움 배지 대신 얇은 테두리 글자 (색만으로 구분하지 않는다) */
+.account-tag { display: inline-block; padding: 0 5px; border: 1px solid var(--color-border-default); border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 17px; vertical-align: 1px; white-space: nowrap; }
+.account-tag--real { border-color: var(--color-brand); color: var(--color-brand); }
+.account-tag--virtual { border-color: var(--color-border-strong); color: var(--color-text-secondary); }

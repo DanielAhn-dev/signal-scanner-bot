@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SavingProgressCard, { type SavingProgressData } from './SavingProgressCard'
 import { currentYmKst } from '../../lib/accumulate'
+import { userScopedKey } from '../../lib/userState'
 
 const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -47,24 +48,23 @@ describe('내 모으기', () => {
     expect(screen.getByText(/목표 9억원의 6.6%/)).toBeInTheDocument()
   })
 
-  it('이번 달 체크인: 계획 금액으로 한 번에 기록하고, 지난달 매수와 이어서 2개월로 센다. 취소하면 되돌린다', async () => {
+  it('이번 달 기록은 홈 할 일 한 곳에서만 — 여기는 상태만 보여 주고 체크인 버튼이 없다', async () => {
     apiFetchMock.mockResolvedValue({ data: data() })
-    renderCard()
+    renderCard('full')
     expect(await screen.findByText(/이번 달을 넣으면 2개월/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '이번 달 넣었어요 (100만원)' }))
-    expect(screen.getByText(/이번 달 넣었어요 · 100만원/)).toBeInTheDocument()
-    expect(screen.getByText('2개월')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '취소' }))
-    expect(screen.getByRole('button', { name: '이번 달 넣었어요 (100만원)' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /이번 달 넣었어요/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /이번 달 할 일은 홈에서/ })).toBeInTheDocument()
   })
 
-  it('다른 금액으로도 기록할 수 있다', async () => {
+  it('홈에서 "샀어요"로 답한 달은 산 상품·수량으로 보이고 이어서 넣은 달에 센다', async () => {
+    window.localStorage.setItem(userScopedKey('state:accumulate')!, JSON.stringify({
+      value: { deposits: [[ym, 1_000_000]], tasks: { [ym]: { status: 'bought', name: 'KIWOOM 200TR', qty: 10, amount: 1_000_000, at: 'x' } } },
+      updatedAt: Date.now(),
+    }))
     apiFetchMock.mockResolvedValue({ data: data() })
     renderCard()
-    fireEvent.click(await screen.findByRole('button', { name: '다른 금액' }))
-    fireEvent.change(screen.getByLabelText('이번 달 넣은 금액'), { target: { value: '300000' } })
-    fireEvent.click(screen.getByRole('button', { name: '기록' }))
-    expect(screen.getByText(/이번 달 넣었어요 · 30만원/)).toBeInTheDocument()
+    expect(await screen.findByText(/이번 달 샀어요 · KIWOOM 200TR 10주/)).toBeInTheDocument()
+    expect(screen.getByText('2개월')).toBeInTheDocument()
   })
 
   it('하락장이면 같은 돈으로 더 많은 수량을 산다고 알려 준다(−20% → 25%)', async () => {
