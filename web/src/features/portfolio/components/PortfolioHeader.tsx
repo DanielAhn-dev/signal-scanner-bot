@@ -200,9 +200,14 @@ export default function PortfolioHeader({
         </tr>
         <tr className="xls-row">
           <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
-            <div className="portfolio-account-tabs" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
-              <AccountTab active={selectedAccountKey !== 'virtual'} onClick={() => onSelectAccount('real')}>{aliases.real || DEFAULT_TOP_LABEL.real} ({realCount})</AccountTab>
-              <AccountTab active={selectedAccountKey === 'virtual'} onClick={() => onSelectAccount('virtual')}>{aliases.virtual || DEFAULT_TOP_LABEL.virtual} ({virtualCount})</AccountTab>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <div className="portfolio-account-tabs" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                <AccountTab active={selectedAccountKey !== 'virtual'} onClick={() => onSelectAccount('real')}>{aliases.real || DEFAULT_TOP_LABEL.real} ({realCount})</AccountTab>
+                <AccountTab active={selectedAccountKey === 'virtual'} onClick={() => onSelectAccount('virtual')}>{aliases.virtual || DEFAULT_TOP_LABEL.virtual} ({virtualCount})</AccountTab>
+              </div>
+              <Button variant="secondary" size="sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => openRename(renameTargetKey)}>
+                이름 바꾸기
+              </Button>
             </div>
             {selectedAccountKey !== 'virtual' && accountFolders.length > 1 && !useSheet && (
             <div className="portfolio-account-tabs portfolio-account-tabs--sub" role="group" aria-label="실제 계좌 고르기" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
@@ -235,11 +240,6 @@ export default function PortfolioHeader({
                 <span className="caption muted" style={{ flexShrink: 0 }}>계좌 {accountFolders.length}개 · 고르기</span>
               </button>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
-              <Button variant="secondary" size="sm" onClick={() => openRename(renameTargetKey)}>
-                이름 바꾸기
-              </Button>
-            </div>
             <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title="계좌 고르기" size="sm">
               <div role="listbox" aria-label="실제 계좌" style={{ display: 'flex', flexDirection: 'column', maxHeight: '60vh', overflowY: 'auto' }}>
                 <button
