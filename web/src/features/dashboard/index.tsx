@@ -17,7 +17,8 @@ import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 import { adviseHoldings, type Holding } from '../../lib/holdingAdvice'
 import { satelliteStatus, SATELLITE_LOSS_LIMIT_PCT, SATELLITE_MAX_WEIGHT_PCT, SATELLITE_SELL_WEIGHT_PCT } from '../../lib/satelliteGuard'
 import { formatKrw } from '../../lib/format'
-import { readUserState } from '../../lib/userState'
+import { readUserState, useUserState } from '../../lib/userState'
+import { sanitizeDropPlan, type DropPlan } from '../../lib/dropPlan'
 import { personalSetup, type InvestorProfile } from '../../lib/startPlan'
 import type { DropDayView } from '../../lib/dropDay'
 import { renderDropDayRows } from './dropDayRows'
@@ -200,6 +201,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [marketShift, setMarketShift] = useState<MarketShiftView | null>(null)
   const [dropDay, setDropDay] = useState<DropDayView | null>(null)
   const [dropDayOpen, setDropDayOpen] = useState(false)
+  const { value: dropPlanRaw } = useUserState<DropPlan>('dropPlan')
+  const dropPlan = sanitizeDropPlan(dropPlanRaw)
   const [indices, setIndices] =useState<Partial<Record<MarketTileKey, { price?: number; changeRate?: number }>> | null>(null)
   const [realHoldings, setRealHoldings] = useState<Holding[] | null>(null)
   const [allTodosOpen, setAllTodosOpen] = useState(false)
@@ -333,7 +336,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
 
           {/* ── 큰 하락일 안내: 코스피 하루 −1.5% 이하일 때만, 평소엔 한 줄(예측 아님) ── */}
-          {renderDropDayRows({ view: dropDay, sp500ChangePct: indices?.sp500?.changeRate, rowNum, open: dropDayOpen, onToggle: () => setDropDayOpen((v) => !v), onOpenPlan: () => nav('plan') })}
+          {renderDropDayRows({ view: dropDay, sp500ChangePct: indices?.sp500?.changeRate, rowNum, open: dropDayOpen, onToggle: () => setDropDayOpen((v) => !v), onOpenPlan: () => nav('plan'), dropPlan, onOpenDropPlan: () => nav('mix#drop-plan') })}
 
           {/* ── 다음 할 일: 관리자는 오늘 점검 전체, 일반 사용자는 다음 1개만(펼치면 전체) ── */}
           <tr className="xls-row">

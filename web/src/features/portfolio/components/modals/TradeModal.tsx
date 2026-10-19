@@ -7,6 +7,8 @@ import { getTodayLocalYmd, shiftYmd, toKstYmd } from '../../lib/dates'
 import type { TradeModalState } from '../../hooks/useTradeModal'
 import { SIZING_EVIDENCE, SIZING_MAX_MULTIPLE } from '../../../../../../src/lib/positionSizing'
 import { holdingSizing, SIZING_LEVEL_LABEL } from '../../lib/stockSizing'
+import { dropPlanLines, sanitizeDropPlan, shouldRemindOnSell, type DropPlan } from '../../../../lib/dropPlan'
+import { useUserState } from '../../../../lib/userState'
 
 /** realTotalValue: 실계좌 보유 평가액 합(개별주 한도와 같은 분모) — 담을 크기 계산용 */
 export default function TradeModal({ trade, realTotalValue }: { trade: TradeModalState; realTotalValue: number }) {
@@ -26,6 +28,8 @@ export default function TradeModal({ trade, realTotalValue }: { trade: TradeModa
     tradeLoading,
     submitTrade,
   } = trade
+  const { value: dropPlanRaw } = useUserState<DropPlan>('dropPlan')
+  const dropPlan = sanitizeDropPlan(dropPlanRaw)
   return (
     <Modal
       isOpen={modalOpen}
@@ -41,6 +45,22 @@ export default function TradeModal({ trade, realTotalValue }: { trade: TradeModa
             </strong>
             <span className="caption"> ({modalRow.code})</span>
           </div>
+
+          {/* 손실 난 매도에만, 하락 전에 내가 정해 둔 계획을 다시 보여준다 — 막지 않는다(이미 증권사에서 팔고 기록만 하는 경우가 많다) */}
+          {modalSide === 'sell' && dropPlan && shouldRemindOnSell(
+            tradePrice !== '' ? Number(tradePrice) : Number(modalRow.stock?.close ?? 0),
+            Number(modalRow.avg_price ?? 0),
+          ) && (
+            <div className="portfolio-modal-lots" style={{ marginBottom: 'var(--space-4)' }}>
+              <div className="portfolio-modal-lots-title">팔기 전에, {dropPlan.savedAt}에 정해 둔 계획</div>
+              {dropPlanLines(dropPlan).map((l) => (
+                <div key={l} className="portfolio-modal-lots-row" style={{ wordBreak: 'keep-all' }}>· {l}</div>
+              ))}
+              <div className="caption muted" style={{ marginTop: 'var(--space-1)', wordBreak: 'keep-all' }}>
+                이미 증권사에서 팔았다면 그대로 기록하세요.
+              </div>
+            </div>
+          )}
 
           {modalSide === 'buy' && modalRow.lots && modalRow.lots.length > 0 && (
             <div className="portfolio-modal-lots">

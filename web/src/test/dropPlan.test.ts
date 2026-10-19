@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DROP_COMMITMENTS, dropPlanLines, sanitizeDropPlan, todayKst } from '../lib/dropPlan'
+import { DROP_COMMITMENTS, dropPlanLines, dropPlanSummary, sanitizeDropPlan, shouldRemindOnSell, todayKst } from '../lib/dropPlan'
 
 describe('dropPlan', () => {
   const ok = { savedAt: '2026-10-02', tolerancePct: 20, commitments: ['keep-dca', 'wait-a-day'], ifTempted: '  배우자와 이야기한다  ' }
@@ -32,6 +32,19 @@ describe('dropPlan', () => {
     expect(lines).toContain(DROP_COMMITMENTS[0].text)
     expect(lines.at(-1)).toBe('팔고 싶어지면 먼저: 배우자와 이야기한다')
     expect(lines).toHaveLength(3)
+  })
+
+  it('한 줄 요약은 짧은 말을 정해 둔 순서대로 잇고, 직접 적은 문장은 개수만 알린다', () => {
+    expect(dropPlanSummary(sanitizeDropPlan(ok)!)).toBe('적립 계속 · 팔기 전 하루 기다림 · 직접 적은 할 일 1개')
+    expect(dropPlanSummary(sanitizeDropPlan({ ...ok, commitments: [], ifTempted: '산책' })!)).toBe('직접 적은 할 일 1개')
+  })
+
+  it('매도 창 안내는 평균단가보다 낮게 팔 때만', () => {
+    expect(shouldRemindOnSell(9_000, 10_000)).toBe(true)
+    expect(shouldRemindOnSell(10_000, 10_000)).toBe(false)
+    expect(shouldRemindOnSell(12_000, 10_000)).toBe(false)
+    expect(shouldRemindOnSell(9_000, 0)).toBe(false)
+    expect(shouldRemindOnSell(Number.NaN, 10_000)).toBe(false)
   })
 
   it('한국 날짜로 오늘을 만든다', () => {

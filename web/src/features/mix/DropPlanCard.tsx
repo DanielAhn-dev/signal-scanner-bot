@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DROP_COMMITMENTS, dropPlanLines, sanitizeDropPlan, todayKst, type DropPlan } from '../../lib/dropPlan'
 import { useUserState } from '../../lib/userState'
 
@@ -9,6 +9,11 @@ export default function DropPlanCard({ tolerance }: { tolerance: number }) {
   const [picked, setPicked] = useState<string[]>(saved?.commitments ?? DROP_COMMITMENTS.map((c) => c.id))
   const [ifTempted, setIfTempted] = useState(saved?.ifTempted ?? '')
   const [editing, setEditing] = useState(false)
+  // 홈 하락 카드의 '전체 보기'·'정해 두기'(#drop-plan)로 오면 이 카드로 내린다
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (window.location.hash === '#drop-plan') ref.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   // 저장된 계획이 서버에서 늦게 도착하면 한 번 반영한다
   useEffect(() => {
@@ -24,7 +29,7 @@ export default function DropPlanCard({ tolerance }: { tolerance: number }) {
 
   if (saved && !editing) {
     return (
-      <section className="acc-card">
+      <section className="acc-card" id="drop-plan" ref={ref}>
         <h2>하락이 오면 내가 할 일</h2>
         <p className="acc-note">{saved.savedAt}에 정했습니다. 잃어도 버틸 수 있다고 정한 선은 {saved.tolerancePct}%입니다. 하락이 오면 모아가기 화면의 "지금 상황"에서 이 계획을 다시 보여드립니다.</p>
         <ul className="acc-note">{dropPlanLines(saved).map((l) => <li key={l}>{l}</li>)}</ul>
@@ -34,7 +39,7 @@ export default function DropPlanCard({ tolerance }: { tolerance: number }) {
   }
 
   return (
-    <section className="acc-card">
+    <section className="acc-card" id="drop-plan" ref={ref}>
       <h2>하락이 오면 내가 할 일, 미리 정해 두기</h2>
       <p className="acc-note">하락 한가운데에서는 판단이 흔들립니다. 지금처럼 차분할 때 정한 문장을 하락이 왔을 때 다시 보여드립니다. 시스템이 대신 결정하지 않고, 나중의 내가 읽기만 합니다.</p>
       {DROP_COMMITMENTS.map((c) => (
