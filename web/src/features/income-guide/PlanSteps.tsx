@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import UnitInput from '../../components/ui/UnitInput'
+import { useToast } from '../../components/ToastProvider'
 
 /** 서버 src/lib/rebalancePlan.ts의 RebalancePlan */
 export type RebalancePlan = {
@@ -150,7 +151,9 @@ const inlineRow: React.CSSProperties = { display: 'flex', alignItems: 'center', 
  */
 export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot }: Props) {
   const savingRef = useRef(false)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  // 결과는 토스트로 — 저장하면 설정이 바뀌어 이 컴포넌트가 새로 마운트되므로(key=settings) 안의 상태 메시지는 사라진다
+  const toast = useToast()
   const [contribMan, setContribMan] = useState(settings.monthlyContribution ? String(Math.round(settings.monthlyContribution / 10_000)) : '')
   // 예수금은 증권사 앱에 보이는 그대로 원 단위로 받는다(만원 칸에 원 금액을 넣어 1만 배로 저장된 일이 있었다)
   // 계좌별로 받는다 — 분배금·매도 대금이 그 계좌로 들어오고 다시 사는 것도 그 계좌 안에서다. LEGACY_CASH는 계좌를 정하지 않은 예전 입력값
@@ -171,10 +174,11 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
   const save = async (patch: Record<string, unknown>, done: string) => {
     if (savingRef.current) return
     savingRef.current = true
-    setMsg(null)
+    setSaving(true)
     const ok = await saveSettings(patch)
     savingRef.current = false
-    setMsg(ok ? done : '저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.')
+    setSaving(false)
+    toast.show(ok ? done : '저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.', ok ? 3500 : 6000)
   }
   const toWon = (v: string) => (v.trim() === '' ? '' : Number(v) * 10_000)
 
@@ -254,7 +258,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 아래에 받은 분배금을 적으면 실제 기준으로 바뀝니다.'}
         </div>
         <div style={{ marginTop: 6 }}>
-          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 원 단위로. 분배금이 들어온 직후에 적으면 가장 정확합니다.</span>
+          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 원 단위로. 분배금이 들어온 직후에 적으면 가장 정확합니다. 보유 화면에서 매수·매도를 기록하면 그 계좌 예수금에서 자동으로 빼고 더합니다.</span>
           {[...accounts.map((a) => ({ key: a.key, label: a.label })), ...(LEGACY_CASH in cashWon ? [{ key: LEGACY_CASH, label: '계좌 미지정 (예전 입력)' }] : [])].map((a) => (
             <div key={a.key} style={{ ...inlineRow, marginTop: 4 }}>
               <span style={{ minWidth: 140 }}>{a.label}</span>
@@ -276,6 +280,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             <Button
               size="sm"
               variant="secondary"
+              disabled={saving}
               onClick={() => {
                 const cashByAccount = Object.fromEntries(accounts.map((a) => [a.key, digitsOf(cashWon[a.key]) === '' ? '' : Number(digitsOf(cashWon[a.key]))]))
                 const patch: Record<string, unknown> = { cashByAccount }
@@ -283,7 +288,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                 void save(patch, `예수금 합계 ${cashTotal > 0 ? man(cashTotal) : '0원'}을 계좌별로 넣어 다시 계산했습니다.`)
               }}
             >
-              반영
+              {saving ? '반영 중…' : '반영'}
             </Button>
             {cashTotal > 0 && <span style={faint}>합계 약 {man(cashTotal)}</span>}
           </div>
@@ -641,7 +646,6 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         )}
       </div>
 
-      {msg && <div style={{ margin: '0 12px', ...muted }}>{msg}</div>}
     </>
   )
 }
