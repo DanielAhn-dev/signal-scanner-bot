@@ -212,15 +212,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (baselineBackfills.length) {
       await Promise.all(
-        baselineBackfills.map(({ chatId, baseline }) => {
-          const rawPrefs = rawPrefsByChat.get(chatId) ?? {};
-          return supabase
+        baselineBackfills.map(async ({ chatId, baseline }) => {
+          // 앞에서 읽은 prefs를 통째로 쓰면 그 사이 자동매매가 바꾼 현금이 옛 값으로 돌아간다 — 쓰기 직전에 다시 읽는다
+          if (!rawPrefsByChat.has(chatId)) return;
+          const { data: fresh, error: readError } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+          if (readError || !fresh) {
+            if (readError) console.error(`baseline backfill skipped for chat ${chatId}: ${readError.message}`);
+            return;
+          }
+          const freshPrefs = ((fresh as { prefs?: Record<string, unknown> | null }).prefs ?? {}) as Record<string, unknown>;
+          const { error } = await supabase
             .from("users")
-            .update({ prefs: { ...rawPrefs, virtual_cash_baseline: baseline } })
-            .eq("tg_id", chatId)
-            .then(({ error }) => {
-              if (error) console.error(`baseline backfill failed for chat ${chatId}: ${error.message}`);
-            });
+            .update({ prefs: { ...freshPrefs, virtual_cash_baseline: baseline } })
+            .eq("tg_id", chatId);
+          if (error) console.error(`baseline backfill failed for chat ${chatId}: ${error.message}`);
         })
       );
     }
