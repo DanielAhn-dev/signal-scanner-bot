@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import StockSearchInput from '../../components/StockSearchInput'
@@ -105,6 +105,11 @@ const monthLabel =(m: string, i: number) => `${Number(m.slice(5))}월${i === 0 ?
  */
 export default function DistributionReceipts({ data, holdings, buyName, submit }: Props) {
   const busy = useRef(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+  // 이번 달 투자금의 '받은 분배금 더 적기' 링크(#receipts)로 오면 이 카드로 내려 준다
+  useEffect(() => {
+    if (window.location.hash === '#receipts') cardRef.current?.scrollIntoView({ block: 'start' })
+  }, [])
   const [pending, setPending] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const months = useMemo(() => recentMonths(3), [])
@@ -185,7 +190,7 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
   }
 
   return (
-    <div style={card}>
+    <div id="receipts" ref={cardRef} style={card}>
       <strong style={{ fontSize: 15, display: 'block', marginBottom: 4 }}>받은 분배금</strong>
       <div>
         {thisMonth.month.slice(5).replace(/^0/, '')}월 받은 금액(세후) <strong>{won(thisMonth.net)}</strong>

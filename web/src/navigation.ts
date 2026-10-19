@@ -4,6 +4,15 @@ export type NavItem = {
   adminOnly?: boolean
   /** 일반 사용자 메뉴에만 보인다 (관리자는 같은 화면을 다른 탭에서 이미 봄) */
   userOnly?: boolean
+  /** 메뉴 검색에서 이름 말고도 찾히게 할 낱말 (화면 안에 있는 기능 이름) */
+  keywords?: readonly string[]
+}
+
+/** 메뉴 검색 일치 — 이름·키·화면 안 기능 낱말 */
+export function navMatches(item: { key: string; label: string; keywords?: readonly string[] }, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return item.label.toLowerCase().includes(q) || item.key.includes(q) || (item.keywords ?? []).some((k) => k.toLowerCase().includes(q))
 }
 
 export type NavGroup = {
@@ -66,14 +75,14 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'money',
     label: '모으기',
     groups: [
-      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'budget', label: '예산 설정' }, { key: 'money-flow', label: '지출 기록' }, { key: 'seed-builder', label: '이번 달 투자금' }, { key: 'follow', label: '따라 사기' }] },
+      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'budget', label: '예산 설정' }, { key: 'money-flow', label: '지출 기록' }, { key: 'seed-builder', label: '이번 달 투자금', keywords: ['시드', '남겨둘 돈', '확보'] }, { key: 'follow', label: '따라 사기' }] },
     ],
   },
   {
     key: 'plan',
     label: '계획',
     groups: [
-      { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드' }] },
+      { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드', keywords: ['분배금', '받은 분배금', '배당', '인컴', '예수금'] }] },
       { category: '계산·주문 정리', items: [{ key: 'simulator', label: '시뮬레이터', userOnly: true }, { key: 'execution-guide', label: '실행가이드', userOnly: true }] },
     ],
   },

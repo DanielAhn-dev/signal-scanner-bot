@@ -18,7 +18,7 @@ import { useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useDetailed, useViewModeStore } from '../stores/viewModeStore'
-import { CONTROL_NAV_ITEM, ALL_NAV_ITEMS, SHEET_NAV_KEYS, filterNavItems, menuSectionsFor, plainNavItems, type MenuSection } from '../navigation'
+import { CONTROL_NAV_ITEM, ALL_NAV_ITEMS, SHEET_NAV_KEYS, filterNavItems, menuSectionsFor, navMatches, plainNavItems, type MenuSection } from '../navigation'
 import ExcelContentArea from './ExcelContentArea'
 import BotUsageBanner from './BotUsageBanner'
 import { useVisualViewportVars } from '../hooks/useVisualViewportVars'
@@ -137,9 +137,10 @@ function getRibbonGroups(tab: RibbonTabKey, sections: MenuSection[]): RibbonGrou
 // ── 시트 탭 / 메뉴 정의 ───────────────────────────────────────────
 // 시트 탭은 매일 여는 화면(SHEET_NAV_KEYS) + 관리자 관제만, 나머지는 리본과 "전체 메뉴" 서랍으로.
 
-const toTab = (item: { key: string; label: string }) => ({
+const toTab = (item: { key: string; label: string; keywords?: readonly string[] }) => ({
   key: item.key,
   label: item.label,
+  keywords: item.keywords,
   icon: navIcon(item.key, 10),
 })
 
@@ -399,7 +400,7 @@ export default function ExcelShell({
     if (!normalized) return ''
     const exact = MENU_TABS.find(tab => tab.key === normalized || tab.label.toLowerCase() === normalized)
     if (exact) return exact.key
-    const partial = MENU_TABS.find(tab => tab.label.toLowerCase().includes(normalized) || tab.key.includes(normalized))
+    const partial = MENU_TABS.find(tab => navMatches(tab, normalized))
     return partial?.key ?? ''
   }, [])
 
@@ -414,7 +415,7 @@ export default function ExcelShell({
   const filteredMenuTabs = useMemo(() => {
     const normalized = menuQuery.trim().toLowerCase()
     const list = normalized
-      ? MENU_TABS.filter(tab => tab.label.toLowerCase().includes(normalized) || tab.key.includes(normalized))
+      ? MENU_TABS.filter(tab => navMatches(tab, normalized))
       : MENU_TABS
     return list.slice(0, 12)
   }, [menuQuery])
