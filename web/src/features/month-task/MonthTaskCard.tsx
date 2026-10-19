@@ -93,13 +93,13 @@ export default function MonthTaskCard() {
     if (chatId) loadMonthBuys(60_000)
   }, [chatId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 구성 지수마다 한 줄 — 상품은 모아가기와 같은 판정(코스피200: 직접 지정 > 추천, 해외지수: 고른 상품 > 추천)
+  // 구성 지수마다 한 줄 — 상품은 모아가기와 같은 판정(코스피200: 구성에 고른 상품 > 예전 직접 지정 > 추천, 해외지수: 고른 상품 > 추천)
   const lines: Line[] | null = useMemo(() => {
     const mix = plan?.mix ?? DEFAULT_PLAN_MIX
     const out: Line[] = []
     for (const e of mix) {
       let pick: Product | null
-      if (e.index === 'kospi200') pick = kospiProduct
+      if (e.index === 'kospi200') pick = e.product ?? kospiProduct
       else if (e.product) pick = e.product
       else {
         const p = recommendOverseas(e.index, etfView.overseas, etfView.asOf).pick

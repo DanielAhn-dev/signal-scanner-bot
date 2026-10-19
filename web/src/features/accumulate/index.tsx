@@ -165,12 +165,19 @@ export default function AccumulatePage() {
 
   const etfView = useIndexEtfCandidates()
   const rec = useMemo(() => recommendCandidate(state.goal, etfView.cands, etfView.asOf), [state.goal, etfView])
-  const custom = state.target
+  const planMix = draftMix ?? savedMix ?? DEFAULT_PLAN_MIX
+  // 코스피200 상품 직접 지정은 내 계획 구성(mix.product)에 둔다 — 서버(가이드·리포트)도 읽는다.
+  // 예전 직접 지정(accumulate.target)은 읽기만: 코스피200 상품이면 '구성에 넣기'로 옮기고, 그 밖의 종목은 예전처럼 참고용 단일 대상
+  const kospiMixProduct = planMix.find((e) => e.index === 'kospi200')?.product ?? null
+  const isKospiProduct = (p: { code: string } | null | undefined) => !!p && INDEX_ETF_CANDIDATES.some((c) => c.code === p.code)
+  const legacyKospi = isKospiProduct(state.target) ? state.target : null
+  const custom = kospiMixProduct ?? state.target
   const pick = custom ? null : rec.pick
   const targetCode = custom?.code ?? pick?.code ?? INDEX_PRICE_CODE
   const targetName = custom?.name ?? pick?.name ?? 'KODEX 200'
-  const isIndexTarget = !custom || INDEX_ETF_CANDIDATES.some((c) => c.code === custom.code)
-  const planMix = draftMix ?? savedMix ?? DEFAULT_PLAN_MIX
+  const isIndexTarget = !custom || isKospiProduct(custom)
+  const withKospiProduct = (product: { code: string; name: string } | null) =>
+    planMix.map((e) => (e.index === 'kospi200' ? { ...e, product } : e))
   const multi = !isKospiOnly(planMix)
   const mixKey = planMix.map((e) => `${e.index}:${e.weight}`).join(',')
   // 여러 지수 구성이면 그 구성 이력(매달 비중 맞춤), 아니면 지금처럼 코스피200(또는 직접 지정한 해외지수 상품)
@@ -281,6 +288,8 @@ export default function AccumulatePage() {
             const mix = Array.isArray(data?.plan?.mix) ? (data.plan.mix as MixEntry[]) : null
             setSavedMix(mix)
             setDraftMix(null)
+            // 예전 직접 지정을 구성으로 옮겼으면 정리한다 (구성에 상품이 들어간 뒤에만)
+            if (legacyKospi && mix?.some((e) => e.index === 'kospi200' && e.product)) update({ target: null })
             setPlanKey((k) => k + 1)
             window.dispatchEvent(new Event(PLAN_CHANGED_EVENT))
           }}
@@ -301,14 +310,25 @@ export default function AccumulatePage() {
             {custom && (
               <div className="acc-pick">
                 <div className="acc-pick-head"><span className="acc-badge acc-badge-user">직접 지정</span><strong>{custom.name}</strong><span className="acc-code">{custom.code}</span></div>
+                {!kospiMixProduct && legacyKospi && (
+                  <p className="acc-note">
+                    예전에 이 화면에서만 지정한 상품이에요. 내 계획 구성에 넣어야 홈 할 일·리밸런싱 가이드·리포트도 이 상품으로 안내합니다.{' '}
+                    <button type="button" className="acc-secondary" onClick={() => setDraftMix(withKospiProduct({ code: legacyKospi.code, name: legacyKospi.name }))}>내 계획 구성에 넣기</button>
+                  </p>
+                )}
                 {!isIndexTarget && !overseas && <p className="acc-warn">추천 기준 밖의 종목입니다. 아래 시뮬레이션은 이 종목의 이력이 아니라 코스피200 장기 이력으로 계산하므로 참고용입니다. 상황 안내는 이 종목의 시세로 합니다.</p>}
                 {overseas && <OverseasLimits h={overseas} />}
-                <button type="button" className="acc-secondary" onClick={() => update({ target: null })}>추천으로 되돌리기</button>
+                <button type="button" className="acc-secondary" onClick={() => { if (kospiMixProduct) setDraftMix(withKospiProduct(null)); update({ target: null }) }}>추천으로 되돌리기</button>
               </div>
             )}
             <label className="acc-field">
               <span>직접 지정하려면 종목 검색</span>
-              <StockSearchInput value={targetText} onChange={setTargetText} onSelect={(s) => { update({ target: { code: s.code, name: s.name } }); setTargetText('') }} placeholder="ETF·종목 이름이나 코드" />
+              <StockSearchInput value={targetText} onChange={setTargetText} onSelect={(s) => {
+                // 코스피200 상품은 구성에(정하기를 눌러야 저장), 그 밖의 종목은 예전처럼 이 화면 참고용
+                if (isKospiProduct(s)) setDraftMix(withKospiProduct({ code: s.code, name: s.name }))
+                else update({ target: { code: s.code, name: s.name } })
+                setTargetText('')
+              }} placeholder="ETF·종목 이름이나 코드" />
             </label>
             <details>
               <summary>이 기준을 통과한 후보 {rec.eligible.length}개 비교</summary>

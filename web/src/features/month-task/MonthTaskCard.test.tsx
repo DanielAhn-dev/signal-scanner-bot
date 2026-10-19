@@ -158,6 +158,13 @@ describe('홈 이번 달 할 일', () => {
       expect(JSON.parse(memo[1].body).plan.mix[0].account).toEqual({ broker: '키움', account: '일반' })
     })
 
+    it('구성에 고른 코스피200 상품이 있으면 추천 대신 그 상품으로 안내한다', async () => {
+      plan = { monthly: 1_220_000, depositDay: 1, mix: [{ ...half[0], product: { code: '069500', name: 'KODEX 200' } }, half[1]] }
+      renderCard()
+      expect(await screen.findByText(/^KODEX 200( \d+주)?$/)).toBeInTheDocument()
+      expect(screen.queryByText(/KIWOOM 200TR/)).toBeNull()
+    })
+
     it('안 산 줄은 0주로 건너뛰고, 중간에 실패하면 저장된 줄은 다시 보내지 않는다', async () => {
       plan = { monthly: 1_220_000, depositDay: 1, mix: half }
       positions = [{ code: '069500', broker_name: '키움', account_name: '일반' }]
