@@ -197,4 +197,17 @@ describe('모아가기', () => {
     expect(screen.getByRole('button', { name: '목표 트래커에서 보기' })).toBeInTheDocument()
     expect(screen.queryByText(/갖고 싶은 성장 자산/)).toBeNull()
   })
+
+  it('예전에 이 화면에서만 지정한 코스피200 상품은 내 계획 구성으로 옮겨 저장한다', async () => {
+    localStorage.setItem(userScopedKey('state:accumulate')!, JSON.stringify({ value: { target: { code: '069500', name: 'KODEX 200' } }, updatedAt: Date.now() }))
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '내 계획 구성에 넣기' }))
+    fireEvent.click(screen.getByRole('button', { name: '이 구성을 내 계획으로 정하기' }))
+    await waitFor(() => {
+      const call = apiFetchMock.mock.calls.find(([path, opts]) => path === '/api/ui/investment-prefs' && (opts as { method?: string })?.method === 'POST')
+      expect(call).toBeTruthy()
+      const body = JSON.parse((call![1] as { body: string }).body)
+      expect(body.plan.mix).toEqual([{ index: 'kospi200', weight: 1, product: { code: '069500', name: 'KODEX 200' }, account: null }])
+    })
+  })
 })
