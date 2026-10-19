@@ -92,6 +92,11 @@ export function historyPrices(): number[] {
   return KODEX200_MONTHLY.map(([, p]) => p)
 }
 
+/** 이력 길이(월)로 계산할 수 있는 가장 긴 적립 기간(년) — 시작점이 MIN_STARTS 이상 남아야 하고 MAX_YEARS를 넘지 않는다 */
+export function maxSimYears(historyMonths: number): number {
+  return Math.max(0, Math.min(MAX_YEARS, Math.floor((historyMonths - MIN_STARTS - 1) / 12)))
+}
+
 /** 모든 월 시작점에서 매달 같은 금액을 넣었을 때의 평가금 경로 분포 */
 export function simulateDca(input: SimInput): SimResult | null {
   const years = Math.min(MAX_YEARS, Math.max(1, Math.round(input.years)))

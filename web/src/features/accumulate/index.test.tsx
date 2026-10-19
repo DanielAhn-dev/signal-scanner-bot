@@ -48,6 +48,18 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><AccumulatePage /></MemoryRouter>)
 
 describe('모아가기', () => {
+  it('4번 목표 계산은 자기 기간을 고르고, 2번 계산기 기간과 따로 움직인다. 기준 한 줄과 읽기 쉬운 금액', async () => {
+    renderPage()
+    await screen.findByText('추천')
+    expect(screen.getByText(/기준: .+\(코스피200 이력 2002~\) · 이미 가진 성장 자산 0원/)).toBeInTheDocument()
+    expect(screen.getByText('10년 뒤 갖고 싶은 성장 자산(원)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: '15년' }))
+    expect(screen.getByText('15년 뒤 갖고 싶은 성장 자산(원)')).toBeInTheDocument()
+    // 2번 계산기 기간은 그대로
+    expect(screen.getByText('기간: 10년')).toBeInTheDocument()
+    expect(screen.getAllByText(/^매달 \d+만( [\d,]+)?원$/).length).toBeGreaterThanOrEqual(2)
+  })
+
   it('모든 시작 시점 그래프에 실제 한 사람 경로와 매끈한 선 안내', async () => {
     renderPage()
     await screen.findByText('추천')

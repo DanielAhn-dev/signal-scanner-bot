@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { KOSPI_HISTORY, overseasHistoryFor, simulateDca } from './accumulate'
+import { KOSPI_HISTORY, maxSimYears, overseasHistoryFor, simulateDca } from './accumulate'
 
 describe('시뮬레이션 이력 고르기', () => {
   it('나스닥100·S&P500을 그대로 따르는 상품만 그 지수 이력', () => {
@@ -39,5 +39,14 @@ describe('실제 한 사람 경로', () => {
   it('넣는 돈이 없으면 경로 없음', () => {
     const prices = Array.from({ length: 60 }, (_, i) => 100 + i)
     expect(simulateDca({ monthly: 0, years: 1, prices })!.deepest).toBeNull()
+  })
+})
+
+describe('계산할 수 있는 가장 긴 기간', () => {
+  it('시작점 12개 이상 남는 만큼, 15년 상한', () => {
+    expect(maxSimYears(KOSPI_HISTORY.monthly.length)).toBe(15)
+    expect(maxSimYears(overseasHistoryFor('TIGER 미국나스닥100')!.monthly.length)).toBeLessThan(15)
+    expect(maxSimYears(12 + 1 + 60)).toBe(5)
+    expect(maxSimYears(10)).toBe(0)
   })
 })

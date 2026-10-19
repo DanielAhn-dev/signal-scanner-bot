@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AmountHint from '../../components/ui/AmountHint'
 import More from '../../components/ui/More'
 import { apiFetch } from '../../lib/api'
-import { formatKrwMan } from '../../lib/format'
+import { formatKrwMan, formatKrwReadable } from '../../lib/format'
 import { useCurrentClientId } from '../../stores/profileStore'
 import { useUserState } from '../../lib/userState'
 import StockSearchInput from '../../components/StockSearchInput'
@@ -16,6 +16,7 @@ import {
   averageReceived,
   candidateDataAgeDays,
   currentYmKst,
+  maxSimYears,
   monthsToGain,
   overseasHistoryFor,
   recommendCandidate,
@@ -37,7 +38,7 @@ import SplitPlanCard from './SplitPlanCard'
 import SavingProgressCard from '../saving-progress/SavingProgressCard'
 import MyPlanCard from '../my-plan/MyPlanCard'
 import { useGoalTracker } from '../goal-tracker/useGoalTracker'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import PeriodSim from './PeriodSim'
 import './accumulate.css'
 
@@ -116,6 +117,7 @@ export default function AccumulatePage() {
   const { view: goalView } = useGoalTracker()
   // 홈에서 '계획 바꾸기'·'자세히'로 오면 해당 칸으로 내린다 — 카드가 데이터를 받은 뒤에 생기므로 잠깐 기다린다
   const location = useLocation()
+  const navigate = useNavigate()
   useEffect(() => {
     const id = location.hash.replace('#', '')
     if (!id) return
@@ -157,6 +159,8 @@ export default function AccumulatePage() {
   const [lumpText, setLumpText] = useState('')
   const [targetText, setTargetText] = useState('')
   const [goalAmount, setGoalAmount] = useState('100000000')
+  // 4번 목표 기간 — 2번 계산기 기간과 따로. null이면 기본값(은퇴까지 남은 해, 없으면 10년)
+  const [goalYearsPick, setGoalYearsPick] = useState<number | null>(null)
   const [income, setIncome] = useState<IncomeView>(null)
   const [recMonth, setRecMonth] = useState(ym)
   const [recReceived, setRecReceived] = useState('')
@@ -215,7 +219,12 @@ export default function AccumulatePage() {
   const simPlain = useMemo(() => simulateDca({ monthly, years, annualDrag: PLAIN_TAX_DRAG_ANNUAL, lump }), [monthly, years, lump])
   const summary = sim ? summarize(sim) : null
   const gain20 = useMemo(() => monthsToGain({ annualDrag: drag, prices: histPrices }), [drag, histPrices])
-  const goalNeed = useMemo(() => requiredMonthly({ target: num(goalAmount), years, annualDrag: drag, lump, prices: histPrices }), [goalAmount, years, drag, lump, histPrices])
+  const goalMaxYears = maxSimYears(history.monthly.length)
+  const retireYears = goalView?.life && goalView.life.monthsToRetire > 0 ? Math.ceil(goalView.life.monthsToRetire / 12) : null
+  const retireFits = retireYears != null && retireYears <= goalMaxYears
+  const goalYears = Math.min(goalMaxYears, goalYearsPick ?? (retireFits ? retireYears! : 10))
+  const goalYearOptions = [...new Set([5, 10, 15].filter((y) => y <= goalMaxYears))]
+  const goalNeed = useMemo(() => (goalYears > 0 ? requiredMonthly({ target: num(goalAmount), years: goalYears, annualDrag: drag, lump, prices: histPrices }) : null), [goalAmount, goalYears, drag, lump, histPrices])
   const guide = useMemo(() => (candles ? situationGuide(candles) : null), [candles])
   const track = trackSummary(state)
 
@@ -387,12 +396,27 @@ export default function AccumulatePage() {
 
       <section className="acc-card" aria-labelledby="acc-goal">
         <h2 id="acc-goal">4. 목표 금액에서 거꾸로</h2>
-        <label className="acc-field"><span>{years}년 뒤 갖고 싶은 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} /><AmountHint value={goalAmount} /></label>
+        {/* 2번 계산기 기간과 묶지 않는다 — 계산기를 바꿔 보기만 해도 목표 계산이 바뀌고, 기간을 어디서 정하는지 안 보였다 */}
+        <p className="acc-note">기준: {targetName}({history.name} 이력 {history.monthly[0][0].slice(0, 4)}~) · 이미 가진 성장 자산 {lump > 0 ? formatKrwReadable(lump) : '0원'} · 과거 실제 가격 기준이고 앞으로를 약속하지 않습니다</p>
+        <div className="acc-field"><span>언제까지</span>
+          <div className="acc-seg" role="radiogroup" aria-label="목표 기간">
+            {goalYearOptions.map((y) => (
+              <button key={y} type="button" role="radio" aria-checked={goalYears === y} className={goalYears === y ? 'is-active' : ''} onClick={() => setGoalYearsPick(y)}>{y}년{retireFits && retireYears === y ? ' · 은퇴까지' : ''}</button>
+            ))}
+            {retireFits && !goalYearOptions.includes(retireYears!) && (
+              <button type="button" role="radio" aria-checked={goalYears === retireYears} className={goalYears === retireYears ? 'is-active' : ''} onClick={() => setGoalYearsPick(retireYears)}>은퇴까지({retireYears}년)</button>
+            )}
+          </div>
+        </div>
+        {retireYears != null && !retireFits && (
+          <p className="acc-note">은퇴까지 {retireYears}년은 이 이력으로 비교할 수 있는 최대 {goalMaxYears}년보다 깁니다. 더 긴 계획은 <button type="button" className="acc-link" onClick={() => navigate('/goal-tracker')}>목표 트래커</button>에서 보세요.</p>
+        )}
+        <label className="acc-field"><span>{goalYears}년 뒤 갖고 싶은 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} /><AmountHint value={goalAmount} /></label>
         {goalNeed ? (
           <dl className="acc-facts">
-            <div><dt>보통의 경우(중앙값)</dt><dd>매달 {won(goalNeed.typical)}</dd></div>
-            <div><dt>보수적으로(하위 10%)</dt><dd>매달 {won(goalNeed.conservative)}</dd></div>
-            {monthly > 0 && <div><dt>지금 계획({won(monthly)})</dt><dd>{monthly >= goalNeed.conservative ? '보수적으로 봐도 닿는 수준' : monthly >= goalNeed.typical ? '보통은 닿지만 부진하면 모자람' : '보통의 경우에도 모자람'}</dd></div>}
+            <div><dt>보통의 경우(중앙값)</dt><dd>매달 {formatKrwReadable(goalNeed.typical)}</dd></div>
+            <div><dt>보수적으로(하위 10%)</dt><dd>매달 {formatKrwReadable(goalNeed.conservative)}</dd></div>
+            {monthly > 0 && <div><dt>지금 계획({formatKrwReadable(monthly)})</dt><dd>{monthly >= goalNeed.conservative ? '보수적으로 봐도 닿는 수준' : monthly >= goalNeed.typical ? '보통은 닿지만 부진하면 모자람' : '보통의 경우에도 모자람'}</dd></div>}
           </dl>
         ) : <p className="acc-warn">이 기간은 계산할 수 없습니다.</p>}
       </section>
