@@ -182,7 +182,7 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
           <button type="button" className="sp__row" onClick={() => navigate('/accumulate#saving-tax')}>
             {taxYear > 0 && <span>세금으로 아끼는 돈 <strong>1년 약 {man(taxYear)}</strong></span>}
             {data.receipts.total > 0 && <span>받은 분배금 <strong>{man(data.receipts.total)}</strong></span>}
-            <span className="sp__more">자세히 <ChevronRight size={12} aria-hidden /></span>
+            <span className="sp__more">계산 보기 <ChevronRight size={12} aria-hidden /></span>
           </button>
         ) : null
       ) : (
@@ -234,7 +234,7 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
         {variant === 'home' ? (
           <span className="sp__links">
             <button type="button" className="sp__link" onClick={() => navigate('/accumulate#my-plan')}>계획 바꾸기</button>
-            <button type="button" className="sp__link" onClick={() => navigate('/accumulate')}>자세히 <ChevronRight size={12} aria-hidden /></button>
+            <button type="button" className="sp__link" onClick={() => navigate('/accumulate')}>모아가기 전체 <ChevronRight size={12} aria-hidden /></button>
           </span>
         ) : null}
       </div>
