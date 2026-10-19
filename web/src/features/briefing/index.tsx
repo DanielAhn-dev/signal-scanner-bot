@@ -90,21 +90,52 @@ const CHIPS: Array<{ key: string; label: string; digits: number }> = [
   { key: 'wtiOil', label: 'WTI 유가', digits: 2 },
 ]
 
+function kstParts(d: Date) {
+  const k = new Date(d.getTime() + 9 * 3600_000)
+  return { day: k.getUTCDay(), minutes: k.getUTCHours() * 60 + k.getUTCMinutes() }
+}
+
+function isKrxSessionNow() {
+  const { day, minutes } = kstParts(new Date())
+  return day >= 1 && day <= 5 && minutes >= 9 * 60 && minutes <= 15 * 60 + 40
+}
+
+function kstTime(iso: string) {
+  const { minutes } = kstParts(new Date(iso))
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+}
+
 function MarketChips() {
   const navigate = useNavigate()
   const [indices, setIndices] = useState<Record<string, Idx | undefined> | null>(null)
   const [failed, setFailed] = useState(false)
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   useEffect(() => {
     let active = true
-    apiFetch('/api/ui?route=market-overview', { cacheMs: 60_000, timeoutMs: 20_000, retries: 0 })
-      .then((res) => { if (active) setIndices(res?.data?.indices ?? null) })
-      .catch(() => { if (active) setFailed(true) })
-    return () => { active = false }
+    let loaded = false
+    const load = (cacheMs: number) =>
+      apiFetch('/api/ui?route=market-overview', { cacheMs, timeoutMs: 20_000, retries: 0 })
+        .then((res) => {
+          if (!active) return
+          setIndices(res?.data?.indices ?? null)
+          setFetchedAt(res?.data?.fetchedAt ?? null)
+          setFailed(false)
+          loaded = true
+        })
+        // 다시 불러오기 실패는 이미 보이는 값을 지우지 않는다
+        .catch(() => { if (active && !loaded) setFailed(true) })
+    load(60_000)
+    // 장중(평일 09:00~15:40 KST)이고 화면이 보일 때만 1분마다 다시 받는다
+    const timer = setInterval(() => {
+      if (document.hidden || !isKrxSessionNow()) return
+      load(30_000)
+    }, 60_000)
+    return () => { active = false; clearInterval(timer) }
   }, [])
   return (
     <section className="acc-card" aria-label="한눈에">
       <div className="bf-head">
-        <h2>한눈에</h2>
+        <h2>한눈에{fetchedAt && <span className="bf-muted"> {kstTime(fetchedAt)} 기준</span>}</h2>
         <button type="button" className="bf-link" onClick={() => navigate('/market')}>시장 화면에서 자세히 <ChevronRight size={14} /></button>
       </div>
       {failed ? <p className="acc-note">시세를 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.</p> : !indices ? <p className="acc-note">불러오는 중…</p> : (
