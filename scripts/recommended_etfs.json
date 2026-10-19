@@ -1,5 +1,5 @@
 {
-  "_comment": "추천·비교에 쓰는 ETF — 보유하지 않아도 일봉·지표를 매일 쌓는다(scripts/recommended_etfs.py). 수집 대상(universe_level)은 바꾸지 않으므로 스캔·시장 폭·점수에는 들어가지 않는다. 모아가기 후보(web/src/data/accumulateData.ts)·코어 프로필(src/services/coreProfiles.ts)·자녀 계좌 기본 후보(web/src/lib/childEtf.ts)가 바뀌면 여기도 맞춘다 — tests/recommendedEtfs.test.ts가 빠진 코드를 잡는다.",
+  "_comment": "추천·비교에 쓰는 ETF — 보유하지 않아도 일봉·지표를 매일 쌓는다(scripts/recommended_etfs.py). 수집 대상(universe_level)은 바꾸지 않으므로 스캔·시장 폭·점수에는 들어가지 않는다. 모아가기 후보(web/src/data/accumulateData.ts)·코어 프로필(src/services/coreProfiles.ts)·자녀 계좌 기본 후보(web/src/lib/childEtf.ts)가 바뀌면 여기도 맞춘다 — tests/recommendedEtfs.test.ts가 빠진 코드를 잡는다. 해외지수 후보(S&P500·나스닥100 국내 상장, 순자산 1조·거래대금 50억 이상)는 모아가기 1번 재구성(docs/plan-screen-map-2026-10-19.md)용으로 2026-10-19 추가.",
   "etfs": [
     { "code": "069500", "name": "KODEX 200", "use": "코스피200 일반" },
     { "code": "102110", "name": "TIGER 200", "use": "코스피200 일반" },
@@ -16,12 +16,18 @@
     { "code": "332930", "name": "HANARO 200TR", "use": "코스피200 TR" },
     { "code": "332500", "name": "ACE 200TR", "use": "코스피200 TR" },
     { "code": "491220", "name": "PLUS 200TR", "use": "코스피200 TR" },
-    { "code": "133690", "name": "TIGER 미국나스닥100", "use": "코어 프로필" },
-    { "code": "360750", "name": "TIGER 미국S&P500", "use": "코어 프로필·자녀 계좌" },
+    { "code": "133690", "name": "TIGER 미국나스닥100", "use": "코어 프로필·해외지수 후보 나스닥100" },
+    { "code": "360750", "name": "TIGER 미국S&P500", "use": "코어 프로필·자녀 계좌·해외지수 후보 S&P500" },
     { "code": "148070", "name": "KIWOOM 국고채10년", "use": "코어 프로필" },
     { "code": "453850", "name": "ACE 미국30년국채액티브(H)", "use": "코어 프로필" },
     { "code": "308620", "name": "KODEX 미국10년국채선물", "use": "코어 프로필" },
     { "code": "411060", "name": "ACE KRX금현물", "use": "코어 프로필" },
-    { "code": "459580", "name": "KODEX CD금리액티브(합성)", "use": "코어 프로필·현금 스윕" }
+    { "code": "459580", "name": "KODEX CD금리액티브(합성)", "use": "코어 프로필·현금 스윕" },
+    { "code": "379800", "name": "KODEX 미국S&P500", "use": "해외지수 후보 S&P500" },
+    { "code": "360200", "name": "ACE 미국S&P500", "use": "해외지수 후보 S&P500" },
+    { "code": "379780", "name": "RISE 미국S&P500", "use": "해외지수 후보 S&P500" },
+    { "code": "379810", "name": "KODEX 미국나스닥100", "use": "해외지수 후보 나스닥100" },
+    { "code": "367380", "name": "ACE 미국나스닥100", "use": "해외지수 후보 나스닥100" },
+    { "code": "368590", "name": "RISE 미국나스닥100", "use": "해외지수 후보 나스닥100" }
   ]
 }
