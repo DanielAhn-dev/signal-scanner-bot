@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buyQuantity, dueDateOf, groupMonthBuys, kstToday, monthTaskView, nextYm } from './monthTask'
+import { buyQuantity, dueDateOf, groupMonthBuys, kstToday, monthTaskView, nextYm, splitAmount } from './monthTask'
 
 describe('이번 달 할 일 상태', () => {
   const base = { depositDay: 1, amount: 1_220_000, price: 93_850 }
@@ -44,5 +44,15 @@ describe('이번 달 실계좌 매수 묶기', () => {
   })
   it('수량·가격이 0인 행은 뺀다', () => {
     expect(groupMonthBuys([b('294400', 0, 1, '2026-11-01')], '294400')).toEqual([])
+  })
+})
+
+describe('splitAmount', () => {
+  it('비중대로 나누고 만원 아래는 마지막 줄이 받아 합이 계획과 같다', () => {
+    expect(splitAmount(1_220_000, [0.5, 0.5])).toEqual([610_000, 610_000])
+    const three = splitAmount(1_000_000, [0.3333, 0.3333, 0.3334])
+    expect(three).toEqual([330_000, 330_000, 340_000])
+    expect(three.reduce((a, b) => a + b, 0)).toBe(1_000_000)
+    expect(splitAmount(0, [1])).toEqual([0])
   })
 })

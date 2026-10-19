@@ -14,7 +14,7 @@ vi.mock('../../stores/profileStore', () => ({
   getCurrentChatIdFromStore: () => '1',
 }))
 
-let plan = { monthly: 1_220_000, depositDay: 1 }
+let plan: { monthly: number; depositDay: number; mix?: unknown } = { monthly: 1_220_000, depositDay: 1 }
 let tradeResult: unknown = { ok: true }
 let monthBuys: unknown[] = []
 let positions: unknown[] = []
@@ -37,6 +37,7 @@ beforeEach(() => {
   apiFetchMock.mockReset()
   apiFetchMock.mockImplementation((url: string, opts?: { method?: string }) => {
     if (url.startsWith('/api/ui/investment-prefs')) return Promise.resolve({ data: { plan } })
+    if (url.startsWith('/api/ui/stock-latest?code=360750')) return Promise.resolve({ data: [], latest: { date: '2026-10-31', close: 24_000 } })
     // 일봉 이력이 없는 ETF처럼 data의 close는 0이고 실시간가는 latest에 온다(운영 응답 모양)
     if (url.startsWith('/api/ui/stock-latest')) return Promise.resolve({ data: [{ date: '2026-10-31', close: 0 }], latest: { date: '2026-10-31', close: 93_850 } })
     if (url.includes('route=saving-progress')) return Promise.resolve({ data: { monthBuys } })
@@ -126,5 +127,65 @@ describe('홈 이번 달 할 일', () => {
     fireEvent.click(await screen.findByRole('button', { name: '이번 달은 못 함' }))
     await waitFor(() => expect(screen.getByText(/11월은 건너뛰었어요/)).toBeInTheDocument())
     expect(posts()).toHaveLength(0)
+  })
+
+  describe('내 계획 구성(여러 지수)', () => {
+    const half = [
+      { index: 'kospi200', weight: 0.5, product: null, account: null },
+      { index: 'sp500', weight: 0.5, product: { code: '360750', name: 'TIGER 미국S&P500' }, account: { broker: '토스', account: 'ISA' } },
+    ]
+
+    it('지수마다 한 줄 — 계획 × 비중, 기억한 계좌, 줄마다 실계좌 매수로 저장', async () => {
+      plan = { monthly: 1_220_000, depositDay: 1, mix: half }
+      positions = [{ code: '069500', broker_name: '키움', account_name: '일반' }, { code: '360750', broker_name: '토스', account_name: 'ISA' }]
+      renderCard()
+      // 61만원씩: KIWOOM 200TR 6주(93,850원), TIGER 미국S&P500 25주(24,000원)
+      expect(await screen.findByText('TIGER 미국S&P500 25주')).toBeInTheDocument()
+      expect(screen.getByText('KIWOOM 200TR 6주')).toBeInTheDocument()
+      expect(screen.getByText(/S&P500 50% · 61만원 · 토스 · ISA에서/)).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: '샀어요' }))
+      expect(screen.getByLabelText('S&P500 산 계좌')).toHaveDisplayValue('토스 · ISA')
+      expect(screen.getByLabelText('코스피200 산 계좌')).toHaveDisplayValue('키움 · 일반')
+      fireEvent.click(screen.getByRole('button', { name: '확인하고 저장' }))
+      expect(await screen.findByText(/11월 완료 · KIWOOM 200TR 6주, TIGER 미국S&P500 25주/)).toBeInTheDocument()
+      expect(posts().map(([, o]) => JSON.parse(o.body)).map((b) => [b.code, b.quantity, b.account_name])).toEqual([['294400', 6, '일반'], ['360750', 25, 'ISA']])
+      const saved = JSON.parse(localStorage.getItem(userScopedKey('state:accumulate')!)!).value.tasks['2026-11']
+      expect(saved.lines.map((l: any) => [l.code, l.qty, l.planAmount])).toEqual([['294400', 6, 610_000], ['360750', 25, 610_000]])
+      // 코스피200 줄에 고른 계좌를 구성에 기억한다
+      await waitFor(() => expect(apiFetchMock.mock.calls.some(([u, o]) => String(u).startsWith('/api/ui/investment-prefs') && o?.method === 'POST')).toBe(true))
+      const memo = apiFetchMock.mock.calls.find(([u, o]) => String(u).startsWith('/api/ui/investment-prefs') && o?.method === 'POST')!
+      expect(JSON.parse(memo[1].body).plan.mix[0].account).toEqual({ broker: '키움', account: '일반' })
+    })
+
+    it('안 산 줄은 0주로 건너뛰고, 중간에 실패하면 저장된 줄은 다시 보내지 않는다', async () => {
+      plan = { monthly: 1_220_000, depositDay: 1, mix: half }
+      positions = [{ code: '069500', broker_name: '키움', account_name: '일반' }]
+      let n = 0
+      const base = apiFetchMock.getMockImplementation()!
+      apiFetchMock.mockImplementation((url: string, opts?: { method?: string }) => {
+        if (url.startsWith('/api/ui/virtual-trade') && opts?.method === 'POST') return ++n === 2 ? Promise.reject(new Error('network')) : Promise.resolve({ ok: true })
+        return base(url, opts)
+      })
+      renderCard()
+      fireEvent.click(await screen.findByRole('button', { name: '샀어요' }))
+      fireEvent.click(screen.getByRole('button', { name: '확인하고 저장' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('앞의 1줄은 저장됐어요')
+      expect(screen.getByText('11월 할 일')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '확인하고 저장' }))
+      expect(await screen.findByText(/11월 완료/)).toBeInTheDocument()
+      expect(posts().map(([, o]) => JSON.parse(o.body).code)).toEqual(['294400', '360750', '360750'])
+    })
+
+    it('한 줄만 산 달 — 다른 줄은 0주', async () => {
+      plan = { monthly: 1_220_000, depositDay: 1, mix: half }
+      positions = [{ code: '069500', broker_name: '키움', account_name: '일반' }]
+      renderCard()
+      fireEvent.click(await screen.findByRole('button', { name: '샀어요' }))
+      fireEvent.change(screen.getByLabelText('S&P500 산 수량(주)'), { target: { value: '0' } })
+      fireEvent.click(screen.getByRole('button', { name: '확인하고 저장' }))
+      expect(await screen.findByText(/11월 완료 · KIWOOM 200TR 6주/)).toBeInTheDocument()
+      expect(posts()).toHaveLength(1)
+    })
   })
 })

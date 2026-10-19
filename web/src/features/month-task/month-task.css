@@ -19,3 +19,7 @@
 .mt .amount-hint { color: var(--color-text-tertiary); font-size: 12px; }
 .mt__buys { margin: 0; padding-left: 18px; line-height: 1.6; }
 .mt__confirm { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--color-border-subtle); border-radius: 6px; }
+/* 구성대로 여러 줄 (화면 지도 4단계) */
+.mt__lines { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; word-break: keep-all; }
+.mt__line-confirm { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--color-border-default); }
+.mt__line-title { margin: 0; }

@@ -7,8 +7,13 @@
 
 export type MonthTaskStatus = 'bought' | 'skipped' | 'later'
 
+/** 구성(여러 지수)으로 산 달의 지수별 한 줄 — planAmount는 그 줄에 계획된 돈(계획 × 비중). 안 산 줄은 qty 0 */
+export type MonthTaskLine = { index?: string; code: string; name: string; qty: number; price: number; planAmount?: number }
+
 export type MonthTaskRecord = {
   status: MonthTaskStatus
+  /** 구성대로 여러 줄을 산 달. 첫 줄은 아래 code·name·qty·price에도 남긴다(예전 화면 호환) */
+  lines?: MonthTaskLine[]
   code?: string
   name?: string
   qty?: number
@@ -73,6 +78,18 @@ export function monthTaskView(input: {
   const phase: MonthTaskPhase = record ? record.status : input.today < dueDate ? 'upcoming' : 'due'
   const { qty, leftover } = buyQuantity(input.amount, input.price)
   return { ym, dueDate, phase, record, firstTime, qty, leftover }
+}
+
+/**
+ * 계획 금액을 구성 비중대로 나눈다 — 만원 아래는 버리고, 나머지는 마지막 줄이 받아 합이 계획과 같다.
+ * (1/3씩처럼 나누어떨어지지 않는 비중도 합이 어긋나지 않게)
+ */
+export function splitAmount(total: number, weights: number[]): number[] {
+  if (!(total > 0) || weights.length === 0) return weights.map(() => 0)
+  const sum = weights.reduce((a, w) => a + w, 0) || 1
+  const parts = weights.map((w) => Math.floor((total * w) / sum / 10_000) * 10_000)
+  parts[parts.length - 1] = Math.round(total - parts.slice(0, -1).reduce((a, v) => a + v, 0))
+  return parts
 }
 
 /** '[실제] 11월' 같은 짧은 달 이름 */
