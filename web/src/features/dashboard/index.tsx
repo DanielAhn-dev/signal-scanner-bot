@@ -12,6 +12,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
 import AccountTag from '../../components/ui/AccountTag'
 import MonthTaskCard from '../month-task/MonthTaskCard'
+import RaiseNudge from '../month-task/RaiseNudge'
 import SavingProgressCard from '../saving-progress/SavingProgressCard'
 import { useJourney, type EntryPath } from '../../lib/journey'
 import { useToast } from '../../components/ToastProvider'
@@ -302,6 +303,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   return (
     <div ref={sheetRef} className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
       {/* 내 계획(MyPlanCard)은 모아가기 화면으로 옮겼다 — 홈은 [실제] 이번 달 할 일 + '내 모으기' 요약 */}
+      <RaiseNudge />
       <MonthTaskCard />
       <SavingProgressCard variant="home" />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>

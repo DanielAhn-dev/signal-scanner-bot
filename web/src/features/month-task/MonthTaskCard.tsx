@@ -12,6 +12,7 @@ import { useUserState } from '../../lib/userState'
 import { groupMonthBuys, kstToday, monthLabel, monthTaskView, type MonthBuy, type MonthTaskRecord } from '../../lib/monthTask'
 import { useCurrentChatId } from '../../stores/profileStore'
 import AccountTag from '../../components/ui/AccountTag'
+import { PLAN_CHANGED_EVENT } from './RaiseNudge'
 import './month-task.css'
 
 /**
@@ -57,17 +58,24 @@ export default function MonthTaskCard() {
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
 
+  const [planVersion, setPlanVersion] = useState(0)
+  useEffect(() => {
+    // 해마다 늘리기(RaiseNudge)·모아가기에서 계획 금액을 바꾸면 다시 읽는다
+    const onChanged = () => setPlanVersion((v) => v + 1)
+    window.addEventListener(PLAN_CHANGED_EVENT, onChanged)
+    return () => window.removeEventListener(PLAN_CHANGED_EVENT, onChanged)
+  }, [])
   useEffect(() => {
     if (!chatId) return
     let active = true
-    apiFetch('/api/ui/investment-prefs', { cacheMs: 60_000, retries: 1 })
+    apiFetch('/api/ui/investment-prefs', { cacheMs: planVersion ? 0 : 60_000, retries: 1 })
       .then((res) => {
         const p = res?.data?.plan
         if (active && p) setPlan({ monthly: Number(p.monthly) || 0, depositDay: Number(p.depositDay) || 1 })
       })
       .catch(() => { /* 계획을 못 읽으면 카드를 그리지 않는다 */ })
     return () => { active = false }
-  }, [chatId])
+  }, [chatId, planVersion])
 
   const loadMonthBuys = (cacheMs: number) => {
     apiFetch('/api/ui?route=saving-progress', { cacheMs, timeoutMs: 20_000, retries: 1 })

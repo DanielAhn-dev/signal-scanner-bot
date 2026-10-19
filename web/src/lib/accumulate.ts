@@ -463,6 +463,8 @@ export type AccumulateState = {
   lump: number
   /** 홈 '이번 달 할 일'에 답한 기록 [YYYY-MM → 답] (lib/monthTask.ts). 예전 기록에는 없다 */
   tasks?: Record<string, MonthTaskRecord>
+  /** 4번에서 정한 '넣는 돈 해마다 늘리기' — 해마다 1월 홈 카드가 알린다. appliedYear는 그해 답한 연도 */
+  raise?: { pct: number; since: string; appliedYear?: number }
 }
 
 export const EMPTY_STATE: AccumulateState = { goal: 'growth', target: null, received: [], deposits: [], valuation: null, lump: 0 }
