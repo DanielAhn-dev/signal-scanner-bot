@@ -197,6 +197,13 @@ export default function DistributionReceipts({ data, holdings, buyName, submit }
         {thisMonth.items.length > 0 && <span style={muted}> · {thisMonth.items.length}종목{notYet > 0 ? ` · 아직 안 적은 종목 ${notYet}개` : ''}</span>}
         {thisMonth.estimatedCount > 0 && <span style={faint}> (세후를 안 적은 {thisMonth.estimatedCount}건은 15.4%를 떼고 계산)</span>}
       </div>
+      {/* 세전(수량×주당)과 나란히 — 세후 칸에 세전을 넣었는지 비율로 바로 보인다(고배당 약 85%, 국내 커버드콜은 더 높을 수 있음) */}
+      {thisMonth.gross > 0 && thisMonth.items.length > 0 && thisMonth.estimatedCount === 0 && (
+        <div style={faint}>
+          세전(수량 × 주당) {won(thisMonth.gross)} · 세후 비율 {Math.round((thisMonth.net / thisMonth.gross) * 1000) / 10}%
+          {thisMonth.net >= thisMonth.gross ? ' — 세금이 0원으로 계산됩니다. 국내 커버드콜이 아니면 세후 칸에 세전 금액을 넣었는지 확인하세요.' : ''}
+        </div>
+      )}
       <div style={{ marginTop: 4 }}>
         다음 달 예상(세후) <strong>약 {man(projection.total)}</strong>
         {/* 안 적은 종목이 있으면 이번 달 합계엔 빠지고 예상엔 추정으로 들어가 차이가 부풀려진다 — 그땐 비교하지 않는다 */}
