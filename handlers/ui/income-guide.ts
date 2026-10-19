@@ -128,7 +128,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const guidePlan = await loadGuidePlan(supabase, chatId).catch(() => null)
     const planOverseasPct = guidePlan?.overseasPct ?? null
     const settings = withPlanOverseas(file.settings, planOverseasPct)
-    const view = buildIncomeGuideView({ holdings, settings, today, contribution, pastCashPcts, yieldPctByCode })
+    const view = buildIncomeGuideView({ holdings, settings, today, contribution, pastCashPcts, yieldPctByCode, planMix: guidePlan?.mix ?? null })
     // 계획(같은 지수 상품 비교 포함)과 그달 안내 — 기록에 안내·가격을 같이 남긴다(월 배치와 같은 계산)
     const { plan, projection, advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file: { ...file, settings }, view, yieldPctByCode, today, prices, alternativesTimeoutMs: 6_000 })
     let history = file.history ?? []

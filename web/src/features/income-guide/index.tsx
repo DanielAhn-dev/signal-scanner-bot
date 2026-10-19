@@ -26,7 +26,7 @@ type Order = {
 }
 type ChangeSplit = { heldDistancePp: number; marketPp: number; minePp: number; text: string }
 type HealthPoint = { date: string; total: number; distancePp: number; outOfBand: number; satellitePct: number; cashPct: number; note?: string }
-type Unfilled = { group: Group; bucket?: string; amount: number }
+type Unfilled = { group: Group; bucket?: string; amount: number; indexLabel?: string; productName?: string | null }
 type View = {
   today: string
   settings: {
@@ -120,6 +120,22 @@ const BUY_HINT: Record<Group, string> = {
 }
 const man = formatKrwMan
 const pct = (v: number) => `${v.toFixed(0)}%`
+
+/** 가진 종목으로 못 채운 금액 — 내 계획 구성의 지수 몫이면 그 지수·고른 상품 이름으로 */
+function UnfilledLine({ u }: { u: Unfilled }) {
+  return (
+    <div style={{ color: 'var(--color-text-secondary)' }}>
+      {u.indexLabel ? (
+        <>새로 살 금액: 내 계획 구성의 {u.indexLabel} 몫 {man(u.amount)} — {u.productName ?? '모아가기 1번 추천 상품'}</>
+      ) : (
+        <>
+          새 상품으로 채울 금액: {GROUP_LABEL[u.group]}
+          {u.bucket === 'global_index' ? '(해외 지수)' : u.bucket === 'kr_index' ? '(국내 지수)' : ''} {man(u.amount)} — {BUY_HINT[u.group]}
+        </>
+      )}
+    </div>
+  )
+}
 
 function OrdersTable({ orders, th, td }: { orders: Order[]; th: React.CSSProperties; td: React.CSSProperties }) {
   return (
@@ -512,10 +528,7 @@ export default function IncomeGuidePage() {
               </>
             )}
             {view.rebalance.unfilled.map((u, i) => (
-              <div key={i} style={{ color: 'var(--color-text-secondary)' }}>
-                새 상품으로 채울 금액: {GROUP_LABEL[u.group]}
-                {u.bucket === 'global_index' ? '(해외 지수)' : u.bucket === 'kr_index' ? '(국내 지수)' : ''} {man(u.amount)} — {BUY_HINT[u.group]}
-              </div>
+              <UnfilledLine key={i} u={u} />
             ))}
             <div style={{ marginTop: 4, color: 'var(--color-text-tertiary)' }}>
               손실 중인지 수익 중인지가 아니라 비중으로 정합니다. 새로 넣는 돈으로 모자란 바구니를 먼저 채우면 팔지 않고도 맞출 수 있습니다.
@@ -558,10 +571,7 @@ export default function IncomeGuidePage() {
                 </div>
                 {view.contribution.orders.length > 0 && <OrdersTable orders={view.contribution.orders} th={th} td={td} />}
                 {view.contribution.unfilled.map((u, i) => (
-                  <div key={i} style={{ color: 'var(--color-text-secondary)' }}>
-                    새 상품으로 채울 금액: {GROUP_LABEL[u.group]}
-                    {u.bucket === 'global_index' ? '(해외 지수)' : u.bucket === 'kr_index' ? '(국내 지수)' : ''} {man(u.amount)} — {BUY_HINT[u.group]}
-                  </div>
+                  <UnfilledLine key={i} u={u} />
                 ))}
                 <div style={{ color: view.contribution.stillOutOfBand ? 'var(--color-error)' : 'var(--color-text-secondary)' }}>
                   {view.contribution.stillOutOfBand

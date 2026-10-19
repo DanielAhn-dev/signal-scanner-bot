@@ -14,6 +14,7 @@
  */
 import type { GuideAdvice } from "./guideAdherence";
 import { isExchangeTradedProduct } from "./securitiesTax";
+import { indexOfProductName, type PlanMixEntryLike } from "./planMixGuide";
 
 export type AssetBucket =
   | "kr_index"
@@ -442,7 +443,14 @@ export type GuideOrder = {
 };
 
 /** 보유 종목이 없는 바구니라 새 상품을 골라 사야 하는 금액 */
-export type UnfilledBuy = { group: BucketGroup; bucket?: AssetBucket; amount: number };
+export type UnfilledBuy = {
+  group: BucketGroup;
+  bucket?: AssetBucket;
+  amount: number;
+  /** 내 계획 구성의 지수 몫인데 그 지수를 가진 상품이 없을 때 — 지수 이름과 구성에 고른 상품 */
+  indexLabel?: string;
+  productName?: string | null;
+};
 
 export type GuideStage = "accumulate" | "transition" | "income";
 
@@ -852,8 +860,52 @@ type PlanRow = GuideHolding & { value: number; bucket: AssetBucket; group: Bucke
  */
 const SELL_PRIORITY: Partial<Record<AssetBucket, number>> = { covered_call: 0, reit_infra: 1, dividend: 2 };
 
-/** 바구니별 금액 변화(+ 매수 / − 매도)를 종목별 주수로 바꾼다. 매도는 (인컴 안에서는 커버드콜부터) 큰 종목 순, 매수는 이미 가진 종목에 비중대로 */
-function toOrders(rows: PlanRow[], deltas: Record<PlanKey, number>): { orders: GuideOrder[]; unfilled: UnfilledBuy[] } {
+const MIX_INDEX_LABEL: Record<string, string> = { kospi200: "코스피200", sp500: "S&P500", nasdaq100: "나스닥100" };
+const mixKeyOf = (index: string): PlanKey => (index === "kospi200" ? "kr" : "global");
+
+/**
+ * 내 계획 구성이 있으면 국내·해외 지수의 매수를 구성대로 나눈다 — 해외 몫 안의 S&P500·나스닥100을 지금 가진 금액 비례가 아니라
+ * 구성 비중대로, 지수마다 한 곳(구성에 고른 상품 → 구성 계좌의 같은 지수 → 아무 계좌의 같은 지수)에서 산다. 홈 할 일·가이드 ①과 같은 기준.
+ * 그 바구니에 구성 지수가 없으면 null → 예전처럼 가진 종목에 비중대로.
+ */
+function mixBuys(
+  key: PlanKey,
+  delta: number,
+  buyable: PlanRow[],
+  mix: PlanMixEntryLike[] | null | undefined,
+): { orders: GuideOrder[]; unfilled: UnfilledBuy[] } | null {
+  if (!mix || mix.length < 2 || (key !== "kr" && key !== "global")) return null;
+  const entries = mix.filter((e) => mixKeyOf(e.index) === key && e.weight > 0);
+  if (entries.length === 0) return null;
+  const wSum = entries.reduce((s, e) => s + e.weight, 0);
+  const orders: GuideOrder[] = [];
+  const unfilled: UnfilledBuy[] = [];
+  for (const e of entries) {
+    const amt = (delta * e.weight) / wSum;
+    if (amt < 10_000) continue;
+    const accountKey = e.account ? `${e.account.broker}|${e.account.account}` : null;
+    const same = buyable.filter((r) => indexOfProductName(r.name) === e.index);
+    const pick =
+      same.find((r) => r.code === e.product?.code && (accountKey == null || r.accountKey === accountKey)) ??
+      same.find((r) => r.code === e.product?.code) ??
+      same.filter((r) => r.accountKey === accountKey).sort((a, b) => b.value - a.value)[0] ??
+      [...same].sort((a, b) => b.value - a.value)[0] ??
+      null;
+    const shares = pick ? Math.floor(amt / pick.price) : 0;
+    const spent = pick ? Math.round(shares * pick.price) : 0;
+    if (pick && shares > 0) {
+      orders.push({ side: "buy", code: pick.code, name: pick.name, accountLabel: pick.accountLabel, group: pick.group, price: pick.price, shares, amount: spent, realizedGain: null });
+    }
+    const left = amt - spent;
+    if (!pick || left >= Math.max(10_000, amt * 0.2)) {
+      unfilled.push({ group: PLAN_GROUP[key], bucket: PLAN_BUCKET[key], amount: Math.round(left), indexLabel: MIX_INDEX_LABEL[e.index] ?? e.index, productName: e.product?.name ?? null });
+    }
+  }
+  return { orders, unfilled };
+}
+
+/** 바구니별 금액 변화(+ 매수 / − 매도)를 종목별 주수로 바꾼다. 매도는 (인컴 안에서는 커버드콜부터) 큰 종목 순, 매수는 이미 가진 종목에 비중대로(구성이 있으면 구성대로) */
+function toOrders(rows: PlanRow[], deltas: Record<PlanKey, number>, mix?: PlanMixEntryLike[] | null): { orders: GuideOrder[]; unfilled: UnfilledBuy[] } {
   const orders: GuideOrder[] = [];
   const unfilled: UnfilledBuy[] = [];
   for (const key of Object.keys(deltas) as PlanKey[]) {
@@ -895,6 +947,12 @@ function toOrders(rows: PlanRow[], deltas: Record<PlanKey, number>): { orders: G
       }
     } else {
       const buyable = members.filter(isBuyable);
+      const byMix = mixBuys(key, delta, buyable, mix);
+      if (byMix) {
+        orders.push(...byMix.orders);
+        unfilled.push(...byMix.unfilled);
+        continue;
+      }
       const base = buyable.reduce((s, r) => s + r.value, 0);
       let spent = 0;
       for (const r of buyable) {
@@ -926,6 +984,8 @@ export function buildIncomeGuideView(input: {
   pastCashPcts?: number[];
   /** 종목별 최근 12개월 실제 분배율 — 없으면 상품 유형별 가정 */
   yieldPctByCode?: YieldPctByCode | null;
+  /** 내 계획 구성(users.prefs.invest_plan.mix) — 국내·해외 지수 매수를 구성 비중·상품·계좌대로. 해외 비중 목표는 settings.overseasPct(withPlanOverseas)로 이미 따른다 */
+  planMix?: PlanMixEntryLike[] | null;
 }): IncomeGuideView {
   const { settings, today } = input;
   const rows = input.holdings
@@ -1064,7 +1124,7 @@ export function buildIncomeGuideView(input: {
   const current: Record<PlanKey, number> = { kr: krValue, global: globalValue, income: gv("income"), satellite: gv("satellite"), cash: gv("cash") };
   const tv = targetValues(total, current.satellite);
   const rebalanceDeltas = Object.fromEntries((Object.keys(current) as PlanKey[]).map((k) => [k, tv[k] - current[k]])) as Record<PlanKey, number>;
-  const rebalanceOrders = total > 0 ? toOrders(rows, rebalanceDeltas) : { orders: [], unfilled: [] };
+  const rebalanceOrders = total > 0 ? toOrders(rows, rebalanceDeltas, input.planMix) : { orders: [], unfilled: [] };
   const realizedGainTotal = rebalanceOrders.orders.reduce((s, o) => s + (o.side === "sell" ? o.realizedGain ?? 0 : 0), 0);
 
   // 새로 넣을 돈: 모자란 곳부터 채우고(팔지 않음), 다 채우고 남으면 성장에 목표 비율로
@@ -1086,7 +1146,7 @@ export function buildIncomeGuideView(input: {
       alloc.kr += rest * (1 - settings.overseasPct / 100);
       alloc.global += rest * (settings.overseasPct / 100);
     }
-    const c = toOrders(rows, alloc);
+    const c = toOrders(rows, alloc, input.planMix);
     const byG = new Map<BucketGroup, number>();
     for (const k of Object.keys(alloc) as PlanKey[]) byG.set(PLAN_GROUP[k], (byG.get(PLAN_GROUP[k]) ?? 0) + alloc[k]);
     const after = (g: BucketGroup) => ((gv(g) + (byG.get(g) ?? 0)) / newTotal) * 100;

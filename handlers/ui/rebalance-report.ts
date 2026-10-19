@@ -72,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 가이드 화면과 같은 해외 비중 목표(내 계획 구성이 있으면 그 값)
     const guidePlan = await loadGuidePlan(supabase, chatId).catch(() => null)
     file = { ...file, settings: withPlanOverseas(file.settings, guidePlan?.overseasPct ?? null) }
-    const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts, yieldPctByCode })
+    const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts, yieldPctByCode, planMix: guidePlan?.mix ?? null })
     // 같은 지수 상품 비교 — 가이드 화면과 같은 자료·같은 함수(indexProductChoice)라 살 곳이 화면마다 갈리지 않는다
     const indexAlt = await loadIndexAlternatives(supabase, view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name })))
     const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan, yieldPctByCode, today, etf: indexAlt.etf, feeAlternatives: indexAlt.alternatives })
