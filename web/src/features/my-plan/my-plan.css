@@ -1,8 +1,11 @@
 .my-plan { width: calc(100% - 24px); margin: 8px 12px; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-elevated); color: var(--color-text-primary); font-size: 12px; word-break: keep-all; }
 .my-plan--muted { color: var(--color-text-secondary); }
-.my-plan__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+/* 첫 줄: 제목 + 바꾸기(오른쪽 고정), 둘째 줄: 요약 — 요약이 길어져도 버튼이 밀려 떨어지지 않게 */
+.my-plan__head { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 10px; }
 .my-plan__title { font-weight: 700; }
-.my-plan__summary { flex: 1 1 auto; min-width: 0; }
+.my-plan__edit { justify-self: end; }
+.my-plan__summary { grid-column: 1 / -1; min-width: 0; line-height: 1.6; }
+.my-plan__part { display: inline-block; max-width: 100%; }
 .my-plan__edit, .my-plan__more, .my-plan__cancel { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--color-border-default); border-radius: 4px; background: transparent; color: var(--color-brand); font: inherit; font-size: 12px; cursor: pointer; }
 .my-plan__more { border: 0; padding: 0; }
 .my-plan__note { margin: 6px 0 0; color: var(--color-text-secondary); line-height: 1.5; }

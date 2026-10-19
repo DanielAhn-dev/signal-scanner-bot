@@ -6,7 +6,7 @@ import { apiFetch } from '../../lib/api'
 import { stockCapFor } from '../../lib/planGuide'
 import { recordSwitch } from '../../lib/switchHistory'
 import { useCurrentChatId, useProfileStore } from '../../stores/profileStore'
-import { mixLabel, type MixEntry } from '../../lib/planMix'
+import { MIX_INDEX_LABEL, type MixEntry } from '../../lib/planMix'
 import './my-plan.css'
 
 /**
@@ -23,13 +23,14 @@ const man = (won: number) => `${(won / 10_000).toLocaleString('ko-KR')}만원`
 /** 급여일 다음 날, 28일을 넘으면 다음 달 1일 — 서버 depositDayFromPayday와 같은 규칙 */
 const dayAfter = (payday: number) => (payday + 1 > 28 ? 1 : payday + 1)
 
-function summary(plan: Plan): string {
+/** 요약 항목들 — 항목 하나는 줄바꿈 없이 붙어 있고 항목 사이에서만 줄이 바뀐다 */
+function summary(plan: Plan): string[] {
   const parts = [plan.monthly > 0 ? `매달 ${plan.depositDay}일 ${man(plan.monthly)}` : '매달 적립 안 함']
   if (plan.tolerancePct != null) parts.push(`버틸 하락 −${plan.tolerancePct}% (주식 ${stockCapFor(plan.tolerancePct).recommended}%부터)`)
-  // 구성은 모아가기 1번에서 정한다 — 정했을 때만 보인다
-  if (plan.mix) parts.push(mixLabel(plan.mix))
+  // 구성은 모아가기 1번에서 정한다 — 정했을 때만, 다른 항목과 섞이지 않게 한 덩어리로
+  if (plan.mix) parts.push(`구성 ${plan.mix.map((e) => `${MIX_INDEX_LABEL[e.index]} ${Math.round(e.weight * 100)}%`).join(' + ')}`)
   parts.push(plan.satellitePct === 0 ? '지수만' : plan.satellitePct === 100 ? '실험: 종목 봇 전체' : `개별주 ${plan.satellitePct}%까지`)
-  return parts.join(' · ')
+  return parts
 }
 
 /** 목표 진행 — 대시보드가 이미 불러온 목표 트래커 값을 넘긴다 (같은 요청을 두 번 하지 않게) */
@@ -129,12 +130,14 @@ export default function MyPlanCard({ goal, onPlanMonthly, onPlanMix }: { goal?: 
     <section className="my-plan" aria-label="내 계획">
       <div className="my-plan__head">
         <span className="my-plan__title">내 계획</span>
-        <span className="my-plan__summary">{summary(plan)}</span>
         {!editing && (
           <button type="button" className="my-plan__edit" onClick={openEdit}>
             <Pencil size={12} aria-hidden /> 바꾸기
           </button>
         )}
+        <span className="my-plan__summary">
+          {summary(plan).map((part, i) => <span key={part} className="my-plan__part">{i > 0 && <span aria-hidden> · </span>}{part}</span>)}
+        </span>
       </div>
       {!editing && (
         <p className="my-plan__note">
