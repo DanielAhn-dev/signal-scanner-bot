@@ -79,3 +79,29 @@ export function monthTaskView(input: {
 export function monthLabel(ym: string): string {
   return `${Number(ym.slice(5, 7))}월`
 }
+
+/** 서버 '내 모으기'가 내려 주는 이번 달 실계좌 매수 한 건 */
+export type MonthBuy = { code: string; quantity: number; price: number; tradedAt: string; broker: string | null; account: string | null; memo: string | null }
+
+export type MonthBuyGroup = { code: string; qty: number; avgPrice: number; amount: number; lastDate: string; account: string }
+
+/**
+ * 이번 달 실계좌 매수를 종목별로 묶는다 — 포트폴리오에서 먼저 적은 매수를 홈 카드가 알아보고
+ * '이걸로 완료'로 답만 남기게(같은 매수를 두 번 기록하지 않게). 고른 상품을 맨 앞에.
+ */
+export function groupMonthBuys(buys: MonthBuy[], productCode: string | null): MonthBuyGroup[] {
+  const by = new Map<string, MonthBuyGroup>()
+  for (const b of buys) {
+    if (!(b.quantity > 0) || !(b.price > 0)) continue
+    const g = by.get(b.code) ?? { code: b.code, qty: 0, avgPrice: 0, amount: 0, lastDate: '', account: '' }
+    g.qty += b.quantity
+    g.amount += b.quantity * b.price
+    g.avgPrice = g.amount / g.qty
+    if (b.tradedAt > g.lastDate) {
+      g.lastDate = b.tradedAt
+      g.account = [b.broker, b.account].filter(Boolean).join(' · ')
+    }
+    by.set(b.code, g)
+  }
+  return [...by.values()].sort((a, b) => Number(b.code === productCode) - Number(a.code === productCode) || b.amount - a.amount)
+}
