@@ -94,6 +94,12 @@ describe('summarizeHoldings', () => {
     const dead = row({ code: 'X', stock_name: '폐지', quantity: 10, avg_price: 1000, unrealized_pnl: -10000 })
     expect(rowTradeCost(dead, opts)).toBeCloseTo(10000 * 0.00015, 8)
   })
+  it('DB 현금이 있으면 추정(시드 − 매수 원금) 대신 그 값으로 총자산을 낸다 — 실현 손익·분배금 반영', () => {
+    const s = summarizeHoldings(rows, { ...opts, cashOverride: 410_000 })
+    expect(s.estimatedCash).toBe(410_000)
+    expect(s.totalAssetValue).toBe(750_000 + 410_000)
+    expect(summarizeHoldings(rows, { ...opts, cashOverride: null }).estimatedCash).toBe(300000)
+  })
   it('행이 없으면 모두 0, 현금은 초기 자본', () => {
     const s = summarizeHoldings([], opts)
     expect(s).toMatchObject({ totalInvested: 0, totalReturnPct: 0, estimatedCash: 1_000_000, totalAssetValue: 1_000_000 })

@@ -67,7 +67,7 @@ export default function Portfolio() {
     totalEvaluationValue, estimatedCash, totalAssetValue, tradeCostOpts, allocationRows, allocationChartStyle,
   } = usePortfolioView({
     allRows, accountFolders, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, sortKey, page, pageSize,
-    rules, macroRiskLevel, policyByKey, includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital,
+    rules, macroRiskLevel, policyByKey, includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital, dbVirtualCash,
   })
 
   // 실제 계좌가 하나도 없으면(주소로 탭을 고르지 않았을 때) 실험 계좌를 먼저 보여 준다

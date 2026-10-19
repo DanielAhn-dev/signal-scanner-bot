@@ -29,13 +29,15 @@ type PortfolioViewInput = {
   buyFeeRatePct: number
   sellFeeRatePct: number
   initialCapital: number
+  /** 실험 계좌의 DB 현금(virtual_cash) — 있으면 총자산·비중에 이 값을 쓴다 */
+  dbVirtualCash?: number | null
 }
 
 /** 불러온 행과 설정으로부터 화면에 필요한 파생값(필터·합계·비중)을 만든다. 서버 호출 없이 즉시 계산 */
 export function usePortfolioView(input: PortfolioViewInput) {
   const {
     allRows, accountFolders, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, sortKey,
-    page, pageSize, rules, macroRiskLevel, policyByKey, includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital,
+    page, pageSize, rules, macroRiskLevel, policyByKey, includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital, dbVirtualCash,
   } = input
   const safeGradeAThreshold = rules.gradeAThreshold
   const safeGradeBThreshold = rules.gradeBThreshold
@@ -101,7 +103,7 @@ export function usePortfolioView(input: PortfolioViewInput) {
     totalUnrealized, totalInvested, totalTradeCost, adjustedUnrealized,
     totalReturnPct, totalEvaluationValue, estimatedCash, totalAssetValue,
   // 시드·현금은 실험 계좌(가상)에만 있다 — 실제 계좌 탭에 가상 시드를 넣으면 '현금 = 가상 시드 − 실제 매수금'이 섞였다
-  } = summarizeHoldings(summaryRows, { includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital: isVirtualTab ? initialCapital : 0 })
+  } = summarizeHoldings(summaryRows, { includeCost, buyFeeRatePct, sellFeeRatePct, initialCapital: isVirtualTab ? initialCapital : 0, cashOverride: isVirtualTab ? dbVirtualCash : null })
   const tradeCostOpts = { buyFeeRatePct, sellFeeRatePct }
   const allocationRows = useMemo(() => buildAllocationRows(summaryRows, isVirtualTab ? estimatedCash : 0), [summaryRows, estimatedCash, isVirtualTab])
   const allocationChartStyle = useMemo(() => buildDonutGradient(allocationRows), [allocationRows])

@@ -6,6 +6,8 @@ export type SummaryOptions = {
   buyFeeRatePct: number
   sellFeeRatePct: number
   initialCapital: number
+  /** DB에 기록된 실제 현금(virtual_cash). 있으면 추정(시드 − 매수 원금) 대신 쓴다 — 추정은 실현 손익·분배금을 빼먹는다 */
+  cashOverride?: number | null
 }
 
 export type TradeCostOptions = Pick<SummaryOptions, 'buyFeeRatePct' | 'sellFeeRatePct'>
@@ -29,7 +31,7 @@ export function summarizeHoldings(rows: HoldingRow[], opts: SummaryOptions) {
   const adjustedUnrealized = opts.includeCost ? totalUnrealized - totalTradeCost : totalUnrealized
   const totalReturnPct = totalInvested > 0 ? (adjustedUnrealized / totalInvested) * 100 : 0
   const totalEvaluationValue = totalInvested + adjustedUnrealized
-  const estimatedCash = opts.initialCapital - totalInvested
+  const estimatedCash = opts.cashOverride != null && Number.isFinite(opts.cashOverride) ? opts.cashOverride : opts.initialCapital - totalInvested
   const totalAssetValue = totalEvaluationValue + estimatedCash
   return {
     totalUnrealized,
