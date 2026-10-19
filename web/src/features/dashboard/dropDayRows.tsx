@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { DROP_DAY_META } from '../../data/dropDayFacts'
 import { dropDayFactsStale, dropDayLines, rallyLines, type DropDayView } from '../../lib/dropDay'
 import { dropPlanSummary, type DropPlan } from '../../lib/dropPlan'
+import DrawdownPosition from './DrawdownPosition'
 
 const todayKst = () => new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10)
 
@@ -87,6 +88,13 @@ export function renderDropDayRows({
               <td className="xls-cell" colSpan={4} style={cellText}>{text}</td>
             </tr>
           ))}
+          {drop && (
+            <tr className="xls-row">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={2} style={labelCell}>고점 대비 위치</td>
+              <td className="xls-cell" colSpan={4} style={cellText}><DrawdownPosition fromHighPct={view.fromHighPct} /></td>
+            </tr>
+          )}
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={{ ...cellText, color: 'var(--color-text-tertiary)' }}>
