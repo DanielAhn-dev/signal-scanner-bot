@@ -8,7 +8,7 @@ describe('시뮬레이션 이력 고르기', () => {
     expect(overseasHistoryFor('ACE 미국 S&P 500')?.id).toBe('sp500')
   })
   it('레버리지·커버드콜·환헤지·채권혼합·일부 종목 상품은 null (코스피 이력 + 참고용 경고)', () => {
-    for (const name of ['TIGER 미국나스닥100레버리지(합성)', 'TIGER 미국나스닥100커버드콜(합성)', 'KODEX 미국S&P500(H)', 'RISE 미국S&P500미국채혼합50', 'TIGER 미국S&P500TOP10', 'KODEX 반도체', 'RISE 현대차고정피지컬AI']) {
+    for (const name of ['KODEX 미국S&P500테크놀로지', 'SOL 미국S&P500ESG', 'KODEX 미국S&P500헬스케어', 'TIGER 미국나스닥100레버리지(합성)', 'TIGER 미국나스닥100커버드콜(합성)', 'KODEX 미국S&P500(H)', 'RISE 미국S&P500미국채혼합50', 'TIGER 미국S&P500TOP10', 'KODEX 반도체', 'RISE 현대차고정피지컬AI']) {
       expect(overseasHistoryFor(name)).toBeNull()
     }
   })

@@ -193,7 +193,8 @@ const OVERSEAS_EXCLUDE = /레버리지|인버스|커버드콜|프리미엄|타�
 export function overseasHistoryFor(name: string): HistorySeries | null {
   const n = name.replace(/\s+/g, '')
   if (OVERSEAS_EXCLUDE.test(n)) return null
-  const id = /나스닥100/i.test(n) ? 'nasdaq100' : /S&P500/i.test(n) ? 'sp500' : null
+  // 이름이 지수 이름으로 끝나야 그 지수 전체다 — 'S&P500테크놀로지'·'S&P500ESG'·'S&P500헬스케어'는 일부 업종만 담는다(2026-10-19)
+  const id = /나스닥100(TR)?$/i.test(n) ? 'nasdaq100' : /S&P500(TR)?$/i.test(n) ? 'sp500' : null
   const asset = id ? MIX_ASSETS.find((a) => a.id === id) : null
   if (!id || !asset) return null
   return { id, name: asset.name, source: asset.source, asOf: MIX_ASOF, dragPct: asset.dragPct, monthly: asset.monthly }
