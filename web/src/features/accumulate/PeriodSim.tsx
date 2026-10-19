@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
-import { historyMonths, simulatePeriod, type PeriodResult } from '../../lib/accumulate'
+import { KOSPI_HISTORY, simulatePeriod, type PeriodResult } from '../../lib/accumulate'
 
 const man = formatKrwMan
 const ymLabel = (ym: string) => `${ym.slice(0, 4)}-${ym.slice(4)}`
@@ -49,17 +49,27 @@ function PeriodChart({ r }: { r: PeriodResult }) {
  * 3번 카드의 "기간 골라 보기" — 실제 월말 가격으로 고른 기간 하나를 따라간다.
  * 한 기간은 우연이 크므로, 같은 길이로 시작할 수 있었던 모든 시작점 중 어디쯤인지 항상 함께 보여 준다.
  */
-export default function PeriodSim({ monthly, lump, drag, years }: { monthly: number; lump: number; drag: number; years: number }) {
-  const months = useMemo(() => historyMonths(), [])
+/** series: 시뮬레이션 이력(기본 코스피200). 해외지수는 시작이 늦어 그 전 빠른 선택(2008 등)은 숨긴다 */
+export default function PeriodSim({ monthly, lump, drag, years, series = KOSPI_HISTORY.monthly }: { monthly: number; lump: number; drag: number; years: number; series?: Array<[string, number]> }) {
+  const months = useMemo(() => series.map(([m]) => m), [series])
+  const presets = PRESETS.filter((p) => months.includes(p.start))
+  const firstStart = presets[0]?.start ?? months[0]
   const first = months[0]
   const last = months[months.length - 1]
   const endFor = (start: string) => {
     const i = months.indexOf(start)
     return months[Math.min(months.length - 1, i + years * 12)]
   }
-  const [startYm, setStartYm] = useState(() => PRESETS[0].start)
-  const [endYm, setEndYm] = useState(() => endFor(PRESETS[0].start))
-  const r = useMemo(() => simulatePeriod({ startYm, endYm, monthly, lump, annualDrag: drag }), [startYm, endYm, monthly, lump, drag])
+  const [startYm, setStartYm] = useState(() => firstStart)
+  const [endYm, setEndYm] = useState(() => endFor(firstStart))
+  // 이력이 바뀌어(상품 변경) 고른 달이 없어지면 처음 값으로
+  useEffect(() => {
+    if (!months.includes(startYm) || !months.includes(endYm)) {
+      setStartYm(firstStart)
+      setEndYm(endFor(firstStart))
+    }
+  }, [months]) // eslint-disable-line react-hooks/exhaustive-deps
+  const r = useMemo(() => simulatePeriod({ startYm, endYm, monthly, lump, annualDrag: drag, series }), [startYm, endYm, monthly, lump, drag, series])
 
   const yearsList = Array.from(new Set(months.map((m) => m.slice(0, 4))))
   const monthsOf = (year: string) => months.filter((m) => m.startsWith(year)).map((m) => m.slice(4))
@@ -85,7 +95,7 @@ export default function PeriodSim({ monthly, lump, drag, years }: { monthly: num
   return (
     <div>
       <div className="acc-period-presets" role="group" aria-label="빠른 선택">
-        {PRESETS.map((p) => (
+        {presets.map((p) => (
           <button key={p.start} type="button" className={startYm === p.start ? 'is-active' : ''} aria-pressed={startYm === p.start}
             onClick={() => { setStartYm(p.start); setEndYm(endFor(p.start)) }}>{p.label}</button>
         ))}

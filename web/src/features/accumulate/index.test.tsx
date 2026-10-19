@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AccumulatePage from './index'
+import { userScopedKey } from '../../lib/userState'
 
 const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -47,6 +48,23 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><AccumulatePage /></MemoryRouter>)
 
 describe('모아가기', () => {
+  it('모든 시작 시점 그래프에 실제 한 사람 경로와 매끈한 선 안내', async () => {
+    renderPage()
+    await screen.findByText('추천')
+    expect(screen.getByText(/실제 한 사람\(\d{4}-\d{2} 시작\)/)).toBeInTheDocument()
+    expect(screen.getByText(/순위값을 이은 것이라 실제보다 매끈합니다/)).toBeInTheDocument()
+  })
+
+  it('나스닥100 상품을 고르면 그 지수 이력으로 계산하고 한계를 알린다', async () => {
+    localStorage.setItem(userScopedKey('state:accumulate')!, JSON.stringify({ value: { target: { code: '133690', name: 'TIGER 미국나스닥100' } }, updatedAt: Date.now() }))
+    renderPage()
+    expect(await screen.findByText(/미국 기술주가 유난히 강했던 구간/)).toBeInTheDocument()
+    expect(screen.queryByText(/코스피200 장기 이력으로 계산하므로 참고용/)).not.toBeInTheDocument()
+    expect(screen.getByText(/2010~, 미국 나스닥100/)).toBeInTheDocument()
+    // 코스피 TR 비교표는 해외지수일 때 숨긴다
+    expect(screen.queryByText('KODEX 200 vs KODEX 200TR')).not.toBeInTheDocument()
+  })
+
   it('계산기 처음 값은 내 계획 금액, 고치면 되돌리기 링크', async () => {
     planMock.monthly = 1_220_000
     renderPage()

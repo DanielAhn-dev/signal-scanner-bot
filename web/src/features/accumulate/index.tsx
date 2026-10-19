@@ -11,10 +11,12 @@ import { useIndexEtfCandidates } from '../../lib/indexEtfLive'
 import {
   EMPTY_STATE,
   PLAIN_TAX_DRAG_ANNUAL,
+  KOSPI_HISTORY,
   averageReceived,
   candidateDataAgeDays,
   currentYmKst,
   monthsToGain,
+  overseasHistoryFor,
   recommendCandidate,
   requiredMonthly,
   simulateDca,
@@ -27,6 +29,7 @@ import {
   type Candle,
   type Freq,
   type Goal,
+  type HistorySeries,
   type SimResult,
 } from '../../lib/accumulate'
 import SplitPlanCard from './SplitPlanCard'
@@ -44,12 +47,32 @@ const STALE_CANDIDATE_DAYS = 90
 /** 지수 ETF 후보는 같은 지수를 따라가므로 시세 판단은 가장 이력이 긴 KODEX 200으로 한다 */
 const INDEX_PRICE_CODE = '069500'
 
+/** 해외지수 이력으로 계산할 때의 한계 — 짧은 기간·좋았던 구간·환율 */
+function OverseasLimits({ h }: { h: HistorySeries }) {
+  const first = h.monthly[0][0]
+  const spanYears = Math.floor(h.monthly.length / 12)
+  return (
+    <div className="acc-note">
+      <p>아래 시뮬레이션은 이 상품이 따르는 <strong>{h.name}</strong> 이력({ymLabel(first)} ~ {h.asOf}, {h.source})으로 계산합니다. 원화로 바꾼 월말 가격(분배금 반영)입니다.</p>
+      <ul className="acc-limits">
+        <li>약 {spanYears}년치뿐이라 긴 기간일수록 비교할 시작점이 적습니다. 시작점이 모자라면 계산하지 않습니다.</li>
+        <li>{h.id === 'nasdaq100' ? '이 기간은 미국 기술주가 유난히 강했던 구간입니다.' : '이 기간은 미국 주식이 다른 나라보다 강했던 구간입니다.'} 결과가 좋게 나와도 앞으로도 그렇다는 근거는 아닙니다.</li>
+        <li>원화 환산이라 환율 효과가 섞여 있습니다. 원화가 강해지면 같은 지수 상승에도 덜 오릅니다.</li>
+        {h.dragPct > 0 && <li>한국 상장 상품이 없던 때는 미국 ETF 가격을 쓰고, 세금·보수 몫으로 연 {h.dragPct}%를 뺐습니다(섞어보기와 같은 값).</li>}
+      </ul>
+    </div>
+  )
+}
+
 type IncomeView = { total: number; distribution: { monthlyNet: number } } | null
+
+const ymLabel = (ym: string) => (ym.length === 6 ? `${ym.slice(0, 4)}-${ym.slice(4)}` : ym)
 
 function FanChart({ sim }: { sim: SimResult }) {
   const W = 640, H = 260, L = 56, R = 12, T = 12, B = 28
   const n = sim.months
-  const maxY = Math.max(...sim.p90, ...sim.paid) * 1.05
+  const real = sim.deepest
+  const maxY = Math.max(...sim.p90, ...sim.paid, ...(real?.value ?? [])) * 1.05
   const x = (i: number) => L + ((W - L - R) * i) / n
   const y = (v: number) => T + (H - T - B) * (1 - v / maxY)
   const line = (arr: number[]) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
@@ -70,6 +93,13 @@ function FanChart({ sim }: { sim: SimResult }) {
       <path d={line(sim.worst)} className="acc-line acc-worst" />
       <path d={line(sim.p10)} className="acc-line acc-p10" />
       <path d={line(sim.median)} className="acc-line acc-median" />
+      {/* 분위수 선은 시점마다 다른 시작점 값을 이어 매끈하다 — 한 사람이 실제로 겪은 길을 점선으로 겹친다 */}
+      {real && (
+        <g>
+          <path d={line(real.value)} className="acc-line acc-real" />
+          <circle cx={x(real.troughStep)} cy={y(real.value[real.troughStep])} r={4} className="acc-trough" />
+        </g>
+      )}
     </svg>
   )
 }
@@ -149,7 +179,13 @@ export default function AccumulatePage() {
   const targetName = custom?.name ?? pick?.name ?? 'KODEX 200'
   const isIndexTarget = !custom || INDEX_ETF_CANDIDATES.some((c) => c.code === custom.code)
   const priceCode = isIndexTarget ? INDEX_PRICE_CODE : targetCode
-  const drag = state.goal === 'income' || (pick?.kind === 'plain') || (custom && INDEX_ETF_CANDIDATES.find((c) => c.code === custom.code)?.kind === 'plain') ? PLAIN_TAX_DRAG_ANNUAL : 0
+  // 나스닥100·S&P500을 그대로 따르는 상품이면 그 지수 이력으로, 아니면 코스피200 이력으로 계산한다
+  // 매번 새 객체면 아래 시뮬레이션이 렌더마다 다시 돈다 — 이름이 바뀔 때만
+  const overseas = useMemo(() => (custom && !isIndexTarget ? overseasHistoryFor(custom.name) : null), [custom?.name, isIndexTarget])
+  const history: HistorySeries = overseas ?? KOSPI_HISTORY
+  const histPrices = useMemo(() => history.monthly.map(([, p]) => p), [history])
+  const histMonths = useMemo(() => history.monthly.map(([m]) => m), [history])
+  const drag = (state.goal === 'income' || (pick?.kind === 'plain') || (custom && INDEX_ETF_CANDIDATES.find((c) => c.code === custom.code)?.kind === 'plain') ? PLAIN_TAX_DRAG_ANNUAL : 0) + history.dragPct / 100
 
   useEffect(() => {
     let cancelled = false
@@ -173,12 +209,12 @@ export default function AccumulatePage() {
   const monthly = mode === 'income' ? monthlyFromIncome + toMonthly(num(extra), 'month') : toMonthly(num(amount), freq)
   const lump = num(lumpText) || state.lump
 
-  const sim = useMemo(() => simulateDca({ monthly, years, annualDrag: drag, lump }), [monthly, years, drag, lump])
+  const sim = useMemo(() => simulateDca({ monthly, years, annualDrag: drag, lump, prices: histPrices, months: histMonths }), [monthly, years, drag, lump, histPrices, histMonths])
   const simTr = useMemo(() => simulateDca({ monthly, years, annualDrag: 0, lump }), [monthly, years, lump])
   const simPlain = useMemo(() => simulateDca({ monthly, years, annualDrag: PLAIN_TAX_DRAG_ANNUAL, lump }), [monthly, years, lump])
   const summary = sim ? summarize(sim) : null
-  const gain20 = useMemo(() => monthsToGain({ annualDrag: drag }), [drag])
-  const goalNeed = useMemo(() => requiredMonthly({ target: num(goalAmount), years, annualDrag: drag, lump }), [goalAmount, years, drag, lump])
+  const gain20 = useMemo(() => monthsToGain({ annualDrag: drag, prices: histPrices }), [drag, histPrices])
+  const goalNeed = useMemo(() => requiredMonthly({ target: num(goalAmount), years, annualDrag: drag, lump, prices: histPrices }), [goalAmount, years, drag, lump, histPrices])
   const guide = useMemo(() => (candles ? situationGuide(candles) : null), [candles])
   const track = trackSummary(state)
 
@@ -226,7 +262,8 @@ export default function AccumulatePage() {
         {custom && (
           <div className="acc-pick">
             <div className="acc-pick-head"><span className="acc-badge acc-badge-user">직접 지정</span><strong>{custom.name}</strong><span className="acc-code">{custom.code}</span></div>
-            {!isIndexTarget && <p className="acc-warn">추천 기준 밖의 종목입니다. 아래 시뮬레이션은 이 종목의 이력이 아니라 코스피200 장기 이력으로 계산하므로 참고용입니다. 상황 안내는 이 종목의 시세로 합니다.</p>}
+            {!isIndexTarget && !overseas && <p className="acc-warn">추천 기준 밖의 종목입니다. 아래 시뮬레이션은 이 종목의 이력이 아니라 코스피200 장기 이력으로 계산하므로 참고용입니다. 상황 안내는 이 종목의 시세로 합니다.</p>}
+            {overseas && <OverseasLimits h={overseas} />}
             <button type="button" className="acc-secondary" onClick={() => update({ target: null })}>추천으로 되돌리기</button>
           </div>
         )}
@@ -301,7 +338,7 @@ export default function AccumulatePage() {
           <button type="button" className={pastView === 'period' ? 'is-active' : ''} aria-pressed={pastView === 'period'} onClick={() => setPastView('period')}>기간 골라 보기</button>
         </div>
         {pastView === 'period' ? (
-          <PeriodSim monthly={monthly} lump={lump} drag={drag} years={years} />
+          <PeriodSim monthly={monthly} lump={lump} drag={drag} years={years} series={history.monthly} />
         ) : !sim || !summary ? (
           <p className="acc-warn">{monthly <= 0 ? '금액을 입력하세요.' : '이 기간은 비교할 시작점이 너무 적어 계산하지 않습니다. 기간을 줄여 보세요.'}</p>
         ) : (
@@ -313,8 +350,15 @@ export default function AccumulatePage() {
               <div><dt>최악</dt><dd>{man(summary.worst)}</dd></div>
             </dl>
             <FanChart sim={sim} />
-            <p className="acc-legend"><i className="acc-k-median" />중앙값 <i className="acc-k-p10" />하위10% <i className="acc-k-worst" />최악 <i className="acc-k-paid" />납입 · 음영은 하위10%~상위10%</p>
-            <p className="acc-note">시작 시점 {sim.starts}가지(2002~)를 모두 해 본 결과입니다. 원금보다 적었던 경우 {summary.lossPct.toFixed(0)}%, 원금의 +20% 이상이었던 경우 {summary.over20Pct.toFixed(0)}%. 시작점이 겹쳐 서로 독립적이지는 않고, 최근 큰 상승장이 포함되어 있습니다.</p>
+            <p className="acc-legend"><i className="acc-k-median" />중앙값 <i className="acc-k-p10" />하위10% <i className="acc-k-worst" />최악 <i className="acc-k-paid" />납입 · 음영은 하위10%~상위10%{sim.deepest && <> <i className="acc-k-real" />실제 한 사람({ymLabel(sim.deepest.start)} 시작)</>}</p>
+            {sim.deepest && sim.deepest.troughPct < 0 && (
+              <p className="acc-summary">
+                색 선은 시점마다 {sim.starts}가지 결과의 순위값을 이은 것이라 실제보다 매끈합니다. 한 사람이 실제로 겪는 길은 점선처럼 출렁입니다 —{' '}
+                {ymLabel(sim.deepest.start)}에 시작했다면 {sim.deepest.troughStep < 12 ? `${sim.deepest.troughStep}개월` : `${(sim.deepest.troughStep / 12).toFixed(1)}년`} 차에 넣은 돈 대비 <strong>{sim.deepest.troughPct.toFixed(0)}%</strong>까지 내려갔고,
+                {' '}{years}년 끝에는 넣은 돈의 {(sim.deepest.finalRatio * 100).toFixed(0)}%였습니다. 이런 구간에서 멈추지 않는 것이 결과를 정합니다.
+              </p>
+            )}
+            <p className="acc-note">시작 시점 {sim.starts}가지({history.monthly[0][0].slice(0, 4)}~, {history.name})를 모두 해 본 결과입니다. 원금보다 적었던 경우 {summary.lossPct.toFixed(0)}%, 원금의 +20% 이상이었던 경우 {summary.over20Pct.toFixed(0)}%. 시작점이 겹쳐 서로 독립적이지는 않고, 최근 큰 상승장이 포함되어 있습니다.</p>
             {gain20.median != null && (
               <More>
                 <p className="acc-note"><strong>의미 있는 상승</strong>의 한 기준으로, 원금 대비 +20%에 처음 닿기까지 중앙값 <strong>{Math.round(gain20.median)}개월</strong>(빠른 25% {Math.round(gain20.p25 ?? 0)}개월, 느린 25% {Math.round(gain20.p75 ?? 0)}개월, 최대 {Math.round(gain20.max ?? 0)}개월)이 걸렸습니다.</p>
@@ -325,7 +369,7 @@ export default function AccumulatePage() {
             )}
           </>
         )}
-        {pastView === 'all' && simTr && simPlain && (
+        {pastView === 'all' && !overseas && simTr && simPlain && (
           <div className="acc-compare">
             <h3>KODEX 200 vs KODEX 200TR</h3>
             <table className="acc-table">

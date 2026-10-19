@@ -1,4 +1,5 @@
 import { ACCUMULATE_ASOF, INDEX_ETF_CANDIDATES, KODEX200_MONTHLY, type IndexEtfCandidate } from '../data/accumulateData'
+import { MIX_ASOF, MIX_ASSETS } from '../data/mixData'
 
 /**
  * 모아가기(적립) 계산 — 과거 실제 가격으로 "그렇게 모았다면"의 분포를 보여 준다. 미래 예측이 아니다.
@@ -38,8 +39,23 @@ export type SimInput = {
   annualDrag?: number
   /** 처음부터 가진 성장 자산(원) */
   lump?: number
-  /** 가격 시리즈 (테스트용 주입, 기본은 KODEX 200 월말 수정주가) */
+  /** 가격 시리즈 (기본은 KODEX 200 월말 수정주가, 해외지수 상품이면 그 지수 — historySeriesFor) */
   prices?: number[]
+  /** prices와 같은 길이의 [YYYYMM] — 실제 한 사람 경로(deepest)의 시작월 표시용 */
+  months?: string[]
+}
+
+/** 시작점 하나가 실제로 겪은 경로 — 분위수 선은 시점마다 다른 시작점 값을 이어 매끈하므로 함께 보여 준다 */
+export type SimPath = {
+  /** 시작월 YYYYMM (months를 안 주면 '') */
+  start: string
+  /** 0~n개월 평가금 */
+  value: number[]
+  /** 원금 대비 가장 깊었던 % (음수) */
+  troughPct: number
+  troughStep: number
+  /** 끝 평가금 / 총 납입 */
+  finalRatio: number
 }
 
 export type SimResult = {
@@ -52,6 +68,8 @@ export type SimResult = {
   p90: number[]
   /** 총납입 대비 최종 배율, 오름차순 */
   finalRatios: number[]
+  /** 중간에 원금 대비 가장 깊게 빠졌던 시작점의 실제 경로 (원금이 없으면 null) */
+  deepest: SimPath | null
 }
 
 function quantile(sorted: number[], q: number): number {
@@ -85,19 +103,37 @@ export function simulateDca(input: SimInput): SimResult | null {
   const starts = q.length - n
   const byStep: number[][] = Array.from({ length: n + 1 }, () => [])
   const finals: number[] = []
+  let deepS = -1
+  let deepRatio = Infinity
+  let deepStep = 0
   for (let s = 0; s < starts; s += 1) {
     let invUnits = 0
     for (let i = 0; i <= n; i += 1) {
       // i개월 뒤 평가금: 매달 초 한 번씩 i번 넣은 단위 + 처음 가진 자산
       const value = monthly * q[s + i] * invUnits + lump * (q[s + i] / q[s])
       byStep[i].push(value)
+      const paidNow = monthly * i + lump
+      if (i > 0 && paidNow > 0 && value / paidNow < deepRatio) {
+        deepRatio = value / paidNow
+        deepS = s
+        deepStep = i
+      }
       if (i < n) invUnits += 1 / q[s + i]
     }
     const paid = monthly * n + lump
     finals.push(paid > 0 ? byStep[n][s] / paid : 0)
   }
   const sortedSteps = byStep.map((v) => [...v].sort((a, b) => a - b))
+  const paidEnd = monthly * n + lump
+  const deepest: SimPath | null = deepS < 0 ? null : {
+    start: input.months?.[deepS] ?? '',
+    value: byStep.map((v) => v[deepS]),
+    troughPct: (deepRatio - 1) * 100,
+    troughStep: deepStep,
+    finalRatio: paidEnd > 0 ? byStep[n][deepS] / paidEnd : 0,
+  }
   return {
+    deepest,
     starts,
     months: n,
     paid: Array.from({ length: n + 1 }, (_, i) => monthly * i + lump),
@@ -123,6 +159,38 @@ export type PeriodResult = {
   /** 같은 길이로 시작할 수 있었던 모든 시작점 수와, 그중 이 기간보다 끝 배율이 낮았던 비율(%) */
   peers: number
   worsePct: number
+}
+
+// ── 시뮬레이션에 쓰는 이력 ─────────────────────────────────
+
+export type HistorySeries = {
+  id: 'kospi200' | 'nasdaq100' | 'sp500'
+  name: string
+  /** 가격 출처 (화면 한계 안내용) */
+  source: string
+  /** 데이터 기준 YYYY-MM */
+  asOf: string
+  /** 연 % — SPY 원화 환산처럼 한국 상장 상품보다 좋게 나오는 몫을 빼는 값 (섞어보기와 같은 값) */
+  dragPct: number
+  monthly: Array<[string, number]>
+}
+
+export const KOSPI_HISTORY: HistorySeries = { id: 'kospi200', name: '코스피200', source: 'KODEX 200', asOf: ACCUMULATE_ASOF, dragPct: 0, monthly: KODEX200_MONTHLY }
+
+/** 같은 지수를 그대로 따라가는 해외 상품만 — 레버리지·커버드콜·환헤지(H)·채권혼합·일부 종목만 담는 상품은 그 지수 이력과 다르다 */
+const OVERSEAS_EXCLUDE = /레버리지|인버스|커버드콜|프리미엄|타겟|위클리|데일리|채권|혼합|\(H\)|액티브|TOP|모멘텀|배당|동일가중|밸류|성장/i
+
+/**
+ * 고른 상품 이름 → 시뮬레이션 이력. 나스닥100·S&P500을 그대로 따르는 상품이면 섞어보기(mixData)의 원화 환산 월말 가격,
+ * 아니면 null (코스피200 이력으로 계산하고 '참고용'이라고 알린다).
+ */
+export function overseasHistoryFor(name: string): HistorySeries | null {
+  const n = name.replace(/\s+/g, '')
+  if (OVERSEAS_EXCLUDE.test(n)) return null
+  const id = /나스닥100/i.test(n) ? 'nasdaq100' : /S&P500/i.test(n) ? 'sp500' : null
+  const asset = id ? MIX_ASSETS.find((a) => a.id === id) : null
+  if (!id || !asset) return null
+  return { id, name: asset.name, source: asset.source, asOf: MIX_ASOF, dragPct: asset.dragPct, monthly: asset.monthly }
 }
 
 /** 데이터가 있는 월 목록 [YYYYMM] */
