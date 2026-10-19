@@ -16,8 +16,10 @@ import {
   fetchYieldPctByCode,
   loadAccountPositionRows,
   loadGuideFile,
+  loadPlanOverseasPct,
   saveGuideFile,
   toGuideHoldings,
+  withPlanOverseas,
 } from "../src/services/incomeGuideStore";
 
 const DRY = process.argv.includes("--dry");
@@ -51,8 +53,10 @@ async function main() {
       }
       // 화면과 같은 분배율·계획으로 — 그달 안내(새 돈 살 곳·더 사지 말 것)와 가격을 기록에 같이 남겨 가이드 따름 판정에 쓴다
       const yieldPctByCode = await fetchYieldPctByCode(holdings);
-      const view = buildIncomeGuideView({ holdings, settings: file.settings, today, yieldPctByCode });
-      const { advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file, view, yieldPctByCode, today, prices });
+      // 화면과 같은 해외 비중 목표(내 계획 구성이 있으면 그 값) — 계산에만 쓰고 저장은 history만
+      const settings = withPlanOverseas(file.settings, await loadPlanOverseasPct(supabase, chatId).catch(() => null));
+      const view = buildIncomeGuideView({ holdings, settings, today, yieldPctByCode });
+      const { advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file: { ...file, settings }, view, yieldPctByCode, today, prices });
       const next = withMonthlyEntry(file.history, view, holdings, { advice, prices: entryPrices });
       if (!next) {
         skipped += 1;

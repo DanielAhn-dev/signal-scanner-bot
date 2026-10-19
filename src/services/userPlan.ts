@@ -127,6 +127,15 @@ export function normalizeMix(raw: unknown): { ok: true; value: MixEntry[] } | { 
   return { ok: true, value: entries };
 }
 
+/**
+ * 구성 중 해외지수(S&P500·나스닥100) 몫(%) — 리밸런싱 가이드의 '성장 바구니 안 해외 비중'이 이 값을 따른다(화면 지도 7단계).
+ * 구성을 정하지 않았으면 null — 가이드에 따로 적어 둔 값을 그대로 쓴다.
+ */
+export function overseasPctOfMix(mix: MixEntry[] | null): number | null {
+  if (!mix) return null;
+  return Math.round(mix.filter((e) => e.index !== "kospi200").reduce((s, e) => s + e.weight, 0) * 100);
+}
+
 /** 저장된 구성 — 깨진 값은 정하지 않은 것(null)으로 본다 */
 function readMix(raw: unknown): MixEntry[] | null {
   if (raw == null) return null;

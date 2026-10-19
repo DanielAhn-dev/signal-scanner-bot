@@ -8,6 +8,7 @@ import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
 import { selectPaged } from "./supabasePaging";
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import { sanitizeReceipts, type DistributionReceipt } from "../lib/distributionReceipts";
+import { overseasPctOfMix, readInvestPlan } from "./userPlan";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   sanitizeIncomeGuideSettings,
@@ -47,6 +48,21 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
   } catch {
     return null;
   }
+}
+
+/**
+ * 내 계획 구성의 해외지수 몫(%) — 정했으면 가이드의 해외 비중 목표 대신 쓴다(화면 지도 7단계: 같은 질문을 두 곳이 따로 답하지 않게).
+ * 구성이 없거나 prefs를 못 읽으면 null — 가이드에 적어 둔 값을 그대로 쓴다(읽기 실패로 목표를 바꾸지 않는다).
+ */
+export async function loadPlanOverseasPct(supabase: any, chatId: string | number): Promise<number | null> {
+  const { data, error } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+  if (error || !data) return null;
+  return overseasPctOfMix(readInvestPlan(((data as any).prefs ?? {}) as Record<string, unknown>).mix);
+}
+
+/** 계산용 설정 — 저장 파일은 건드리지 않는다 */
+export function withPlanOverseas(settings: IncomeGuideSettings, planOverseasPct: number | null): IncomeGuideSettings {
+  return planOverseasPct == null ? settings : { ...settings, overseasPct: planOverseasPct };
 }
 
 export async function saveGuideFile(supabase: any, chatId: string | number, file: GuideFile): Promise<string | null> {

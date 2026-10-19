@@ -87,6 +87,8 @@ type View = {
   }
   groups: Array<{ group: Group; label: string; value: number; actualPct: number; targetPct: number; diffPct: number; diffAmount: number }>
   growthSplit: { krValue: number; globalValue: number; globalPct: number; targetGlobalPct: number }
+  /** 해외 비중 목표가 내 계획 구성(모아가기 1번)에서 온 값이면 그 %. 배포 전 API에는 없다 */
+  overseasFromPlan?: number | null
   buckets: Array<{ bucket: string; label: string; value: number; pct: number }>
   npsReference?: Array<{ label: string; actualPct: number; refPct: number; diffPp: number }> | null
   rebalance: {
@@ -226,7 +228,8 @@ export default function IncomeGuidePage() {
           monthlyNeed: Number(form.needMan) * 10_000,
           incomeStart: form.incomeStart,
           satelliteCapPct: Number(form.satCap),
-          overseasPct: Number(form.overseas),
+          // 내 계획 구성이 정한 값이면 보내지 않는다 — 여기서 고칠 수 없다(모아가기 1번이 정한다)
+          ...(view?.overseasFromPlan == null ? { overseasPct: Number(form.overseas) } : {}),
           // 빈 칸은 단계 기본값으로 되돌린다
           customTargets: { income: form.incomePct, cash: form.cashPct },
           financialIncomeCap: Number(form.capMan) * 10_000,
@@ -321,7 +324,9 @@ export default function IncomeGuidePage() {
             위성 상한(%)
             <input style={inputStyle} value={form.satCap} onChange={(e) => setForm({ ...form, satCap: e.target.value })} />
             성장 중 해외 비중(%)
-            <input style={inputStyle} value={form.overseas} onChange={(e) => setForm({ ...form, overseas: e.target.value })} />
+            {view?.overseasFromPlan != null
+              ? <span>{view.overseasFromPlan}% <Button size="sm" variant="ghost" onClick={() => navigate('/accumulate')}>내 계획 구성에서 정함 · 모아가기에서 바꾸기</Button></span>
+              : <input style={inputStyle} value={form.overseas} onChange={(e) => setForm({ ...form, overseas: e.target.value })} />}
             내 목표 — 인컴(%)
             <input style={inputStyle} placeholder="단계 기본" value={form.incomePct} onChange={(e) => setForm({ ...form, incomePct: e.target.value })} />
             현금성(%)
@@ -444,7 +449,7 @@ export default function IncomeGuidePage() {
             </div>
             <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
               성장 바구니 안: 국내 {man(view.growthSplit.krValue)} · 해외 {man(view.growthSplit.globalValue)} (해외 {pct(view.growthSplit.globalPct)}, 목표{' '}
-              {view.growthSplit.targetGlobalPct}%)
+              {view.growthSplit.targetGlobalPct}%{view.overseasFromPlan != null ? ' · 내 계획 구성' : ''})
             </div>
             <div style={{ marginTop: 2, color: 'var(--color-text-tertiary)' }}>
               세부: {view.buckets.map((b) => `${b.label} ${pct(b.pct)}`).join(' · ')}

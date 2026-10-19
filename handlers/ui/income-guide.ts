@@ -9,6 +9,8 @@ import {
   fetchYieldPctByCode,
   loadAccountPositionRows,
   loadGuideFile,
+  loadPlanOverseasPct,
+  withPlanOverseas,
   saveGuideFile,
   toGuideHoldings,
 } from '../../src/services/incomeGuideStore'
@@ -121,9 +123,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const contribution = Number((req.query?.contribution as string) ?? body.contribution ?? 0)
     const pastCashPcts = (file.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
     const yieldPctByCode = await fetchYieldPctByCode(holdings)
-    const view = buildIncomeGuideView({ holdings, settings: file.settings, today, contribution, pastCashPcts, yieldPctByCode })
+    // 내 계획 구성을 정했으면 해외 비중 목표는 구성을 따른다 — 계산에만 쓰고 저장 파일은 그대로
+    const planOverseasPct = await loadPlanOverseasPct(supabase, chatId).catch(() => null)
+    const settings = withPlanOverseas(file.settings, planOverseasPct)
+    const view = buildIncomeGuideView({ holdings, settings, today, contribution, pastCashPcts, yieldPctByCode })
     // 계획(같은 지수 상품 비교 포함)과 그달 안내 — 기록에 안내·가격을 같이 남긴다(월 배치와 같은 계산)
-    const { plan, projection, advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file, view, yieldPctByCode, today, prices, alternativesTimeoutMs: 6_000 })
+    const { plan, projection, advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file: { ...file, settings }, view, yieldPctByCode, today, prices, alternativesTimeoutMs: 6_000 })
     let history = file.history ?? []
     if (isRecord) {
       if (view.total <= 0) return res.status(400).json({ error: '기록할 계좌 보유가 없습니다.' })
@@ -140,7 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const month = today.slice(0, 7)
     const prevMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()
     const yearAgoMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 12 ? `${y}-01` : `${y - 1}-${String(m + 1).padStart(2, '0')}` })()
-    const ctx = { settings: file.settings, today, priceOf: (code: string) => prices.get(code) }
+    const ctx = { settings, today, priceOf: (code: string) => prices.get(code) }
     // 이번 달 월입금 — 모아가기 '이번 달 넣었어요' 체크인(user-state 'accumulate'.deposits). 받은 분배금이 있을 때만 읽는다
     let deposit: number | null = 0
     if (monthSummary(receipts, month).net > 0) {
@@ -153,6 +158,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       data: {
         ...view,
         plan,
+        // 해외 비중 목표가 내 계획 구성에서 온 값이면 그 값(%) — 화면은 이 칸을 고치지 않고 모아가기 1번으로 보낸다
+        overseasFromPlan: planOverseasPct,
         // 'distributions'(금융소득 상한)는 view에 이미 있다 — 이름을 따로 둔다
         distributionReceipts: {
           thisMonth: monthSummary(receipts, month),

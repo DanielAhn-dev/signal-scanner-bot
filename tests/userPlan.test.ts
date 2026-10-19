@@ -7,6 +7,7 @@ import {
   investPlanPrefsPatch,
   mergeInvestPlan,
   normalizeMix,
+  overseasPctOfMix,
   readInvestPlan,
   type InvestPlan,
 } from "../src/services/userPlan";
@@ -139,4 +140,17 @@ test("구성: 저장된 값이 깨져 있으면 정하지 않은 것으로 읽�
   const plan = readInvestPlan({ invest_plan: { mix: [{ index: "gold", weight: 1 }] } });
   assert.equal(plan.mix, null);
   assert.equal(effectiveMix(plan)[0].index, "kospi200");
+});
+
+test("구성의 해외지수 몫: 리밸런싱 가이드 해외 비중 목표가 따른다, 안 정했으면 null", () => {
+  assert.equal(overseasPctOfMix(null), null);
+  assert.equal(overseasPctOfMix([{ ...kospi, weight: 1 }]), 0);
+  assert.equal(overseasPctOfMix([kospi, sp]), 50);
+  const three = normalizeMix([
+    { index: "kospi200", weight: 1 / 3, product: null, account: null },
+    { index: "sp500", weight: 1 / 3, product: null, account: null },
+    { index: "nasdaq100", weight: 1 / 3, product: null, account: null },
+  ]);
+  assert.ok(three.ok);
+  assert.equal(overseasPctOfMix(three.value), 67);
 });

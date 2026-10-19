@@ -4,7 +4,7 @@ import { denyIfUnauthorizedRead } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { kstDateKey } from '../../src/services/virtualAutoTradeTiming'
 import { loadGoalFile } from '../../src/services/goalTracker'
-import { fetchGuidePrices, fetchYieldPctByCode, loadAccountPositionRows, loadGuideFile, toGuideHoldings } from '../../src/services/incomeGuideStore'
+import { fetchGuidePrices, fetchYieldPctByCode, loadAccountPositionRows, loadGuideFile, loadPlanOverseasPct, toGuideHoldings, withPlanOverseas } from '../../src/services/incomeGuideStore'
 import { fetchEtfKeyIndicators } from '../../src/services/etfKeyIndicator'
 import { loadIndexAlternatives, toEtfYield } from '../../src/services/indexAlternatives'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
@@ -68,6 +68,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pastCashPcts = (file.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
     // 가이드 화면과 같은 분배율(최근 12개월 실제값 → 없으면 가정)로 계산해야 월 인컴이 화면마다 갈리지 않는다
     const yieldPctByCode = await fetchYieldPctByCode(holdings)
+    // 가이드 화면과 같은 해외 비중 목표(내 계획 구성이 있으면 그 값)
+    file = { ...file, settings: withPlanOverseas(file.settings, await loadPlanOverseasPct(supabase, chatId).catch(() => null)) }
     const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts, yieldPctByCode })
     // 같은 지수 상품 비교 — 가이드 화면과 같은 자료·같은 함수(indexProductChoice)라 살 곳이 화면마다 갈리지 않는다
     const indexAlt = await loadIndexAlternatives(supabase, view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name })))
