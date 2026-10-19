@@ -22,6 +22,7 @@ import {
   type IncomeGuideSettings,
 } from "./incomeGuide";
 import { chooseIndexBuy, newMoneyFromSettings, type EtfYield, type FeeAlternative } from "./indexProductChoice";
+import { ETF_BRAND_PREFIX } from "./securitiesTax";
 
 const DISTRIBUTION_TAX = 0.154;
 /** 같은 계좌·같은 종류 안에서 전체의 이 비중(%) 미만이면 "소액"으로 보고 큰 종목에 합치자고 안내한다 */
@@ -61,7 +62,7 @@ export function strategyKey(name: string): string {
           : /(200|코스피200)/.test(n)
             ? "k200"
             : // 고배당·배당 ETF는 운용사마다 지수가 달라 이름 전체로만 같다고 본다
-              n.replace(/^(KODEX|TIGER|SOL|RISE|ACE|PLUS|HANARO|KOSEF|KBSTAR|ARIRANG|TIMEFOLIO|KIWOOM)/i, "");
+              n.replace(ETF_BRAND_PREFIX, "");
   const style = /타겟/.test(n) && /위클리/.test(n) ? "target-weekly" : /위클리/.test(n) ? "weekly" : /액티브/.test(n) ? "active" : /타겟/.test(n) ? "target" : "basic";
   return `${base}|${style}`;
 }

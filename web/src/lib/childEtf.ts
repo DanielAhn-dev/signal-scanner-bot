@@ -4,6 +4,8 @@
  * 아직 화면의 가상 매매에 연결돼 있지 않다 — 자녀 계좌에 매매 기록·가상 계좌가 붙을 때 이 함수를 쓴다.
  */
 
+import { isExchangeTradedProduct } from '../../../src/lib/securitiesTax'
+
 /** 처음 보여주는 기본 후보 — 이미 비교·검증해 둔 코스피200·미국지수 ETF */
 export const CHILD_ETF_DEFAULTS: Array<{ code: string; name: string; note: string }> = [
   { code: '069500', name: 'KODEX 200', note: '코스피200 — 규모가 가장 큰 국내 지수 ETF' },
@@ -27,7 +29,7 @@ export function childEtfCheck(name: string): EtfCheck {
   const n = name.trim()
   if (!n) return { ok: false, reason: '종목 이름을 입력하세요' }
   for (const r of BLOCKED) if (r.re.test(n)) return { ok: false, reason: r.reason }
-  if (!/ETF|KODEX|TIGER|ACE|RISE|SOL|PLUS|KIWOOM|HANARO|ARIRANG|KOSEF|1Q|WON|TIMEFOLIO/i.test(n)) {
+  if (!isExchangeTradedProduct('', n) && !/ETF/i.test(n)) {
     return { ok: false, reason: 'ETF로 보이지 않습니다. 자녀 계좌는 ETF만 담습니다(개별 주식 불가)' }
   }
   return { ok: true, reason: '지수를 따라가는 일반 ETF로 보입니다. 상품 설명서에서 추종 지수를 한 번 더 확인하세요' }

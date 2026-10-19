@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 import { fetchAllMarketData, type MarketOverview } from "../utils/fetchMarketData";
 import { buildInvestmentPlan } from "../lib/investPlan";
@@ -109,13 +110,12 @@ interface WatchlistViewItem {
   etfDistribution: EtfDistributionSummary | null;
 }
 
-const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
 
 function isEtfLike(input: { market?: unknown; name?: unknown }): boolean {
   const market = String(input.market ?? "").trim().toUpperCase();
   if (market === "ETF" || market.includes("ETF")) return true;
   const name = String(input.name ?? "").trim();
-  return ETF_NAME_HINT.test(name);
+  return isExchangeTradedProduct("", name);
 }
 
 function formatKstDateTimeLabel(iso?: string | null): string | null {

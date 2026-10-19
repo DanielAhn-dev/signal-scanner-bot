@@ -51,7 +51,7 @@ import {
 } from "../../services/decisionLogService";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { ACTIONS, actionButtons } from "../messages/layout";
-import { resolveBaseSellTaxRate } from "../../lib/securitiesTax";
+import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../../lib/securitiesTax";
 import {
   buildTradeHistoryInputGuide,
   parseTradeHistoryInput,
@@ -62,7 +62,6 @@ const DEFAULT_TARGET_POSITIONS = 10;
 const DEFAULT_FEE_RATE = 0.00015;
 const CORE_PLAN_STRATEGY_ID = "core.plan.v1";
 const DECISION_MODEL_VERSION = "2026.04.19-mvp1";
-const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -104,7 +103,7 @@ function isEtfLike(input: { market?: unknown; name?: unknown }): boolean {
   const market = String(input.market ?? "").trim().toUpperCase();
   if (market === "ETF" || market.includes("ETF")) return true;
   const name = String(input.name ?? "").trim();
-  return ETF_NAME_HINT.test(name);
+  return isExchangeTradedProduct("", name);
 }
 
 function buildPlanFromScoreSnapshot(input: {

@@ -1,3 +1,5 @@
+import { isExchangeTradedProduct } from "./securitiesTax";
+
 type CandidateLike = {
   code?: string | null;
   name?: string | null;
@@ -33,6 +35,8 @@ const EXCLUDED_NAME_PATTERNS = [
 export function isExcludedStockName(name?: string | null): boolean {
   const normalized = (name || "").trim();
   if (!normalized) return true;
+  // "KODEX 200"처럼 이름에 ETF가 없어도 운용사 브랜드로 시작하면 ETF — 개별 종목 후보에서 뺀다
+  if (isExchangeTradedProduct("", normalized)) return true;
   return EXCLUDED_NAME_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 

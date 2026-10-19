@@ -1,4 +1,5 @@
 import type { ChatContext } from "../router";
+import { isExchangeTradedProduct } from "../../lib/securitiesTax";
 import { supabase } from "../../db/client";
 import { searchByNameOrCode } from "../../search/normalize";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
@@ -18,10 +19,9 @@ type EtfHit = {
   market?: string | null;
 };
 
-const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
 
 function isEtfLike(row: Pick<EtfHit, "name" | "market">): boolean {
-  return row.market === "ETF" || ETF_NAME_HINT.test(row.name || "");
+  return row.market === "ETF" || isExchangeTradedProduct("", row.name || "");
 }
 
 async function resolveEtfHits(query: string, limit = 5): Promise<EtfHit[]> {

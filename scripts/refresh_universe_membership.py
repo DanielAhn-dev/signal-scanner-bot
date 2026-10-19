@@ -62,6 +62,15 @@ EXCLUDED_NAME_PATTERNS = [
     r"BLANK",
 ]
 
+# 국내 ETF 운용사 브랜드 — src/lib/securitiesTax.ts ETF_BRANDS와 같아야 한다(tests/etfBrandSingleSource.test.ts가 확인).
+# "KODEX 200"처럼 이름에 ETF가 없어도 브랜드로 시작하면 ETF다. 브랜드 뒤는 공백이나 끝 — "BNK금융지주"(은행지주)·"파워로직스"는 기업.
+ETF_BRANDS = [
+    "KODEX", "TIGER", "KBSTAR", "RISE", "ACE", "SOL", "HANARO", "KOSEF", "ARIRANG", "PLUS", "KIWOOM", "TIMEFOLIO",
+    "WOORI", "BNK", "UNICORN", "FOCUS", "TREX", "VITA", "마이다스", "에셋플러스", "히어로즈", "파워", "마이티", "KTOP",
+    "1Q", "DAISHIN343", "WON",
+]
+EXCLUDED_NAME_PATTERNS.append(r"^(" + "|".join(ETF_BRANDS) + r")(?=\s|$)")
+
 # 유휴현금 스윕(cash-sweep)에 쓰는 CD금리/KOFR 연동 ETF는 위 ETF 제외 규칙에 걸리지만,
 # 봇이 실거래 매수 신호가 없을 때 유휴현금을 굴리는 용도로 종가 추적이 필요해 예외로 허용한다.
 # (src/services/virtualAutoTradeCashSweep.ts의 CASH_SWEEP_CANDIDATE_CODES와 동일하게 유지)

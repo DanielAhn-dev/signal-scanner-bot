@@ -16,12 +16,29 @@ const KNOWN_ETF_CODES = new Set([
   "122630", // KODEX 레버리지 — 예전 지수 1.5배 모드
 ]);
 
-const ETF_BRAND_PATTERN =
-  /^(KODEX|TIGER|KBSTAR|RISE|ACE|SOL|HANARO|KOSEF|ARIRANG|PLUS|KIWOOM|TIMEFOLIO|WOORI|BNK|UNICORN|FOCUS|TREX|VITA|마이다스|에셋플러스|히어로즈|파워|마이티|KTOP|1Q|DAISHIN343|WON)\b/i;
+/**
+ * 국내 ETF 운용사 브랜드 — ETF 판별의 단일 출처. 봇 명령·유니버스 제외·웹 매도비용·자녀 계좌가 모두 이것을 쓴다
+ * (예전엔 사본 8개가 갈라져 KIWOOM이 빠진 곳이 있었다). 배치의 파이썬 사본(scripts/refresh_universe_membership.py
+ * ETF_BRANDS)은 tests/etfBrandSingleSource.test.ts가 같은지 확인한다.
+ */
+export const ETF_BRANDS = [
+  "KODEX", "TIGER", "KBSTAR", "RISE", "ACE", "SOL", "HANARO", "KOSEF", "ARIRANG", "PLUS", "KIWOOM", "TIMEFOLIO",
+  "WOORI", "BNK", "UNICORN", "FOCUS", "TREX", "VITA", "마이다스", "에셋플러스", "히어로즈", "파워", "마이티", "KTOP",
+  "1Q", "DAISHIN343", "WON",
+] as const;
+
+/** 이름 맨 앞의 브랜드 (같은 지수 상품 묶기에서 떼어 낼 때도 쓴다) */
+export const ETF_BRAND_PREFIX = new RegExp(`^(${ETF_BRANDS.join("|")})`, "i");
+/**
+ * 브랜드 뒤는 공백이나 끝 — 예전 `\b`는 JS에서 한글을 단어 문자로 보지 않아 "BNK금융지주"(은행지주)를 ETF로 잡고
+ * (거래세 0·자동매매 후보 제외), "파워 200"·"마이다스 …" 같은 한글 브랜드 ETF는 못 잡았다(2026-10-19 활성 종목 전수 대조).
+ * 파이썬 \b는 유니코드 기준이라 결과도 달랐다 — 이 형태는 두 언어에서 같게 동작한다.
+ */
+const ETF_BRAND_PATTERN = new RegExp(`^(${ETF_BRANDS.join("|")})(?=\\s|$)`, "i");
 const ETN_PATTERN = /\bETN\b/i;
 
-export function isExchangeTradedProduct(code: string, name?: string | null): boolean {
-  if (KNOWN_ETF_CODES.has(String(code).trim())) return true;
+export function isExchangeTradedProduct(code?: string | null, name?: string | null): boolean {
+  if (code && KNOWN_ETF_CODES.has(String(code).trim())) return true;
   const trimmed = String(name ?? "").trim();
   if (!trimmed) return false;
   return ETF_BRAND_PATTERN.test(trimmed) || ETN_PATTERN.test(trimmed);

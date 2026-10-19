@@ -1,4 +1,5 @@
 import type { ChatContext } from "../router";
+import { isExchangeTradedProduct } from "../../lib/securitiesTax";
 import { createClient } from "@supabase/supabase-js";
 import { withIndexTrendRatios } from "../../services/indexTrendRatios";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
@@ -157,7 +158,6 @@ const ETF_NAME_QUERY_PATTERNS = [
   "%ETF%",
 ];
 
-const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
 
 const CORE_ETF_PATTERNS = [
   /코스피\s*200/i,
@@ -270,7 +270,7 @@ function isUnsafeEtfName(name: string): boolean {
 }
 
 function isEtfLikeName(name: string): boolean {
-  return ETF_NAME_HINT.test((name ?? "").trim());
+  return isExchangeTradedProduct("", (name ?? "").trim());
 }
 
 function buildEtfOrFilter(): string {
