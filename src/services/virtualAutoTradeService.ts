@@ -6514,20 +6514,31 @@ async function applyDistributionsIfDue(supabase: SupabaseClientAny, chatId: numb
   try {
     const todayKey = toKstDateKey();
     for (const code of Object.keys(KODEX_FUND_IDS)) {
-      const { data: userRow } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
-      const raw = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
+      // 읽기 실패를 빈 prefs로 보면 이미 넣은 분배금을 또 넣고 virtual_cash를 '0 + 이번 분배금'으로 덮어쓴다 — 이번엔 건너뛴다
+      const { data: userRow, error: userError } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+      if (userError || !userRow) {
+        if (userError) console.error("[autoTrade] etf distribution skipped: prefs read failed", userError);
+        return [...notes, ...(await applyStockDividendsIfDue(supabase, chatId))];
+      }
+      const raw = ((userRow.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
       const credited = readDistributionLog(raw);
       const due = dueDistributions(await fetchEtfDistributions(code), todayKey, credited);
       if (!due.length) continue;
-      const { data: tradeRows } = await supabase
-        .from(PORTFOLIO_TABLES.trades)
-        .select("side, quantity, traded_at")
-        .eq("chat_id", chatId)
-        .eq("code", code)
-        .is("broker_name", null)
-        .is("account_name", null)
-        .limit(5000);
-      const trades = ((tradeRows ?? []) as Array<{ side: string; quantity: number; traded_at: string }>).map((t) => ({
+      // 응답이 1000행에서 잘리므로 끝까지 받는다 (조회 실패는 throw → 아래 catch에서 이번 반영을 건너뜀)
+      const tradeRows = await selectPaged<{ side: string; quantity: number; traded_at: string }>(
+        async (from, to) =>
+          await supabase
+            .from(PORTFOLIO_TABLES.trades)
+            .select("id, side, quantity, traded_at")
+            .eq("chat_id", chatId)
+            .eq("code", code)
+            .is("broker_name", null)
+            .is("account_name", null)
+            .order("id")
+            .range(from, to),
+        { logLabel: "autoTrade.distribution.trades" }
+      );
+      const trades = tradeRows.map((t) => ({
         side: String(t.side),
         quantity: Math.max(0, Math.floor(toNumber(t.quantity, 0))),
         tradedDate: toKstDateKey(new Date(t.traded_at)),
@@ -6539,11 +6550,13 @@ async function applyDistributionsIfDue(supabase: SupabaseClientAny, chatId: numb
       }
       if (!records.length) continue;
       const net = records.reduce((s, r) => s + r.net, 0);
-      await setUserInvestmentPrefs(chatId, {
+      const saved = await setUserInvestmentPrefs(chatId, {
         virtual_cash: Math.round(Math.max(0, toNumber(raw.virtual_cash, 0)) + net),
         virtual_realized_pnl: toNumber(raw.virtual_realized_pnl, 0) + net,
         virtual_distribution_log: [...credited, ...records].slice(-80),
       } as InvestmentPrefs);
+      // 저장 못 했으면 입금 안내를 내지 않는다 (다음 실행 때 다시 반영된다)
+      if (!saved.ok) continue;
       for (const r of records) {
         notes.push(
           `[분배금] ${code} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)`
@@ -6567,21 +6580,32 @@ async function applyStockDividendsIfDue(supabase: SupabaseClientAny, chatId: num
   const notes: string[] = [];
   try {
     const todayKey = toKstDateKey();
-    const { data: userRow } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
-    const raw = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
+    // 읽기 실패를 빈 prefs로 보면 받은 배당을 또 넣고 virtual_cash를 덮어쓴다 — 이번엔 건너뛴다
+    const { data: userRow, error: userError } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+    if (userError || !userRow) {
+      if (userError) console.error("[autoTrade] stock dividend skipped: prefs read failed", userError);
+      return notes;
+    }
+    const raw = ((userRow.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
     if (!process.env.DART_API_KEY || raw.virtual_dividend_checked_on === todayKey) return notes;
 
-    const { data: tradeRows } = await supabase
-      .from(PORTFOLIO_TABLES.trades)
-      .select("code, side, quantity, traded_at")
-      .eq("chat_id", chatId)
-      .is("broker_name", null)
-      .is("account_name", null)
-      .limit(5000);
+    // 응답이 1000행에서 잘리므로 끝까지 받는다 — 잘리면 최근 매매가 빠져 받을 배당을 놓친다
+    const tradeRows = await selectPaged<{ code: string; side: string; quantity: number; traded_at: string }>(
+      async (from, to) =>
+        await supabase
+          .from(PORTFOLIO_TABLES.trades)
+          .select("id, code, side, quantity, traded_at")
+          .eq("chat_id", chatId)
+          .is("broker_name", null)
+          .is("account_name", null)
+          .order("id")
+          .range(from, to),
+      { logLabel: "autoTrade.dividend.trades" }
+    );
     const since = new Date(Date.now() - STOCK_DIVIDEND_TRADE_LOOKBACK_DAYS * 86_400_000).toISOString();
     const byCode = new Map<string, Array<{ side: string; quantity: number; tradedDate: string }>>();
     const recent = new Set<string>();
-    for (const t of (tradeRows ?? []) as Array<{ code: string; side: string; quantity: number; traded_at: string }>) {
+    for (const t of tradeRows) {
       const code = String(t.code ?? "");
       if (!/^[0-9A-Z]{6}$/.test(code) || KODEX_FUND_IDS[code]) continue;
       const list = byCode.get(code) ?? [];
@@ -6611,7 +6635,7 @@ async function applyStockDividendsIfDue(supabase: SupabaseClientAny, chatId: num
       }
     }
     const net = records.reduce((s, r) => s + r.net, 0);
-    await setUserInvestmentPrefs(chatId, {
+    const saved = await setUserInvestmentPrefs(chatId, {
       virtual_dividend_checked_on: todayKey,
       ...(records.length
         ? {
@@ -6621,6 +6645,7 @@ async function applyStockDividendsIfDue(supabase: SupabaseClientAny, chatId: num
           }
         : {}),
     } as InvestmentPrefs);
+    if (!saved.ok) return notes;
     for (const r of records) {
       notes.push(
         `[배당금] ${r.code} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)` +
