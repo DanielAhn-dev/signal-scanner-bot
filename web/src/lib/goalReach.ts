@@ -35,19 +35,22 @@ export type PathInput = {
   lump?: number
 }
 
-/** months개월 뒤 평가금 — 매달 초에 넣고, 12개월마다 넣는 돈을 raisePct만큼 늘린다 */
+/**
+ * months개월 뒤 평가금 — 매달 말에 넣고(서버 src/services/goalTracker.ts planValueAt·monthsToReach와 같은 규칙),
+ * 12개월마다 넣는 돈을 raisePct만큼 늘린다. 목표 트래커의 예상 도달과 같은 달이 나와야 한다.
+ */
 export function projectValue(input: PathInput, months: number): number {
   const m = Math.pow(1 + input.rate, 1 / 12) - 1
   let v = Math.max(0, input.lump ?? 0)
   let c = input.monthly
   for (let i = 0; i < months; i += 1) {
     if (i > 0 && i % 12 === 0) c *= 1 + (input.raisePct ?? 0)
-    v = (v + c) * (1 + m)
+    v = v * (1 + m) + c
   }
   return v
 }
 
-/** 목표에 처음 닿는 개월 (maxMonths 안에 못 닿으면 null) */
+/** 목표에 처음 닿는 개월 (maxMonths 안에 못 닿으면 null) — 서버 monthsToReach와 같은 식 */
 export function monthsToTarget(input: PathInput, target: number, maxMonths = 600): number | null {
   if (!(target > 0)) return null
   const m = Math.pow(1 + input.rate, 1 / 12) - 1
@@ -56,7 +59,7 @@ export function monthsToTarget(input: PathInput, target: number, maxMonths = 600
   let c = input.monthly
   for (let i = 0; i < maxMonths; i += 1) {
     if (i > 0 && i % 12 === 0) c *= 1 + (input.raisePct ?? 0)
-    v = (v + c) * (1 + m)
+    v = v * (1 + m) + c
     if (v >= target) return i + 1
   }
   return null
