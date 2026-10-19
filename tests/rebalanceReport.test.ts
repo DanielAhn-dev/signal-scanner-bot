@@ -266,3 +266,20 @@ test("예수금: 그 계좌 예수금만 그 계좌 리포트에 — 판 대금�
   assert.match(buyStep, /판 대금 .* \+ 예수금 10만원/);
   assert.equal(withSell.buy.shares, Math.floor((withSell.buy.fromSells + 100_000) / 15_000));
 });
+
+test("hold 현금 목표를 채우는 중이면 분배금은 지수가 아니라 현금으로 — 할 일 화면과 같은 규칙", () => {
+  const holdings = [
+    H("278530", "KODEX 200TR", 15_000, 300, 14_000),
+    H("498400", "KODEX 200타겟위클리커버드콜", 16_000, 600, 18_000),
+  ];
+  const filling = reportFor(holdings, { incomeMode: "hold", customTargets: { income: 70, cash: 10 }, cashByAccount: { a: 200_000 } });
+  const inflowStep = filling.steps.find((s) => s.includes("분배금(월"))!;
+  assert.match(inflowStep, /현금 목표 10%까지 .* 현금으로 둡니다/);
+  assert.match(filling.headline, /분배금은 현금으로/);
+  assert.equal(filling.buy.fromCash, 0, "채우는 중인 예수금은 지수로 쓰지 않는다");
+
+  // 현금 목표가 없으면 기존처럼 지수로
+  const noTarget = reportFor(holdings, { incomeMode: "hold", customTargets: { income: 70 } });
+  assert.match(noTarget.steps.find((s) => s.includes("분배금(월"))!, /KODEX 200TR로 보냅니다/);
+  assert.doesNotMatch(noTarget.headline, /분배금은 현금으로/);
+});

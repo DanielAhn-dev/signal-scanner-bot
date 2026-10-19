@@ -620,6 +620,9 @@ export function buildRebalanceReport(input: {
   const fromCash = buyTarget ? Math.max(0, idleRow?.spendable ?? 0) : 0;
   const buyShares = buyTarget && buyTarget.price > 0 ? Math.floor((fromSells + fromCash) / buyTarget.price) : 0;
   const hasLoss = rows.some((r) => r.pnlPct != null && r.pnlPct < 0);
+  // hold 현금 목표를 채우는 중이면 분배금·새 돈은 지수가 아니라 현금으로 (할 일 화면과 같은 규칙)
+  const cashRule = plan?.cash ?? null;
+  const fillingCash = cashRule?.state === "filling" && cashRule.amount > 0;
 
   // 맨 위 한 줄
   const parts: string[] = [];
@@ -629,6 +632,7 @@ export function buildRebalanceReport(input: {
   else parts.push("지금 팔 종목은 없습니다(수익 구간에 정리 대상 없음)");
   if (conditionals.length) parts.push(`가격 조건부 ${conditionals.length}건 대기`);
   if (stopReasons.length && incomeValue > 0) parts.push("인컴 추가매수 멈춤");
+  if (fillingCash) parts.push(`현금 목표 ${cashRule!.targetPct.toFixed(0)}%까지 분배금은 현금으로`);
   const headline = parts.join(" · ");
 
   // 실행 순서 — 덧붙이는 말은 그 상황일 때만
@@ -686,11 +690,22 @@ export function buildRebalanceReport(input: {
   if (monthlyContribution > 0) inflow.push(`새 돈(월 ${money(monthlyContribution)})`);
   if (inflow.length)
     steps.push(
-      buyTarget
+      fillingCash && cashRule
+        ? `현금 목표 ${cashRule.targetPct.toFixed(0)}%까지 ${money(cashRule.amount)} 남았습니다. 그때까지 ${inflow.join("과 ")}은 사지 말고 계좌에 현금으로 둡니다.${cashRule.months != null ? ` 지금 속도면 약 ${cashRule.months}개월 걸립니다.` : ""} 다 채운 뒤부터 ${buyTarget ? buyTarget.name : "지수 ETF"}로 보냅니다.`
+        : buyTarget
         ? `이번 달부터 ${inflow.join("과 ")}이 들어오면 ${buyTarget.name}로 보냅니다.${feeSwitch ? ` ${feeSwitch.text}` : ""}`
         : `${inflow.join("과 ")}을 모아 지수 ETF를 하나 정해 사기 시작합니다. ${buyHint}`,
     );
   else if (!buyTarget) steps.push(`새 돈이 생기면 지수 ETF를 하나 정해 사기 시작합니다. ${buyHint}`);
+  // 현금 밴드 규칙(hold) — 판 지수가 이 계좌 것일 때, 넘는 현금은 가장 큰 계좌에서만 안내한다(계좌별로 나뉘어 있지 않다)
+  if (cashRule?.state === "take-profit" && cashRule.sellFrom && cashRule.sellFrom.accountLabel === acc.label)
+    steps.push(
+      `현금이 ${cashRule.actualPct.toFixed(1)}%로 목표 아래 ${cashRule.bandPp.toFixed(0)}%p를 넘게 줄었습니다. ${cashRule.sellFrom.name} ${cashRule.sellFrom.shares.toLocaleString("ko-KR")}주(약 ${money(cashRule.amount)})를 팔아 현금으로 둡니다. 판단이 아니라 비중 규칙입니다.`,
+    );
+  if (cashRule?.state === "buy-index" && cashRule.amount > 0 && view.accounts[0]?.key === acc.key)
+    steps.push(
+      `현금이 ${cashRule.actualPct.toFixed(1)}%로 목표보다 ${cashRule.bandPp.toFixed(0)}%p 넘게 많습니다. 넘는 ${money(cashRule.amount)}으로 ${buyTarget ? buyTarget.name : "지수 ETF"}를 삽니다.`,
+    );
   if (stopReasons.length && incomeValue > 0) steps.push(`인컴(커버드콜·배당) 추가매수를 멈춥니다 — ${stopReasons[0]}.`);
   if (conditionals.length)
     steps.push(`가격 조건부 ${conditionals.length}건은 월 1회 점검 때만 봅니다. 조건 가격에 닿은 종목만 실행하고, 매일 확인하지 않습니다.`);
