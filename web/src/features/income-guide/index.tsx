@@ -7,6 +7,7 @@ import { useCurrentChatId } from '../../stores/profileStore'
 import Collapsible from '../../components/ui/Collapsible'
 import PlanSteps, { type RebalancePlan } from './PlanSteps'
 import DistributionReceipts, { type DistributionReceiptsData } from './DistributionReceipts'
+import { reinvestLabel, reinvestTargets } from './reinvestTarget'
 
 type Group = 'growth' | 'income' | 'satellite' | 'cash'
 type Warning = { level: 'info' | 'warn' | 'alert'; title: string; text: string }
@@ -384,7 +385,7 @@ export default function IncomeGuidePage() {
                 <DistributionReceipts
                   data={view.distributionReceipts}
                   holdings={receiptHoldings(view.holdings)}
-                  buyName={view.plan.buyTarget?.name ?? null}
+                  buyName={reinvestLabel(reinvestTargets(view.plan, view.distributionReceipts.thisMonth.items.map((r) => r.code), view.holdings))}
                   submit={submitReceipt}
                 />
               ) : null}

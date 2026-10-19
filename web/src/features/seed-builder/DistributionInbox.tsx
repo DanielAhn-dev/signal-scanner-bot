@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
+import { reinvestLabel, reinvestTargets } from '../income-guide/reinvestTarget'
 
 type Props = {
   /** 이번 달 YYYY-MM */
@@ -13,6 +14,7 @@ type Props = {
 }
 
 type GuideSlice = { received: number; estimated: number; buyName: string | null; count: number }
+type ReceiptItem = { code?: string }
 
 /**
  * 이번 달 투자금 맨 위: 실계좌에서 이 달 받은 분배금(리밸런싱 가이드의 받은 분배금 기록)을 투자금에 넣는다.
@@ -30,7 +32,10 @@ export default function DistributionInbox({ month, invested, onApply, krw }: Pro
         const d = res?.data
         const r = d?.distributionReceipts
         if (cancelled || !r || r.thisMonth?.month !== month) return
-        setSlice({ received: Number(r.thisMonth.net) || 0, estimated: Number(r.thisMonth.estimatedCount) || 0, buyName: d?.plan?.buyTarget?.name ?? null, count: r.thisMonth.items?.length ?? 0 })
+        const items: ReceiptItem[] = r.thisMonth.items ?? []
+        // 분배금이 들어온 계좌의 살 곳 — 리밸런싱 가이드·리포트와 같은 판정(서버 indexProductChoice)
+        const buyName = reinvestLabel(reinvestTargets(d?.plan, items.map((i) => String(i.code ?? '')), Array.isArray(d?.holdings) ? d.holdings : []))
+        setSlice({ received: Number(r.thisMonth.net) || 0, estimated: Number(r.thisMonth.estimatedCount) || 0, buyName, count: items.length })
       })
       .catch(() => {})
     return () => { cancelled = true }

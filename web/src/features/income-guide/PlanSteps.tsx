@@ -10,6 +10,10 @@ export type RebalancePlan = {
   growth: { actualPct: number; targetPct: number; needByNewMoney: number; monthlyInflow: number; months: number | null }
   buyTarget: { code: string; name: string; accountLabel: string; price: number } | null
   buyHint: string
+  /** 같은 지수 상품 비교로 정한 이유 (서버 indexProductChoice — 리포트와 같은 판정) */
+  buyWhy?: string | null
+  /** 계좌별 살 곳 — 분배금·매도 대금은 그 계좌 안에서 다시 산다 */
+  buyTargetsByAccount?: Array<{ accountKey: string; accountLabel: string; target: { code: string; name: string; price: number }; heldCode: string; why: string | null }>
   merges: Array<{
     from: { code: string; name: string; accountLabel: string; shares: number; amount: number; realizedGain: number | null }
     to: { code: string; name: string; accountLabel: string; price: number; shares: number; amount: number }
@@ -351,6 +355,18 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           </div>
         )}
         <div style={faint}>{plan.buyHint}</div>
+        {plan.buyWhy && <div style={faint}>{plan.buyWhy}</div>}
+        {/* 계좌마다 살 곳이 다르면 나눠 보여 준다 — 분배금은 그 계좌 안에서만 다시 산다 */}
+        {(plan.buyTargetsByAccount?.length ?? 0) > 1 && new Set(plan.buyTargetsByAccount!.map((a) => a.target.code)).size > 1 && (
+          <ul style={{ ...faint, margin: '4px 0 0', paddingLeft: 18 }}>
+            {plan.buyTargetsByAccount!.map((a) => (
+              <li key={a.accountKey}>
+                {a.accountLabel}: <strong>{a.target.name}</strong>
+                {a.target.code !== a.heldCode ? ' (새 돈만, 가진 상품은 그대로)' : ''}
+              </li>
+            ))}
+          </ul>
+        )}
         <div style={inlineRow}>
           <span>내 계좌에 직접 넣는 돈 (매달)</span>
           <UnitInput unit="만원" width={120} inputMode="numeric" placeholder="0" aria-label="내 계좌에 매달 직접 넣는 돈" value={contribMan} onChange={(e) => setContribMan(e.target.value)} />
