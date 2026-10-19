@@ -464,10 +464,10 @@ export default function Settings(){
             </td>
           </tr>
           <tr className="xls-row">
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>내 계획 (실험 계좌)</td>
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>내 계획</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
               <div className="muted" style={{ whiteSpace: 'normal', wordBreak: 'keep-all' }}>
-                매달 투자할 돈·넣는 날·개별주 몫은 모아가기 화면의 &lsquo;내 계획&rsquo; 한 곳에서 바꿉니다. 실험 계좌가 그 계획을 그대로 따라 하고, 내가 직접 매매하는 계좌에는 입금·자동매매가 걸리지 않습니다.
+                매달 투자할 돈·넣는 날·개별주 몫은 모아가기 화면의 &lsquo;내 계획&rsquo; 한 곳에서 바꿉니다. [가상] 가상 계좌는 그 계획대로 자동으로 사고, [실제] 내 계좌는 자동으로 사지 않고 매달 홈의 &lsquo;이번 달 할 일&rsquo;로 안내합니다.
               </div>
               {deposit && (
                 <div className="text-xs mt-2" style={{ lineHeight: 1.6 }}>

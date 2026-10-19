@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import AccountTag from '../../components/ui/AccountTag'
 import { ChevronRight, Pencil } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
@@ -133,9 +134,9 @@ export default function MyPlanCard({ goal, onPlanMonthly }: { goal?: PlanGoal | 
       </div>
       {!editing && (
         <p className="my-plan__note">
-          실험 계좌가 이 계획을 그대로 따라 합니다{plan.monthly > 0 && deposit?.next_deposit_date ? ` · 다음 입금 ${deposit.next_deposit_date.slice(5).replace('-', '/')}` : ''}
+          <AccountTag kind="virtual" /> 가상 계좌가 이 계획대로 자동으로 삽니다{plan.monthly > 0 && deposit?.next_deposit_date ? ` · 다음 입금 ${deposit.next_deposit_date.slice(5).replace('-', '/')}` : ''}
           {lastDeposit ? ` · 최근 입금 ${lastDeposit.date.slice(5).replace('-', '/')} ${man(lastDeposit.amount)}` : ''}.
-          {' '}내가 직접 매매하는 계좌에는 입금·자동매매가 걸리지 않습니다.
+          {' '}<AccountTag kind="real" /> 내 계좌는 자동으로 사지 않고, 매달 홈의 &lsquo;이번 달 할 일&rsquo;로 무엇을 몇 주 살지 안내합니다.
         </p>
       )}
 
@@ -172,7 +173,7 @@ export default function MyPlanCard({ goal, onPlanMonthly }: { goal?: PlanGoal | 
             )}
           </fieldset>
           {toSellStocks && (
-            <p className="my-plan__warn" role="status">저장하면 다음 자동매매 때 실험 계좌의 개별주를 모두 팔고 KODEX 200으로 옮깁니다.</p>
+            <p className="my-plan__warn" role="status">저장하면 다음 자동매매 때 가상 계좌의 개별주를 모두 팔고 KODEX 200으로 옮깁니다.</p>
           )}
           <div className="my-plan__actions">
             <button type="button" className="my-plan__save" disabled={saving} onClick={() => void save()}>{saving ? '저장 중' : '저장'}</button>

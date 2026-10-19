@@ -292,7 +292,7 @@ export default function PortfolioHeader({
             </Modal>
             {selectedAccountKey === 'virtual' && (
               <div className="caption muted" style={{ padding: '4px var(--space-3) 0', wordBreak: 'keep-all' }}>
-                실험 계좌는 봇이 &lsquo;내 계획&rsquo;대로 사고팝니다. 내가 직접 매매하는 계좌와 합치지 않습니다.
+                가상 계좌는 봇이 &lsquo;내 계획&rsquo;대로 자동으로 사고팝니다. 내가 직접 사는 내 계좌와 합치지 않습니다.
               </div>
             )}
           </td>

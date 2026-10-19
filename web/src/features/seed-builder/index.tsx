@@ -685,7 +685,7 @@ export default function SeedBuilderPage() {
             : <span className="seed-delete-confirm" role="alertdialog" aria-label="전체 삭제 확인">모든 연도의 월 기록과 확보 내역이 삭제되며 되돌릴 수 없습니다. <button type="button" className="seed-primary" disabled={saving} onClick={() => void deleteAll()}>삭제</button> <button type="button" className="seed-link-button" onClick={() => setConfirmDeleteAll(false)}>취소</button></span>}
         </div>
       </section></Detail>
-      <p className="seed-disclaimer"><Wallet size={15} /> 이 기록은 실제 돈 기록입니다. 실험(가상) 계좌의 시드·월 입금·자동매매에는 반영되지 않습니다.{virtualDeposit !== null && <> 실험 계좌 월 입금은 {virtualDeposit > 0 ? krw(virtualDeposit) : '꺼짐'}이며 <button type="button" className="seed-link-button" onClick={() => navigate('/settings')}>설정</button>에서 바꿉니다.</>}</p>
+      <p className="seed-disclaimer"><Wallet size={15} /> 이 기록은 실제 돈 기록입니다. [가상] 가상 계좌의 시드·월 입금·자동매매에는 반영되지 않습니다.{virtualDeposit !== null && <> 실험 계좌 월 입금은 {virtualDeposit > 0 ? krw(virtualDeposit) : '꺼짐'}이며 <button type="button" className="seed-link-button" onClick={() => navigate('/settings')}>설정</button>에서 바꿉니다.</>}</p>
       <section className="seed-maturity" id="maturity" aria-label="모아 둔 시드">
         <h2>모아 둔 시드</h2>
         <MaturityTab />

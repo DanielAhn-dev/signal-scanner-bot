@@ -56,7 +56,7 @@ export default function AccountDirectionCard({ accountName }: { accountName: str
           목표 비중과의 차이와 옮길 금액은 <button type="button" className="portfolio-direction-link" onClick={() => navigate('/income-guide')}>리밸런싱 제안 <ChevronRight size={12} aria-hidden /></button>에서 봅니다.
         </li>
       </ul>
-      <p className="caption muted">입금·자동매매는 실험 계좌에만 걸립니다. 이 계좌는 직접 사고판 것을 기록하고 관리하는 곳입니다.</p>
+      <p className="caption muted">입금·자동매매는 [가상] 가상 계좌에만 걸립니다. 이 계좌는 직접 사고판 것을 기록하고 관리하는 곳입니다.</p>
     </div>
   )
 }

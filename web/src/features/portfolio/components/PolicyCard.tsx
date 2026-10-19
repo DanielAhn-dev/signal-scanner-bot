@@ -51,7 +51,7 @@ export default function PolicyCard({
             {selectedAccountKey === 'real'
               ? '계좌 폴더를 선택하면 정책 설정'
               : selectedAccountKey === 'virtual'
-                ? '실험 계좌는 개별 정책 미적용'
+                ? '가상 계좌는 개별 정책 미적용'
                 : `${accountLabel(policyDraft?.broker_name, policyDraft?.account_name)} ${policyLoading ? '조회 중...' : ''}`
             }
           </div>
@@ -64,7 +64,7 @@ export default function PolicyCard({
           {selectedAccountKey === 'real' ? (
             <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
           ) : selectedAccountKey === 'virtual' ? (
-            <div className="caption muted">실험 계좌는 개별 계좌 정책 대상이 아닙니다. 실제 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
+            <div className="caption muted">가상 계좌는 개별 계좌 정책 대상이 아닙니다. 내 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
           ) : policyDraft ? (
             <>
               <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>

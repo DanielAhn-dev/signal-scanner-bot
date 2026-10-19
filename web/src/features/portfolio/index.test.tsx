@@ -55,14 +55,14 @@ describe('포트폴리오 화면', () => {
     const { container } = renderPage()
     await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
     expect(screen.getByText('보유 종목')).toBeTruthy()
-    expect(screen.getByText('내 계좌(실제) (1)')).toBeTruthy()
-    expect(screen.getByText('실험 계좌 (1)')).toBeTruthy()
+    expect(screen.getByText('내 계좌 [실제] (1)')).toBeTruthy()
+    expect(screen.getByText('가상 계좌 [가상] (1)')).toBeTruthy()
   })
 
   it('실험 계좌 탭을 누르면 봇 보유만 남고 직접 개입 버튼은 접혀 있다', async () => {
     const { container } = renderPage()
     await waitFor(() => expect(cardNames(container)).toEqual(['삼성전자']))
-    fireEvent.click(screen.getByText('실험 계좌 (1)'))
+    fireEvent.click(screen.getByText('가상 계좌 [가상] (1)'))
     await waitFor(() => expect(cardNames(container)).toEqual(['KODEX 200']))
     // 카드는 접힌 한 줄 행으로 시작 — 눌러 펼쳐야 버튼이 보인다
     expect(screen.queryByText('직접 개입 (실험 기록에 남음)')).toBeNull()

@@ -92,9 +92,9 @@ export function usePortfolioView(input: PortfolioViewInput) {
   const summaryRows = selectAccountRows(holdingAll, selectedAccountKey)
   const isVirtualTab = selectedAccountKey === 'virtual'
   const selectedAccountLabel = selectedAccountKey === 'real'
-    ? '내 계좌(실제) 전체'
+    ? '내 계좌 [실제] 전체'
     : isVirtualTab
-      ? '실험 계좌'
+      ? '가상 계좌 [가상]'
       : accountLabel(
           accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
           accountFolders.find(f => f.key === selectedAccountKey)?.accountName,

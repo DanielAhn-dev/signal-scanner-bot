@@ -43,12 +43,12 @@ export default function AssetOverviewCard({
     <div className="card mb-4 portfolio-asset-overview-card">
       <div className="portfolio-asset-overview-head">
         <div>
-          <div className="title-md">{isVirtual ? '실험 계좌 자산 구성' : '내 계좌 종목 비중'}</div>
+          <div className="title-md">{isVirtual ? '가상 계좌 자산 구성' : '내 계좌 종목 비중'}</div>
           <div className="caption muted">
             {selectedAccountKey === 'real'
               ? '직접 매매하는 계좌 전부의 보유 평가금과 종목별 비중입니다. 예수금은 이 앱에 입력하지 않아 빠져 있습니다.'
               : isVirtual
-                ? '실험 계좌의 시드, 평가금, 현금, 종목별 비중을 확인합니다.'
+                ? '[가상] 봇이 내 계획대로 사고파는 가상 계좌의 시드, 평가금, 현금, 종목별 비중입니다.'
                 : `${accountLabel(
                     accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
                     accountFolders.find(f => f.key === selectedAccountKey)?.accountName

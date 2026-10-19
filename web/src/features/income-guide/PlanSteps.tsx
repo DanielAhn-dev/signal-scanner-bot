@@ -379,7 +379,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             저장
           </Button>
         </div>
-        <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다. 봇 실험 계좌의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div>
+        <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다. [가상] 가상 계좌(봇)의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div>
         {hold ? null : growth.needByNewMoney > 0 ? (
           <div style={{ marginTop: 6 }}>
             {idleCash && idleCash.spend > 0 ? '예수금으로 산 뒤에도 ' : ''}새 돈만으로 목표 {growth.targetPct.toFixed(0)}%까지 약 <strong>{man(growth.needByNewMoney)}</strong>

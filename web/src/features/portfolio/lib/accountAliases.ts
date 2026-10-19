@@ -7,7 +7,7 @@ export const ALIAS_MAX_LENGTH = 20
 /** 이 개수 이상이면 가로 탭 대신 선택 시트로 보여 준다 */
 export const ACCOUNT_SHEET_THRESHOLD = 4
 
-export const DEFAULT_TOP_LABEL = { real: '내 계좌(실제)', virtual: '실험 계좌' } as const
+export const DEFAULT_TOP_LABEL = { real: '내 계좌 [실제]', virtual: '가상 계좌 [가상]' } as const
 
 export function cleanAlias(input: string): string {
   return String(input || '').replace(/\s+/g, ' ').trim().slice(0, ALIAS_MAX_LENGTH)
