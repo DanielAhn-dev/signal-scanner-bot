@@ -417,12 +417,14 @@ export async function fetchAccountEquity(
   const cash = Number(prefs.virtual_cash);
   const realized = Number(prefs.virtual_realized_pnl ?? 0);
   if (!(seed > 0) || !Number.isFinite(cash)) return null;
-  const { data: positions } = await supabase
+  const { data: positions, error: positionsError } = await supabase
     .from("virtual_positions")
     .select("code, quantity, buy_price, status, stock:stocks(close)")
     .eq("chat_id", chatId)
     .is("broker_name", null)
     .is("account_name", null);
+  // 보유 조회 실패를 보유 0으로 보면 평가액 기록에 가짜 급락이 남는다 — 이날은 기록하지 않는다
+  if (positionsError) return null;
   let holdings = 0;
   for (const row of (positions ?? []) as any[]) {
     if (String(row.status ?? "holding") === "closed") continue;
