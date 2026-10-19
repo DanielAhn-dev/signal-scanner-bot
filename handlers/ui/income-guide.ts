@@ -24,7 +24,7 @@ import {
 } from '../../src/lib/incomeGuide'
 import { buildGuidePlanSnapshot } from '../../src/services/guidePlanSnapshot'
 import { buildAdherence } from '../../src/lib/guideAdherence'
-import { MAX_RECEIPTS, monthSummary, sanitizeReceipt } from '../../src/lib/distributionReceipts'
+import { MAX_RECEIPTS, estimateReinvest, monthSummary, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
@@ -104,6 +104,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (saveErr) return res.status(500).json({ error: `분배금 기록 저장 실패: ${saveErr}` })
     } else if (req.method === 'POST' && !isRecord && !isExclude) {
       file.settings = sanitizeIncomeGuideSettings(body, file.settings)
+      // 예수금 칸을 저장한 날 — 값이 같아도 '지금 확인한 숫자'로 본다(분배금 재투자 추정이 최신 예수금인지 판단)
+      if ('cashByAccount' in body || 'cashBalance' in body) file.settings = { ...file.settings, cashUpdatedAt: kstDateKey() }
       const saveErr = await saveGuideFile(supabase, chatId, file)
       if (saveErr) return res.status(500).json({ error: `가이드 설정 저장 실패: ${saveErr}` })
     }
@@ -150,6 +152,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           projection,
           // 최근 12개월 — 화면이 달별로 묶어 지난달 대비 증감을 보여 준다
           recent: receipts.filter((r) => r.month >= yearAgoMonth).sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.localeCompare(a.createdAt)),
+          // 받은 분배금 중 매수에 쓰인 몫 — 예수금 변화로 거꾸로 추정(따로 적지 않아도 되게)
+          reinvest: estimateReinvest({ receipts, history, cashNow: view.cashPlan.balance, cashUpdatedAt: file.settings.cashUpdatedAt, today }),
         },
         // 가이드 따름 기록 — 안내와 다음 기록의 보유 변화 비교 (내 선택 돌아보기)
         adherence: buildAdherence({ history, today, priceOf: (code) => prices.get(code), receipts, excluded: file.adherenceExcluded }),

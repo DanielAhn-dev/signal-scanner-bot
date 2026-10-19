@@ -384,3 +384,10 @@ test("국민연금 참고 비교: 주식·채권·대체로 묶고 목표 합계
   assert.ok(Math.abs(rows[0].diffPp - 4.5) < 1e-9);
   assert.equal(buildNpsReference(new Map(), 0), null);
 });
+
+test("sanitizeIncomeGuideSettings: 예수금 저장일(cashUpdatedAt)은 다른 설정을 저장해도 지워지지 않는다", () => {
+  const current = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashByAccount: { "a|b": 1_000 }, cashUpdatedAt: "2026-10-18" };
+  assert.equal(sanitizeIncomeGuideSettings({ monthlyNeed: 1 } as never, current).cashUpdatedAt, "2026-10-18");
+  // 입력으로는 바꿀 수 없다(서버가 예수금 칸 저장 때만 찍는다)
+  assert.equal(sanitizeIncomeGuideSettings({ cashUpdatedAt: "2099-01-01" } as never, current).cashUpdatedAt, "2026-10-18");
+});

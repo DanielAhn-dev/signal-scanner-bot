@@ -167,3 +167,60 @@ export function projectNextMonth(input: {
   const fromEstimate = rows.filter((r) => r.source === "estimate").reduce((s, r) => s + r.net, 0);
   return { total: fromReceipts + fromEstimate, fromReceipts, fromEstimate, receiptCodes: rows.filter((r) => r.source === "receipt").length, rows };
 }
+
+/** ISO 시각 → KST 날짜(YYYY-MM-DD) */
+const kstDate = (iso: string) => {
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? new Date(t + 9 * 3600_000).toISOString().slice(0, 10) : "";
+};
+
+export type ReinvestEstimate =
+  | {
+      status: "ok";
+      month: string;
+      /** 이번 달 받은 분배금(세후) */
+      received: number;
+      /** 기준 기록 날짜(지난달 마지막 점검 기록) */
+      baselineDate: string;
+      cashThen: number;
+      cashNow: number;
+      /** 매수에 쓰인 것으로 보이는 몫 = 받은 분배금 − 늘어난 예수금(0~받은 분배금) */
+      reinvested: number;
+      /** 현금으로 남은 몫 = 받은 분배금 − reinvested */
+      kept: number;
+      /** 기준 예수금을 현금 비중으로 되짚었다(예수금을 저장하기 전의 기록) */
+      baselineApprox: boolean;
+    }
+  /** 분배금을 적은 뒤 예수금을 고치지 않았다 — 지금 예수금으로는 판단할 수 없다 */
+  | { status: "stale-cash"; month: string; received: number; cashUpdatedAt: string | null }
+  /** 지난달 기록이 없다 */
+  | { status: "no-baseline"; month: string; received: number };
+
+/**
+ * 분배금 재투자 추정 — 예수금과 보유를 증권사 앱 숫자로 덮어쓰는 사람은 "어느 돈으로 샀는지"를 따로 적지 않는다(2026-10-19 사용자).
+ * 그래서 거꾸로 계산한다: 지난달 마지막 기록 뒤 예수금이 받은 분배금만큼 늘지 않았다면 그 차이는 매수에 쓰인 것으로 본다.
+ * 그사이 월급 입금은 예수금을 늘려 재투자를 적게, 출금은 많게 보이게 하므로 추정치다.
+ */
+export function estimateReinvest(input: {
+  receipts: DistributionReceipt[];
+  history: Array<{ date: string; total: number; cash?: number; groups: Array<{ group: string; actualPct: number }> }>;
+  cashNow: number;
+  cashUpdatedAt?: string | null;
+  today: string;
+}): ReinvestEstimate | null {
+  const month = input.today.slice(0, 7);
+  const items = input.receipts.filter((r) => r.month === month);
+  const received = items.reduce((s, r) => s + receiptNet(r), 0);
+  if (received <= 0) return null;
+  // 예수금이 분배금을 적은 날 이후에 저장돼야 입금이 반영된 숫자로 본다(같은 날은 반영으로 본다)
+  const lastReceiptDay = items.map((r) => kstDate(r.createdAt)).sort().pop() ?? "";
+  const updated = input.cashUpdatedAt ?? null;
+  if (!updated || updated < `${month}-01` || updated < lastReceiptDay) return { status: "stale-cash", month, received, cashUpdatedAt: updated };
+  const base = [...input.history].filter((h) => h.date < `${month}-01`).sort((a, b) => a.date.localeCompare(b.date)).pop();
+  if (!base) return { status: "no-baseline", month, received };
+  const baselineApprox = base.cash == null;
+  const cashThen = base.cash ?? Math.round((base.total * (base.groups.find((g) => g.group === "cash")?.actualPct ?? 0)) / 100);
+  const cashNow = Math.round(input.cashNow);
+  const kept = Math.min(received, Math.max(0, cashNow - cashThen));
+  return { status: "ok", month, received, baselineDate: base.date, cashThen, cashNow, reinvested: received - kept, kept, baselineApprox };
+}

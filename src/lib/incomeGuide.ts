@@ -184,6 +184,8 @@ export type IncomeGuideSettings = {
    * 분배금·매도 대금이 그 계좌로 들어오고 다시 사는 것도 그 계좌 안에서라, 살 수량은 계좌별로 계산한다.
    */
   cashByAccount?: Record<string, number>;
+  /** 예수금을 마지막으로 적은 날(KST YYYY-MM-DD). 서버가 예수금 칸 저장 때 찍는다 — 분배금 재투자 추정이 최신 예수금인지 판단 */
+  cashUpdatedAt?: string;
   /**
    * "hold"면 인컴(커버드콜·배당·리츠)을 사지도 팔지도 않고, 분배금을 지수·현금으로 보내 비중을 저절로 줄여 간다.
    * 인컴 목표 비중 대신 지금 비중을 목표로 두고, 현금 목표는 처음 채울 때까지 분배금·새 돈으로만 채운다(팔지 않음).
@@ -369,6 +371,7 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
     ...(monthlyContribution != null ? { monthlyContribution } : {}),
     ...(cashBalance != null ? { cashBalance } : {}),
     ...(Object.keys(cashByAccount).length ? { cashByAccount } : {}),
+    ...(current.cashUpdatedAt ? { cashUpdatedAt: current.cashUpdatedAt } : {}),
     ...(incomeMode ? { incomeMode } : {}),
     ...(Object.keys(fees).length ? { feePctByCode: fees } : {}),
     customTargets,
@@ -605,6 +608,8 @@ export type GuideHistoryEntry = {
   holdings?: Array<{ code: string; name: string; quantity: number }>;
   /** 그달 가이드가 안내한 것 — 다음 기록과 맞춰 따름/다르게 함을 판정한다 (src/lib/guideAdherence.ts, 2026-10-19~) */
   advice?: GuideAdvice;
+  /** 기록한 날 예수금 합계(원) — 분배금 재투자 추정의 기준(2026-10-19~). 없는 예전 기록은 현금 비중으로 되짚는다 */
+  cash?: number;
   /** 기록한 날 가격 — 보유 종목과 안내 상품(이번·지난 기록). '안내대로였다면'을 이 가격으로 계산한다 */
   prices?: Record<string, number>;
 };
@@ -628,6 +633,7 @@ export function toHistoryEntry(
     ...(note ? { note: String(note).slice(0, 200) } : {}),
     ...(extra?.auto ? { auto: true } : {}),
     ...(qty.size ? { holdings: [...qty.values()] } : {}),
+    ...(view.cashPlan ? { cash: Math.round(view.cashPlan.balance) } : {}),
     ...(extra?.advice ? { advice: extra.advice } : {}),
     ...(extra?.prices && Object.keys(extra.prices).length ? { prices: extra.prices } : {}),
   };

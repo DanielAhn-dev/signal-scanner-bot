@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { monthSummary, projectNextMonth, receiptNet, sanitizeReceipt, sanitizeReceipts, type DistributionReceipt } from "../src/lib/distributionReceipts";
+import { estimateReinvest, monthSummary, projectNextMonth, receiptNet, sanitizeReceipt, sanitizeReceipts, type DistributionReceipt } from "../src/lib/distributionReceipts";
 
 const R = (patch: Partial<DistributionReceipt>): DistributionReceipt => ({
   id: "x", month: "2026-10", code: "498400", name: "KODEX 200타겟위클리커버드콜", quantity: 600, perShare: 160, net: null, createdAt: "2026-10-15T00:00:00Z", ...patch,
@@ -61,4 +61,48 @@ test("projectNextMonth: 분기마다 받는 종목은 기록 간격(3달)으로 
   const p = projectNextMonth({ receipts, holdings: [{ code: "161510", name: "PLUS 고배당주", quantity: 100 }], estimateMonthlyNet: () => 0, today: "2026-10-20" });
   assert.equal(p.rows[0].intervalMonths, 3);
   assert.equal(p.rows[0].net, Math.round((300 * 100 * 0.846) / 3));
+});
+
+test("estimateReinvest: 예수금이 분배금만큼 늘지 않은 몫을 매수에 쓰인 것으로 본다", () => {
+  // 600주 × 160원 × 0.846 = 81,216원
+  const receipts = [R({ net: 300_000 })];
+  const history = [
+    { date: "2026-09-02", total: 50_000_000, cash: 900_000, groups: [] },
+    { date: "2026-09-30", total: 52_000_000, cash: 1_000_000, groups: [] },
+    { date: "2026-10-01", total: 52_000_000, cash: 1_000_000, groups: [] },
+  ];
+  const base = { receipts, history, today: "2026-10-19" };
+  const ok = estimateReinvest({ ...base, cashNow: 1_020_000, cashUpdatedAt: "2026-10-18" });
+  assert.deepEqual(ok, { status: "ok", month: "2026-10", received: 300_000, baselineDate: "2026-09-30", cashThen: 1_000_000, cashNow: 1_020_000, reinvested: 280_000, kept: 20_000, baselineApprox: false });
+  // 예수금이 분배금보다 더 늘면 전부 현금, 줄었으면 전부 매수 — 받은 분배금 범위를 넘지 않는다
+  const kept = estimateReinvest({ ...base, cashNow: 2_000_000, cashUpdatedAt: "2026-10-18" });
+  assert.equal(kept?.status === "ok" && kept.reinvested, 0);
+  const spent = estimateReinvest({ ...base, cashNow: 100_000, cashUpdatedAt: "2026-10-18" });
+  assert.equal(spent?.status === "ok" && spent.reinvested, 300_000);
+});
+
+test("estimateReinvest: 분배금을 적은 뒤 예수금을 안 고쳤으면 판단하지 않는다", () => {
+  const history = [{ date: "2026-09-30", total: 1, cash: 0, groups: [] }];
+  const receipts = [R({ net: 300_000, createdAt: "2026-10-15T00:00:00Z" })];
+  for (const cashUpdatedAt of [null, "2026-09-29", "2026-10-14"]) {
+    assert.equal(estimateReinvest({ receipts, history, cashNow: 0, cashUpdatedAt, today: "2026-10-19" })?.status, "stale-cash");
+  }
+  // 같은 날 고친 것은 반영으로 본다(KST — 10/15 23시 UTC는 10/16 KST)
+  assert.equal(estimateReinvest({ receipts, history, cashNow: 0, cashUpdatedAt: "2026-10-15", today: "2026-10-19" })?.status, "ok");
+  const late = [R({ net: 300_000, createdAt: "2026-10-15T16:00:00Z" })];
+  assert.equal(estimateReinvest({ receipts: late, history, cashNow: 0, cashUpdatedAt: "2026-10-15", today: "2026-10-19" })?.status, "stale-cash");
+});
+
+test("estimateReinvest: 받은 기록이 없으면 null, 지난달 기록이 없으면 no-baseline, 예전 기록은 현금 비중으로 되짚는다", () => {
+  assert.equal(estimateReinvest({ receipts: [R({ month: "2026-09" })], history: [], cashNow: 0, cashUpdatedAt: "2026-10-18", today: "2026-10-19" }), null);
+  assert.equal(estimateReinvest({ receipts: [R({})], history: [{ date: "2026-10-01", total: 1, cash: 0, groups: [] }], cashNow: 0, cashUpdatedAt: "2026-10-18", today: "2026-10-19" })?.status, "no-baseline");
+  const approx = estimateReinvest({
+    receipts: [R({ net: 100_000 })],
+    history: [{ date: "2026-09-30", total: 40_000_000, groups: [{ group: "cash", actualPct: 2.5 }] }],
+    cashNow: 1_050_000, cashUpdatedAt: "2026-10-18", today: "2026-10-19",
+  });
+  assert.ok(approx?.status === "ok");
+  assert.equal(approx.cashThen, 1_000_000);
+  assert.equal(approx.kept, 50_000);
+  assert.equal(approx.baselineApprox, true);
 });
