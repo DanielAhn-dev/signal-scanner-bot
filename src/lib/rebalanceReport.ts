@@ -714,9 +714,16 @@ export function buildRebalanceReport(input: {
       `인컴 종목 압축: 역할별 대표로 ${compressMoves.length}종목을 옮깁니다(인컴 종목 ${plan.compress.before}종 → ${plan.compress.after}종, 목표 ${plan.compress.target}종). 서두를 필요는 없고, 한 번에 하나씩 같은 계좌에서 팔고 바로 사면 됩니다.`,
     );
   const outGroups = view.groups.filter((g) => Math.abs(g.diffPct) > REBALANCE_BAND_PP);
+  // 가이드(view.rebalance.needed)와 같은 기준 — 바구니 ±10%p에 더해 성장 안 해외 비중이 ±20%p를 벗어난 경우
+  const split = view.growthSplit;
+  const splitOff = split.krValue + split.globalValue > 0 && Math.abs(split.globalPct - split.targetGlobalPct) > REBALANCE_BAND_PP * 2;
+  const offTexts = [
+    ...outGroups.map((g) => `${g.label} ${g.actualPct.toFixed(0)}%(목표 ${g.targetPct.toFixed(0)}%)`),
+    ...(splitOff ? [`성장 안 해외 비중 ${split.globalPct.toFixed(0)}%(목표 ${split.targetGlobalPct}%)`] : []),
+  ];
   steps.push(
-    outGroups.length
-      ? `${outGroups.map((g) => `${g.label} ${g.actualPct.toFixed(0)}%(목표 ${g.targetPct.toFixed(0)}%)`).join(", ")}이 목표 ±${REBALANCE_BAND_PP}%p를 벗어나 있습니다. 새 돈·분배금으로 먼저 맞추고, 한 달 뒤 점검 때도 벗어나 있으면 수익 구간 종목부터 일부 팔아 맞춥니다.`
+    offTexts.length
+      ? `${offTexts.join(", ")}이 목표를 벗어나 있습니다. 새 돈·분배금으로 먼저 맞추고${splitOff ? "(해외 지수는 ISA·연금 계좌에서)" : ""}, 한 달 뒤 점검 때도 벗어나 있으면 수익 구간 종목부터 일부 팔아 맞춥니다. 손실 종목은 이 때문에 팔지 않습니다.${splitOff && split.globalValue === 0 ? " 해외 지수를 둘 계획이 없다면 가이드 설정의 해외 비중을 0으로 바꾸세요." : ""}`
       : `지금은 모든 바구니가 목표 ±${REBALANCE_BAND_PP}%p 안이라, 비중을 맞추려고 팔 것은 없습니다. 다음 점검은 한 달 뒤입니다.`,
   );
 

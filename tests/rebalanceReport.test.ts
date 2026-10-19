@@ -117,7 +117,7 @@ test("실행 순서 문구는 상황일 때만: 1주·개별주면 '나눠 팔�
   assert.ok(!sellStep.includes("분배락일"), sellStep);
   assert.match(sellStep, /금액이 55,000원으로 작아/);
   assert.ok(r.steps.some((s) => s.includes("1주 값")), "대금이 1주 값보다 작으면 '0주' 대신 다음 분배금과 합친다고 쓴다");
-  assert.ok(r.steps.at(-1)!.includes("인컴 (분배형) 0%(목표 65%)이 목표 ±10%p를 벗어나"), r.steps.at(-1));
+  assert.ok(r.steps.at(-1)!.includes("인컴 (분배형) 0%(목표 65%)"), r.steps.at(-1));
 });
 
 test("분배형 종목을 팔 때만 분배락일 안내", () => {
@@ -282,4 +282,12 @@ test("hold 현금 목표를 채우는 중이면 분배금은 지수가 아니라
   const noTarget = reportFor(holdings, { incomeMode: "hold", customTargets: { income: 70 } });
   assert.match(noTarget.steps.find((s) => s.includes("분배금(월"))!, /KODEX 200TR로 보냅니다/);
   assert.doesNotMatch(noTarget.headline, /분배금은 현금으로/);
+});
+
+test("해외 비중이 ±20%p 벗어나면 리포트도 가이드처럼 벗어남을 말하고, 손실 종목은 그 때문에 팔지 않는다", () => {
+  const r = reportFor([H("069500", "KODEX 200", 86_000, 100, 100_000), H("498400", "KODEX 200타겟위클리커버드콜", 16_000, 500, 18_000)], { incomeMode: "hold", customTargets: { income: 50 }, overseasPct: 50 });
+  const last = r.steps.at(-1)!;
+  assert.match(last, /성장 안 해외 비중 0%\(목표 50%\)/);
+  assert.match(last, /해외 비중을 0으로/);
+  assert.equal(r.sells.length, 0);
 });
