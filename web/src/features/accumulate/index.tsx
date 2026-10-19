@@ -41,6 +41,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import PeriodSim from './PeriodSim'
 import MixPicker from './MixPicker'
 import FanChart from './FanChart'
+import FutureView from './FutureView'
 import { DEFAULT_PLAN_MIX, isKospiOnly, mixHistory, type MixEntry } from '../../lib/planMix'
 import './accumulate.css'
 
@@ -135,8 +136,8 @@ export default function AccumulatePage() {
   }
   const [years, setYears] = useState(10)
   const [mode, setMode] = useState<'direct' | 'income'>('direct')
-  // 3번 카드 보기: 모든 시작 시점 분포 / 기간 하나를 골라 실제 경로
-  const [pastView, setPastView] = useState<'all' | 'period'>('all')
+  // 3번 카드 보기: 모든 시작 시점 분포 / 기간 하나를 골라 실제 경로 / 과거 조각을 섞은 앞으로의 경우의 수
+  const [pastView, setPastView] = useState<'all' | 'period' | 'future'>('all')
   const [extra, setExtra] = useState('0')
   const [incomeAdj, setIncomeAdj] = useState(1)
   const [lumpText, setLumpText] = useState('')
@@ -406,8 +407,11 @@ export default function AccumulatePage() {
         <div className="acc-seg acc-view-toggle" role="group" aria-label="보기 방식">
           <button type="button" className={pastView === 'all' ? 'is-active' : ''} aria-pressed={pastView === 'all'} onClick={() => setPastView('all')}>모든 시작 시점</button>
           <button type="button" className={pastView === 'period' ? 'is-active' : ''} aria-pressed={pastView === 'period'} onClick={() => setPastView('period')}>기간 골라 보기</button>
+          <button type="button" className={pastView === 'future' ? 'is-active' : ''} aria-pressed={pastView === 'future'} onClick={() => setPastView('future')}>앞으로 {years}년 경우의 수</button>
         </div>
-        {pastView === 'period' ? (
+        {pastView === 'future' ? (
+          <FutureView monthly={monthly} lump={lump} years={years} mix={planMix} />
+        ) : pastView === 'period' ? (
           <PeriodSim monthly={monthly} lump={lump} drag={drag} years={years} series={history.monthly} />
         ) : !sim || !summary ? (
           <p className="acc-warn">{monthly <= 0 ? '금액을 입력하세요.' : '이 기간은 비교할 시작점이 너무 적어 계산하지 않습니다. 기간을 줄여 보세요.'}</p>

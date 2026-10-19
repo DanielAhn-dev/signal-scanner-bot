@@ -22,7 +22,8 @@ function niceStep(range: number): number {
   return [1, 2, 5, 10].map((k) => k * mag).find((s) => s >= raw) ?? 10 * mag
 }
 
-export default function FanChart({ sim }: { sim: SimResult }) {
+/** realName: 겹쳐 그린 경로 하나의 이름 — 없으면 "YYYY-MM 시작"(과거 실제 시작점), 경우의 수 보기는 "경우 n" */
+export default function FanChart({ sim, realName }: { sim: SimResult; realName?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [W, setW] = useState(640)
   const [hover, setHover] = useState<number | null>(null)
@@ -82,7 +83,7 @@ export default function FanChart({ sim }: { sim: SimResult }) {
         height={H}
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label="적립 평가금 추이: 넣은 돈 대비 %, 중앙값·하위10%·최악·실제 한 사람"
+        aria-label={`적립 평가금 추이: 넣은 돈 대비 %, 중앙값·하위10%·최악·${realName ?? '실제 한 사람'}`}
         onPointerMove={onMove}
         onPointerDown={onMove}
         onPointerLeave={() => setHover(null)}
@@ -117,7 +118,7 @@ export default function FanChart({ sim }: { sim: SimResult }) {
           <span><i className="acc-k-median" />중앙값 {signed(series.median[k])} ({formatKrwMan(sim.median[hover])})</span>
           <span><i className="acc-k-p10" />하위10% {signed(series.p10[k])} ({formatKrwMan(sim.p10[hover])})</span>
           <span><i className="acc-k-worst" />최악 {signed(series.worst[k])} ({formatKrwMan(sim.worst[hover])})</span>
-          {real && series.real && <span><i className="acc-k-real" />{ymLabel(real.start)} 시작 {signed(series.real[k])} ({formatKrwMan(real.value[hover])})</span>}
+          {real && series.real && <span><i className="acc-k-real" />{realName ?? `${ymLabel(real.start)} 시작`} {signed(series.real[k])} ({formatKrwMan(real.value[hover])})</span>}
         </div>
       )}
     </div>

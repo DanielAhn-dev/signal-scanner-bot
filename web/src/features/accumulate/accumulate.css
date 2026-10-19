@@ -65,6 +65,9 @@
 .acc-table th, .acc-table td { padding: 8px 6px; border-bottom: 1px solid var(--color-border-default); text-align: right; }
 .acc-table th:first-child, .acc-table td:first-child { text-align: left; }
 .acc-compare { display: flex; flex-direction: column; gap: 8px; }
+/* 3번 '앞으로의 경우의 수' — 한국어 문장이 단어 중간에서 끊기지 않게 */
+.acc-future { display: flex; flex-direction: column; gap: 12px; word-break: keep-all; }
+.acc-future-facts { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.55; }
 .acc-guide { padding: 12px; border-radius: 6px; border-left: 4px solid var(--color-border-default); background: var(--color-bg-sunken); display: flex; flex-direction: column; gap: 6px; line-height: 1.55; }
 .acc-guide.is-drop { border-left-color: var(--color-warning, #ed6c02); }
 .acc-guide.is-rally { border-left-color: var(--color-brand); }

@@ -109,6 +109,16 @@ describe('모아가기', () => {
     expect(screen.queryByText('KODEX 200 vs KODEX 200TR')).not.toBeInTheDocument()
   })
 
+  it('앞으로의 경우의 수: 3번의 세 번째 보기로, 예측이 아니라고 밝히고 과거 분포 비교표는 숨긴다', async () => {
+    renderPage()
+    await screen.findByText('추천')
+    fireEvent.click(screen.getByRole('button', { name: '앞으로 10년 경우의 수' }))
+    expect(screen.getByRole('button', { name: '앞으로 10년 경우의 수' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('예측이 아닙니다.')).toBeInTheDocument()
+    expect(screen.getByLabelText('끼워 넣을 사건')).toBeInTheDocument()
+    expect(screen.queryByText('KODEX 200 vs KODEX 200TR')).not.toBeInTheDocument()
+  })
+
   it('목적을 분배금 받기로 바꾸면 일반형을 추천한다', async () => {
     renderPage()
     fireEvent.click(await screen.findByRole('radio', { name: '분배금 받기' }))
