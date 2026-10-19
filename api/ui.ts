@@ -57,6 +57,7 @@ import followReport from '../handlers/ui/follow-report'
 import invites from '../handlers/ui/invites'
 import incomeGuide from '../handlers/ui/income-guide'
 import rebalanceReport from '../handlers/ui/rebalance-report'
+import savingProgress from '../handlers/ui/saving-progress'
 import summary from '../handlers/ui/summary'
 import syncHistory from '../handlers/ui/sync-history'
 import syncStatus from '../handlers/ui/sync-status'
@@ -124,6 +125,7 @@ const ROUTES: Record<string, UiHandler> = {
   'follow-report': followReport,
   'income-guide': incomeGuide,
   'rebalance-report': rebalanceReport,
+  'saving-progress': savingProgress,
   invites,
   summary,
   'sync-history': syncHistory,
