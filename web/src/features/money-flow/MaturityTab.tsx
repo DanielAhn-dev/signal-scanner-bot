@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { formatKrwMan } from '../../lib/format'
 import { useUserState } from '../../lib/userState'
+import { useIndexEtfCandidates } from '../../lib/indexEtfLive'
 import {
   HORIZON_LABEL, MAX_ITEMS, adviceFor, daysUntil, ddayLabel, newMaturityId, sanitizeMaturityState, sortMaturities, statusOf, summarizeUpcoming,
   type Maturity, type MaturityHorizon, type MaturityState,
@@ -18,6 +19,7 @@ const STATUS_TEXT = { overdue: '만기 지남', soon: '곧 만기', later: '', d
  */
 export default function MaturityTab() {
   const { value, set } = useUserState<MaturityState>('maturities')
+  const etfView = useIndexEtfCandidates()
   const items = sanitizeMaturityState(value).items
   const today = kstToday()
   const [name, setName] = useState('')
@@ -89,7 +91,7 @@ export default function MaturityTab() {
           <ul className="mf-list">
             {sorted.map((item) => {
               const status = statusOf(item, today)
-              const advice = adviceFor(item.horizon)
+              const advice = adviceFor(item.horizon, etfView)
               const isOpen = open === item.id
               return (
                 <li key={item.id} style={item.done ? { opacity: 0.55 } : undefined}>

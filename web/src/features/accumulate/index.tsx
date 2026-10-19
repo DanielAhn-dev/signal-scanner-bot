@@ -6,7 +6,8 @@ import { useCurrentClientId } from '../../stores/profileStore'
 import { useUserState } from '../../lib/userState'
 import StockSearchInput from '../../components/StockSearchInput'
 import { dropPlanLines, sanitizeDropPlan, type DropPlan } from '../../lib/dropPlan'
-import { ACCUMULATE_ASOF, INDEX_ETF_CANDIDATES } from '../../data/accumulateData'
+import { INDEX_ETF_CANDIDATES } from '../../data/accumulateData'
+import { useIndexEtfCandidates } from '../../lib/indexEtfLive'
 import {
   EMPTY_STATE,
   PLAIN_TAX_DRAG_ANNUAL,
@@ -125,7 +126,8 @@ export default function AccumulatePage() {
       .catch(() => { /* 인컴 계좌를 안 쓰면 직접 입력으로 계속 쓴다 */ })
   }, [clientId])
 
-  const rec = useMemo(() => recommendCandidate(state.goal), [state.goal])
+  const etfView = useIndexEtfCandidates()
+  const rec = useMemo(() => recommendCandidate(state.goal, etfView.cands, etfView.asOf), [state.goal, etfView])
   const custom = state.target
   const pick = custom ? null : rec.pick
   const targetCode = custom?.code ?? pick?.code ?? INDEX_PRICE_CODE
@@ -165,7 +167,7 @@ export default function AccumulatePage() {
   const guide = useMemo(() => (candles ? situationGuide(candles) : null), [candles])
   const track = trackSummary(state)
 
-  const candleAge = candidateDataAgeDays()
+  const candleAge = candidateDataAgeDays(new Date(), etfView.asOf)
   const incomeAssets = income?.total ?? 0
 
   const saveRecord = () => {
@@ -225,7 +227,7 @@ export default function AccumulatePage() {
           </table>
         </details>
         <p className={`acc-note${candleAge > STALE_CANDIDATE_DAYS ? ' acc-warn' : ''}`}>
-          보수·순자산 기준일 {ACCUMULATE_ASOF}{candleAge > STALE_CANDIDATE_DAYS ? ` — ${candleAge}일이 지나 낡았을 수 있습니다. 증권사 앱에서 보수와 순자산을 확인하세요.` : ''}
+          보수·순자산 기준일 {etfView.asOf}{etfView.live ? ' · 일 거래대금은 최근 20거래일 평균' : ''}{candleAge > STALE_CANDIDATE_DAYS ? ` — ${candleAge}일이 지나 낡았을 수 있습니다. 증권사 앱에서 보수와 순자산을 확인하세요.` : ''}
         </p>
       </section>
 

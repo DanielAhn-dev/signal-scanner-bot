@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useUserState } from '../../lib/userState'
+import { useIndexEtfCandidates } from '../../lib/indexEtfLive'
 import {
   HORIZON_LABEL, adviceFor, maturitiesDecidedIn, maturitiesDue, sanitizeMaturityState, suggestedInvest,
   type Maturity, type MaturityState,
@@ -21,6 +22,7 @@ const toWon = (text: string) => Math.max(0, Math.round(Number(text.replace(/,/g,
  */
 export default function MaturityInbox({ month, onApply, krw }: Props) {
   const { value, set } = useUserState<MaturityState>('maturities')
+  const etfView = useIndexEtfCandidates()
   const items = sanitizeMaturityState(value).items
   const due = maturitiesDue(items, month)
   const decided = maturitiesDecidedIn(items, month)
@@ -58,7 +60,7 @@ export default function MaturityInbox({ month, onApply, krw }: Props) {
               <strong>{item.name} {krw(item.amount)}</strong>
               <small>{item.date} 만기 · {HORIZON_LABEL[item.horizon]}</small>
             </div>
-            <p className="seed-inbox-guide">갈 곳: {adviceFor(item.horizon).where}</p>
+            <p className="seed-inbox-guide">갈 곳: {adviceFor(item.horizon, etfView).where}</p>
             <div className="seed-inbox-split">
               <label>투자금에 넣을 금액
                 <input type="number" inputMode="numeric" min="0" step="10000" max={item.amount} aria-label={`${item.name} 투자금에 넣을 금액`} value={amount}
