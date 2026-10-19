@@ -7,6 +7,8 @@
  *   - 계획: 가상 계좌가 그달 산 지수 ETF(봇 거래 메모 전략이 지수 보유·유휴현금 스윕)가 있으면 그 수량,
  *     없으면 계획 금액(plan.monthly)을 그달 가격으로 나눈 '살 수 있었던 주수'(buyQuantity).
  *   - 'later'(다음 달부터 시작)는 아직 시작 전이라 지킴/건너뜀 분모에서 뺀다.
+ *   - 구성(여러 지수)으로 답한 달은 줄마다(lines): 계획은 그 줄 금액 ÷ 그달 가격, 실제는 산 주수(0이면 그 지수는 건너뜀).
+ *     한 줄이라도 샀으면 그달은 지킴으로 센다.
  */
 import { buyQuantity, type MonthTaskRecord } from './monthTask'
 import { parseStrategyMemo } from '../../../src/lib/strategyMemo'
@@ -15,10 +17,12 @@ export type PlanTrade = { code: string; name?: string | null; side: 'BUY' | 'SEL
 
 export type PlanVsActualResult = 'kept' | 'skipped' | 'notStarted'
 
+export type PlanVsActualLine = { name: string; qty: number | null }
+
 export type PlanVsActualRow = {
   ym: string
-  plan: { name: string | null; qty: number | null; amount: number; source: 'virtual' | 'estimate' }
-  actual: { status: MonthTaskRecord['status']; name: string | null; qty: number | null; price: number | null }
+  plan: { name: string | null; qty: number | null; amount: number; source: 'virtual' | 'estimate'; lines?: PlanVsActualLine[] }
+  actual: { status: MonthTaskRecord['status']; name: string | null; qty: number | null; price: number | null; lines?: PlanVsActualLine[] }
   result: PlanVsActualResult
 }
 
@@ -77,10 +81,16 @@ export function buildPlanVsActual(input: {
       ? { status, name: rec?.name ?? trade?.name ?? rec?.code ?? trade?.code ?? null, qty: rec?.qty ?? trade?.qty ?? null, price: actualPrice }
       : { status, name: null, qty: null, price: null }
 
+    const multi = status === 'bought' && rec?.lines && rec.lines.length > 1 ? rec.lines : null
+    if (multi) (actual as PlanVsActualRow['actual']).lines = multi.map((l) => ({ name: l.name, qty: l.qty }))
+
     const bot = botByYm.get(ym)
-    const plan: PlanVsActualRow['plan'] = bot
-      ? { name: bot.name, qty: bot.qty, amount: input.monthly, source: 'virtual' }
-      : { name: actual.name, qty: buyQuantity(input.monthly, actualPrice).qty, amount: input.monthly, source: 'estimate' }
+    // 가상 계좌는 아직 코스피200만 산다 — 구성으로 답한 달은 계획도 줄마다 계획 금액으로 살 수 있었던 주수
+    const plan: PlanVsActualRow['plan'] = multi
+      ? { name: null, qty: null, amount: input.monthly, source: 'estimate', lines: multi.map((l) => ({ name: l.name, qty: buyQuantity(l.planAmount ?? 0, l.price).qty })) }
+      : bot
+        ? { name: bot.name, qty: bot.qty, amount: input.monthly, source: 'virtual' }
+        : { name: actual.name, qty: buyQuantity(input.monthly, actualPrice).qty, amount: input.monthly, source: 'estimate' }
 
     const result: PlanVsActualResult = status === 'bought' ? 'kept' : status === 'skipped' ? 'skipped' : 'notStarted'
     return { ym, plan, actual, result }

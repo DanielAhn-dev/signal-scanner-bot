@@ -69,4 +69,24 @@ describe('계획 vs 실제', () => {
   it('기록이 없으면 빈 표', () => {
     expect(buildPlanVsActual({ monthly, tasks: {}, bot: [], real: [] })).toEqual({ rows: [], kept: 0, counted: 0 })
   })
+
+  it('구성으로 답한 달은 줄마다 — 한 줄만 샀어도 지킴, 안 산 줄은 0주', () => {
+    const s = buildPlanVsActual({
+      monthly: 1_220_000,
+      bot: [],
+      real: [],
+      tasks: {
+        '2026-11': {
+          status: 'bought', code: '294400', name: 'KIWOOM 200TR', qty: 6, price: 93_850, amount: 1_220_000, at: 'x',
+          lines: [
+            { index: 'kospi200', code: '294400', name: 'KIWOOM 200TR', qty: 6, price: 93_850, planAmount: 610_000 },
+            { index: 'sp500', code: '360750', name: 'TIGER 미국S&P500', qty: 0, price: 24_000, planAmount: 610_000 },
+          ],
+        },
+      },
+    })
+    expect(s.rows[0].result).toBe('kept')
+    expect(s.rows[0].plan.lines).toEqual([{ name: 'KIWOOM 200TR', qty: 6 }, { name: 'TIGER 미국S&P500', qty: 25 }])
+    expect(s.rows[0].actual.lines).toEqual([{ name: 'KIWOOM 200TR', qty: 6 }, { name: 'TIGER 미국S&P500', qty: 0 }])
+  })
 })

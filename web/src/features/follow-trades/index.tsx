@@ -56,6 +56,7 @@ const ymLabel = (ym: string) => `${ym.slice(0, 4)}년 ${monthLabel(ym)}`
 const qtyText = (name: string | null, qty: number | null) => [name, qty != null ? `${qty.toLocaleString('ko-KR')}주` : null].filter(Boolean).join(' ')
 
 function planCell(r: PlanVsActualRow) {
+  if (r.plan.lines) return r.plan.lines.map((l) => <div key={l.name}>{l.qty != null ? `약 ${qtyText(l.name, l.qty)}` : l.name}</div>)
   if (r.plan.source === 'virtual') return qtyText(r.plan.name, r.plan.qty)
   if (r.plan.qty != null) return `약 ${qtyText(r.plan.name, r.plan.qty)}`
   return r.plan.amount > 0 ? `${won(r.plan.amount)} 넣기` : '—'
@@ -64,6 +65,7 @@ function planCell(r: PlanVsActualRow) {
 function actualCell(r: PlanVsActualRow) {
   if (r.actual.status === 'skipped') return '건너뜀'
   if (r.actual.status === 'later') return '다음 달부터 시작'
+  if (r.actual.lines) return r.actual.lines.map((l) => <div key={l.name}>{l.qty ? qtyText(l.name, l.qty) : `${l.name} 건너뜀`}</div>)
   return qtyText(r.actual.name, r.actual.qty) || '샀어요'
 }
 
