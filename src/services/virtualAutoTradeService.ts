@@ -79,7 +79,7 @@ import type { SignalGateResult } from "./virtualAutoTradeSignalGate";
 import { describeSizingSkips, type AutoTradeSizingResult } from "./virtualAutoTradeSizing";
 import { sendMessage } from "../telegram/api";
 import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securitiesTax";
-import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
+import { fetchBenchmarkComparison, formatBenchmarkLine, resolveBenchmarkPrincipal } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
 import {
@@ -7300,7 +7300,7 @@ export async function runVirtualAutoTradingCycle(input?: {
           const cmp = await fetchBenchmarkComparison({
             supabase,
             chatId: setting.chat_id,
-            seedCapital: toNumber(fresh.virtual_seed_capital, toNumber(fresh.capital_krw, 0)),
+            seedCapital: resolveBenchmarkPrincipal(fresh),
             cash: toNumber(fresh.virtual_cash, 0),
           });
           return cmp ? formatBenchmarkLine(cmp) : null;

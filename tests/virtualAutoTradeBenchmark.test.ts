@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeReturnPct, formatBenchmarkLine, sumEtfDistributionNetPerShare } from "../src/services/virtualAutoTradeBenchmark";
+import { computeReturnPct, formatBenchmarkLine, resolveBenchmarkPrincipal, sumEtfDistributionNetPerShare } from "../src/services/virtualAutoTradeBenchmark";
 import { computeDistributionCredit, exDividendDate, type EtfDistribution } from "../src/services/etfDistribution";
 
 test("formatBenchmarkLine: 계좌 vs 지수·CD금리 비교와 우위 판정", () => {
@@ -29,4 +29,14 @@ test("sumEtfDistributionNetPerShare: 기간 내 지급완료 분배금만 세후
   // 계좌 시작일(sinceDate)이 분배락일보다 나중 → 그 전부터 들고 있던 게 아니므로 제외
   const dayAfterEx = new Date(new Date(`${exDate}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
   assert.equal(sumEtfDistributionNetPerShare([d], dayAfterEx, d.payDate), 0);
+});
+
+test("resolveBenchmarkPrincipal: 재계산되는 시드가 아니라 넣은 원금 기준선을 분모로", () => {
+  // 손실로 시드가 줄어도 원금 기준선이 있으면 그걸 쓴다
+  assert.equal(resolveBenchmarkPrincipal({ virtual_cash_baseline: 10_000_000, virtual_total_deposited: 9_000_000, virtual_seed_capital: 3_000_000 }), 10_000_000);
+  assert.equal(resolveBenchmarkPrincipal({ virtual_total_deposited: 9_000_000, virtual_seed_capital: 3_000_000 }), 9_000_000);
+  // 예전 계정은 시드 → 투자금 순으로 대신
+  assert.equal(resolveBenchmarkPrincipal({ virtual_seed_capital: 3_000_000, capital_krw: 5_000_000 }), 3_000_000);
+  assert.equal(resolveBenchmarkPrincipal({ virtual_cash_baseline: 0, capital_krw: "5000000" }), 5_000_000);
+  assert.equal(resolveBenchmarkPrincipal({}), 0);
 });

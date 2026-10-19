@@ -44,6 +44,24 @@ export function formatBenchmarkLine(input: BenchmarkComparison): string {
   return `[기준선 ${input.sinceDate.slice(5).replace("-", "/")}~] 계좌 ${fmtPct(input.accountReturnPct)} vs ${parts.join(" · ")}${verdict}`;
 }
 
+/**
+ * 계좌 수익률의 분모(넣은 원금). virtual_seed_capital은 주 1회 확정 손익으로 재계산되고(복리 반영)
+ * 동기화 때도 바뀌어 원금이 아니다 — 손실이 쌓이면 분모가 줄어 수익률이 부풀었다.
+ * 재계산에 물들지 않는 virtual_cash_baseline(시작 시드 + 입금 누적) → virtual_total_deposited → 시드 순으로 쓴다.
+ */
+export function resolveBenchmarkPrincipal(prefs: {
+  virtual_cash_baseline?: unknown;
+  virtual_total_deposited?: unknown;
+  virtual_seed_capital?: unknown;
+  capital_krw?: unknown;
+}): number {
+  for (const v of [prefs.virtual_cash_baseline, prefs.virtual_total_deposited, prefs.virtual_seed_capital, prefs.capital_krw]) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
 export function computeReturnPct(start: number, end: number): number | null {
   if (!(start > 0) || !(end > 0)) return null;
   return ((end - start) / start) * 100;
@@ -72,6 +90,8 @@ export async function fetchBenchmarkComparison(input: {
     .from("virtual_trades")
     .select("traded_at")
     .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .order("traded_at", { ascending: true })
     .limit(1);
   const firstAt = (firstTrade?.[0] as { traded_at?: string } | undefined)?.traded_at;
@@ -81,7 +101,10 @@ export async function fetchBenchmarkComparison(input: {
   const { data: positions } = await supabase
     .from("virtual_positions")
     .select("code, quantity, status, stock:stocks(close)")
-    .eq("chat_id", chatId);
+    .eq("chat_id", chatId)
+    // 실계좌 입력 행 제외 — 빠지면 실계좌 평가액이 가상 계좌 자산에 더해져 수익률이 크게 부푼다
+    .is("broker_name", null)
+    .is("account_name", null);
   let holdingsValue = 0;
   for (const row of (positions ?? []) as Array<Record<string, any>>) {
     if ((row.status ?? "holding") !== "holding") continue;
