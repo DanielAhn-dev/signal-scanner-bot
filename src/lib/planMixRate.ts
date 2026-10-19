@@ -22,6 +22,8 @@ export type PlanMixRates = {
   asOf: string;
   /** "코스피200 50 · S&P500 50" */
   label: string;
+  /** 구성 비중 그대로 — 웹 목표 트래커가 '앞으로의 경우의 수'(web/src/lib/futurePaths.ts)를 같은 구성으로 돌릴 때 쓴다 */
+  weights: PlanMixWeights;
 };
 
 const LABEL: Record<string, string> = { kospi200: "코스피200", sp500: "S&P500", nasdaq100: "나스닥100" };
@@ -130,6 +132,7 @@ export function planMixRates(mix: PlanMixWeights | null | undefined): PlanMixRat
         from: `${series[0][0].slice(0, 4)}-${series[0][0].slice(4)}`,
         asOf: PLAN_INDEX_ASOF,
         label: planMixLabel(m),
+        weights: m.map((e) => ({ index: e.index, weight: e.weight })),
       };
     }
   }

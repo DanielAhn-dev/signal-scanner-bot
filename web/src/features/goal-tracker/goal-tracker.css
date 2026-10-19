@@ -20,6 +20,8 @@
 .goal-progress > div { height: 100%; background: var(--color-brand, #2f6f68); min-width: 2px; }
 .goal-progress--thin { height: 6px; }
 .goal-note { color: var(--color-text-secondary); margin-top: 6px; }
+/* 문장 안의 이동 버튼 — 글자 링크처럼 */
+.goal-link { padding: 0; border: 0; background: none; color: var(--color-brand); font: inherit; text-decoration: underline; cursor: pointer; }
 .goal-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
 .goal-table th, .goal-table td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--color-border-default); }
 .goal-table th:first-child, .goal-table td:first-child { text-align: left; }

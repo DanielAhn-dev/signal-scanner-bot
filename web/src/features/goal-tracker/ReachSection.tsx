@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AccountTag from '../../components/ui/AccountTag'
 import { formatKrwMan, formatKrwReadable } from '../../lib/format'
 import { projectValue } from '../../lib/goalReach'
+import { FUTURE_DEFAULT_PATHS, shareAtLeast, simulateFuture } from '../../lib/futurePaths'
+import type { MixIndex } from '../../lib/planMix'
 import { useUserState } from '../../lib/userState'
 import { EMPTY_STATE, type AccumulateState } from '../../lib/accumulate'
 import GoalReachOptions from './GoalReachOptions'
@@ -28,6 +30,16 @@ export default function ReachSection({ view, onSavePlan, saveMsg }: { view: Goal
   const options = [...new Set([5, 10, 15, ...(retireYears ? [retireYears] : [])])].sort((a, b) => a - b)
   const [years, setYears] = useState<number>(retireYears ?? 10)
   const [showAssumed, setShowAssumed] = useState(false)
+  // 목표 이상인 경우의 비율 — 모아가기 3번 '앞으로의 경우의 수'와 같은 계산·같은 구성(서버가 준 비중). 비중이 없는 옛 응답이면 줄을 숨긴다
+  const weights = (rates?.weights ?? []).filter((w): w is { index: MixIndex; weight: number } => ['kospi200', 'sp500', 'nasdaq100'].includes(w.index))
+  const wKey = weights.map((w) => `${w.index}:${w.weight}`).join(',')
+  const target = view.target.requiredSeed
+  const monthlyPlan = s.monthlyContribution
+  const reachPct = useMemo(() => {
+    if (!wKey || !(monthlyPlan > 0) || !(target > view.equity)) return null
+    const r = simulateFuture({ mix: weights, monthly: monthlyPlan, lump: view.equity, years })
+    return { hit: shareAtLeast(r, target), below: r.belowPrincipalPct }
+  }, [wKey, monthlyPlan, view.equity, target, years])
 
   if (!basis || !rates) return null
   const monthly = s.monthlyContribution
@@ -65,6 +77,13 @@ export default function ReachSection({ view, onSavePlan, saveMsg }: { view: Goal
         <br />
         <small>오늘 물가로 보면 보통 {formatKrwMan(todayPrice(typical))} · 운 나쁘면 {formatKrwMan(todayPrice(low))} (물가 연 2% 가정)</small>
       </p>
+      {reachPct && (
+        <p className="goal-note">
+          과거 1년 조각을 섞은 경우 {FUTURE_DEFAULT_PATHS.toLocaleString()}개 중 {years}년 뒤 필요 시드 {formatKrwMan(target)} 이상인 경우 <strong>{reachPct.hit.toFixed(0)}%</strong>
+          {' '}(넣은 돈보다 적은 경우 {reachPct.below.toFixed(0)}%). 예측이 아닙니다 — 위기를 끼워 넣어 보려면{' '}
+          <button type="button" className="goal-link" onClick={() => navigate('/accumulate')}>모아가기 3번 &lsquo;앞으로 경우의 수&rsquo;</button>
+        </p>
+      )}
 
       {monthly > 0 && view.target.requiredSeed > view.equity ? (
         <GoalReachOptions

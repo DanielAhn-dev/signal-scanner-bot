@@ -51,7 +51,7 @@ export type GoalView = {
     assetSource: 'real' | 'virtual'
     ratePct: number
     rateSource: 'history' | 'assumed'
-    rates: { typicalPct: number; lowPct: number; years: number; from: string; asOf: string; label: string } | null
+    rates: { typicalPct: number; lowPct: number; years: number; from: string; asOf: string; label: string; weights?: Array<{ index: string; weight: number }> } | null
     etaLowMonth: string | null
     etaAssumedMonth: string | null
     virtualEquity: number
