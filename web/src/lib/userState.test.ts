@@ -70,3 +70,17 @@ describe('userState 서버 조회', () => {
     expect(readUserState('buycheck')).toEqual({ maxHoldings: 4 })
   })
 })
+
+describe('useUserState — 같은 화면의 두 컴포넌트', () => {
+  it('한쪽이 쓰면 다른 쪽도 새 값을 읽어, 옛 값으로 덮어쓰지 않는다', async () => {
+    const { renderHook, act } = await import('@testing-library/react')
+    const { useUserState } = await import('./userState')
+    localStorage.clear()
+    const a = renderHook(() => useUserState<{ n: number }>('accumulate'))
+    const b = renderHook(() => useUserState<{ n: number }>('accumulate'))
+    act(() => a.result.current.set({ n: 1 }))
+    expect(b.result.current.value).toEqual({ n: 1 })
+    act(() => b.result.current.set({ ...(b.result.current.value ?? { n: 0 }), n: (b.result.current.value?.n ?? 0) + 1 }))
+    expect(a.result.current.value).toEqual({ n: 2 })
+  })
+})

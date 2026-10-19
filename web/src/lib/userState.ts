@@ -38,6 +38,8 @@ const SIGN_OUT_LOCAL_KEYS = [
 ]
 const SIGN_OUT_SESSION_KEYS = ['execution_guide_pending_v1', 'analyze_pending_code', 'backtest_pending_code', 'scan_snapshot_v1', 'scan_signal_history_v1']
 const PULLED_EVENT = 'user-state-pulled'
+/** 같은 화면의 다른 컴포넌트가 같은 키를 썼을 때 — 각자 들고 있던 옛 값으로 덮어쓰지 않게 다시 읽는다 */
+const CHANGED_EVENT = 'user-state-changed'
 const SAVE_DELAY_MS = 800
 
 type Entry = { value: unknown; updatedAt: number }
@@ -95,6 +97,7 @@ export function writeUserState(name: UserStateName, value: unknown) {
   const clientId = getCurrentClientIdFromStore()
   if (!clientId) return
   writeEntry(name, { value, updatedAt: Date.now() })
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: name }))
   const timerKey = `${clientId}:${name}`
   const pending = saveTimers.get(timerKey)
   if (pending) clearTimeout(pending)
@@ -165,9 +168,11 @@ export function useUserState<T>(name: UserStateName): { value: T | null; set: (n
     setValue(readUserState<T>(name))
     let cancelled = false
     const reload = () => { if (!cancelled) setValue(readUserState<T>(name)) }
+    const onChanged = (e: Event) => { if ((e as CustomEvent).detail === name) reload() }
     window.addEventListener(PULLED_EVENT, reload)
+    window.addEventListener(CHANGED_EVENT, onChanged)
     void pullUserState().finally(() => { if (!cancelled) { reload(); setReady(true) } })
-    return () => { cancelled = true; window.removeEventListener(PULLED_EVENT, reload) }
+    return () => { cancelled = true; window.removeEventListener(PULLED_EVENT, reload); window.removeEventListener(CHANGED_EVENT, onChanged) }
   }, [clientId, name])
 
   const set = useCallback((next: T) => { setValue(next); writeUserState(name, next) }, [name])
