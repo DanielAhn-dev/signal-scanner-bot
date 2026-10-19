@@ -24,6 +24,7 @@ import {
   monthsToGain,
   overseasHistoryFor,
   recommendCandidate,
+  recommendOverseas,
   requiredMonthly,
   simulateDca,
   situationGuide,
@@ -44,6 +45,8 @@ import MyPlanCard from '../my-plan/MyPlanCard'
 import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { useLocation, useNavigate } from 'react-router-dom'
 import PeriodSim from './PeriodSim'
+import MixPicker from './MixPicker'
+import { DEFAULT_PLAN_MIX, isKospiOnly, mixHistory, type MixEntry } from '../../lib/planMix'
 import './accumulate.css'
 
 const man = formatKrwMan
@@ -65,6 +68,20 @@ function OverseasLimits({ h }: { h: HistorySeries }) {
         <li>{h.id === 'nasdaq100' ? '이 기간은 미국 기술주가 유난히 강했던 구간입니다.' : '이 기간은 미국 주식이 다른 나라보다 강했던 구간입니다.'} 결과가 좋게 나와도 앞으로도 그렇다는 근거는 아닙니다.</li>
         <li>원화 환산이라 환율 효과가 섞여 있습니다. 원화가 강해지면 같은 지수 상승에도 덜 오릅니다.</li>
         {h.dragPct > 0 && <li>한국 상장 상품이 없던 때는 미국 ETF 가격을 쓰고, 세금·보수 몫으로 연 {h.dragPct}%를 뺐습니다(섞어보기와 같은 값).</li>}
+      </ul>
+    </div>
+  )
+}
+
+/** 여러 지수 구성 이력의 한계 — 가장 짧은 지수가 시작을 정하고, 해외지수 몫은 원화 환산이다 */
+function MixLimits({ h }: { h: HistorySeries }) {
+  return (
+    <div className="acc-note">
+      <p>위 결과는 <strong>{h.name}</strong> 구성을 매달 비중대로 맞췄다고 보고 계산했습니다({ymLabel(h.monthly[0][0])} ~ {h.asOf}, 섞어보기와 같은 이력).</p>
+      <ul className="acc-limits">
+        <li>지수마다 이력 시작이 달라 가장 짧은 지수가 시작을 정합니다. 짧을수록 비교할 시작점이 적습니다.</li>
+        <li>이 기간은 미국 주식이 다른 나라보다 강했던 구간입니다. 결과가 좋게 나와도 앞으로도 그렇다는 근거는 아닙니다.</li>
+        <li>해외지수는 원화로 바꾼 가격이라 환율 효과가 섞여 있고, 한국 상장 상품이 없던 때는 미국 ETF 가격에서 세금·보수 몫(연 0.9%)을 뺐습니다.</li>
       </ul>
     </div>
   )
@@ -174,6 +191,10 @@ export default function AccumulatePage() {
   const [recDeposit, setRecDeposit] = useState('')
   const [valueText, setValueText] = useState('')
   const [candles, setCandles] = useState<Candle[] | null>(null)
+  // 내 계획 구성 — 저장된 값(안 정했으면 null)과 1번에서 고르는 중인 값. 고르는 중이면 2·3·4번 계산이 그 구성을 따른다
+  const [savedMix, setSavedMix] = useState<MixEntry[] | null>(null)
+  const [draftMix, setDraftMix] = useState<MixEntry[] | null>(null)
+  const onPlanMix = useCallback((mix: MixEntry[] | null) => setSavedMix(mix), [])
   const [candleError, setCandleError] = useState('')
 
   useEffect(() => {
@@ -190,14 +211,28 @@ export default function AccumulatePage() {
   const targetCode = custom?.code ?? pick?.code ?? INDEX_PRICE_CODE
   const targetName = custom?.name ?? pick?.name ?? 'KODEX 200'
   const isIndexTarget = !custom || INDEX_ETF_CANDIDATES.some((c) => c.code === custom.code)
-  const priceCode = isIndexTarget ? INDEX_PRICE_CODE : targetCode
+  const planMix = draftMix ?? savedMix ?? DEFAULT_PLAN_MIX
+  const multi = !isKospiOnly(planMix)
+  const mixKey = planMix.map((e) => `${e.index}:${e.weight}`).join(',')
+  // 여러 지수 구성이면 그 구성 이력(매달 비중 맞춤), 아니면 지금처럼 코스피200(또는 직접 지정한 해외지수 상품)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const mixHist = useMemo(() => (multi ? mixHistory(planMix) : null), [mixKey])
+  // 구성에서 비중이 가장 큰 지수의 상품 시세로 '지금 상황'을 본다 (같으면 앞쪽 = 코스피200)
+  const leadEntry = planMix.reduce((a, b) => (b.weight > a.weight + 1e-9 ? b : a))
+  const leadOverseasCode = multi && leadEntry.index !== 'kospi200'
+    ? leadEntry.product?.code ?? recommendOverseas(leadEntry.index, etfView.overseas, etfView.asOf).pick?.code ?? null
+    : null
+  const leadOverseasName = leadOverseasCode ? etfView.overseas.find((c) => c.code === leadOverseasCode)?.name ?? leadOverseasCode : null
+  const priceCode = leadOverseasCode ?? (isIndexTarget ? INDEX_PRICE_CODE : targetCode)
   // 나스닥100·S&P500을 그대로 따르는 상품이면 그 지수 이력으로, 아니면 코스피200 이력으로 계산한다
   // 매번 새 객체면 아래 시뮬레이션이 렌더마다 다시 돈다 — 이름이 바뀔 때만
-  const overseas = useMemo(() => (custom && !isIndexTarget ? overseasHistoryFor(custom.name) : null), [custom?.name, isIndexTarget])
-  const history: HistorySeries = overseas ?? KOSPI_HISTORY
+  const overseas = useMemo(() => (!multi && custom && !isIndexTarget ? overseasHistoryFor(custom.name) : null), [custom?.name, isIndexTarget, multi])
+  const history: HistorySeries = mixHist ?? overseas ?? KOSPI_HISTORY
+  const kospiWeight = planMix.find((e) => e.index === 'kospi200')?.weight ?? 0
   const histPrices = useMemo(() => history.monthly.map(([, p]) => p), [history])
   const histMonths = useMemo(() => history.monthly.map(([m]) => m), [history])
-  const drag = (state.goal === 'income' || (pick?.kind === 'plain') || (custom && INDEX_ETF_CANDIDATES.find((c) => c.code === custom.code)?.kind === 'plain') ? PLAIN_TAX_DRAG_ANNUAL : 0) + history.dragPct / 100
+  // 일반형 분배금 세금 몫은 코스피200 비중만큼만 (해외지수 몫은 구성 이력에 이미 들어 있다)
+  const drag = (state.goal === 'income' || (pick?.kind === 'plain') || (custom && INDEX_ETF_CANDIDATES.find((c) => c.code === custom.code)?.kind === 'plain') ? PLAIN_TAX_DRAG_ANNUAL * (multi ? kospiWeight : 1) : 0) + history.dragPct / 100
 
   useEffect(() => {
     let cancelled = false
@@ -290,45 +325,62 @@ export default function AccumulatePage() {
 
       <SavingProgressCard variant="full" />
       <div id="my-plan">
-        <MyPlanCard key={planKey} goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} onPlanMonthly={onPlanMonthly} />
+        <MyPlanCard key={planKey} goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} onPlanMonthly={onPlanMonthly} onPlanMix={onPlanMix} />
       </div>
 
       <section className="acc-card" aria-labelledby="acc-target">
         <h2 id="acc-target">1. 무엇으로 모을까</h2>
-        <div className="acc-seg" role="radiogroup" aria-label="목적">
-          {([['growth', '키우기 (분배금 없이 자동 재투자)'], ['income', '분배금 받기']] as const).map(([g, label]) => (
-            <button key={g} type="button" role="radio" aria-checked={state.goal === g} className={state.goal === g ? 'is-active' : ''} onClick={() => update({ goal: g as Goal })}>{label}</button>
-          ))}
-        </div>
-        {pick && (
-          <div className="acc-pick">
-            <div className="acc-pick-head"><span className="acc-badge">추천</span><strong>{pick.name}</strong><span className="acc-code">{pick.code}</span></div>
-            <ul>{rec.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-            <p className="acc-note">같은 코스피200 지수를 따라가는 상품은 과거 수익률이 거의 같아서(연 0.1%p 안팎) 수익률 순위가 아니라 규모·거래대금·보수로 골랐습니다. {state.goal === 'growth' ? '일반형은 분배금에 세금(15.4%)이 붙어 연 약 0.3%p 불리합니다.' : '분배금이 필요한 목적이라 일반형을 추천합니다.'}</p>
-          </div>
+        <MixPicker
+          saved={savedMix}
+          draft={planMix}
+          onDraft={setDraftMix}
+          etfView={etfView}
+          onSaved={(data) => {
+            const mix = Array.isArray(data?.plan?.mix) ? (data.plan.mix as MixEntry[]) : null
+            setSavedMix(mix)
+            setDraftMix(null)
+            setPlanKey((k) => k + 1)
+            window.dispatchEvent(new Event(PLAN_CHANGED_EVENT))
+          }}
+          kospiSlot={
+            <>
+            <div className="acc-seg" role="radiogroup" aria-label="목적">
+              {([['growth', '키우기 (분배금 없이 자동 재투자)'], ['income', '분배금 받기']] as const).map(([g, label]) => (
+                <button key={g} type="button" role="radio" aria-checked={state.goal === g} className={state.goal === g ? 'is-active' : ''} onClick={() => update({ goal: g as Goal })}>{label}</button>
+              ))}
+            </div>
+            {pick && (
+              <div className="acc-pick">
+                <div className="acc-pick-head"><span className="acc-badge">추천</span><strong>{pick.name}</strong><span className="acc-code">{pick.code}</span></div>
+                <ul>{rec.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+                <p className="acc-note">같은 코스피200 지수를 따라가는 상품은 과거 수익률이 거의 같아서(연 0.1%p 안팎) 수익률 순위가 아니라 규모·거래대금·보수로 골랐습니다. {state.goal === 'growth' ? '일반형은 분배금에 세금(15.4%)이 붙어 연 약 0.3%p 불리합니다.' : '분배금이 필요한 목적이라 일반형을 추천합니다.'}</p>
+              </div>
+            )}
+            {custom && (
+              <div className="acc-pick">
+                <div className="acc-pick-head"><span className="acc-badge acc-badge-user">직접 지정</span><strong>{custom.name}</strong><span className="acc-code">{custom.code}</span></div>
+                {!isIndexTarget && !overseas && <p className="acc-warn">추천 기준 밖의 종목입니다. 아래 시뮬레이션은 이 종목의 이력이 아니라 코스피200 장기 이력으로 계산하므로 참고용입니다. 상황 안내는 이 종목의 시세로 합니다.</p>}
+                {overseas && <OverseasLimits h={overseas} />}
+                <button type="button" className="acc-secondary" onClick={() => update({ target: null })}>추천으로 되돌리기</button>
+              </div>
+            )}
+            <label className="acc-field">
+              <span>직접 지정하려면 종목 검색</span>
+              <StockSearchInput value={targetText} onChange={setTargetText} onSelect={(s) => { update({ target: { code: s.code, name: s.name } }); setTargetText('') }} placeholder="ETF·종목 이름이나 코드" />
+            </label>
+            <details>
+              <summary>이 기준을 통과한 후보 {rec.eligible.length}개 비교</summary>
+              <table className="acc-table">
+                <thead><tr><th>상품</th><th>보수</th><th>순자산</th><th>일 거래대금</th></tr></thead>
+                <tbody>{rec.eligible.map((c) => <tr key={c.code}><td>{c.name}</td><td>{c.feePct}%</td><td>{(c.marketCapEok / 10_000).toFixed(1)}조</td><td>{Math.round(c.tradingValueMil / 100).toLocaleString('ko-KR')}억</td></tr>)}</tbody>
+              </table>
+            </details>
+            </>
+          }
+        />
+        {candleAge > STALE_CANDIDATE_DAYS && (
+          <p className="acc-warn">보수·순자산 기준일 {etfView.asOf} — {candleAge}일이 지나 낡았을 수 있습니다. 증권사 앱에서 보수와 순자산을 확인하세요.</p>
         )}
-        {custom && (
-          <div className="acc-pick">
-            <div className="acc-pick-head"><span className="acc-badge acc-badge-user">직접 지정</span><strong>{custom.name}</strong><span className="acc-code">{custom.code}</span></div>
-            {!isIndexTarget && !overseas && <p className="acc-warn">추천 기준 밖의 종목입니다. 아래 시뮬레이션은 이 종목의 이력이 아니라 코스피200 장기 이력으로 계산하므로 참고용입니다. 상황 안내는 이 종목의 시세로 합니다.</p>}
-            {overseas && <OverseasLimits h={overseas} />}
-            <button type="button" className="acc-secondary" onClick={() => update({ target: null })}>추천으로 되돌리기</button>
-          </div>
-        )}
-        <label className="acc-field">
-          <span>직접 지정하려면 종목 검색</span>
-          <StockSearchInput value={targetText} onChange={setTargetText} onSelect={(s) => { update({ target: { code: s.code, name: s.name } }); setTargetText('') }} placeholder="ETF·종목 이름이나 코드" />
-        </label>
-        <details>
-          <summary>이 기준을 통과한 후보 {rec.eligible.length}개 비교</summary>
-          <table className="acc-table">
-            <thead><tr><th>상품</th><th>보수</th><th>순자산</th><th>일 거래대금</th></tr></thead>
-            <tbody>{rec.eligible.map((c) => <tr key={c.code}><td>{c.name}</td><td>{c.feePct}%</td><td>{(c.marketCapEok / 10_000).toFixed(1)}조</td><td>{Math.round(c.tradingValueMil / 100).toLocaleString('ko-KR')}억</td></tr>)}</tbody>
-          </table>
-        </details>
-        <p className={`acc-note${candleAge > STALE_CANDIDATE_DAYS ? ' acc-warn' : ''}`}>
-          보수·순자산 기준일 {etfView.asOf}{etfView.live ? ' · 일 거래대금은 최근 20거래일 평균' : ''}{candleAge > STALE_CANDIDATE_DAYS ? ` — ${candleAge}일이 지나 낡았을 수 있습니다. 증권사 앱에서 보수와 순자산을 확인하세요.` : ''}
-        </p>
       </section>
 
       <section className="acc-card" aria-labelledby="acc-amount">
@@ -417,7 +469,8 @@ export default function AccumulatePage() {
             )}
           </>
         )}
-        {pastView === 'all' && !overseas && simTr && simPlain && (
+        {pastView === 'all' && multi && mixHist && <MixLimits h={mixHist} />}
+        {pastView === 'all' && !overseas && !multi && simTr && simPlain && (
           <div className="acc-compare">
             <h3>KODEX 200 vs KODEX 200TR</h3>
             <table className="acc-table">
@@ -435,7 +488,7 @@ export default function AccumulatePage() {
       <section className="acc-card" aria-labelledby="acc-goal">
         <h2 id="acc-goal">4. 목표에서 거꾸로</h2>
         {/* 2번 계산기 기간과 묶지 않는다 — 계산기를 바꿔 보기만 해도 목표 계산이 바뀌고, 기간을 어디서 정하는지 안 보였다 */}
-        <p className="acc-note">기준: {targetName}({history.name} 이력 {history.monthly[0][0].slice(0, 4)}~) · 이미 가진 성장 자산 {lump > 0 ? formatKrwReadable(lump) : '0원'} · 과거 실제 가격 기준이고 앞으로를 약속하지 않습니다</p>
+        <p className="acc-note">기준: {multi ? `내 구성(${history.name}, 매달 비중 맞춤)` : targetName}({multi ? '' : `${history.name} `}이력 {history.monthly[0][0].slice(0, 4)}~) · 이미 가진 성장 자산 {lump > 0 ? formatKrwReadable(lump) : '0원'} · 과거 실제 가격 기준이고 앞으로를 약속하지 않습니다</p>
         <div className="acc-field"><span>언제까지</span>
           <div className="acc-seg" role="radiogroup" aria-label="목표 기간">
             {goalYearOptions.map((y) => (
@@ -498,7 +551,7 @@ export default function AccumulatePage() {
                 </div>
               )}
               <More>
-                <p className="acc-note">기준: {isIndexTarget ? 'KODEX 200(같은 지수)' : targetName} 시세 {guide.lastDate ?? '없음'}{guide.drawdownPct != null ? ` · 1년 고점 대비 ${guide.drawdownPct.toFixed(1)}%` : ''}{guide.gain12mPct != null ? ` · 1년 수익 ${guide.gain12mPct.toFixed(0)}%` : ''}</p>
+                <p className="acc-note">기준: {leadOverseasName ? `${leadOverseasName}(구성에서 비중이 가장 큰 지수)` : isIndexTarget ? 'KODEX 200(같은 지수)' : targetName} 시세 {guide.lastDate ?? '없음'}{guide.drawdownPct != null ? ` · 1년 고점 대비 ${guide.drawdownPct.toFixed(1)}%` : ''}{guide.gain12mPct != null ? ` · 1년 수익 ${guide.gain12mPct.toFixed(0)}%` : ''}</p>
               </More>
             </div>
           )}

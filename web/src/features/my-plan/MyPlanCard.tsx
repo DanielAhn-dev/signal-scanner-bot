@@ -6,6 +6,7 @@ import { apiFetch } from '../../lib/api'
 import { stockCapFor } from '../../lib/planGuide'
 import { recordSwitch } from '../../lib/switchHistory'
 import { useCurrentChatId, useProfileStore } from '../../stores/profileStore'
+import { mixLabel, type MixEntry } from '../../lib/planMix'
 import './my-plan.css'
 
 /**
@@ -14,7 +15,7 @@ import './my-plan.css'
  * 저장은 /api/ui/investment-prefs의 plan 하나로만 한다 (src/services/userPlan.ts).
  */
 type Satellite = 0 | 10 | 100
-type Plan = { monthly: number; payday: number | null; depositDay: number; tolerancePct: number | null; satellitePct: Satellite }
+type Plan = { monthly: number; payday: number | null; depositDay: number; tolerancePct: number | null; satellitePct: Satellite; mix?: MixEntry[] | null }
 type DepositInfo = { next_deposit_date: string | null; total_deposited: number | null; deposit_log: Array<{ date: string; amount: number }> }
 
 const TOLERANCES = [10, 15, 20, 25, 30, 40, 50] as const
@@ -25,6 +26,8 @@ const dayAfter = (payday: number) => (payday + 1 > 28 ? 1 : payday + 1)
 function summary(plan: Plan): string {
   const parts = [plan.monthly > 0 ? `매달 ${plan.depositDay}일 ${man(plan.monthly)}` : '매달 적립 안 함']
   if (plan.tolerancePct != null) parts.push(`버틸 하락 −${plan.tolerancePct}% (주식 ${stockCapFor(plan.tolerancePct).recommended}%부터)`)
+  // 구성은 모아가기 1번에서 정한다 — 정했을 때만 보인다
+  if (plan.mix) parts.push(mixLabel(plan.mix))
   parts.push(plan.satellitePct === 0 ? '지수만' : plan.satellitePct === 100 ? '실험: 종목 봇 전체' : `개별주 ${plan.satellitePct}%까지`)
   return parts.join(' · ')
 }
@@ -32,8 +35,8 @@ function summary(plan: Plan): string {
 /** 목표 진행 — 대시보드가 이미 불러온 목표 트래커 값을 넘긴다 (같은 요청을 두 번 하지 않게) */
 export type PlanGoal = { progressPct: number; gapPct: number }
 
-/** onPlanMonthly: 계획을 읽거나 저장할 때마다 매달 금액을 알린다 — 모아가기 계산기 처음 값이 계획과 같게 */
-export default function MyPlanCard({ goal, onPlanMonthly }: { goal?: PlanGoal | null; onPlanMonthly?: (monthly: number) => void }) {
+/** onPlanMonthly: 계획을 읽거나 저장할 때마다 매달 금액을 알린다 — 모아가기 계산기 처음 값이 계획과 같게. onPlanMix: 저장된 구성(안 정했으면 null) */
+export default function MyPlanCard({ goal, onPlanMonthly, onPlanMix }: { goal?: PlanGoal | null; onPlanMonthly?: (monthly: number) => void; onPlanMix?: (mix: MixEntry[] | null) => void }) {
   const navigate = useNavigate()
   const chatId = useCurrentChatId()
   const isAdmin = useProfileStore((st) => st.isAdmin)
@@ -50,6 +53,7 @@ export default function MyPlanCard({ goal, onPlanMonthly }: { goal?: PlanGoal | 
     if (!data?.plan) return
     setPlan(data.plan as Plan)
     onPlanMonthly?.(Number((data.plan as Plan).monthly) || 0)
+    onPlanMix?.(Array.isArray(data.plan.mix) ? (data.plan.mix as MixEntry[]) : null)
     setDeposit({ next_deposit_date: data.next_deposit_date ?? null, total_deposited: data.total_deposited ?? null, deposit_log: Array.isArray(data.deposit_log) ? data.deposit_log : [] })
   }
 

@@ -15,12 +15,13 @@ vi.mock('../../stores/profileStore', () => ({
 // 화면 위 '내 모으기'·'내 계획'·목표는 각자 테스트가 있다 — 이 화면 테스트의 대상이 아니다
 vi.mock('../saving-progress/SavingProgressCard', () => ({ default: () => null }))
 // '내 계획'은 매달 금액만 알린다(onPlanMonthly) — 계산기 처음 값 테스트용
-const planMock = vi.hoisted(() => ({ monthly: 0 }))
+const planMock = vi.hoisted(() => ({ monthly: 0, mix: null as unknown }))
 vi.mock('../my-plan/MyPlanCard', async () => {
   const { useEffect } = await import('react')
   return {
-    default: ({ onPlanMonthly }: { onPlanMonthly?: (m: number) => void }) => {
+    default: ({ onPlanMonthly, onPlanMix }: { onPlanMonthly?: (m: number) => void; onPlanMix?: (mix: any) => void }) => {
       useEffect(() => { if (planMock.monthly) onPlanMonthly?.(planMock.monthly) }, [onPlanMonthly])
+      useEffect(() => { if (planMock.mix) onPlanMix?.(planMock.mix) }, [onPlanMix])
       return null
     },
   }
@@ -36,6 +37,7 @@ function candles(n: number, close: (i: number) => number) {
 
 beforeEach(() => {
   planMock.monthly = 0
+  planMock.mix = null
   window.localStorage.clear()
   apiFetchMock.mockReset()
   apiFetchMock.mockImplementation((path: string) => {
@@ -164,5 +166,36 @@ describe('모아가기', () => {
     fireEvent.click(screen.getByRole('button', { name: '이 달 기록 저장' }))
     expect(await screen.findByText(/\(진행 중\)/)).toBeInTheDocument()
     expect(screen.getByText('244,646')).toBeInTheDocument()
+  })
+
+  it('1번 구성: 안 정했으면 국내만으로 계산하고, 반반을 고르면 아래 계산이 구성 이력으로 바뀌고 저장은 버튼으로', async () => {
+    renderPage()
+    await screen.findByText('처음이면 이걸로')
+    expect(screen.getByText(/아직 구성을 정하지 않았어요/)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /국내만/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.queryByRole('button', { name: '이 구성을 내 계획으로 정하기' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('radio', { name: /국내·해외 반반/ }))
+    expect(screen.getByText(/기준: 내 구성\(코스피200 50 · S&P500 50, 매달 비중 맞춤\)\(이력 2003~\)/)).toBeInTheDocument()
+    expect(screen.getByLabelText('같은 지수의 다른 후보')).toBeInTheDocument()
+    expect(apiFetchMock.mock.calls.some(([p, o]) => p === '/api/ui/investment-prefs' && (o as any)?.method === 'POST')).toBe(false)
+
+    apiFetchMock.mockImplementationOnce((_p: string, o: any) => Promise.resolve({ data: { plan: { monthly: 0, mix: JSON.parse(o.body).plan.mix } } }))
+    fireEvent.click(screen.getByRole('button', { name: '이 구성을 내 계획으로 정하기' }))
+    await screen.findByText(/내 계획 구성을 '코스피200 50 · S&P500 50'\(으\)로 정했어요/)
+    const [, opts] = apiFetchMock.mock.calls.find(([p, o]) => p === '/api/ui/investment-prefs' && (o as any)?.method === 'POST')!
+    expect(JSON.parse((opts as any).body).plan.mix.map((e: any) => [e.index, e.weight])).toEqual([['kospi200', 0.5], ['sp500', 0.5]])
+    expect(screen.getByRole('radio', { name: /국내·해외 반반.*내 계획/ })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('1번 구성: 저장된 직접 구성은 그대로 보이고 지수마다 상품 칸이 생긴다', async () => {
+    planMock.mix = [
+      { index: 'kospi200', weight: 0.7, product: null, account: null },
+      { index: 'nasdaq100', weight: 0.3, product: null, account: null },
+    ]
+    renderPage()
+    await screen.findByText('직접 정한 구성')
+    expect(screen.getByLabelText<HTMLSelectElement>("같은 지수의 다른 후보").value).toMatch(/^[0-9A-Z]{6}$/)
+    expect(screen.queryByText(/아직 구성을 정하지 않았어요/)).toBeNull()
   })
 })
