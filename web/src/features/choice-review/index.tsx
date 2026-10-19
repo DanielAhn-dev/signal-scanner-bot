@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan } from '../../lib/format'
 import { readSwitchHistory, type SwitchEvent } from '../../lib/switchHistory'
 import { useCurrentClientId } from '../../stores/profileStore'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
+import AdherenceCard, { type Adherence } from './AdherenceCard'
 import './choice-review.css'
 
 type Point = { date: string; actual: number; alt: number | null }
@@ -72,18 +73,24 @@ type Health = {
  * 몇 달 단위 수익은 잡음이라 그 숫자로 규칙을 흔들게 된다. 대신 "규칙대로 가고 있는지"만 본다.
  */
 function HealthCard() {
-  const [state, setState] = useState<{ health: Health | null; satCap: number } | null>(null)
+  const [state, setState] = useState<{ health: Health | null; satCap: number; adherence: Adherence | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const apply = (data: any) => setState({ health: data.health ?? null, satCap: Number(data.settings?.satelliteCapPct) || 10, adherence: data.adherence ?? null })
   useEffect(() => {
     let active = true
     apiFetch('/api/ui/income-guide', { cacheMs: 0, timeoutMs: 20_000, retries: 0 })
       .then((res) => {
         if (!active) return
         if (!res?.data) setError(res?.error ?? '불러오지 못했습니다.')
-        else setState({ health: res.data.health ?? null, satCap: Number(res.data.settings?.satelliteCapPct) || 10 })
+        else apply(res.data)
       })
       .catch((e) => { if (active) setError(e instanceof Error ? e.message : String(e)) })
     return () => { active = false }
+  }, [])
+  // 판정에서 빼기 — 저장이 성공한 응답으로만 화면을 바꾼다
+  const exclude = useCallback(async (key: string, on: boolean) => {
+    const res = await apiFetch('/api/ui/income-guide', { method: 'POST', body: JSON.stringify({ action: 'adherence-exclude', key, exclude: on }), cacheMs: 0, timeoutMs: 20_000, retries: 0 })
+    if (res?.data) apply(res.data)
   }, [])
 
   if (error) return <section className="choice-card choice-error" role="alert">계좌 건강을 불러오지 못했습니다: {error}</section>
@@ -119,6 +126,7 @@ function HealthCard() {
     { label: '평가액', fmt: (p) => formatKrwMan(p.total) },
   ]
   return (
+    <>
     <section className="choice-card" aria-label="계좌 건강">
       <h2>계좌 건강 — 규칙대로 가고 있나요</h2>
       <p className="choice-wait">{summary}</p>
@@ -144,6 +152,8 @@ function HealthCard() {
         기록은 매달 자동으로 쌓이고, <Link to="/income-guide">리밸런싱 가이드</Link>에서 직접 남길 수도 있습니다.
       </p>
     </section>
+    {state.adherence && <AdherenceCard data={state.adherence} onExclude={exclude} />}
+    </>
   )
 }
 

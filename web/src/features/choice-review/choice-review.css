@@ -26,3 +26,12 @@
 .choice-health thead th { font-size: 11px; color: var(--color-text-secondary); font-weight: 600; }
 .choice-health tbody th { text-align: left; font-weight: 400; color: var(--color-text-secondary); }
 .choice-health td.is-warn { color: var(--color-error); font-weight: 600; }
+/* 가이드 따름 기록 — 내 선택 우세·안내 우세를 같은 크기로 */
+.choice-adherence tbody th { white-space: normal; word-break: keep-all; min-width: 160px; }
+.choice-adherence small { display: block; font-size: 11px; color: var(--color-text-tertiary); font-weight: 400; }
+.choice-adherence .is-up, .choice-card strong.is-up { color: var(--color-stock-up); }
+.choice-adherence .is-down, .choice-card strong.is-down { color: var(--color-stock-down); }
+.choice-adherence .is-muted { color: var(--color-text-tertiary); text-align: center; }
+.choice-adherence tr.is-excluded th, .choice-adherence tr.is-excluded td:not(:last-child) { color: var(--color-text-tertiary); text-decoration: line-through; }
+.choice-link { border: 0; background: none; padding: 0; color: var(--color-brand); font: inherit; font-size: 11px; cursor: pointer; text-decoration: underline; }
+.choice-link:disabled { opacity: .5; cursor: default; }
