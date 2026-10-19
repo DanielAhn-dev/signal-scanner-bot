@@ -111,3 +111,15 @@
 .acc-preset-stat { color: var(--color-text-secondary); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .acc-mix-slot { display: flex; flex-direction: column; gap: 8px; }
 .acc-mix-index { font-size: 14px; }
+/* 3번 그래프 (FanChart) — 넣은 돈 대비 %, 0% = 원금 */
+.acc-chart-wrap { position: relative; width: 100%; touch-action: pan-y; }
+.acc-chart-wrap .acc-chart { display: block; }
+.acc-chart-wrap .acc-axis { font-size: 11px; }
+.acc-zero { stroke: var(--color-text-secondary); stroke-width: 1.5; }
+.acc-loss-zone { fill: var(--color-error-bg); opacity: .7; }
+.acc-crosshair { stroke: var(--color-text-tertiary); stroke-width: 1; stroke-dasharray: 3 3; }
+.acc-dot { stroke: var(--color-bg-surface); stroke-width: 2; }
+.acc-dot--median { fill: var(--color-brand); }
+.acc-dot--real { fill: var(--color-text-primary); }
+.acc-tip { position: absolute; width: 184px; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 2px; pointer-events: none; font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgb(0 0 0 / .12); }
+.acc-tip i { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; }

@@ -37,7 +37,6 @@ import {
   type Freq,
   type Goal,
   type HistorySeries,
-  type SimResult,
 } from '../../lib/accumulate'
 import SplitPlanCard from './SplitPlanCard'
 import SavingProgressCard from '../saving-progress/SavingProgressCard'
@@ -46,6 +45,7 @@ import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { useLocation, useNavigate } from 'react-router-dom'
 import PeriodSim from './PeriodSim'
 import MixPicker from './MixPicker'
+import FanChart from './FanChart'
 import { DEFAULT_PLAN_MIX, isKospiOnly, mixHistory, type MixEntry } from '../../lib/planMix'
 import './accumulate.css'
 
@@ -90,42 +90,6 @@ function MixLimits({ h }: { h: HistorySeries }) {
 type IncomeView = { total: number; distribution: { monthlyNet: number } } | null
 
 const ymLabel = (ym: string) => (ym.length === 6 ? `${ym.slice(0, 4)}-${ym.slice(4)}` : ym)
-
-function FanChart({ sim }: { sim: SimResult }) {
-  const W = 640, H = 260, L = 56, R = 12, T = 12, B = 28
-  const n = sim.months
-  const real = sim.deepest
-  const maxY = Math.max(...sim.p90, ...sim.paid, ...(real?.value ?? [])) * 1.05
-  const x = (i: number) => L + ((W - L - R) * i) / n
-  const y = (v: number) => T + (H - T - B) * (1 - v / maxY)
-  const line = (arr: number[]) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
-  const band = `${line(sim.p90)} ${sim.p10.map((_, i) => `L${x(n - i).toFixed(1)},${y(sim.p10[n - i]).toFixed(1)}`).join(' ')} Z`
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => maxY * f)
-  const years = Array.from({ length: Math.floor(n / 12) + 1 }, (_, i) => i * 12).filter((m) => m % (n > 84 ? 24 : 12) === 0)
-  return (
-    <svg className="acc-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="적립 평가금 추이: 중앙값, 하위10%, 최악, 납입액">
-      {ticks.map((t) => (
-        <g key={t}>
-          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className="acc-grid" />
-          <text x={L - 6} y={y(t) + 4} textAnchor="end" className="acc-axis">{man(t)}</text>
-        </g>
-      ))}
-      {years.map((m) => <text key={m} x={x(m)} y={H - 8} textAnchor="middle" className="acc-axis">{m / 12}년</text>)}
-      <path d={band} className="acc-band" />
-      <path d={line(sim.paid)} className="acc-line acc-paid" />
-      <path d={line(sim.worst)} className="acc-line acc-worst" />
-      <path d={line(sim.p10)} className="acc-line acc-p10" />
-      <path d={line(sim.median)} className="acc-line acc-median" />
-      {/* 분위수 선은 시점마다 다른 시작점 값을 이어 매끈하다 — 한 사람이 실제로 겪은 길을 점선으로 겹친다 */}
-      {real && (
-        <g>
-          <path d={line(real.value)} className="acc-line acc-real" />
-          <circle cx={x(real.troughStep)} cy={y(real.value[real.troughStep])} r={4} className="acc-trough" />
-        </g>
-      )}
-    </svg>
-  )
-}
 
 export default function AccumulatePage() {
   const clientId = useCurrentClientId()
@@ -450,7 +414,7 @@ export default function AccumulatePage() {
               <div><dt>최악</dt><dd>{man(summary.worst)}</dd></div>
             </dl>
             <FanChart sim={sim} />
-            <p className="acc-legend"><i className="acc-k-median" />중앙값 <i className="acc-k-p10" />하위10% <i className="acc-k-worst" />최악 <i className="acc-k-paid" />납입 · 음영은 하위10%~상위10%{sim.deepest && <> <i className="acc-k-real" />실제 한 사람({ymLabel(sim.deepest.start)} 시작)</>}</p>
+            <p className="acc-legend"><i className="acc-k-median" />중앙값 <i className="acc-k-p10" />하위10% <i className="acc-k-worst" />최악{sim.deepest && <> <i className="acc-k-real" />실제 한 사람({ymLabel(sim.deepest.start)} 시작)</>} · 세로축은 넣은 돈 대비 %, 붉은 바탕은 원금 아래 · 음영은 하위10%~상위10% · 그래프를 짚으면 그 시점 값</p>
             {sim.deepest && sim.deepest.troughPct < 0 && (
               <p className="acc-summary">
                 색 선은 시점마다 {sim.starts}가지 결과의 순위값을 이은 것이라 실제보다 매끈합니다. 한 사람이 실제로 겪는 길은 점선처럼 출렁입니다 —{' '}
