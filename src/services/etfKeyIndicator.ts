@@ -3,6 +3,8 @@
  * 모든 국내 상장 ETF에 대해 최근 12개월 분배율·총보수·1개월/3개월/1년 수익률을 준다(신규 상장 종목 포함).
  * 하루 안에서는 거의 바뀌지 않아 종목별 6시간 캐시. 실패해도 카드는 이력 데이터·기본 문구로 그려진다.
  */
+import { fetchEtfMarketSums } from "./etfMarketList";
+
 export type EtfKeyIndicator = {
   /** 최근 12개월 분배율 % */
   yieldTtm: number | null;
@@ -85,6 +87,23 @@ export async function fetchEtfKeyIndicators(codes: string[]): Promise<Map<string
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(6, todo.length) }, worker));
+  const [, marketSums] = await Promise.all([
+    Promise.all(Array.from({ length: Math.min(6, todo.length) }, worker)),
+    out.size || todo.length ? fetchEtfMarketSums() : Promise.resolve(new Map<string, number>()),
+  ]);
+  return withListedMarketCap(out, marketSums);
+}
+
+/**
+ * 순자산은 ETF 전체 목록 값을 먼저 쓴다 — 종목별 marketValueRaw는 같은 종목도 요청마다 빠졌다 들어왔다 해서
+ * (2026-10-19 장중 3번 중 2번 누락) 같은 지수 상품 판정의 규모 비교가 요청마다 달라질 수 있었다. 목록에 없으면 종목별 값 유지.
+ */
+export function withListedMarketCap(indicators: Map<string, EtfKeyIndicator>, marketSumEok: Map<string, number>): Map<string, EtfKeyIndicator> {
+  if (!marketSumEok.size) return indicators;
+  const out = new Map<string, EtfKeyIndicator>();
+  for (const [code, k] of indicators) {
+    const eok = marketSumEok.get(code);
+    out.set(code, eok != null ? { ...k, marketCap: eok * 1e8 } : k);
+  }
   return out;
 }
