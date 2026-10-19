@@ -85,3 +85,17 @@ body = (
 )
 open(OUT, "w", encoding="utf-8", newline="\n").write(body)
 print(OUT, cut, [(a['id'], a['first'], len(a['monthly'])) for a in out])
+
+# 서버용: 내 계획 구성(코스피200·S&P500·나스닥100)의 과거 이력 — 목표 트래커·금요일 보고의 수익 가정(src/lib/planMixRate.ts).
+# 웹 섞어보기와 같은 값이어야 한다(tests/planMixRate.test.ts가 대조). 서버는 web/ 파일을 import하지 않으므로 따로 쓴다.
+SERVER_OUT = "src/data/planIndexMonthly.ts"
+plan = [{"id": a["id"], "dragPct": a["dragPct"], "monthly": a["monthly"]} for a in out if a["id"] in ("kospi200", "sp500", "nasdaq100")]
+server_body = (
+    "// 자동 생성 — scripts/research/build_mix_data.py. 직접 고치지 말고 스크립트를 다시 돌린다.\n"
+    "/** 내 계획 구성에 넣을 수 있는 지수의 월말 가격(원화, 분배금 반영) — web/src/data/mixData.ts와 같은 값 */\n"
+    "export type PlanIndexSeries = { id: 'kospi200' | 'sp500' | 'nasdaq100'; dragPct: number; monthly: Array<[string, number]> }\n\n"
+    f"export const PLAN_INDEX_ASOF = '{cut[:4]}-{cut[4:]}'\n\n"
+    f"export const PLAN_INDEX_MONTHLY: PlanIndexSeries[] = {json.dumps(plan, ensure_ascii=False)}\n"
+)
+open(SERVER_OUT, "w", encoding="utf-8", newline="\n").write(server_body)
+print(SERVER_OUT, [(a["id"], len(a["monthly"])) for a in plan])
