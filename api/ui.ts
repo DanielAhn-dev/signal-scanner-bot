@@ -214,6 +214,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Headers', Array.from(allowHeaders).join(','))
   res.setHeader('Access-Control-Allow-Credentials', allowOrigin ? 'true' : 'false')
   res.setHeader('Vary', 'Origin,Access-Control-Request-Headers')
+  // 기본은 브라우저도 저장하지 않는다. Vercel 기본값(public, max-age=0, must-revalidate)이면 운영 웹에서 받은 응답이
+  // 브라우저 캐시에 남아 같은 브라우저의 localhost에서 그 응답(Allow-Origin=운영 도메인)을 다시 써 CORS로 막혔다(2026-10-19).
+  // 프로필 같은 개인 응답은 원래 저장하면 안 된다. 캐시가 필요한 공개 라우트는 핸들러가 Cache-Control을 덮어쓴다.
+  res.setHeader('Cache-Control', 'private, no-store')
   if (req.method === 'OPTIONS') return res.status(204).end()
 
   try {
