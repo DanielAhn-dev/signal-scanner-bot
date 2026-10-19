@@ -15,6 +15,7 @@ import { computeFlowScore, pickHeavyNetSelling } from "../src/services/investorF
 import { fetchFundamentalGateResults } from "../src/services/fundamentalQualityGate";
 import { buildPromotionKeyboard } from "../src/services/strategyPromotion";
 import { PROFILE_CODES, fetchNaverCloses, simulateAllCoreProfiles, type CloseBar } from "../src/services/coreProfiles";
+import { realGoalEquity } from "../src/services/realAccountValue";
 import {
   buildGoalTrackerView,
   fetchAccountEquity,
@@ -480,8 +481,9 @@ async function main(): Promise<void> {
         ? await recordGoalEquity(supabase, goalChat, { date: now.date, seed: now.seed, total: now.total, realized: now.realized }).catch(() => null)
         : await loadGoalFile(supabase, goalChat).catch(() => null);
       if (file) {
-        const realized = await fetchMonthRealized(supabase, goalChat, endDate);
-        goalLine = formatGoalLine(buildGoalTrackerView({ file, now, realized }));
+        // 화면과 같은 기준 — 목표는 [실제] 내 계좌·내 구성 과거 이력 (src/services/goalTracker.ts)
+        const [realized, real] = await Promise.all([fetchMonthRealized(supabase, goalChat, endDate), realGoalEquity(supabase, goalChat)]);
+        goalLine = formatGoalLine(buildGoalTrackerView({ file, now, realized, real }));
       }
     }
   }

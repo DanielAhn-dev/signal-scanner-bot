@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   assessMonth,
+  basisLine,
+  formatGoalLine,
   buildGoalTrackerView,
   chainedReturn,
   compoundingCrossover,
@@ -152,4 +154,52 @@ test("buildGoalTrackerView: trail은 시작일 이후 월별 마지막 기록만
     { date: "2026-09-30", total: 20_000_000 },
     { date: "2026-10-31", total: 21_000_000 },
   ]);
+});
+
+test("목표 계산 기준: 목표는 [실제] 내 계좌·구성 과거 이력, 계획선 대비·이번 달은 [가상] 그대로", () => {
+  const file = { settings: { ...settings, monthlyContribution: 1_000_000 }, history: [{ date: "2026-09-30", seed: 20_000_000, total: 20_000_000 }] };
+  const now = { date: "2026-10-15", seed: 20_000_000, total: 20_400_000, cash: 0, holdings: 20_400_000, mix: [
+    { index: "kospi200" as const, weight: 0.5, product: null, account: null },
+    { index: "sp500" as const, weight: 0.5, product: null, account: null },
+  ] };
+  const realized = { swing: 0, sweep: 0, sells: 0, wins: 0 };
+  const v = buildGoalTrackerView({ file, now, realized, real: { total: 60_000_000, principal: 50_000_000 } });
+  assert.equal(v.basis.assetSource, "real");
+  assert.equal(v.equity, 60_000_000);
+  assert.ok(Math.abs(v.target.progressPct - 20) < 1e-9); // 6천만 / 3억
+  assert.equal(v.basis.rateSource, "history");
+  assert.equal(v.basis.rates?.label, "코스피200 50 · S&P500 50");
+  assert.equal(v.basis.ratePct, v.basis.rates!.typicalPct);
+  assert.equal(v.target.monthsToReach, monthsToReach({ fromEquity: 60_000_000, target: 300_000_000, planAnnualPct: v.basis.ratePct, monthlyContribution: 1_000_000 }));
+  // 운 나쁘면 더 늦고, 가정 수익률(8%)로 본 도달도 따로
+  assert.ok(v.basis.etaLowMonth! >= v.target.etaMonth!);
+  assert.ok(v.basis.etaAssumedMonth != null);
+  assert.ok(v.schedule.every((r) => r.contributionLow != null && r.contributionLow >= r.contribution));
+  assert.equal(v.progress.principal, 50_000_000);
+  // 계획선 대비·이번 달 기대 수익은 [가상] 봇 계좌
+  assert.equal(v.basis.virtualEquity, 20_400_000);
+  assert.ok(Math.abs(v.plan.gapPct - ((20_400_000 / v.plan.planValue - 1) * 100)) < 0.01);
+  assert.equal(v.thisMonth.expectedProfit, Math.round(20_000_000 * monthlyRate(8)));
+});
+
+test("목표 계산 기준: 실계좌 기록이 없으면 가상 계좌, 구성이 없으면 코스피200 100% 이력", () => {
+  const v = buildGoalTrackerView({
+    file: { settings, history: [] },
+    now: { date: "2026-10-15", seed: 20_000_000, total: 20_000_000, cash: 0, holdings: 0 },
+    realized: { swing: 0, sweep: 0, sells: 0, wins: 0 },
+  });
+  assert.equal(v.basis.assetSource, "virtual");
+  assert.equal(v.equity, 20_000_000);
+  assert.equal(v.basis.rates?.label, "코스피200 100");
+  assert.match(basisLine(v), /^\[가상\] 계좌 · 내 구성\(코스피200 100\) 2002-10~ 이력 보통 연 [\d.]+%·운 나쁨 [\d.]+%$/);
+  assert.match(formatGoalLine(v), /예상 도달 .+ · \[가상\] 계좌 · 내 구성/);
+});
+
+test("monthsToReach: 넣는 돈을 해마다 늘리면 더 빨리 닿는다(13번째 달부터)", () => {
+  const base = { fromEquity: 0, target: 100_000_000, planAnnualPct: 6, monthlyContribution: 1_000_000 };
+  const flat = monthsToReach(base)!;
+  const raised = monthsToReach({ ...base, raisePct: 0.05 })!;
+  assert.ok(raised < flat);
+  // 첫 해는 같다
+  assert.equal(monthsToReach({ ...base, target: 5_000_000 }), monthsToReach({ ...base, target: 5_000_000, raisePct: 0.5 }));
 });

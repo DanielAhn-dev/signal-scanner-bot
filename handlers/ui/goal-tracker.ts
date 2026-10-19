@@ -9,6 +9,7 @@ import {
   fetchMonthRealized,
   recordGoalEquity,
 } from '../../src/services/goalTracker'
+import { realGoalEquity } from '../../src/services/realAccountValue'
 
 // 목표 트래커 (src/services/goalTracker.ts) — GET: 오늘 평가액을 기록하고 진행 상황 반환 / POST: 목표 설정 변경
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -38,8 +39,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!now) return res.status(200).json({ ok: true, data: null, reason: '가상 계좌(시드) 설정이 없습니다. /투자금 으로 시드를 설정하세요.' })
     // 설정 변경과 오늘 기록을 한 번에 쓴다 — 따로 쓰면 뒤의 기록이 옛 설정으로 덮어쓴다
     const file = await recordGoalEquity(supabase, chatId, { date: now.date, seed: now.seed, total: now.total, realized: now.realized }, patch)
-    const realized = await fetchMonthRealized(supabase, chatId, today)
-    return res.status(200).json({ ok: true, data: buildGoalTrackerView({ file, now, realized }) })
+    // 목표(달성률·예상 도달)는 [실제] 내 계좌로 — 기록 이력(file.history)은 가상 계좌 그대로 둔다(전향검증 기록과 같은 파일)
+    const [realized, real] = await Promise.all([fetchMonthRealized(supabase, chatId, today), realGoalEquity(supabase, chatId)])
+    return res.status(200).json({ ok: true, data: buildGoalTrackerView({ file, now, realized, real }) })
   } catch (e: any) {
     return res.status(500).json({ error: String(e?.message || e) })
   }

@@ -2,12 +2,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { denyIfUnauthorizedRead } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
-import { fetchGuidePrices, fetchYieldPctByCode, loadAccountPositionRows, loadGuideFile, toGuideHoldings } from '../../src/services/incomeGuideStore'
+import { fetchYieldPctByCode, loadGuideFile } from '../../src/services/incomeGuideStore'
+import { fetchRealAccountValue } from '../../src/services/realAccountValue'
 import { selectPaged } from '../../src/services/supabasePaging'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { loadGoalFile, requiredSeed, DEFAULT_WITHDRAWAL_PCT } from '../../src/services/goalTracker'
 import { readInvestPlan } from '../../src/services/userPlan'
-import { classifyHolding, resolveYieldPct, totalCashBalance } from '../../src/lib/incomeGuide'
+import { classifyHolding, resolveYieldPct } from '../../src/lib/incomeGuide'
 import { accountKind, distributionTaxSaved, isTotalReturnEtf } from '../../src/lib/savingProgress'
 
 // 홈·모아가기 "내 모으기" (계산 src/lib/savingProgress.ts)
@@ -44,14 +45,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!chatId && !user.clientId) return res.status(400).json({ error: 'identity required' })
 
   try {
-    // 실계좌 보유 — 원금(매수가 × 수량)과 평가금
-    const rows = chatId ? await loadAccountPositionRows(supabase, chatId) : []
-    const { prices } = await fetchGuidePrices(supabase, rows.map((r) => r.code))
-    const { holdings } = toGuideHoldings(rows, prices)
+    // 실계좌 보유 — 원금(매수가 × 수량)과 평가금. 목표 트래커와 같은 계산(src/services/realAccountValue.ts)
     const guide = chatId ? await loadGuideFile(supabase, chatId) : null
-    const cash = guide ? totalCashBalance(guide.settings) : 0
-    const cost = holdings.reduce((s, h) => s + h.quantity * (h.avgPrice ?? h.price), 0)
-    const value = holdings.reduce((s, h) => s + h.quantity * h.price, 0)
+    const real = chatId ? await fetchRealAccountValue(supabase, chatId, { guide }) : null
+    const holdings = real?.guideHoldings ?? []
+    const cash = real?.cash ?? 0
+    const cost = real?.cost ?? 0
+    const value = real?.holdings ?? 0
 
     // 순매수가 있었던 달 — 수량 고침(ADJUST)은 넣은 돈이 아니라 빼고, 매수 − 매도 > 0인 달만
     const owner = [user.clientId ? `client_id.eq.${user.clientId}` : null, chatId ? `chat_id.eq.${chatId}` : null].filter(Boolean).join(',')

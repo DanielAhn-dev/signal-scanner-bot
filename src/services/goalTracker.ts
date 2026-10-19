@@ -8,7 +8,14 @@
  *     50일선 규칙 기준 20년 원금 유지 비율: 4% 87% · 5% 68% · 6% 50% (보유 1배는 4% 97%). 고배당 ETF 배당률도 4~5%대.
  *   - 이번 달 수익률: 날짜별 평가액을 이어 붙이되, 입금·출금이 있던 날은 수익 0으로 본다(isCapitalFlow)
  *   - 정상 범위: 코스피 50일선 규칙의 과거 월별 수익 분포 — 마이너스 달이 "흔한 달"인지 알려 준다
+ *
+ * 2026-10-19 목표 계산 기준 통합(docs/plan-screen-map-2026-10-19.md 5단계):
+ *   - 목표(필요 시드 달성률·예상 도달·은퇴 계획·필요 월 적립)는 [실제] 내 계좌 평가액(realAccountValue — '내 모으기'와 같은 값)으로,
+ *     수익 가정은 내 계획 구성의 과거 이력(planMixRates 보통·운 나쁨). planAnnualPct(8%)는 "내가 가정한 수익률" 보조 값이다.
+ *   - 계획선 대비·이번 달 수익·스윙은 [가상] 봇 계좌 기록 그대로(전향검증 기록과 같은 파일이라 실제 값을 섞지 않는다).
  */
+import { planMixRates, type PlanMixRates } from "../lib/planMixRate";
+import { readInvestPlan, type MixEntry } from "./userPlan";
 
 type SupabaseClientAny = any;
 
@@ -132,12 +139,16 @@ export function monthsToReach(input: {
   target: number;
   planAnnualPct: number;
   monthlyContribution: number;
+  /** 넣는 돈을 해마다 늘리는 비율(0.05 = 5%) — 12개월마다 */
+  raisePct?: number;
 }): number | null {
   if (input.fromEquity >= input.target) return 0;
   const m = monthlyRate(input.planAnnualPct);
   let v = input.fromEquity;
+  let c = Math.max(0, input.monthlyContribution);
   for (let n = 1; n <= 600; n += 1) {
-    v = v * (1 + m) + Math.max(0, input.monthlyContribution);
+    if (n > 1 && (n - 1) % 12 === 0) c *= 1 + (input.raisePct ?? 0);
+    v = v * (1 + m) + c;
     if (v >= input.target) return n;
   }
   return null;
@@ -410,7 +421,7 @@ export async function fetchAccountEquity(
   supabase: SupabaseClientAny,
   chatId: number,
   date: string
-): Promise<(EquityPoint & { cash: number; holdings: number; monthlyDeposit: number | null; principal: number | null; life: LifeProfile | null }) | null> {
+): Promise<(EquityPoint & { cash: number; holdings: number; monthlyDeposit: number | null; principal: number | null; life: LifeProfile | null; mix: MixEntry[] | null }) | null> {
   const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
   const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
   const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
@@ -447,6 +458,8 @@ export async function fetchAccountEquity(
     principal: Number(prefs.virtual_total_deposited) > 0 ? Math.round(Number(prefs.virtual_total_deposited)) : null,
     // 프로필의 출생 연월·은퇴 나이 (없으면 null — 나이 없이 예전처럼 보여 준다)
     life: readLifeProfile(prefs),
+    // 내 계획 구성 — 목표 계산의 수익 가정(과거 이력)을 정한다. 없으면 코스피200 100%
+    mix: readInvestPlan(prefs).mix,
   };
 }
 
@@ -581,8 +594,8 @@ export type GoalTrackerView = {
   currentMonthlyProfit: number;
   /** 지금 평가액에서 원금을 지키며 매달 꺼내 쓸 수 있는 금액 (인출률 기준) */
   currentMonthlyWithdrawal: number;
-  /** 시점별 필요 월 입금 — 1·2·3·5년과 설정한 목표 시점. 2차면 빈 배열 */
-  schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean; isRetire?: boolean }>;
+  /** 시점별 필요 월 입금 — 1·2·3·5년과 설정한 목표 시점(보통 / 운 나쁨 수익률). 2차면 빈 배열 */
+  schedule: Array<{ month: string; months: number; contribution: number; contributionLow?: number; isTarget: boolean; isRetire?: boolean }>;
   /** 프로필에 출생 연월이 있을 때: 은퇴 나이 기준 계획. 없으면 null */
   life: LifePlan | null;
   normalRange: typeof NORMAL_MONTHLY_RANGE;
@@ -597,12 +610,30 @@ export type GoalTrackerView = {
     growthPct: number;
     crossover: { monthlyExpected: number; contribution: number; ratioPct: number; months: number | null; month: string | null } | null;
   };
+  /**
+   * 목표 계산의 기준 — 자산은 [실제] 내 계좌(있으면), 수익률은 내 계획 구성의 과거 이력(보통).
+   * equity·target·schedule·life·currentMonthly*·progress가 이 기준이고, plan(계획선 대비)·thisMonth는 [가상] 봇 계좌 그대로.
+   */
+  basis: {
+    assetSource: "real" | "virtual";
+    /** 목표 계산에 쓴 연 수익률 % (구성 이력 보통, 이력을 못 내면 가정 수익률) */
+    ratePct: number;
+    rateSource: "history" | "assumed";
+    rates: PlanMixRates | null;
+    /** 운 나쁨 수익률이면 언제 닿나 · 내가 가정한 수익률(planAnnualPct)이면 언제 닿나 */
+    etaLowMonth: string | null;
+    etaAssumedMonth: string | null;
+    /** [가상] 봇 계좌 평가액 — 계획선 대비·이번 달은 이 값 기준 */
+    virtualEquity: number;
+  };
 };
 
 export function buildGoalTrackerView(input: {
   file: GoalTrackerFile;
-  now: EquityPoint & { cash: number; holdings: number; monthlyDeposit?: number | null; principal?: number | null; life?: LifeProfile | null };
+  now: EquityPoint & { cash: number; holdings: number; monthlyDeposit?: number | null; principal?: number | null; life?: LifeProfile | null; mix?: MixEntry[] | null };
   realized: { swing: number; sweep: number; sells: number; wins: number };
+  /** [실제] 내 계좌 평가액·넣은 원금(매수가+예수금). 없거나 못 읽었으면 가상 계좌로 계산한다 */
+  real?: { total: number; principal: number } | null;
 }): GoalTrackerView {
   const { file, now, realized } = input;
   // 월 자동 입금을 설정한 계정은 실제 입금액이 계획의 월 입금이다 (두 곳에 따로 넣지 않게)
@@ -612,14 +643,17 @@ export function buildGoalTrackerView(input: {
   const planValue = planValueAt(s, monthsElapsed);
   const withdrawalPct = s.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT;
   const need = requiredSeed(s.targetMonthlyProfit, withdrawalPct);
-  const months = monthsToReach({
-    fromEquity: now.total,
-    target: need,
-    planAnnualPct: s.planAnnualPct,
-    monthlyContribution: s.monthlyContribution,
-  });
+  // 목표 쪽 기준: [실제] 자산 + 구성 과거 이력 수익률(보통). 이력을 못 내면 가정 수익률
+  const assetSource: "real" | "virtual" = input.real ? "real" : "virtual";
+  const equity = input.real ? input.real.total : now.total;
+  const rates = planMixRates(now.mix ?? null);
+  const ratePct = rates ? rates.typicalPct : s.planAnnualPct;
+  const reachAt = (pct: number) => monthsToReach({ fromEquity: equity, target: need, planAnnualPct: pct, monthlyContribution: s.monthlyContribution });
+  const months = reachAt(ratePct);
   const etaMonth = months != null ? addMonths(now.date, months) : null;
-  const reached = Number.isFinite(need) && now.total >= need;
+  const monthsLow = rates ? reachAt(rates.lowPct) : null;
+  const monthsAssumed = reachAt(s.planAnnualPct);
+  const reached = Number.isFinite(need) && equity >= need;
   const phase: GoalTrackerView["phase"] = reached
     ? {
         stage: 2,
@@ -635,9 +669,9 @@ export function buildGoalTrackerView(input: {
     ? buildLifePlan({
         life: now.life,
         today: now.date,
-        equity: now.total,
+        equity,
         requiredSeed: need,
-        planAnnualPct: s.planAnnualPct,
+        planAnnualPct: ratePct,
         monthlyContribution: s.monthlyContribution,
         withdrawalPct,
         etaMonth,
@@ -668,8 +702,9 @@ export function buildGoalTrackerView(input: {
           month: addMonths(now.date, h.months),
           months: h.months,
           contribution: Math.round(
-            requiredMonthlyContribution({ fromEquity: now.total, target: need, planAnnualPct: s.planAnnualPct, months: h.months })
+            requiredMonthlyContribution({ fromEquity: equity, target: need, planAnnualPct: ratePct, months: h.months })
           ),
+          ...(rates ? { contributionLow: Math.round(requiredMonthlyContribution({ fromEquity: equity, target: need, planAnnualPct: rates.lowPct, months: h.months })) } : {}),
           isTarget: h.isTarget,
           isRetire: h.isRetire,
         }));
@@ -687,14 +722,14 @@ export function buildGoalTrackerView(input: {
   return {
     today: now.date,
     settings: s,
-    equity: now.total,
+    equity,
     seed: now.seed,
     cash: now.cash,
     holdings: now.holdings,
     plan: { monthsElapsed, planValue: Math.round(planValue), gapPct: planValue > 0 ? (now.total / planValue - 1) * 100 : 0 },
     target: {
       requiredSeed: Math.round(need),
-      progressPct: Number.isFinite(need) && need > 0 ? (now.total / need) * 100 : 0,
+      progressPct: Number.isFinite(need) && need > 0 ? (equity / need) * 100 : 0,
       monthsToReach: months,
       etaMonth,
     },
@@ -708,20 +743,20 @@ export function buildGoalTrackerView(input: {
       assessment: assessMonth(mtd == null ? null : mtd * 100),
     },
     phase,
-    currentMonthlyProfit: Math.round(now.total * monthlyRate(s.planAnnualPct)),
-    currentMonthlyWithdrawal: Math.round((now.total * withdrawalPct) / 100 / 12),
+    currentMonthlyProfit: Math.round(equity * monthlyRate(ratePct)),
+    currentMonthlyWithdrawal: Math.round((equity * withdrawalPct) / 100 / 12),
     schedule,
     life,
     normalRange: NORMAL_MONTHLY_RANGE,
     contributionLinked,
     trail,
     progress: (() => {
-      const principal = Math.round(now.principal ?? s.startEquity);
-      const cross = compoundingCrossover({ equity: now.total, planAnnualPct: s.planAnnualPct, monthlyContribution: s.monthlyContribution });
+      const principal = Math.round(input.real ? input.real.principal : now.principal ?? s.startEquity);
+      const cross = compoundingCrossover({ equity, planAnnualPct: ratePct, monthlyContribution: s.monthlyContribution });
       return {
         principal,
-        growth: Math.round(now.total - principal),
-        growthPct: principal > 0 ? (now.total / principal - 1) * 100 : 0,
+        growth: Math.round(equity - principal),
+        growthPct: principal > 0 ? (equity / principal - 1) * 100 : 0,
         crossover: cross
           ? {
               ...cross,
@@ -731,6 +766,15 @@ export function buildGoalTrackerView(input: {
           : null,
       };
     })(),
+    basis: {
+      assetSource,
+      ratePct,
+      rateSource: rates ? "history" : "assumed",
+      rates,
+      etaLowMonth: monthsLow != null ? addMonths(now.date, monthsLow) : null,
+      etaAssumedMonth: monthsAssumed != null ? addMonths(now.date, monthsAssumed) : null,
+      virtualEquity: now.total,
+    },
   };
 }
 
@@ -742,10 +786,19 @@ export function formatGoalLine(v: GoalTrackerView): string {
   return [
     `[목표] 월 ${man(v.settings.targetMonthlyProfit)}원 인출(연 ${v.settings.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT}%) → 필요 시드 ${man(v.target.requiredSeed)}원 · 현재 ${man(v.equity)}원 (${v.target.progressPct.toFixed(0)}%)`,
     `  이번 달 ${mtd} · 스윙 확정 ${man(v.thisMonth.realizedSwing)}원 · 계획 월 평균 ${man(v.thisMonth.expectedProfit)}원 · 계획선 대비 ${v.plan.gapPct >= 0 ? "+" : ""}${v.plan.gapPct.toFixed(1)}%`,
-    `  예상 도달 ${v.target.etaMonth ?? "50년 이상"} (연 ${v.settings.planAnnualPct}% 재투자${v.settings.monthlyContribution > 0 ? ` + 월 ${man(v.settings.monthlyContribution)}원 입금` : ""})`,
+    `  예상 도달 ${v.target.etaMonth ?? "50년 이상"}${v.basis.etaLowMonth ? ` (운 나쁘면 ${v.basis.etaLowMonth})` : ""} · ${basisLine(v)}${v.settings.monthlyContribution > 0 ? ` + 월 ${man(v.settings.monthlyContribution)}원 입금` : ""}`,
     target ? `  ${v.phase.title} · ${target.month}까지 닿으려면 월 ${man(target.contribution)}원 입금 필요` : `  ${v.phase.title}`,
     ...(v.life ? [`  [나이] 만 ${v.life.currentAge}세 · ${lifeVerdict(v.life)}`] : []),
   ].join("\n");
+}
+
+/** 목표 계산 기준 한 줄 — "[실제] 내 계좌 · 내 구성(코스피200 50 · S&P500 50) 2003-12~ 이력 보통 연 9.9%·운 나쁨 7.9%" */
+export function basisLine(v: Pick<GoalTrackerView, "basis" | "settings">): string {
+  const asset = v.basis.assetSource === "real" ? "[실제] 내 계좌" : "[가상] 계좌";
+  const r = v.basis.rates;
+  return r
+    ? `${asset} · 내 구성(${r.label}) ${r.from}~ 이력 보통 연 ${r.typicalPct}%·운 나쁨 ${r.lowPct}%`
+    : `${asset} · 가정 연 ${v.settings.planAnnualPct}%`;
 }
 
 /** 나이 기준 판단 한 줄 — 텔레그램 보고와 화면이 같은 문구를 쓴다 */
