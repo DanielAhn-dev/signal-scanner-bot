@@ -45,9 +45,9 @@ const STATE_LABEL: Record<MonthCell['state'], string> = { done: '넣음', missed
 
 function MonthStrip({ cells }: { cells: MonthCell[] }) {
   return (
-    <span className="sp-strip" role="list">
+    <span className="sp__strip" role="list">
       {cells.map((c) => (
-        <span key={c.ym} role="listitem" className={`sp-cell sp-cell--${c.state}`} title={`${c.ym} ${STATE_LABEL[c.state]}`} aria-label={`${Number(c.ym.slice(5))}월 ${STATE_LABEL[c.state] || '앞으로'}`} />
+        <span key={c.ym} role="listitem" className={`sp__cell sp__cell--${c.state}`} title={`${c.ym} ${STATE_LABEL[c.state]}`} aria-label={`${Number(c.ym.slice(5))}월 ${STATE_LABEL[c.state] || '앞으로'}`} />
       ))}
     </span>
   )
@@ -192,12 +192,13 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
             <tbody>
               <tr>
                 <th scope="row">연금저축·IRP 세액공제</th>
-                <td>
-                  {pension == null ? <span className="sp__muted">예산을 불러오지 못했습니다</span>
-                    : pension.base > 0 ? <>{man(pension.low)} ~ {man(pension.high)}</>
+                {/* 금액 칸은 다른 줄처럼 금액이나 '-'만, 안내는 설명 칸에 (금액 칸에 문장을 넣으면 좁게 접히고 설명 칸이 비었다) */}
+                <td>{pension && pension.base > 0 ? <>{man(pension.low)} ~ {man(pension.high)}</> : '-'}</td>
+                <td className="sp__muted">
+                  {pension == null ? '예산을 불러오지 못했습니다'
+                    : pension.base > 0 ? `연 납입 ${man(pension.base)}(한도 900만원) × 13.2%, 총급여 5,500만원 이하면 16.5%`
                     : <button type="button" className="sp__link" onClick={() => navigate('/budget')}>예산의 저축에 연금을 적으면 계산됩니다</button>}
                 </td>
-                <td className="sp__muted">{pension && pension.base > 0 ? `연 납입 ${man(pension.base)}(한도 900만원) × 13.2%, 총급여 5,500만원 이하면 16.5%` : ''}</td>
               </tr>
               <tr>
                 <th scope="row">일반 계좌 TR형</th>
