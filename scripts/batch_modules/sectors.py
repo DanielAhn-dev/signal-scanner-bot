@@ -24,7 +24,10 @@ def update_sector_data(supabase: Client, trading_date: str):
             .not_.is_("sector_id", "null")
             .eq("is_active", True)
             .order("code"))
-        stock_sector_map = {r["code"]: r["sector_id"] for r in stock_rows}
+        # 추천 ETF는 일봉만 따로 쌓는 것이라 섹터 구성종목이 아니다('KRX:기타'로 묶여 있어 등락이 지수에 끌려감)
+        from recommended_etfs import recommended_etf_codes
+        etf_codes = set(recommended_etf_codes())
+        stock_sector_map = {r["code"]: r["sector_id"] for r in stock_rows if r["code"] not in etf_codes}
 
         dates_res = supabase.table("stock_daily") \
             .select("date") \
@@ -121,11 +124,13 @@ def populate_sector_daily(supabase: Client):
         latest_sector_date = max((v["date"] for v in last_known.values()), default="2025-01-01")
         print(f"  latest sector_daily date: {latest_sector_date}")
 
+        from recommended_etfs import recommended_etf_codes
+        etf_codes = set(recommended_etf_codes())
         stock_sector = {r["code"]: r["sector_id"] for r in select_all(lambda: supabase.table("stocks")
             .select("code, sector_id")
             .not_.is_("sector_id", "null")
             .eq("is_active", True)
-            .order("code"))}
+            .order("code")) if r["code"] not in etf_codes}
         all_sector_ids = set(stock_sector.values())
 
         ref_ticker = "005930"

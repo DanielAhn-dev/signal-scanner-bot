@@ -65,7 +65,7 @@ def get_trading_dates_between(start_dt: date, end_dt: date) -> list[str]:
 
 
 def fetch_universe_codes(supabase: Client) -> list[str]:
-    """core+extended 활성 종목 코드 (PostgREST 1000행 상한을 넘어도 끝까지 페이지 조회)."""
+    """core+extended 활성 종목 코드 (PostgREST 1000행 상한을 넘어도 끝까지 페이지 조회) + 추천 ETF(구멍·수정주가 복구 대상)."""
     codes: list[str] = []
     offset = 0
     while True:
@@ -84,7 +84,9 @@ def fetch_universe_codes(supabase: Client) -> list[str]:
         if len(rows) < 1000:
             break
         offset += 1000
-    return codes
+    from recommended_etfs import recommended_etf_codes
+    have = set(codes)
+    return codes + [c for c in recommended_etf_codes() if c not in have]
 
 
 def fetch_present_pairs(supabase: Client, codes: list[str], start_iso: str, end_iso: str) -> dict[str, set[str]]:

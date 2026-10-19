@@ -111,7 +111,11 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
         print("   No active stocks found.")
         return False
 
-    print(f"  Universe size: {len(tickers)} tickers")
+    universe_size = len(tickers)
+    # 추천 ETF는 유니버스 밖이어도 일봉을 쌓는다(스캔·시장 폭에는 안 들어감) — scripts/recommended_etfs.py
+    from recommended_etfs import with_recommended_etfs
+    tickers = with_recommended_etfs(tickers)
+    print(f"  Universe size: {universe_size} tickers (+{len(tickers) - universe_size} recommended ETFs)")
 
     latest_rows = _count_rows_on(supabase, latest_date) if latest_dt >= trading_dt else None
     if needs_refetch_window(latest_dt, trading_dt, latest_rows, len(tickers)):

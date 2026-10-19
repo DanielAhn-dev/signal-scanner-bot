@@ -107,6 +107,11 @@ def fetch_target_codes(supabase: Client, universe: str) -> list[tuple[str, str]]
         if code:
             out.append((code, name))
 
+    # 추천 ETF는 유니버스 밖이어도 일봉을 쌓는다 — 자동 백필·구멍 복구가 --codes로 넘겨도 여기서 걸러지지 않게
+    if universe == "core-extended":
+        from recommended_etfs import with_recommended_etfs
+        out = with_recommended_etfs(out)
+
     out.sort(key=lambda x: x[0])
     return out
 

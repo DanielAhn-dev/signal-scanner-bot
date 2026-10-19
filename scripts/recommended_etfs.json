@@ -1,0 +1,27 @@
+{
+  "_comment": "추천·비교에 쓰는 ETF — 보유하지 않아도 일봉·지표를 매일 쌓는다(scripts/recommended_etfs.py). 수집 대상(universe_level)은 바꾸지 않으므로 스캔·시장 폭·점수에는 들어가지 않는다. 모아가기 후보(web/src/data/accumulateData.ts)·코어 프로필(src/services/coreProfiles.ts)·자녀 계좌 기본 후보(web/src/lib/childEtf.ts)가 바뀌면 여기도 맞춘다 — tests/recommendedEtfs.test.ts가 빠진 코드를 잡는다.",
+  "etfs": [
+    { "code": "069500", "name": "KODEX 200", "use": "코스피200 일반" },
+    { "code": "102110", "name": "TIGER 200", "use": "코스피200 일반" },
+    { "code": "148020", "name": "RISE 200", "use": "코스피200 일반" },
+    { "code": "105190", "name": "ACE 200", "use": "코스피200 일반" },
+    { "code": "152100", "name": "PLUS 200", "use": "코스피200 일반" },
+    { "code": "069660", "name": "KIWOOM 200", "use": "코스피200 일반" },
+    { "code": "293180", "name": "HANARO 200", "use": "코스피200 일반" },
+    { "code": "278530", "name": "KODEX 200TR", "use": "코스피200 TR" },
+    { "code": "294400", "name": "KIWOOM 200TR", "use": "코스피200 TR" },
+    { "code": "295040", "name": "SOL 200TR", "use": "코스피200 TR" },
+    { "code": "361580", "name": "RISE 200TR", "use": "코스피200 TR" },
+    { "code": "310960", "name": "TIGER 200TR", "use": "코스피200 TR" },
+    { "code": "332930", "name": "HANARO 200TR", "use": "코스피200 TR" },
+    { "code": "332500", "name": "ACE 200TR", "use": "코스피200 TR" },
+    { "code": "491220", "name": "PLUS 200TR", "use": "코스피200 TR" },
+    { "code": "133690", "name": "TIGER 미국나스닥100", "use": "코어 프로필" },
+    { "code": "360750", "name": "TIGER 미국S&P500", "use": "코어 프로필·자녀 계좌" },
+    { "code": "148070", "name": "KIWOOM 국고채10년", "use": "코어 프로필" },
+    { "code": "453850", "name": "ACE 미국30년국채액티브(H)", "use": "코어 프로필" },
+    { "code": "308620", "name": "KODEX 미국10년국채선물", "use": "코어 프로필" },
+    { "code": "411060", "name": "ACE KRX금현물", "use": "코어 프로필" },
+    { "code": "459580", "name": "KODEX CD금리액티브(합성)", "use": "코어 프로필·현금 스윕" }
+  ]
+}
