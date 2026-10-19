@@ -106,7 +106,8 @@ def main():
             json.dump(px, open(f"{OUT}/kr_{code}.json", "w", encoding="utf-8"))
             meta = json.loads(http(f"https://m.stock.naver.com/api/stock/{code}/integration"))
             infos = {i["code"]: i["value"] for i in meta.get("totalInfos", [])}
-            info[code] = {"name": name, "fee": infos.get("fundPay"), "first": px[0][0] if px else None,
+            fee = (meta.get("etfKeyIndicator") or {}).get("totalFee")  # fundPay는 보수 인하가 늦게 반영된다
+            info[code] = {"name": name, "fee": f"{fee}%" if fee is not None else infos.get("fundPay"), "first": px[0][0] if px else None,
                           "last": px[-1][0] if px else None, "n": len(px), "marketSum": listing.get(code, {}).get("marketSum")}
             print(f"kr {code} {name}: {info[code]['first']}~{info[code]['last']} ({len(px)}일) 보수 {info[code]['fee']}")
         except Exception as e:

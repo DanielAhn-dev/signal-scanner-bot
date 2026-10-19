@@ -41,7 +41,9 @@ def fetch_prices(code: str) -> list:
 def fetch_info(code: str) -> dict:
     data = json.loads(http(f"https://m.stock.naver.com/api/stock/{code}/integration"))
     infos = {i["code"]: i["value"] for i in data.get("totalInfos", [])}
-    return {"name": data.get("stockName"), "fee": infos.get("fundPay"), "nav": infos.get("nav"),
+    fee = (data.get("etfKeyIndicator") or {}).get("totalFee")
+    # 총보수는 etfKeyIndicator.totalFee — fundPay는 보수 인하가 늦게 반영된다(2026-10 SOL 200TR 0.05% 표시, 공시 0.01%)
+    return {"name": data.get("stockName"), "fee": f"{fee}%" if fee is not None else infos.get("fundPay"), "nav": infos.get("nav"),
             "issuer": infos.get("issueName"), "base_index": infos.get("etfBaseIdx"),
             "last_close": infos.get("lastClosePrice")}
 

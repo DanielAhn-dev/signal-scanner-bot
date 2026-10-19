@@ -36,7 +36,9 @@ def info(code):
     req = urllib.request.Request(f"https://m.stock.naver.com/api/stock/{code}/integration", headers={"User-Agent": "Mozilla/5.0"})
     d = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
     i = {x["code"]: x["value"] for x in d.get("totalInfos", [])}
-    fee = float(str(i.get("fundPay", "")).replace("%", "")) if i.get("fundPay") else None
+    # 총보수는 etfKeyIndicator.totalFee — fundPay는 보수 인하가 늦게 반영된다
+    total = (d.get("etfKeyIndicator") or {}).get("totalFee")
+    fee = float(total) if total is not None else (float(str(i.get("fundPay", "")).replace("%", "")) if i.get("fundPay") else None)
     return d.get("stockName"), fee, MARKET_SUM.get(code, 0)
 
 

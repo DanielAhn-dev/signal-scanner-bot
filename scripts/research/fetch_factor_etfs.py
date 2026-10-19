@@ -3,7 +3,7 @@
 V1(코스피200 동일가중)·V2(미국 팩터 ETF)·V9(TDF) 검증용 가격 수집 (2026-10-15). → .research-cache/factor_etfs/
   kr_<코드>.json : 네이버 일봉 [[YYYYMMDD, 종가], ...] (분배금 소급 반영 수정주가 — 분배금을 따로 더하지 않는다)
   us_<심볼>.json : 야후 일봉 [[YYYYMMDD, 수정종가, 종가], ...] (수정종가 = 분배금 재투자 총수익)
-  info.json      : 이름·총보수(네이버 fundPay)·첫날·마지막날·일수
+  info.json      : 이름·총보수(네이버 etfKeyIndicator.totalFee, 없으면 fundPay)·첫날·마지막날·일수
 비교 기준(SPY, KODEX 200)은 allweather/ 에 이미 있다. 받는 함수는 fetch_allweather_data.py와 같은 것을 쓴다.
 한계: 팩터 ETF는 2011~2013년 상장이라 표본이 13~15년, 한국 TDF ETF는 2022년 이후 상장이라 성과 비교보다 보수 비교용.
 """
@@ -37,7 +37,8 @@ def main():
             json.dump(px, open(f"{OUT}/kr_{code}.json", "w", encoding="utf-8"))
             meta = json.loads(http(f"https://m.stock.naver.com/api/stock/{code}/integration"))
             infos = {i["code"]: i["value"] for i in meta.get("totalInfos", [])}
-            info[code] = {"name": name, "fee": infos.get("fundPay"), "first": px[0][0] if px else None,
+            fee = (meta.get("etfKeyIndicator") or {}).get("totalFee")  # fundPay는 보수 인하가 늦게 반영된다
+            info[code] = {"name": name, "fee": f"{fee}%" if fee is not None else infos.get("fundPay"), "first": px[0][0] if px else None,
                           "last": px[-1][0] if px else None, "n": len(px)}
             print(f"kr {code} {name}: {info[code]['first']}~{info[code]['last']} ({len(px)}일) 보수 {info[code]['fee']}")
         except Exception as e:
