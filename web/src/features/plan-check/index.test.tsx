@@ -1,17 +1,18 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import PlanCheckPage from './index'
+import { MemoryRouter } from 'react-router-dom'
 
 describe('계획 점검', () => {
   it('감내 낙폭을 −30%로 올리면 주식 비중 상한 60%, 처음엔 40%를 보여준다', () => {
-    render(<PlanCheckPage />)
+    render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '30' } })
     expect(screen.getByText('60%', { selector: 'dd' })).toBeTruthy()
     expect(screen.getByText('40%', { selector: 'dd' })).toBeTruthy()
   })
 
   it('한꺼번에 보기: 조합을 바꾸면 모든 시작 달 범위와 반대 방식의 후회 몫을 같이 보여준다', () => {
-    render(<PlanCheckPage />)
+    render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     expect(screen.getByText('내 선택 한꺼번에 보기')).toBeTruthy()
     expect(screen.getByText(/좋은 사례만 보면 이 숫자가 보입니다/)).toBeTruthy()
     expect(screen.getByText('12개월 나눠 넣었다면 끝이 더 좋았던 경우')).toBeTruthy()
@@ -22,27 +23,27 @@ describe('계획 점검', () => {
   })
 
   it('분할 표는 분할이 더 벌어 주는 게 아니라고 말하고 월 1회 확인을 권한다', () => {
-    render(<PlanCheckPage />)
+    render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     expect(screen.getByText(/나눠 넣는다고 더 벌지는 않습니다/)).toBeTruthy()
     expect(screen.getByText(/월 1회를 권합니다/)).toBeTruthy()
   })
 
   it('필요 월 적립 탭이 적금·보통·8/10·9/10 범위를 보여준다', () => {
-    render(<PlanCheckPage />)
+    render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     fireEvent.click(screen.getByRole('tab', { name: '필요 월 적립' }))
     expect(screen.getByText('적금만(실질 연 0.5%)')).toBeTruthy()
     expect(screen.getByText('열 번 중 9번 닿으려면')).toBeTruthy()
   })
 
   it('은퇴 인출 탭: 1.8억에서 월 150만원 실수령은 높은 인출률 경고가 뜬다', () => {
-    render(<PlanCheckPage />)
+    render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     fireEvent.click(screen.getByRole('tab', { name: '은퇴 인출' }))
     expect(screen.getByText('계좌에서 매달 꺼낼 돈')).toBeTruthy()
     expect(screen.getByText(/바닥났던 수준/)).toBeTruthy()
   })
 
   it('사용 시점 탭: 계좌가 없으면 지수 유지 안내와 과거 결과 표(자료 기준 포함)를 보여준다', () => {
-    const { container } = render(<PlanCheckPage />)
+    const { container } = render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     fireEvent.click(screen.getByRole('tab', { name: '사용 시점' }))
     expect(screen.getByText(/정하지 않은 계좌는 지금처럼 지수만/)).toBeTruthy()
     expect(screen.getByText('과거에는 이렇게 달랐습니다')).toBeTruthy()
@@ -50,7 +51,7 @@ describe('계획 점검', () => {
   })
 
   it('모든 표에는 자료 기준(기간·표본·한계)이 붙는다', () => {
-    const { container } = render(<PlanCheckPage />)
+    const { container } = render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     // 처음 넣는 법 탭: 한꺼번에 보기·감내 낙폭·시장 비교·재미 몫·분할·확인 빈도 = 6개
     expect(container.querySelectorAll('.plan-basis').length).toBe(6)
     fireEvent.click(screen.getByRole('tab', { name: '필요 월 적립' }))
@@ -69,21 +70,21 @@ describe('관리자·일반 사용자 구분', () => {
   it('일반 사용자에게는 관리자 연구 원자료와 스크립트 경로가 보이지 않는다', async () => {
     const { useProfileStore } = await import('../../stores/profileStore')
     useProfileStore.setState({ isAdmin: false })
-    const { container } = render(<PlanCheckPage />)
+    const { container } = render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     expect(screen.queryByText('관리자 · 연구 원자료')).toBeNull()
     expect(container.textContent).not.toContain('scripts/research')
   })
   it('관리자에게는 원자료 카드와 스크립트 출처가 보인다', async () => {
     const { useProfileStore } = await import('../../stores/profileStore')
     useProfileStore.setState({ isAdmin: true })
-    const { container } = render(<PlanCheckPage />)
+    const { container } = render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     expect(screen.getByText('관리자 · 연구 원자료')).toBeTruthy()
     expect(container.textContent).toContain('scripts/research')
     useProfileStore.setState({ isAdmin: false })
   })
 
   it('절세 계좌 탭: 연금저축 600만 + IRP 300만이면 환급 149만원(반올림)과 한도 안내', () => {
-    render(<PlanCheckPage />)
+    render(<MemoryRouter><PlanCheckPage /></MemoryRouter>)
     fireEvent.click(screen.getByRole('tab', { name: '절세 계좌' }))
     expect(screen.getByText('연말정산 환급')).toBeTruthy()
     expect(screen.getByText('149만원', { selector: 'dd' })).toBeTruthy()

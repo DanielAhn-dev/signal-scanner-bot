@@ -3,7 +3,7 @@ import { formatKrwMan } from '../../lib/format'
 import { formatMonths, milestoneTargets, monthlyAfterYears, monthsToTarget, yearAfterMonths } from '../../lib/goalReach'
 
 /**
- * 모아가기 4번 아래 — 지금 계획으로 목표까지 언제, 더 빨리 닿는 선택지(넣는 돈 해마다 늘리기 · 지금 더 넣기)와 바로 따르는 버튼.
+ * 목표 트래커 '내 계획이면 언제 닿나' 아래(모아가기 4번에서 옮김) — 지금 계획으로 목표까지 언제, 더 빨리 닿는 선택지(넣는 돈 해마다 늘리기 · 지금 더 넣기)와 바로 따르는 버튼.
  * 수익률은 고를 수 없지만 넣는 돈은 고를 수 있다. 상품을 바꿔 줄이는 방법은 과거에 좋았던 것을 고르게 되기 쉬워 권하지 않는다.
  * 15년 넘는 길은 과거 적립 결과의 연평균(rates)으로 늘려 본 추정이다 (lib/goalReach.ts).
  */

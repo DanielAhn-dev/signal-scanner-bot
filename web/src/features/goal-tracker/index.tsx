@@ -9,6 +9,8 @@ import { judgeRealism, requiredAnnualPct } from '../../lib/startPlan'
 import { monthsUntil } from '../../../../src/services/goalTracker'
 import LifePlanCard from './LifePlanCard'
 import GoalPathChart from './GoalPathChart'
+import ReachSection from './ReachSection'
+import AccountTag from '../../components/ui/AccountTag'
 import './goal-tracker.css'
 
 const UP = 'var(--color-stock-up)'
@@ -16,7 +18,8 @@ const DOWN = 'var(--color-stock-down)'
 const colorOf = (v: number) => (v >= 0 ? UP : DOWN)
 
 /**
- * 목표 트래커 — 시드로 스윙 월 평균 수익을 내고, 수익은 재투자해 필요 시드까지 키운다.
+ * 목표 트래커 — 얼마를, 언제 닿나 (화면 지도: 목표 계산은 이 화면 한 곳).
+ * 목표 쪽은 [실제] 내 계좌 + 내 구성 과거 이력(view.basis), 계획선 대비·이번 달은 [가상] 봇 계좌.
  * 계산은 src/services/goalTracker.ts (금요일 텔레그램 보고와 같은 값). 매매 로직과는 무관하다.
  */
 export default function GoalTrackerPage() {
@@ -33,6 +36,8 @@ export default function GoalTrackerPage() {
   const [autoMan, setAutoMan] = useState('')
   const [autoBusy, setAutoBusy] = useState(false)
   const [autoMsg, setAutoMsg] = useState<string | null>(null)
+  // 저장 결과는 누른 자리에만 — '내 계획이면 언제 닿나' 선택지 / 아래 기간별 표
+  const [autoFrom, setAutoFrom] = useState<'reach' | 'table'>('table')
 
   if (!view) {
     return (
@@ -75,7 +80,8 @@ export default function GoalTrackerPage() {
   }
 
   /** 표의 필요 금액이나 직접 적은 금액을 실제 "월 자동 입금"으로 저장한다 (입금일은 지금 설정 유지) */
-  const applyAutoDeposit = async (amountWon: number) => {
+  const applyAutoDeposit = async (amountWon: number, from: 'reach' | 'table' = 'table') => {
+    setAutoFrom(from)
     if (!Number.isFinite(amountWon) || amountWon < 0 || (amountWon > 0 && amountWon < 10_000)) {
       setAutoMsg('0(적립 안 함) 또는 1만원 이상으로 입력하세요')
       return
@@ -225,7 +231,7 @@ export default function GoalTrackerPage() {
           <div className="goal-form">
             {field('targetMan', '목표 월 인출 (만원)', '나중에 매달 꺼내 쓰고 싶은 금액')}
             {field('withdrawPct', '인출률 (%)', `원금을 지키며 매년 꺼낼 비율. 기본 4% (2~8%)`)}
-            {field('planPct', '계획 연 수익률 (%)', '시드를 모으는 동안의 성장 가정. 기본 8% (1~15%)')}
+            {field('planPct', '내가 가정한 수익률 (%)', '목표 계산은 내 구성의 과거 이력이 기본이고, 이 값은 "가정 수익률로도 보기"와 [가상] 계좌 계획선에만 씁니다. 기본 8% (1~15%)')}
             {view.contributionLinked ? (
               <div className="goal-field">
                 <span style={{ fontSize: 12, fontWeight: 600 }}>월 추가 입금</span>
@@ -262,7 +268,7 @@ export default function GoalTrackerPage() {
         </h2>
         <div className="goal-tiles">
           <div className="goal-tile">
-            <div className="goal-tile__label">현재 자산</div>
+            <div className="goal-tile__label">현재 자산 {view.basis && <AccountTag kind={view.basis.assetSource === 'real' ? 'real' : 'virtual'} />}</div>
             <div className="goal-tile__value">{man(view.equity)}</div>
           </div>
           <div className="goal-tile">
@@ -282,7 +288,9 @@ export default function GoalTrackerPage() {
                   {life.etaAge}세{life.etaAge > life.retireAge ? ` (은퇴 ${life.retireAge}세보다 늦음)` : ''} ·{' '}
                 </span>
               )}
-              연 {s.planAnnualPct}% 재투자{s.monthlyContribution > 0 ? ` + 월 ${man(s.monthlyContribution)} 입금` : ''}
+              {view.basis?.rates
+                ? `보통 기준${view.basis.etaLowMonth ? ` · 운 나쁘면 ${view.basis.etaLowMonth}` : ''}`
+                : `연 ${s.planAnnualPct}% 재투자`}{s.monthlyContribution > 0 ? ` + 월 ${man(s.monthlyContribution)} 입금` : ''}
             </div>
           </div>
         </div>
@@ -307,10 +315,13 @@ export default function GoalTrackerPage() {
         )}
       </section>
 
+      <ReachSection view={view} onSavePlan={(m) => void applyAutoDeposit(m, 'reach')} saveMsg={autoFrom === 'reach' ? autoMsg : null} />
+
       <LifePlanCard view={view} reload={() => void load()} />
 
       <section className="goal-card" aria-label="계획 대비">
-        <h2>계획대로 가고 있나요?</h2>
+        <h2>계획대로 가고 있나요? <AccountTag kind="virtual" /></h2>
+        {view.basis && <p className="goal-card__lead">가상 계좌({man(view.basis.virtualEquity)})가 시작 금액에서 가정 연 {s.planAnnualPct}%로 그린 계획선을 따라가는지입니다. 목표 달성률은 위 {view.basis.assetSource === 'real' ? '내 계좌' : '가상 계좌'} 기준입니다.</p>}
         <div className="goal-tiles">
           <div className="goal-tile">
             <div className="goal-tile__label">오늘 계획선</div>
@@ -350,7 +361,7 @@ export default function GoalTrackerPage() {
 
       <Detail>
       <section className="goal-card" aria-label="이번 달">
-        <h2>이번 달</h2>
+        <h2>이번 달 <AccountTag kind="virtual" /></h2>
         <div className="goal-tiles">
           <div className="goal-tile">
             <div className="goal-tile__label">수익률</div>
@@ -410,17 +421,21 @@ export default function GoalTrackerPage() {
 
       {view.schedule.length > 0 && (
         <section className="goal-card" aria-label="필요 입금액">
-          <h2>필요 시드에 닿으려면 매달 얼마를 넣어야 하나요?</h2>
+          <h2>기간별로 매달 얼마를 넣어야 하나요?</h2>
           <p className="goal-card__lead">
-            지금 시드로는 계획상 월 평균 {man(view.currentMonthlyProfit)} 수익(재투자)이고, 원금을 지키며 꺼내 쓰면 월{' '}
-            {man(view.currentMonthlyWithdrawal)}입니다. 연 {s.planAnnualPct}% 재투자 가정입니다.
+            지금 자산으로는 월 평균 {man(view.currentMonthlyProfit)} 불어나고(재투자), 원금을 지키며 꺼내 쓰면 월{' '}
+            {man(view.currentMonthlyWithdrawal)}입니다.{' '}
+            {view.basis?.rates
+              ? `내 구성 ${view.basis.rates.from}~ 이력 보통 연 ${view.basis.rates.typicalPct}% · 운 나쁨 ${view.basis.rates.lowPct}% 기준입니다.`
+              : `연 ${s.planAnnualPct}% 재투자 가정입니다.`}
           </p>
           <table className="goal-table">
             <thead>
               <tr>
                 <th scope="col">도달 시점</th>
                 <th scope="col">기간</th>
-                <th scope="col">매달 넣을 금액</th>
+                <th scope="col">매달 넣을 금액{view.basis?.rates ? '(보통)' : ''}</th>
+                {view.basis?.rates && <th scope="col">운 나빠도</th>}
                 {view.contributionLinked && <th scope="col">적용</th>}
               </tr>
             </thead>
@@ -435,6 +450,7 @@ export default function GoalTrackerPage() {
                   <td>{r.months % 12 === 0 ? `${r.months / 12}년` : `${r.months}개월`}</td>
                   {/* "적용"이 만원 단위로 올려 저장하므로, 표도 같은 올림 금액을 보여 준다 */}
                   <td>{man(view.contributionLinked ? Math.ceil(r.contribution / 10_000) * 10_000 : r.contribution)}</td>
+                  {view.basis?.rates && <td>{r.contributionLow != null ? man(Math.ceil(r.contributionLow / 10_000) * 10_000) : '-'}</td>}
                   {view.contributionLinked && (
                     <td>
                       <Button size="sm" disabled={autoBusy} onClick={() => void applyAutoDeposit(Math.ceil(r.contribution / 10_000) * 10_000)}>적용</Button>
@@ -459,7 +475,7 @@ export default function GoalTrackerPage() {
                 <span>만원</span>
                 <Button size="sm" disabled={autoBusy || autoMan.trim() === ''} onClick={() => void applyAutoDeposit(Number(autoMan) * 10_000)}>월 자동 입금으로 저장</Button>
               </div>
-              {autoMsg && <div className="goal-note" role="status" style={{ marginTop: 8 }}>{autoMsg}</div>}
+              {autoMsg && autoFrom === 'table' && <div className="goal-note" role="status" style={{ marginTop: 8 }}>{autoMsg}</div>}
             </div>
           )}
         </section>

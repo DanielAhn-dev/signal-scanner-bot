@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AmountHint from '../../components/ui/AmountHint'
-import { impliedAnnualRate } from '../../lib/goalReach'
-import GoalReachOptions from './GoalReachOptions'
 import { PLAN_CHANGED_EVENT } from '../month-task/RaiseNudge'
-import { kstToday } from '../../lib/monthTask'
 import More from '../../components/ui/More'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan, formatKrwReadable } from '../../lib/format'
@@ -20,12 +17,10 @@ import {
   averageReceived,
   candidateDataAgeDays,
   currentYmKst,
-  maxSimYears,
   monthsToGain,
   overseasHistoryFor,
   recommendCandidate,
   recommendOverseas,
-  requiredMonthly,
   simulateDca,
   situationGuide,
   summarize,
@@ -146,13 +141,8 @@ export default function AccumulatePage() {
   const [incomeAdj, setIncomeAdj] = useState(1)
   const [lumpText, setLumpText] = useState('')
   const [targetText, setTargetText] = useState('')
-  const [goalAmount, setGoalAmount] = useState('100000000')
-  // 4번 목표 기간 — 2번 계산기 기간과 따로. null이면 기본값(은퇴까지 남은 해, 없으면 10년)
-  const [goalYearsPick, setGoalYearsPick] = useState<number | null>(null)
   const [planKey, setPlanKey] = useState(0)
   const [planSaveMsg, setPlanSaveMsg] = useState<string | null>(null)
-  // 저장 결과 문구를 누른 자리에만 보인다 — 2번 금액 칸 / 4번 선택지
-  const [planSaveFrom, setPlanSaveFrom] = useState<'amount' | 'goal'>('goal')
   const planSavingRef = useRef(false)
   const [income, setIncome] = useState<IncomeView>(null)
   const [recMonth, setRecMonth] = useState(ym)
@@ -230,31 +220,11 @@ export default function AccumulatePage() {
   const simPlain = useMemo(() => simulateDca({ monthly, years, annualDrag: PLAIN_TAX_DRAG_ANNUAL, lump }), [monthly, years, lump])
   const summary = sim ? summarize(sim) : null
   const gain20 = useMemo(() => monthsToGain({ annualDrag: drag, prices: histPrices }), [drag, histPrices])
-  const goalMaxYears = maxSimYears(history.monthly.length)
-  const retireYears = goalView?.life && goalView.life.monthsToRetire > 0 ? Math.ceil(goalView.life.monthsToRetire / 12) : null
-  const retireFits = retireYears != null && retireYears <= goalMaxYears
-  const goalYears = Math.min(goalMaxYears, goalYearsPick ?? (retireFits ? retireYears! : 10))
-  const goalYearOptions = [...new Set([5, 10, 15].filter((y) => y <= goalMaxYears))]
-  const goalNeed = useMemo(() => (goalYears > 0 ? requiredMonthly({ target: num(goalAmount), years: goalYears, annualDrag: drag, lump, prices: histPrices }) : null), [goalAmount, goalYears, drag, lump, histPrices])
-  // 과거 가장 긴 적립 결과(보통·운 나쁨)를 연 수익률로 바꿔 15년 넘는 길을 늘려 본다 (lib/goalReach.ts)
-  const reachRates = useMemo(() => {
-    const sim = goalMaxYears > 0 ? simulateDca({ monthly: 1, years: goalMaxYears, annualDrag: drag, prices: histPrices }) : null
-    if (!sim) return null
-    const q = (f: number) => sim.finalRatios[Math.floor((sim.finalRatios.length - 1) * f)]
-    const typical = impliedAnnualRate(q(0.5), sim.months)
-    const low = impliedAnnualRate(q(0.1), sim.months)
-    return typical != null && low != null ? { typical, low, years: goalMaxYears } : null
-  }, [goalMaxYears, drag, histPrices])
-  const goalTarget = num(goalAmount)
-  const planSim = useMemo(() => (planMonthly > 0 && goalYears > 0 ? simulateDca({ monthly: planMonthly, years: goalYears, annualDrag: drag, lump, prices: histPrices, months: histMonths }) : null), [planMonthly, goalYears, drag, lump, histPrices, histMonths])
-  const planSum = planSim ? summarize(planSim) : null
-  const today = kstToday()
 
-  const savePlanMonthly = async (amount: number, from: 'amount' | 'goal' = 'goal') => {
+  const savePlanMonthly = async (amount: number) => {
     if (planSavingRef.current) return
     planSavingRef.current = true
     setPlanSaveMsg(null)
-    setPlanSaveFrom(from)
     try {
       const res = await apiFetch('/api/ui/investment-prefs', { method: 'POST', cacheMs: 0, timeoutMs: 15_000, body: JSON.stringify({ plan: { monthly: amount } }) })
       if (res?.error) throw new Error(String(res.error))
@@ -404,11 +374,11 @@ export default function AccumulatePage() {
         {/* 바꿔 본 금액을 그 자리에서 계획으로 — 다른 화면으로 가지 않아도 되게 (2026-10-19 사용자 요청). 매일·매주는 한 달 금액으로 바꿔 저장한다 */}
         {planLoaded && mode === 'direct' && monthly >= 10_000 && monthly !== planMonthly && (
           <div className="acc-plan-save">
-            <button type="button" className="acc-primary" onClick={() => savePlanMonthly(monthly, 'amount')}>매달 {formatKrwReadable(monthly)}을 내 계획으로 정하기</button>
+            <button type="button" className="acc-primary" onClick={() => savePlanMonthly(monthly)}>매달 {formatKrwReadable(monthly)}을 내 계획으로 정하기</button>
             <p className="acc-note">{planMonthly > 0 ? `지금 내 계획은 매달 ${formatKrwReadable(planMonthly)}입니다. ` : ''}정하면 홈 &lsquo;이번 달 할 일&rsquo;과 가상 계좌 월 입금도 이 금액으로 바뀝니다.</p>
           </div>
         )}
-        {planSaveFrom === 'amount' && planSaveMsg && <p className="acc-note" role="status">{planSaveMsg}</p>}
+        {planSaveMsg && <p className="acc-note" role="status">{planSaveMsg}</p>}
       </section>
 
       <section className="acc-card" aria-labelledby="acc-result">
@@ -465,54 +435,17 @@ export default function AccumulatePage() {
         )}
       </section>
 
+      {/* 4번 '목표에서 거꾸로'는 목표 트래커로 옮겼다 — 목표 계산은 한 곳·한 기준(내 계좌 + 내 구성 과거 이력, 화면 지도 5단계) */}
       <section className="acc-card" aria-labelledby="acc-goal">
-        <h2 id="acc-goal">4. 목표에서 거꾸로</h2>
-        {/* 2번 계산기 기간과 묶지 않는다 — 계산기를 바꿔 보기만 해도 목표 계산이 바뀌고, 기간을 어디서 정하는지 안 보였다 */}
-        <p className="acc-note">기준: {multi ? `내 구성(${history.name}, 매달 비중 맞춤)` : targetName}({multi ? '' : `${history.name} `}이력 {history.monthly[0][0].slice(0, 4)}~) · 이미 가진 성장 자산 {lump > 0 ? formatKrwReadable(lump) : '0원'} · 과거 실제 가격 기준이고 앞으로를 약속하지 않습니다</p>
-        <div className="acc-field"><span>언제까지</span>
-          <div className="acc-seg" role="radiogroup" aria-label="목표 기간">
-            {goalYearOptions.map((y) => (
-              <button key={y} type="button" role="radio" aria-checked={goalYears === y} className={goalYears === y ? 'is-active' : ''} onClick={() => setGoalYearsPick(y)}>{y}년{retireFits && retireYears === y ? ' · 은퇴까지' : ''}</button>
-            ))}
-            {retireFits && !goalYearOptions.includes(retireYears!) && (
-              <button type="button" role="radio" aria-checked={goalYears === retireYears} className={goalYears === retireYears ? 'is-active' : ''} onClick={() => setGoalYearsPick(retireYears)}>은퇴까지({retireYears}년)</button>
-            )}
-          </div>
-        </div>
-        {retireYears != null && !retireFits && (
-          <p className="acc-note">은퇴까지 {retireYears}년은 이 이력으로 비교할 수 있는 최대 {goalMaxYears}년보다 깁니다. 더 긴 계획은 <button type="button" className="acc-link" onClick={() => navigate('/goal-tracker')}>목표 트래커</button>에서 보세요.</p>
-        )}
-
-        {/* 먼저 "내 계획대로면 얼마가 되나" — '모자람' 같은 판정보다 손에 잡히는 숫자 (2026-10-19 사용자 요청) */}
-        {planMonthly > 0 && planSum && (
+        <h2 id="acc-goal">4. 목표까지는</h2>
+        {goalView && goalView.target.requiredSeed > 0 ? (
           <p className="acc-summary">
-            지금 계획(매달 <strong>{formatKrwReadable(planMonthly)}</strong>)이면 {goalYears}년 뒤 보통 <strong>{formatKrwMan(planSum.median)}</strong>, 운 나쁘면 {formatKrwMan(planSum.p10)} <small>(넣은 돈 {formatKrwMan(planSum.paid)})</small>
+            필요 시드 {formatKrwMan(goalView.target.requiredSeed)}의 <strong>{goalView.target.progressPct.toFixed(0)}%</strong> · 예상 도달 <strong>{goalView.target.etaMonth ?? '50년 이상'}</strong>
+            {goalView.basis?.etaLowMonth ? <small> (운 나쁘면 {goalView.basis.etaLowMonth})</small> : null}
           </p>
-        )}
-
-        <label className="acc-field"><span>갖고 싶은 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} /><AmountHint value={goalAmount} /></label>
-        {goalNeed ? (
-          <dl className="acc-facts">
-            <div><dt>{goalYears}년 안에 닿으려면(보통)</dt><dd>매달 {formatKrwReadable(goalNeed.typical)}</dd></div>
-            <div><dt>운 나빠도 닿으려면(하위 10%)</dt><dd>매달 {formatKrwReadable(goalNeed.conservative)}</dd></div>
-          </dl>
-        ) : <p className="acc-warn">이 기간은 계산할 수 없습니다.</p>}
-
-        {planMonthly > 0 && reachRates && goalTarget > 0 && (
-          <GoalReachOptions
-            planMonthly={planMonthly}
-            target={goalTarget}
-            lump={lump}
-            rates={reachRates}
-            today={today}
-            raise={state.raise ?? null}
-            onRaise={(next) => update({ raise: next ?? undefined })}
-            onSavePlan={(a) => savePlanMonthly(a, 'goal')}
-            saveMsg={planSaveFrom === 'goal' ? planSaveMsg : null}
-            onOpenMix={() => navigate('/mix')}
-          />
-        )}
-        {planMonthly <= 0 && <p className="acc-note">위 &lsquo;내 계획&rsquo;에 매달 넣을 돈을 정하면, 그 금액으로 언제 닿는지와 더 빨리 닿는 방법을 보여 드립니다.</p>}
+        ) : null}
+        <p className="acc-note">목표 금액·언제 닿나·더 빨리 닿는 방법(해마다 늘리기·더 넣기)은 목표 트래커 한 곳에서 같은 기준(내 계좌 + 내 구성 과거 이력)으로 봅니다.</p>
+        <button type="button" className="acc-secondary" onClick={() => navigate('/goal-tracker')}>목표 트래커에서 보기</button>
       </section>
 
       <section className="acc-card" aria-labelledby="acc-guide">

@@ -31,7 +31,7 @@ export type GoalView = {
   phase: { stage: 1 | 2; title: string; text: string }
   currentMonthlyProfit: number
   currentMonthlyWithdrawal: number
-  schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean; isRetire?: boolean }>
+  schedule: Array<{ month: string; months: number; contribution: number; contributionLow?: number; isTarget: boolean; isRetire?: boolean }>
   life?: LifePlan | null
   normalRange: { plusMonthsPct: number; p10: number; worst: number; maxLosingStreak: number; source: string }
   contributionLinked?: boolean
@@ -42,6 +42,19 @@ export type GoalView = {
     growth: number
     growthPct: number
     crossover: { monthlyExpected: number; contribution: number; ratioPct: number; months: number | null; month: string | null } | null
+  }
+  /**
+   * 목표 계산 기준 (서버 src/services/goalTracker.ts) — 자산은 [실제] 내 계좌(없으면 가상), 수익률은 내 구성 과거 이력(보통).
+   * 계획선 대비·이번 달은 [가상] 봇 계좌(virtualEquity). 배포 전 API에는 없다
+   */
+  basis?: {
+    assetSource: 'real' | 'virtual'
+    ratePct: number
+    rateSource: 'history' | 'assumed'
+    rates: { typicalPct: number; lowPct: number; years: number; from: string; asOf: string; label: string } | null
+    etaLowMonth: string | null
+    etaAssumedMonth: string | null
+    virtualEquity: number
   }
 }
 

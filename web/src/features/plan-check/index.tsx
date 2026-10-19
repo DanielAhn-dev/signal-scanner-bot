@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import AmountHint from '../../components/ui/AmountHint'
 import { formatKrwMan } from '../../lib/format'
@@ -213,6 +214,7 @@ function CheckingCard() {
 }
 
 function SavingCard() {
+  const navigate = useNavigate()
   const [targetMan, setTargetMan] = useState('30000')
   const [years, setYears] = useState(20)
   const target = toWon(targetMan)
@@ -220,6 +222,10 @@ function SavingCard() {
   return (
     <section className="acc-card">
       <h2>목표 금액까지 매달 얼마가 필요한가</h2>
+      {/* 내 목표 계산은 목표 트래커 한 곳(내 계좌 + 내 구성 과거 이력) — 여기는 마음가짐을 위한 근거만 접어 둔다 (화면 지도 5단계) */}
+      <p className="acc-note">내 목표까지 언제 닿는지, 매달 얼마를 넣어야 하는지는 <strong>목표 트래커</strong>에서 내 계좌와 내 구성 기준으로 봅니다.</p>
+      <button type="button" className="acc-secondary" onClick={() => navigate('/goal-tracker')}>목표 트래커에서 보기</button>
+      <More label="근거: 미국 주식 150년으로 본 범위(오늘 물가)">
       <p className="acc-note">금액은 <strong>오늘 물가로 환산한 가치</strong>이고, 월 적립액도 오늘 가치로 고정했습니다. 단일 숫자 대신 시작 시점의 운에 따른 범위를 보여 드립니다.</p>
       <div className="acc-row">
         <label className="acc-field"><span>목표 금액 (만원)</span><input type="number" inputMode="numeric" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /><AmountHint value={targetMan} unit="man" /></label>
@@ -247,6 +253,7 @@ function SavingCard() {
         </>
       )}
       {!r && <p className="acc-note">목표 금액을 적고 기간을 고르세요.</p>}
+      </More>
     </section>
   )
 }

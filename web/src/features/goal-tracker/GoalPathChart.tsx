@@ -20,14 +20,19 @@ function niceStep(maxY: number): number {
  * 색에만 기대지 않도록 선 모양(실선·점선·굵기)을 모두 다르게 한다.
  */
 export default function GoalPathChart({ view }: { view: GoalView }) {
-  const s = view.settings
+  // 목표 계산 기준과 같은 수익률(내 구성 이력 보통)로 앞으로 선을 그린다. [실제] 계좌 기준이면 지나온 기록이 없어(기록 이력은 가상 계좌) 지금부터만
+  const real = view.basis?.assetSource === 'real'
+  const ratePct = view.basis?.ratePct ?? view.settings.planAnnualPct
+  // 계획선(지나온 길)은 [가상] 계좌의 가정 수익률 그대로 — 서버 '계획선 대비'와 같은 선
+  const s = real ? { ...view.settings, startDate: view.today, startEquity: view.equity } : view.settings
   const p = buildGoalPath({
     today: view.today,
     settings: s,
     equity: view.equity,
     requiredSeed: view.target.requiredSeed,
     monthsToReach: view.target.monthsToReach,
-    trail: view.trail,
+    trail: real ? [] : view.trail,
+    futureRatePct: ratePct,
   })
   const retireX = view.life && view.life.monthsToRetire > 0 && p.nowX + view.life.monthsToRetire <= p.endX ? p.nowX + view.life.monthsToRetire : null
 
@@ -88,13 +93,13 @@ export default function GoalPathChart({ view }: { view: GoalView }) {
       </svg>
       <div className="goal-path__legend">
         {hasActual && <span><i className="goal-path__key goal-path__key--actual" />실제 평가액(월말)</span>}
-        <span><i className="goal-path__key goal-path__key--plan" />계획선({s.startDate.slice(0, 7)}부터)</span>
-        {p.aheadMonths > 0 && <span><i className="goal-path__key goal-path__key--future" />지금부터 연 {s.planAnnualPct}%면</span>}
+        {!real && <span><i className="goal-path__key goal-path__key--plan" />계획선({s.startDate.slice(0, 7)}부터, 가정 연 {s.planAnnualPct}%)</span>}
+        {p.aheadMonths > 0 && <span><i className="goal-path__key goal-path__key--future" />지금부터 연 {ratePct}%면</span>}
         {p.aheadMonths > 0 && <span><i className="goal-path__key goal-path__key--zero" />수익 0%면(넣은 돈만)</span>}
       </div>
       <p className="goal-note">
         {p.aheadMonths > 0
-          ? <>앞으로 선은 연 {s.planAnnualPct}%가 매년 고르게 나온다는 가정입니다. 실제로는 해마다 다르고, {view.normalRange.source} 기준 마이너스 달이 최장 {view.normalRange.maxLosingStreak}개월 이어졌습니다. 시장이 빠지면 회색 선 아래로도 내려갑니다.{p.etaX == null && p.goal != null ? ` 계획대로면 도달이 ${view.target.etaMonth ?? '50년 이상 뒤'}라 그래프(앞으로 ${p.aheadMonths / 12}년) 밖입니다.` : ''}</>
+          ? <>앞으로 선은 연 {ratePct}%{view.basis?.rates ? `(내 구성 ${view.basis.rates.from}~ 이력 보통)` : ''}가 매년 고르게 나온다는 가정입니다. 실제로는 해마다 다르고, {view.normalRange.source} 기준 마이너스 달이 최장 {view.normalRange.maxLosingStreak}개월 이어졌습니다. 시장이 빠지면 회색 선 아래로도 내려갑니다.{p.etaX == null && p.goal != null ? ` 계획대로면 도달이 ${view.target.etaMonth ?? '50년 이상 뒤'}라 그래프(앞으로 ${p.aheadMonths / 12}년) 밖입니다.` : ''}</>
           : '필요 시드에 도달했습니다. 위 선은 지금까지의 기록입니다.'}
         {!hasActual && ' 실제 평가액 선은 월말 기록이 쌓이면 그려집니다.'}
       </p>

@@ -50,18 +50,6 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><AccumulatePage /></MemoryRouter>)
 
 describe('모아가기', () => {
-  it('4번 목표 계산은 자기 기간을 고르고, 2번 계산기 기간과 따로 움직인다. 기준 한 줄과 읽기 쉬운 금액', async () => {
-    renderPage()
-    await screen.findByText('추천')
-    expect(screen.getByText(/기준: .+\(코스피200 이력 2002~\) · 이미 가진 성장 자산 0원/)).toBeInTheDocument()
-    expect(screen.getByText('10년 안에 닿으려면(보통)')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('radio', { name: '15년' }))
-    expect(screen.getByText('15년 안에 닿으려면(보통)')).toBeInTheDocument()
-    // 2번 계산기 기간은 그대로
-    expect(screen.getByText('기간: 10년')).toBeInTheDocument()
-    expect(screen.getAllByText(/^매달 \d+만( [\d,]+)?원$/).length).toBeGreaterThanOrEqual(2)
-  })
-
   it('모든 시작 시점 그래프에 실제 한 사람 경로와 매끈한 선 안내', async () => {
     renderPage()
     await screen.findByText('추천')
@@ -90,16 +78,6 @@ describe('모아가기', () => {
     fireEvent.change(input, { target: { value: '500000' } })
     fireEvent.click(screen.getByRole('button', { name: '내 계획(122만원)으로 되돌리기' }))
     expect(input.value).toBe('1220000')
-  })
-
-  it('4번: 내 계획이 있으면 "그 금액이면 n년 뒤 얼마"를 먼저, 판정 문구 대신 숫자', async () => {
-    planMock.monthly = 1_220_000
-    renderPage()
-    await screen.findByText('추천')
-    expect(screen.getByText(/10년 뒤 보통/)).toBeInTheDocument()
-    expect(screen.queryByText(/보통의 경우에도 모자람|보수적으로 봐도 닿는 수준/)).not.toBeInTheDocument()
-    expect(screen.getByText(/지금 계획으로 1억원까지/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /매년 5%씩 늘리기로 정하기/ })).toBeInTheDocument()
   })
 
   it('계획이 없으면 50만원 그대로, 되돌리기 링크 없음', async () => {
@@ -176,7 +154,7 @@ describe('모아가기', () => {
     expect(screen.queryByRole('button', { name: '이 구성을 내 계획으로 정하기' })).toBeNull()
 
     fireEvent.click(screen.getByRole('radio', { name: /국내·해외 반반/ }))
-    expect(screen.getByText(/기준: 내 구성\(코스피200 50 · S&P500 50, 매달 비중 맞춤\)\(이력 2003~\)/)).toBeInTheDocument()
+    expect(screen.getByText(/2003~, 코스피200 50 · S&P500 50\)를 모두 해 본 결과/)).toBeInTheDocument()
     expect(screen.getByLabelText('같은 지수의 다른 후보')).toBeInTheDocument()
     expect(apiFetchMock.mock.calls.some(([p, o]) => p === '/api/ui/investment-prefs' && (o as any)?.method === 'POST')).toBe(false)
 
@@ -210,5 +188,13 @@ describe('모아가기', () => {
     await screen.findByText('내 계획을 매달 200만원으로 바꿨어요')
     const [, opts] = apiFetchMock.mock.calls.find(([p, o]) => p === '/api/ui/investment-prefs' && (o as any)?.method === 'POST')!
     expect(JSON.parse((opts as any).body)).toEqual({ plan: { monthly: 2_000_000 } })
+  })
+
+  it('4번은 목표 트래커로 옮겼다 — 요약 한 줄과 바로 가기만', async () => {
+    renderPage()
+    await screen.findByText('처음이면 이걸로')
+    expect(screen.getByRole('heading', { name: '4. 목표까지는' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '목표 트래커에서 보기' })).toBeInTheDocument()
+    expect(screen.queryByText(/갖고 싶은 성장 자산/)).toBeNull()
   })
 })

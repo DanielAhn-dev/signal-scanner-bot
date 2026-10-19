@@ -118,7 +118,7 @@ export default function LifePlanCard({ view, reload }: { view: GoalView; reload:
       <details className="goal-details">
         <summary>어떤 가정으로 계산했나요?</summary>
         <p>
-          지금 자산 {man(view.equity)}에서 연 {s.planAnnualPct}% 재투자, 매달 말 적립을 가정했습니다. 필요 시드는 월 {man(s.targetMonthlyProfit)}을 연{' '}
+          지금 자산 {man(view.equity)}에서 연 {view.basis?.ratePct ?? s.planAnnualPct}%{view.basis?.rates ? `(내 구성 ${view.basis.rates.from}~ 이력 보통)` : ''} 재투자, 매달 말 적립을 가정했습니다. 필요 시드는 월 {man(s.targetMonthlyProfit)}을 연{' '}
           {withdrawPct}%로 꺼내 쓰는 규모입니다. 물가 상승은 따로 반영하지 않았으니 은퇴가 멀수록 목표 월 인출을 넉넉히 잡으세요. 국민연금은 넣지
           않았습니다. 기대수명 {l.lifeExpectancy}세는 통계청 2023 생명표 기준 참고선입니다. 목표 설정에서 수익률·인출률을 바꾸면 이 표도 바뀝니다.
         </p>

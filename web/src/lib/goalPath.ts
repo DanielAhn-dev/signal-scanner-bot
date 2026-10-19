@@ -12,6 +12,8 @@ export type GoalPathInput = {
   requiredSeed: number | null
   monthsToReach: number | null
   trail?: Array<{ date: string; total: number }>
+  /** 앞으로 선의 연 수익률 % — 목표 계산 기준(내 구성 이력 보통). 없으면 settings.planAnnualPct(계획선과 같은 값) */
+  futureRatePct?: number
 }
 
 export type Pt = { x: number; v: number }
@@ -51,7 +53,7 @@ export function buildGoalPath(input: GoalPathInput): GoalPath {
     .filter((p) => p.x <= nowX && Number.isFinite(p.v))
   actual.push({ x: nowX, v: input.equity })
 
-  const m = monthlyRate(s.planAnnualPct)
+  const m = monthlyRate(input.futureRatePct ?? s.planAnnualPct)
   const c = Math.max(0, s.monthlyContribution)
   const future: Pt[] = [{ x: nowX, v: input.equity }]
   const noReturn: Pt[] = [{ x: nowX, v: input.equity }]

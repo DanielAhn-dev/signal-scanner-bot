@@ -73,3 +73,4 @@
 .goal-path__key--plan { border-top: 1.5px dashed var(--color-text-tertiary); }
 .goal-path__key--future { border-top-width: 3px; border-color: var(--color-brand, #2f6f68); opacity: 0.45; }
 .goal-path__key--zero { border-top: 2px dotted var(--color-text-tertiary); }
+.goal-assumed { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; color: var(--color-text-secondary); }
