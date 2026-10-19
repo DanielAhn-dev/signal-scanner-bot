@@ -93,3 +93,12 @@
 .acc-period-range label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--color-text-secondary); }
 .acc-period-range select { padding: 6px 8px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; }
 .acc-view-toggle { margin-bottom: 12px; }
+/* 4번 '더 빨리 닿는 선택지' (GoalReachOptions) — 채움 카드 대신 얇은 테두리 */
+.acc-reach { display: flex; flex-direction: column; gap: 10px; }
+.acc-option { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--color-border-subtle); border-radius: 6px; }
+.acc-option p { line-height: 1.55; }
+.acc-option .acc-secondary { align-self: flex-start; }
+.acc-option__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.acc-chips { display: inline-flex; gap: 4px; }
+.acc-chips button { padding: 3px 10px; border: 1px solid var(--color-border-default); border-radius: 4px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.acc-chips button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }

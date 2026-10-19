@@ -52,9 +52,9 @@ describe('모아가기', () => {
     renderPage()
     await screen.findByText('추천')
     expect(screen.getByText(/기준: .+\(코스피200 이력 2002~\) · 이미 가진 성장 자산 0원/)).toBeInTheDocument()
-    expect(screen.getByText('10년 뒤 갖고 싶은 성장 자산(원)')).toBeInTheDocument()
+    expect(screen.getByText('10년 안에 닿으려면(보통)')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('radio', { name: '15년' }))
-    expect(screen.getByText('15년 뒤 갖고 싶은 성장 자산(원)')).toBeInTheDocument()
+    expect(screen.getByText('15년 안에 닿으려면(보통)')).toBeInTheDocument()
     // 2번 계산기 기간은 그대로
     expect(screen.getByText('기간: 10년')).toBeInTheDocument()
     expect(screen.getAllByText(/^매달 \d+만( [\d,]+)?원$/).length).toBeGreaterThanOrEqual(2)
@@ -88,6 +88,16 @@ describe('모아가기', () => {
     fireEvent.change(input, { target: { value: '500000' } })
     fireEvent.click(screen.getByRole('button', { name: '내 계획(122만원)으로 되돌리기' }))
     expect(input.value).toBe('1220000')
+  })
+
+  it('4번: 내 계획이 있으면 "그 금액이면 n년 뒤 얼마"를 먼저, 판정 문구 대신 숫자', async () => {
+    planMock.monthly = 1_220_000
+    renderPage()
+    await screen.findByText('추천')
+    expect(screen.getByText(/10년 뒤 보통/)).toBeInTheDocument()
+    expect(screen.queryByText(/보통의 경우에도 모자람|보수적으로 봐도 닿는 수준/)).not.toBeInTheDocument()
+    expect(screen.getByText(/지금 계획으로 1억원까지/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /매년 5%씩 늘리기로 정하기/ })).toBeInTheDocument()
   })
 
   it('계획이 없으면 50만원 그대로, 되돌리기 링크 없음', async () => {

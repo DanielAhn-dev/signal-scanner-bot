@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AmountHint from '../../components/ui/AmountHint'
+import { impliedAnnualRate } from '../../lib/goalReach'
+import GoalReachOptions from './GoalReachOptions'
+import { PLAN_CHANGED_EVENT } from '../month-task/RaiseNudge'
+import { kstToday } from '../../lib/monthTask'
 import More from '../../components/ui/More'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan, formatKrwReadable } from '../../lib/format'
@@ -161,6 +165,9 @@ export default function AccumulatePage() {
   const [goalAmount, setGoalAmount] = useState('100000000')
   // 4번 목표 기간 — 2번 계산기 기간과 따로. null이면 기본값(은퇴까지 남은 해, 없으면 10년)
   const [goalYearsPick, setGoalYearsPick] = useState<number | null>(null)
+  const [planKey, setPlanKey] = useState(0)
+  const [planSaveMsg, setPlanSaveMsg] = useState<string | null>(null)
+  const planSavingRef = useRef(false)
   const [income, setIncome] = useState<IncomeView>(null)
   const [recMonth, setRecMonth] = useState(ym)
   const [recReceived, setRecReceived] = useState('')
@@ -225,6 +232,37 @@ export default function AccumulatePage() {
   const goalYears = Math.min(goalMaxYears, goalYearsPick ?? (retireFits ? retireYears! : 10))
   const goalYearOptions = [...new Set([5, 10, 15].filter((y) => y <= goalMaxYears))]
   const goalNeed = useMemo(() => (goalYears > 0 ? requiredMonthly({ target: num(goalAmount), years: goalYears, annualDrag: drag, lump, prices: histPrices }) : null), [goalAmount, goalYears, drag, lump, histPrices])
+  // 과거 가장 긴 적립 결과(보통·운 나쁨)를 연 수익률로 바꿔 15년 넘는 길을 늘려 본다 (lib/goalReach.ts)
+  const reachRates = useMemo(() => {
+    const sim = goalMaxYears > 0 ? simulateDca({ monthly: 1, years: goalMaxYears, annualDrag: drag, prices: histPrices }) : null
+    if (!sim) return null
+    const q = (f: number) => sim.finalRatios[Math.floor((sim.finalRatios.length - 1) * f)]
+    const typical = impliedAnnualRate(q(0.5), sim.months)
+    const low = impliedAnnualRate(q(0.1), sim.months)
+    return typical != null && low != null ? { typical, low, years: goalMaxYears } : null
+  }, [goalMaxYears, drag, histPrices])
+  const goalTarget = num(goalAmount)
+  const planSim = useMemo(() => (planMonthly > 0 && goalYears > 0 ? simulateDca({ monthly: planMonthly, years: goalYears, annualDrag: drag, lump, prices: histPrices, months: histMonths }) : null), [planMonthly, goalYears, drag, lump, histPrices, histMonths])
+  const planSum = planSim ? summarize(planSim) : null
+  const today = kstToday()
+
+  const savePlanMonthly = async (amount: number) => {
+    if (planSavingRef.current) return
+    planSavingRef.current = true
+    setPlanSaveMsg(null)
+    try {
+      const res = await apiFetch('/api/ui/investment-prefs', { method: 'POST', cacheMs: 0, timeoutMs: 15_000, body: JSON.stringify({ plan: { monthly: amount } }) })
+      if (res?.error) throw new Error(String(res.error))
+      // 저장이 성공한 뒤에만 바꾼다. 내 계획 카드는 다시 읽게 새로 그린다
+      setPlanKey((k) => k + 1)
+      window.dispatchEvent(new Event(PLAN_CHANGED_EVENT))
+      setPlanSaveMsg(`내 계획을 매달 ${formatKrwReadable(amount)}으로 바꿨어요`)
+    } catch (e) {
+      setPlanSaveMsg(`바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      planSavingRef.current = false
+    }
+  }
   const guide = useMemo(() => (candles ? situationGuide(candles) : null), [candles])
   const track = trackSummary(state)
 
@@ -252,7 +290,7 @@ export default function AccumulatePage() {
 
       <SavingProgressCard variant="full" />
       <div id="my-plan">
-        <MyPlanCard goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} onPlanMonthly={onPlanMonthly} />
+        <MyPlanCard key={planKey} goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} onPlanMonthly={onPlanMonthly} />
       </div>
 
       <section className="acc-card" aria-labelledby="acc-target">
@@ -395,7 +433,7 @@ export default function AccumulatePage() {
       </section>
 
       <section className="acc-card" aria-labelledby="acc-goal">
-        <h2 id="acc-goal">4. 목표 금액에서 거꾸로</h2>
+        <h2 id="acc-goal">4. 목표에서 거꾸로</h2>
         {/* 2번 계산기 기간과 묶지 않는다 — 계산기를 바꿔 보기만 해도 목표 계산이 바뀌고, 기간을 어디서 정하는지 안 보였다 */}
         <p className="acc-note">기준: {targetName}({history.name} 이력 {history.monthly[0][0].slice(0, 4)}~) · 이미 가진 성장 자산 {lump > 0 ? formatKrwReadable(lump) : '0원'} · 과거 실제 가격 기준이고 앞으로를 약속하지 않습니다</p>
         <div className="acc-field"><span>언제까지</span>
@@ -411,14 +449,37 @@ export default function AccumulatePage() {
         {retireYears != null && !retireFits && (
           <p className="acc-note">은퇴까지 {retireYears}년은 이 이력으로 비교할 수 있는 최대 {goalMaxYears}년보다 깁니다. 더 긴 계획은 <button type="button" className="acc-link" onClick={() => navigate('/goal-tracker')}>목표 트래커</button>에서 보세요.</p>
         )}
-        <label className="acc-field"><span>{goalYears}년 뒤 갖고 싶은 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} /><AmountHint value={goalAmount} /></label>
+
+        {/* 먼저 "내 계획대로면 얼마가 되나" — '모자람' 같은 판정보다 손에 잡히는 숫자 (2026-10-19 사용자 요청) */}
+        {planMonthly > 0 && planSum && (
+          <p className="acc-summary">
+            지금 계획(매달 <strong>{formatKrwReadable(planMonthly)}</strong>)이면 {goalYears}년 뒤 보통 <strong>{formatKrwMan(planSum.median)}</strong>, 운 나쁘면 {formatKrwMan(planSum.p10)} <small>(넣은 돈 {formatKrwMan(planSum.paid)})</small>
+          </p>
+        )}
+
+        <label className="acc-field"><span>갖고 싶은 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} /><AmountHint value={goalAmount} /></label>
         {goalNeed ? (
           <dl className="acc-facts">
-            <div><dt>보통의 경우(중앙값)</dt><dd>매달 {formatKrwReadable(goalNeed.typical)}</dd></div>
-            <div><dt>보수적으로(하위 10%)</dt><dd>매달 {formatKrwReadable(goalNeed.conservative)}</dd></div>
-            {monthly > 0 && <div><dt>지금 계획({formatKrwReadable(monthly)})</dt><dd>{monthly >= goalNeed.conservative ? '보수적으로 봐도 닿는 수준' : monthly >= goalNeed.typical ? '보통은 닿지만 부진하면 모자람' : '보통의 경우에도 모자람'}</dd></div>}
+            <div><dt>{goalYears}년 안에 닿으려면(보통)</dt><dd>매달 {formatKrwReadable(goalNeed.typical)}</dd></div>
+            <div><dt>운 나빠도 닿으려면(하위 10%)</dt><dd>매달 {formatKrwReadable(goalNeed.conservative)}</dd></div>
           </dl>
         ) : <p className="acc-warn">이 기간은 계산할 수 없습니다.</p>}
+
+        {planMonthly > 0 && reachRates && goalTarget > 0 && (
+          <GoalReachOptions
+            planMonthly={planMonthly}
+            target={goalTarget}
+            lump={lump}
+            rates={reachRates}
+            today={today}
+            raise={state.raise ?? null}
+            onRaise={(next) => update({ raise: next ?? undefined })}
+            onSavePlan={savePlanMonthly}
+            saveMsg={planSaveMsg}
+            onOpenMix={() => navigate('/mix')}
+          />
+        )}
+        {planMonthly <= 0 && <p className="acc-note">위 &lsquo;내 계획&rsquo;에 매달 넣을 돈을 정하면, 그 금액으로 언제 닿는지와 더 빨리 닿는 방법을 보여 드립니다.</p>}
       </section>
 
       <section className="acc-card" aria-labelledby="acc-guide">
