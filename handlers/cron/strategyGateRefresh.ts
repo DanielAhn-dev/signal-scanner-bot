@@ -213,6 +213,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .from("virtual_trades")
             .select("chat_id, pnl_amount, memo")
             .eq("side", "SELL")
+            // 실계좌 기록 매도는 자동매매 성과가 아니다
+            .is("broker_name", null)
+            .is("account_name", null)
             .gte("traded_at", since)
             .in("chat_id", chatIds)
             .order("id")

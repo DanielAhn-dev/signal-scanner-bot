@@ -77,6 +77,8 @@ export async function computeAutoTradePacingMetrics(input: {
     .from("virtual_trades")
     .select("pnl_amount, side, traded_at")
     .eq("chat_id", input.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("side", "SELL")
     .gte("traded_at", monthStartIso)
     .limit(3000);
