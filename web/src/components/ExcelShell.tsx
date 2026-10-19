@@ -54,6 +54,7 @@ const NAV_ICON_COMPONENTS: Record<string, React.ComponentType<{ size?: number | 
   'control': Shield,
   'sectors': PieChart,
   'market': Globe2,
+  'briefing': Newspaper,
   'news': Newspaper,
   'economy': Activity,
   'trades': History,

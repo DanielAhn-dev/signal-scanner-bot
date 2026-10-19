@@ -68,7 +68,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'home',
     label: '홈',
     groups: [
-      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }] },
+      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'briefing', label: '오늘 시장', keywords: ['테마', '브리핑', '뜨는 테마', '보유 테마'] }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }] },
     ],
   },
   {
@@ -165,6 +165,7 @@ export type NavKey = NavItem['key']
  */
 export const USER_NAV_KEYS: readonly string[] = [
   'dashboard',
+  'briefing',
   'start',
   'accumulate',
   'mix',
@@ -216,6 +217,8 @@ export function filterNavGroups(groups: NavGroup[], isAdmin: boolean): NavGroup[
  * 봇 로직이 바뀌면 여기만 고친다. 근거: 2026-09-28 10년·30년 검증.
  */
 export const BOT_USAGE_NOTES: Record<string, string> = {
+  briefing:
+    '봇은 테마 순위·보유 테마 판정을 매매에 쓰지 않습니다. 시장이 어디를 보는지 알기 위한 화면이며, 급등 테마를 따라 사는 것은 검증에서 불리했습니다.',
   market:
     '봇은 여기 위험지수가 아니라 맨 위 "봇 매수"(코스피 50일선) 기준으로 신규 매수 여부를 정합니다. 위험지수는 참고용입니다.',
   portfolio:

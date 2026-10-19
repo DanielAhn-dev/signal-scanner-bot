@@ -63,6 +63,7 @@ const WatchlistPage        = lazyWithRecovery(() => import('./features/watchlist
 const AlertsPage           = lazyWithRecovery(() => import('./features/alerts'))
 const ReportsPage          = lazyWithRecovery(() => import('./features/reports'))
 const MarketPage           = lazyWithRecovery(() => import('./features/market'))
+const BriefingPage         = lazyWithRecovery(() => import('./features/briefing'))
 const EconomyPage          = lazyWithRecovery(() => import('./features/economy'))
 const FeedPage             = lazyWithRecovery(() => import('./features/feed'))
 const NewsPage             = lazyWithRecovery(() => import('./features/news'))
@@ -399,6 +400,7 @@ function AppContent() {
             <Route path="/alerts"                 element={<AlertsPage />} />
             <Route path="/reports"                element={<ReportsPage />} />
             <Route path="/market"                 element={<MarketPage />} />
+            <Route path="/briefing"               element={<BriefingPage />} />
             <Route path="/economy"                element={<EconomyPage />} />
             <Route path="/feed"                   element={<FeedPage />} />
             <Route path="/news"                   element={<NewsPage />} />

@@ -1,0 +1,56 @@
+/* 오늘 시장 — 채움 카드·컬러 바 없이 보더·타이포 위계로 구분 (accumulate.css의 .acc 틀 위에) */
+.bf { word-break: keep-all; }
+.bf-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.bf-head .bf-link { margin-left: auto; }
+.bf-muted { color: var(--color-text-tertiary); font-size: 12px; }
+.bf-link { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: transparent; color: var(--color-brand); font: inherit; font-size: 13px; cursor: pointer; }
+.bf-up { color: var(--color-stock-up); }
+.bf-down { color: var(--color-stock-down); }
+
+.bf-chips { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.bf-chips li { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--color-border-subtle); border-radius: 6px; }
+.bf-chip__label { color: var(--color-text-secondary); font-size: 12px; }
+.bf-chip__value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.bf-chip__chg { font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.bf h3 { margin-top: 4px; }
+.bf-flows { list-style: none; padding: 0; display: grid; gap: 0; }
+.bf-flow { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--color-border-subtle); }
+.bf-flow:first-child { border-top: 0; padding-top: 0; }
+.bf-flow__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.bf-flow__rank { min-width: 1.5em; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; font-size: 13px; }
+.bf-flow__name { font-weight: 700; }
+.bf-tag { padding: 0 6px; border: 1px solid var(--color-brand); border-radius: 4px; color: var(--color-brand); font-size: 11px; line-height: 18px; }
+.bf-flow__facts { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--color-text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
+.bf-news { list-style: none; padding: 0; display: grid; gap: 2px; font-size: 13px; line-height: 1.45; }
+.bf-news a { color: var(--color-text-primary); text-decoration: none; border-bottom: 1px solid var(--color-border-default); }
+.bf-news a:hover { border-bottom-color: var(--color-brand); }
+.bf-caution { color: var(--color-text-secondary); font-size: 13px; line-height: 1.5; padding-top: 8px; border-top: 1px solid var(--color-border-subtle); }
+
+.bf-holdings { display: grid; gap: 12px; }
+.bf-holding { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--color-border-subtle); border-radius: 6px; }
+.bf-holding__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.bf-holding__name { font-weight: 700; }
+.bf-holding__link { line-height: 1.5; }
+.bf-overall { display: grid; gap: 2px; font-size: 13px; line-height: 1.5; }
+.bf-overall span { color: var(--color-text-secondary); }
+.bf-overall--strong b { color: var(--color-success); }
+.bf-overall--weak b { color: var(--color-warning); }
+.bf-signals { display: grid; gap: 4px; font-size: 13px; }
+.bf-signals > div { display: flex; gap: 10px; }
+.bf-signals dt { flex: 0 0 5.5em; color: var(--color-text-secondary); }
+.bf-signals dd { min-width: 0; flex: 1; margin: 0; }
+.bf-level { font-weight: 600; }
+.bf-level--strong { color: var(--color-success); }
+.bf-level--weak { color: var(--color-warning); }
+.bf-level--unknown { color: var(--color-text-tertiary); font-weight: 400; }
+.bf-rules { font-size: 13px; color: var(--color-text-secondary); }
+.bf-rules summary { cursor: pointer; }
+.bf-rules ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
+
+.bf-events { list-style: none; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.bf-events li { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.bf-events li.is-done { color: var(--color-text-tertiary); }
+.bf-events__when { flex: 0 0 auto; min-width: 9em; font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.bf-events__name { font-weight: 600; }
+.bf .bf-foot { margin-top: 16px; color: var(--color-text-tertiary); font-size: 12px; line-height: 1.5; }
