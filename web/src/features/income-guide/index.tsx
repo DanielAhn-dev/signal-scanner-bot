@@ -8,6 +8,7 @@ import Collapsible from '../../components/ui/Collapsible'
 import PlanSteps, { type RebalancePlan } from './PlanSteps'
 import DistributionReceipts, { type DistributionReceiptsData } from './DistributionReceipts'
 import { reinvestLabel, reinvestTargets } from './reinvestTarget'
+import WeightHistory from './WeightHistory'
 
 type Group = 'growth' | 'income' | 'satellite' | 'cash'
 type Warning = { level: 'info' | 'warn' | 'alert'; title: string; text: string }
@@ -622,6 +623,8 @@ export default function IncomeGuidePage() {
               매달 한 번은 자동으로 기록됩니다. 위 "오늘 비중 기록"으로 남긴 기록도 여기에 쌓입니다.
             </div>
             {view.history && view.history.length > 0 ? (
+              <>
+              <WeightHistory history={view.history} />
               <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 6 }}>
                 <thead>
@@ -655,6 +658,7 @@ export default function IncomeGuidePage() {
                 </tbody>
               </table>
             </div>
+              </>
             ) : (
               <div style={{ color: 'var(--color-text-tertiary)' }}>
                 리밸런싱을 한 날 기록해 두면 비중이 어떻게 움직였는지(현재 / 목표) 엑셀 이력처럼 쌓입니다.
