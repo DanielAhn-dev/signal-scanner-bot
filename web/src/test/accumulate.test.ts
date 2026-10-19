@@ -82,10 +82,18 @@ describe('recommendCandidate', () => {
     c('BIG', 'tr', 0.05, 78_000, 8_000), c('CHEAP', 'tr', 0.012, 18_000, 7_000), c('SMALL', 'tr', 0.012, 5_000, 5_000),
     c('THIN', 'tr', 0.01, 20_000, 100), c('NEW', 'tr', 0.01, 20_000, 9_000, '20250101'), c('PLAIN', 'plain', 0.15, 258_000, 2_000_000),
   ]
-  it('성장 목표는 TR 중 관문을 넘고 보수 차이가 작으면 규모가 큰 쪽', () => {
+  it('성장 목표는 TR 중 관문을 넘은 것 중 최저 보수 묶음(0.01%p 안)에서 — 0.04%p 비싼 큰 상품보다 싼 쪽', () => {
     const r = recommendCandidate('growth', list, '2026-10-02')
-    expect(r.pick?.code).toBe('BIG')
+    expect(r.pick?.code).toBe('CHEAP')
     expect(r.eligible.map((x) => x.code)).toEqual(['BIG', 'CHEAP'])
+  })
+  it('보수가 같은 묶음이면 규모가 큰 쪽', () => {
+    const r = recommendCandidate('growth', [c('BIG', 'tr', 0.015, 78_000, 8_000), c('CHEAP', 'tr', 0.012, 18_000, 7_000)], '2026-10-02')
+    expect(r.pick?.code).toBe('BIG')
+  })
+  it('실제 후보(2026-10-02)에서 성장은 KIWOOM 200TR, 분배형은 RISE 200', () => {
+    expect(recommendCandidate('growth').pick?.name).toBe('KIWOOM 200TR')
+    expect(recommendCandidate('income').pick?.name).toBe('RISE 200')
   })
   it('보수 차이가 크면 싼 쪽을 고른다', () => {
     const r = recommendCandidate('growth', [c('BIG', 'tr', 0.3, 78_000, 8_000), c('CHEAP', 'tr', 0.012, 18_000, 7_000)], '2026-10-02')

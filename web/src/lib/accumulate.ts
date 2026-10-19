@@ -258,8 +258,11 @@ export type Goal = 'growth' | 'income'
 const MIN_CAP_EOK = 10_000 // 순자산 1조원
 const MIN_TRADING_MIL = 5_000 // 일 거래대금 50억원
 const MIN_LISTED_YEARS = 3
-/** 보수가 이만큼(%p) 이상 차이 나야 규모가 작은 쪽을 고른다 */
-const FEE_MARGIN_PCT = 0.1
+/**
+ * 최저 보수에서 이만큼(%p) 안이면 같은 보수로 보고 규모가 큰 쪽 — 서버 src/lib/indexProductChoice.ts FEE_SWITCH_PP와 같은 값.
+ * 예전 0.1%p는 장기 적립의 보수 차이(20년 월 100만원이면 0.04%p 차이가 약 240만원)를 무시해 KODEX 200TR(0.05%)을 KIWOOM 200TR(0.012%)보다 앞에 뒀다(2026-10-19).
+ */
+const FEE_MARGIN_PCT = 0.01
 
 function yearsSince(yyyymmdd: string, asOf: string): number {
   const a = Date.parse(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`)
@@ -275,7 +278,8 @@ export type Recommendation = {
 
 /**
  * 같은 지수를 따라가므로 수익률 순위가 아니라 구조로 고른다: 규모·거래대금·상장기간 관문을 넘은 상품 중
- * 최저 보수와 차이가 크지 않으면 순자산이 가장 큰 쪽(폐지·괴리 위험이 낮다).
+ * 최저 보수 묶음(0.01%p 안)에서 순자산이 가장 큰 쪽(폐지·괴리 위험이 낮다). 처음 사는 사람용이라 보유는 보지 않는다 —
+ * 리밸런싱 가이드·리포트(서버 indexProductChoice)가 보유 없을 때 고르는 상품과 같은 결과가 나와야 한다.
  */
 export function recommendCandidate(goal: Goal, cands: IndexEtfCandidate[] = INDEX_ETF_CANDIDATES, asOf = ACCUMULATE_ASOF): Recommendation {
   const kind = goal === 'growth' ? 'tr' : 'plain'

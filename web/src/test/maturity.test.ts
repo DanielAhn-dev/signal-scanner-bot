@@ -65,12 +65,12 @@ describe('maturity', () => {
   it('쓸 시점이 3년 안이면 지수로 보내지 않는다', () => {
     const a = adviceFor('under3')
     expect(a.where).toContain('지수에 넣지 않고')
-    expect(JSON.stringify(a)).not.toContain('KODEX 200TR')
+    expect(JSON.stringify(a)).not.toContain('KIWOOM 200TR')
   })
 
-  it('3~5년은 일부만, 5년 넘게는 KODEX 200TR 일시금', () => {
+  it('3~5년은 일부만, 5년 넘게는 모아가기 추천 TR(KIWOOM 200TR) 일시금', () => {
     expect(adviceFor('3to5').where).toContain('일부')
-    expect(adviceFor('over5').where).toContain('KODEX 200TR')
+    expect(adviceFor('over5').where).toContain('KIWOOM 200TR')
     expect(adviceFor('over5').steps.join(' ')).toContain('한도')
   })
 

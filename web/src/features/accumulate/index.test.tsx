@@ -39,7 +39,7 @@ describe('모아가기', () => {
   it('추천 상품과 과거 시뮬레이션 결과를 보여 준다', async () => {
     renderPage()
     expect(await screen.findByText('추천')).toBeInTheDocument()
-    expect(screen.getByText(/KODEX 200TR/, { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText(/KIWOOM 200TR/, { selector: 'strong' })).toBeInTheDocument()
     expect(screen.getAllByText('중앙값').length).toBeGreaterThan(0)
     expect(screen.getByRole('img', { name: /적립 평가금 추이/ })).toBeInTheDocument()
     expect(screen.getByText(/원금의 \+20% 이상/)).toBeInTheDocument()

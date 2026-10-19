@@ -48,16 +48,16 @@ describe('만기 예·적금 탭', () => {
     expect(screen.getByText(/가장 가까운 것은/)).toHaveTextContent('A예금 D-5')
   })
 
-  it('갈 곳 보기: 5년 넘게는 KODEX 200TR, 3년 안은 지수에 넣지 않음', () => {
+  it('갈 곳 보기: 5년 넘게는 KIWOOM 200TR, 3년 안은 지수에 넣지 않음', () => {
     renderTab()
     addItem('장기', '1000', plusDays(10), 'over5')
     addItem('단기', '500', plusDays(20), 'under3')
     const [long, short] = screen.getAllByRole('listitem')
     fireEvent.click(long.querySelector('button[aria-expanded]')!)
-    expect(long).toHaveTextContent('KODEX 200TR(일반계좌)에 입금된 날 한 번에 넣습니다')
+    expect(long).toHaveTextContent('KIWOOM 200TR(일반계좌)에 입금된 날 한 번에 넣습니다')
     fireEvent.click(short.querySelector('button[aria-expanded]')!)
     expect(short).toHaveTextContent('지수에 넣지 않고')
-    expect(short).not.toHaveTextContent('KODEX 200TR')
+    expect(short).not.toHaveTextContent('KIWOOM 200TR')
   })
 
   it('처리했어요를 누르면 맨 아래로 가고 합계에서 빠지며, 삭제할 수 있다', () => {

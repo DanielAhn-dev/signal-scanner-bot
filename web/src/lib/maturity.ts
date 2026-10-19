@@ -5,6 +5,11 @@
  * 쓸 시점 세 구간으로 나눠 만기일에 한 줄로 보여 줄 뿐이다. 수익률 비교·상품 추천·자동 매매는 하지 않는다.
  */
 
+import { recommendCandidate } from './accumulate'
+
+/** 일반계좌 지수 상품 — 모아가기 추천과 같은 상품(같은 지수 중 최저 보수 묶음에서 규모가 가장 큰 TR). 상품명을 박아 두면 화면마다 갈린다 */
+const trName = () => recommendCandidate('growth').pick?.name ?? '코스피200 TR형 ETF'
+
 export type MaturityHorizon = 'under3' | '3to5' | 'over5'
 
 export const HORIZON_LABEL: Record<MaturityHorizon, string> = {
@@ -115,12 +120,12 @@ export function adviceFor(horizon: MaturityHorizon): MaturityAdvice {
   if (horizon === '3to5') {
     return {
       where: '지수에는 일부(절반 안팎까지)만 넣고 나머지는 원금이 지켜지는 곳에 둡니다',
-      steps: ['얼마까지 넣을지는 계획 점검의 "감내 낙폭"으로 정합니다', '지수로 가는 몫은 입금 당일 KODEX 200TR(일반계좌)로 한 번에 넣습니다'],
+      steps: ['얼마까지 넣을지는 계획 점검의 "감내 낙폭"으로 정합니다', `지수로 가는 몫은 입금 당일 ${trName()}(일반계좌)로 한 번에 넣습니다`],
       why: '폭락 직전에 시작해도 36개월 뒤에는 대부분 플러스였지만(C5) 도중 평가손실이 -22~-45%였습니다. 쓸 때가 그 구간이면 곤란합니다.',
     }
   }
   return {
-    where: 'KODEX 200TR(일반계좌)에 입금된 날 한 번에 넣습니다',
+    where: `${trName()}(일반계좌)에 입금된 날 한 번에 넣습니다`,
     steps: [
       '연금저축·IRP·ISA 납입 한도를 먼저 채웠는지 확인합니다',
       '입금 당일 또는 다음 영업일에 사고, 하루 이틀 미루지 않습니다',
