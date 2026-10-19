@@ -23,6 +23,7 @@ import {
   withMonthlyEntry,
 } from '../../src/lib/incomeGuide'
 import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
+import { loadIndexAlternatives } from '../../src/services/indexAlternatives'
 import { isTaxAdvantagedAccount, resolveYieldPct } from '../../src/lib/incomeGuide'
 import { MAX_RECEIPTS, monthSummary, projectNextMonth, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
@@ -132,11 +133,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 기록이 없을 때도 쓰지 않고 분배율 추정으로 둔다
     const planSettings = { ...file.settings, actualMonthlyNet: projection.receiptCodes > 0 ? projection.total : undefined }
     const ctx = { settings: file.settings, today, priceOf: (code: string) => prices.get(code) }
+    // 같은 지수 상품 비교(리포트와 같은 자료·같은 함수) — 오래 걸리면 비교 없이 보유 상품으로
+    const growth = view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name }))
+    const indexAlt = await Promise.race([
+      loadIndexAlternatives(supabase, growth),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 6_000)),
+    ])
     return res.status(200).json({
       ok: true,
       data: {
         ...view,
-        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: planSettings, cashPlan: view.cashPlan, yieldPctByCode }),
+        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: planSettings, cashPlan: view.cashPlan, yieldPctByCode, today, etf: indexAlt?.etf, feeAlternatives: indexAlt?.alternatives }),
         // 'distributions'(금융소득 상한)는 view에 이미 있다 — 이름을 따로 둔다
         distributionReceipts: {
           thisMonth: monthSummary(receipts, month),

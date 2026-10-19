@@ -21,6 +21,7 @@ import {
   type GroupRow,
   type IncomeGuideSettings,
 } from "./incomeGuide";
+import { chooseIndexBuy, newMoneyFromSettings, type EtfYield, type FeeAlternative } from "./indexProductChoice";
 
 const DISTRIBUTION_TAX = 0.154;
 /** 같은 계좌·같은 종류 안에서 전체의 이 비중(%) 미만이면 "소액"으로 보고 큰 종목에 합치자고 안내한다 */
@@ -139,9 +140,13 @@ export type RebalancePlan = {
     monthlyInflow: number;
     months: number | null;
   };
-  /** ① 새 돈을 넣을 성장 ETF (보유 중인 것 중에서). 없으면 null → buyHint만 */
+  /** ① 새 돈을 넣을 성장 ETF — 보유 중인 기준 상품을 같은 지수 상품과 비교해 정한다(indexProductChoice, 리포트와 같은 함수). 없으면 null → buyHint만 */
   buyTarget: { code: string; name: string; accountLabel: string; price: number } | null;
   buyHint: string;
+  /** 같은 지수 상품 비교로 정한 이유 (비교 자료가 있을 때). 가진 상품과 다르면 새 돈만 옮긴다 */
+  buyWhy: string | null;
+  /** 계좌별 살 곳 — 분배금·매도 대금은 그 계좌 안에서만 다시 산다. 성장 ETF가 있는 계좌만 */
+  buyTargetsByAccount: Array<{ accountKey: string; accountLabel: string; target: { code: string; name: string; price: number }; heldCode: string; why: string | null }>;
   /** ② 합치기 */
   merges: PlanMerge[];
   kinds: { before: number; after: number };
@@ -225,6 +230,11 @@ export function buildRebalancePlan(input: {
   cashPlan?: IncomeGuideView["cashPlan"];
   /** 종목별 최근 12개월 실제 분배율 — 없으면 상품 유형별 가정 */
   yieldPctByCode?: YieldPctByCode | null;
+  /** 같은 지수 상품 비교용 — 보유 성장 ETF와 다른 운용사 상품의 총보수·규모 (src/services/indexAlternatives.ts). 없으면 비교 없이 보유 상품 */
+  etf?: Map<string, EtfYield>;
+  feeAlternatives?: FeeAlternative[];
+  /** 남은 적립 기간 계산용 (YYYY-MM-DD) */
+  today?: string;
 }): RebalancePlan | null {
   const { holdings, total, groups, settings } = input;
   const hold = settings.incomeMode === "hold";
@@ -425,13 +435,38 @@ export function buildRebalancePlan(input: {
   const codes = new Set(holdings.map((h) => h.code));
   const remainingCodes = new Set(holdings.filter((h) => !mergedAway.has(h)).map((h) => h.code));
 
-  // ① 새 돈을 넣을 곳 — 일반 계좌면 분배금 과세를 미루는 TR, 아니면 가장 큰 성장 ETF
+  // ① 새 돈을 넣을 곳 — 계좌마다 기준 상품(일반 계좌면 분배금 과세를 미루는 TR, 아니면 가장 큰 성장 ETF)을 같은 지수 상품과 비교해 정한다.
+  //    전체 기준 살 곳은 일반 계좌의 가장 큰 TR이 있는 계좌, 없으면 가장 큰 성장 ETF가 있는 계좌의 결정.
   const growthRows = holdings.filter((h) => h.group === "growth" && !mergedAway.has(h)).sort((a, b) => b.value - a.value);
+  const etfMap = input.etf ?? new Map<string, EtfYield>();
+  const alts = (input.feeAlternatives ?? []).filter((a) => a.price > 0);
+  const feeOf = (code: string): number | null => fees[code] ?? etfMap.get(code)?.fee ?? alts.find((a) => a.code === code)?.fee ?? null;
+  const newMoney = input.today ? newMoneyFromSettings(settings, input.today) : null;
+  const choiceByAccount = new Map<string, ReturnType<typeof chooseIndexBuy> & { accountLabel: string }>();
+  for (const h of growthRows) {
+    if (choiceByAccount.has(h.accountKey)) continue;
+    const c = chooseIndexBuy({
+      growthHeld: growthRows.filter((x) => x.accountKey === h.accountKey),
+      taxAdvantaged: isTaxAdvantagedAccount(h.accountLabel),
+      alternatives: alts,
+      feeOf,
+      infoOf: (code) => etfMap.get(code) ?? alts.find((a) => a.code === code),
+      newMoney,
+    });
+    choiceByAccount.set(h.accountKey, { ...c, accountLabel: h.accountLabel });
+  }
   const trInTaxable = growthRows.find((h) => /TR/i.test(h.name) && !isTaxAdvantagedAccount(h.accountLabel));
   const buy = trInTaxable ?? growthRows[0] ?? null;
-  const buyTarget = buy ? { code: buy.code, name: buy.name, accountLabel: buy.accountLabel, price: buy.price } : null;
+  const buyChoice = buy ? choiceByAccount.get(buy.accountKey) ?? null : null;
+  const buyTarget = buy && buyChoice?.target ? { ...buyChoice.target, accountLabel: buy.accountLabel } : null;
+  const buyWhy = buyChoice?.pick?.why ?? null;
+  const buyTargetsByAccount: RebalancePlan["buyTargetsByAccount"] = [...choiceByAccount.entries()]
+    .filter(([, c]) => c.target && c.base)
+    .map(([accountKey, c]) => ({ accountKey, accountLabel: c.accountLabel, target: c.target!, heldCode: c.base!.code, why: c.pick?.why ?? null }));
   const buyHint = buy
-    ? trInTaxable
+    ? buyTarget && buyTarget.code !== buy.code
+      ? `가진 ${buy.name}는 팔지 않고 두고, 새 돈만 같은 지수의 ${buyTarget.name}로 보냅니다.`
+      : trInTaxable
       ? "일반 계좌에서는 분배금을 재투자해 과세를 미루는 TR형이 유리합니다. 기존 성장 ETF는 팔지 않고 그대로 둡니다."
       : "이미 가진 성장 ETF 한 곳에만 넣습니다. 여러 곳에 나눠 사면 종류만 늘어납니다."
     : "성장 ETF가 없습니다. 일반 계좌는 코스피200 TR형, ISA·연금 계좌는 S&P500 같은 해외 지수가 과세 면에서 유리합니다.";
@@ -474,9 +509,7 @@ export function buildRebalancePlan(input: {
     }
     const rows: IdleCashAccount[] = accounts.map((a) => {
       // 그 계좌 안의 성장 ETF — 미지정이면 전체 기준 살 곳
-      const inAccount = a.accountKey == null ? growthRows : growthRows.filter((h) => h.accountKey === a.accountKey);
-      const pick = a.accountKey == null ? buy : (!isTaxAdvantagedAccount(a.accountLabel) ? inAccount.find((h) => /TR/i.test(h.name)) : undefined) ?? inAccount[0] ?? null;
-      const target = pick ? { code: pick.code, name: pick.name, price: pick.price } : null;
+      const target = a.accountKey == null ? (buyTarget ? { code: buyTarget.code, name: buyTarget.name, price: buyTarget.price } : null) : choiceByAccount.get(a.accountKey)?.target ?? null;
       const keep = keepOf.get(a) ?? 0;
       const spendable = a.balance - keep;
       const shares = target && target.price > 0 ? Math.floor(spendable / target.price) : 0;
@@ -587,6 +620,8 @@ export function buildRebalancePlan(input: {
     growth: { actualPct, targetPct, needByNewMoney, monthlyInflow: Math.round(monthlyInflow), months },
     buyTarget,
     buyHint,
+    buyWhy,
+    buyTargetsByAccount,
     merges,
     kinds: { before: codes.size, after: remainingCodes.size },
     mergeIncomeDelta: Math.round(mergeIncomeDelta),

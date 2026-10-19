@@ -14,6 +14,7 @@
 import { BUCKET_LABEL, CASH_BALANCE_CODE, REBALANCE_BAND_PP, isTaxAdvantagedAccount, resolveYieldPct, type AssetBucket, type BucketGroup, type IncomeGuideView } from "./incomeGuide";
 import { FEE_TIE_PP, strategyKey, type RebalancePlan } from "./rebalancePlan";
 import { KRX_SELL_TAX_RATE, resolveOtherEtfGainTax, resolveSellTaxRate } from "./securitiesTax";
+import { chooseIndexBuy, newMoneyFromSettings, type EtfYield, type FeeAlternative } from "./indexProductChoice";
 
 /** 매도 수수료 가정 (온라인 기준) */
 export const SELL_FEE_RATE = 0.00015;
@@ -29,104 +30,9 @@ export const DRAWDOWN_ALERT_PCT = -10;
 
 const FOREIGN = /(미국|나스닥|S&P|다우존스|글로벌|선진|중국|차이나|일본|인도|베트남|유럽)/i;
 
-/** 네이버 ETF 지표 중 리포트가 쓰는 값 (src/services/etfKeyIndicator.ts) */
-export type EtfYield = {
-  yieldTtm: number | null;
-  fee: number | null;
-  marketCap?: number | null;
-  return1y?: number | null;
-  deviation?: number | null;
-};
-/** 살 곳과 같은 지수를 따르는 다른 운용사 상품 (handlers/ui/rebalance-report.ts가 종목 테이블에서 찾는다) */
-export type FeeAlternative = { code: string; name: string; price: number } & EtfYield;
-
-/** 같은 보수로 보는 폭(%p) — 1천만원당 연 1천원 미만 차이 */
-export const FEE_SWITCH_PP = 0.01;
-/** 같은 지수끼리 1년 수익률이 이만큼(%p) 넘게 낮으면 숨은 비용·추적 차이가 큰 것으로 본다 */
-export const RETURN_GAP_PP = 0.2;
-/** 이보다 작은 상품은 큰 상품이 있으면 고르지 않는다 (호가 차이·상장폐지 위험) */
-export const MIN_MARKET_CAP = 100_000_000_000;
-/** 괴리율이 이보다 크면 고르지 않는다 */
-export const MAX_DEVIATION_PCT = 1;
-
-export type IndexCandidate = { code: string; name: string; price: number; fee: number; marketCap: number | null; return1y: number | null; deviation: number | null };
-export type IndexPick = {
-  chosen: IndexCandidate;
-  /** 상품별 판단 — 표에 그대로 쓴다 */
-  notes: Map<string, string>;
-  /** 고른 이유 한 문장 */
-  why: string;
-};
-
-const eok = (v: number) => (v >= 1e12 ? `${(v / 1e12).toFixed(1)}조` : `${Math.round(v / 1e8).toLocaleString("ko-KR")}억`);
-
-/**
- * 같은 지수 상품 중 새 돈을 보낼 곳 — 점수 가중치 대신 단계별로 거른다(표에서 이유가 보이게).
- *   ① 제외: 시가총액 1천억 미만(1천억 이상이 하나라도 있을 때), 괴리율 ±1% 초과
- *   ② 총보수: 가장 싼 보수에서 0.01%p 안
- *   ③ 1년 수익률: 같은 지수라 차이 = 숨은 비용(기타·매매비용)과 추적 차이. 최고치에서 0.2%p 안 (1년 안 된 상품은 통과)
- *   ④ 시가총액이 가장 큰 것
- *   단, 이미 가진 상품(keepCodes, 큰 것부터)이 ①을 통과하고 총보수가 최저보다 FEE_TIE_PP(0.05%p, 남길 종목 규칙과 같은 값) 안이면
- *   그대로 산다 — 1년 수익률은 매일 바뀌므로 그걸로 보유 상품을 바꾸면 추천이 날마다 흔들리고 같은 지수 상품만 늘어난다.
- */
-export function pickIndexProduct(pool: IndexCandidate[], keepCodes?: string | string[] | null): IndexPick | null {
-  if (pool.length === 0) return null;
-  const notes = new Map<string, string>();
-  const anyBig = pool.some((c) => (c.marketCap ?? 0) >= MIN_MARKET_CAP);
-  const eligible = pool.filter((c) => {
-    if (anyBig && c.marketCap != null && c.marketCap < MIN_MARKET_CAP) {
-      notes.set(c.code, `시가총액 ${eok(c.marketCap)}으로 작음`);
-      return false;
-    }
-    if (c.deviation != null && Math.abs(c.deviation) > MAX_DEVIATION_PCT) {
-      notes.set(c.code, `괴리율 ${c.deviation.toFixed(2)}%로 큼`);
-      return false;
-    }
-    return true;
-  });
-  const base = eligible.length ? eligible : pool;
-  const minFee = Math.min(...base.map((c) => c.fee));
-  const keepList = keepCodes == null ? [] : Array.isArray(keepCodes) ? keepCodes : [keepCodes];
-  const keepHeld = keepList
-    .map((code) => base.find((c) => c.code === code))
-    .find((c): c is IndexCandidate => c != null && c.fee - minFee < FEE_TIE_PP - 1e-9);
-  if (keepHeld) {
-    for (const c of pool) if (c !== keepHeld && !notes.has(c.code)) notes.set(c.code, `보수 차이 ${Math.max(0, keepHeld.fee - c.fee).toFixed(3)}%p로 작아 가진 상품을 그대로 삼`);
-    notes.set(keepHeld.code, "이미 보유 중 — 보수 차이가 0.05%p 미만이라 그대로");
-    return {
-      chosen: keepHeld,
-      notes,
-      why: `이미 가진 ${keepHeld.name}를 그대로 삽니다. 같은 지수 상품 중 가장 싼 보수(${minFee}%)와 차이가 ${FEE_TIE_PP}%p 미만이라 바꿔도 이득이 작고 종류만 늘어납니다.`,
-    };
-  }
-  const feeBand = base.filter((c) => {
-    const ok = c.fee - minFee < FEE_SWITCH_PP - 1e-9;
-    if (!ok) notes.set(c.code, `총보수가 최저(${minFee}%)보다 높음`);
-    return ok;
-  });
-  const rets = feeBand.map((c) => c.return1y).filter((r): r is number => r != null);
-  const maxRet = rets.length ? Math.max(...rets) : null;
-  const retBand = feeBand.filter((c) => {
-    const ok = maxRet == null || c.return1y == null || maxRet - c.return1y <= RETURN_GAP_PP + 1e-9;
-    if (!ok) notes.set(c.code, `보수는 같지만 1년 수익률이 ${(maxRet! - c.return1y!).toFixed(2)}%p 낮음(숨은 비용·추적 차이)`);
-    return ok;
-  });
-  const keep = keepList.map((code) => retBand.find((c) => c.code === code)).find((c) => c != null);
-  const chosen = keep ?? [...retBand].sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0))[0];
-  for (const c of retBand) if (c !== chosen && !notes.has(c.code)) notes.set(c.code, "조건은 같고 시가총액이 더 작음");
-  notes.set(chosen.code, keep ? "이미 보유 중이고 조건도 최선 묶음" : "선정");
-  const why = keep
-    ? `이미 가진 ${chosen.name}가 총보수·1년 수익률·규모 모두 최선 묶음에 있어 그대로 모읍니다.`
-    : `같은 지수 상품 중 총보수 최저 묶음(${minFee}%)${maxRet != null ? `에서 1년 수익률 차이가 ${RETURN_GAP_PP}%p 안이고` : "에서"} 시가총액이 가장 큰(${chosen.marketCap != null ? eok(chosen.marketCap) : "규모 자료 없음"}) ${chosen.name}를 골랐습니다.`;
-  return { chosen, notes, why };
-}
-
-/** 운용사 이름(첫 단어)을 뗀 상품 이름 — "KODEX 200TR"과 "TIGER 200TR"을 같은 지수로 본다 */
-export function sameIndexKey(name: string): string | null {
-  const m = String(name ?? "").trim().match(/^\S+\s+(.+)$/);
-  const rest = m ? m[1].replace(/\s+/g, "") : "";
-  return rest.length >= 2 ? rest : null;
-}
+// 같은 지수 상품 고르기는 가이드와 함께 쓰는 src/lib/indexProductChoice.ts에 있다 (예전 경로로 import하는 곳을 위해 다시 내보낸다)
+export { FEE_SWITCH_PP, MAX_DEVIATION_PCT, MIN_MARKET_CAP, RETURN_GAP_PP, pickIndexProduct, sameIndexKey } from "./indexProductChoice";
+export type { EtfYield, FeeAlternative, IndexCandidate, IndexPick } from "./indexProductChoice";
 export type MarketContext = { asOf: string; changePct: number; fromHighPct: number };
 
 export type ReportAction = "sell" | "sell-later" | "buy" | "stop-add" | "hold";
@@ -311,63 +217,54 @@ export function buildRebalanceReport(input: {
   };
   const monthlyOf = (code: string, bucket: AssetBucket, name: string, value: number) => ((value * yieldOf(code, bucket, name).pct) / 100 / 12) * keep;
 
-  // 살 곳 — 같은 계좌의 성장 ETF: 일반 계좌면 TR형 먼저, 아니면 가장 큰 것
+  // 살 곳 — 같은 계좌의 성장 ETF 중 기준 상품을 정하고 같은 지수 상품과 비교 (가이드 ①·예수금·분배금과 같은 함수)
   const growthHeld = held.filter((h) => h.group === "growth").sort((a, b) => b.value - a.value);
-  const buyRow = (!taxAdvantaged ? growthHeld.find((h) => /TR/i.test(h.name)) : undefined) ?? growthHeld[0] ?? null;
   // 총보수: 리밸런싱 가이드에서 직접 넣은 값 → 네이버 → 대체 상품 조회값
   const alts = (input.feeAlternatives ?? []).filter((a) => a.price > 0);
   const feeOf = (code: string): number | null =>
     view.settings.feePctByCode?.[code] ?? etf.get(code)?.fee ?? alts.find((a) => a.code === code)?.fee ?? null;
-  let buyTarget = buyRow ? { code: buyRow.code, name: buyRow.name, price: buyRow.price } : null;
+  const choice = chooseIndexBuy({
+    growthHeld,
+    taxAdvantaged,
+    alternatives: alts,
+    feeOf,
+    infoOf: (code) => etf.get(code) ?? alts.find((a) => a.code === code),
+    newMoney: newMoneyFromSettings(view.settings, view.today),
+  });
+  const buyRow = choice.base;
+  const buyTarget = choice.target;
+  const pick = choice.pick;
   let feeSwitch: RebalanceReport["feeSwitch"] = null;
   let feeCompare: RebalanceReport["feeCompare"] = [];
   let feeWhy: string | null = null;
-  if (buyRow) {
-    const key = sameIndexKey(buyRow.name);
-    const infoOf = (code: string) => etf.get(code) ?? alts.find((a) => a.code === code);
-    const pool: IndexCandidate[] = [
-      { code: buyRow.code, name: buyRow.name, price: buyRow.price },
-      ...alts.filter((a) => a.code !== buyRow.code && key != null && sameIndexKey(a.name) === key),
-    ]
-      .map((c) => {
-        const k = infoOf(c.code);
-        return { code: c.code, name: c.name, price: c.price, fee: feeOf(c.code) ?? -1, marketCap: k?.marketCap ?? null, return1y: k?.return1y ?? null, deviation: k?.deviation ?? null };
-      })
-      .filter((c) => c.fee >= 0);
-    // 같은 지수 상품을 이 계좌에 여럿 가졌으면 모두 '가진 상품'으로 본다(큰 것부터) — 한 번 옮겨 산 상품이 다음 달 또 바뀌지 않게
-    const heldSame = held.filter((h) => key != null && sameIndexKey(h.name) === key).sort((a, b) => b.value - a.value).map((h) => h.code);
-    const keepCodes = [buyRow.code, ...heldSame.filter((c) => c !== buyRow.code)];
-    const pick = pool.length >= 2 ? pickIndexProduct(pool, keepCodes) : null;
+  if (buyRow && buyTarget && pick) {
     const currentFee = feeOf(buyRow.code);
-    if (pick && pick.chosen.code !== buyRow.code) {
+    if (buyTarget.code !== buyRow.code) {
       const to = pick.chosen;
-      buyTarget = { code: to.code, name: to.name, price: to.price };
       const feeGap = currentFee != null ? currentFee - to.fee : 0;
       const perTenMillion = Math.round((feeGap / 100) * 10_000_000);
       const whyNotCurrent = pick.notes.get(buyRow.code);
       feeSwitch = {
         from: { code: buyRow.code, name: buyRow.name, fee: currentFee ?? to.fee },
         to: { code: to.code, name: to.name, fee: to.fee },
-        text: `${pick.why}${whyNotCurrent ? ` 가진 ${buyRow.name}는 ${whyNotCurrent}${feeGap > 0 ? `(1천만원당 연 약 ${perTenMillion.toLocaleString("ko-KR")}원 차이)` : ""}.` : ""} 새로 사는 돈만 ${to.name}로 보내고, 이미 가진 ${buyRow.name}는 팔지 않고 둡니다.`,
+        text: `${pick.why}${whyNotCurrent && !pick.gap ? ` 가진 ${buyRow.name}는 ${whyNotCurrent}${feeGap > 0 ? `(1천만원당 연 약 ${perTenMillion.toLocaleString("ko-KR")}원 차이)` : ""}.` : ""} 새로 사는 돈만 ${to.name}로 보내고, 이미 가진 ${buyRow.name}는 팔지 않고 둡니다.`,
       };
     }
-    if (pick) {
-      const heldCodes = new Set(view.holdings.filter((h) => h.accountKey === accountKey).map((h) => h.code));
-      feeCompare = [...pool]
-        .sort((a, b) => a.fee - b.fee || (b.marketCap ?? 0) - (a.marketCap ?? 0))
-        .map((c) => ({
-          code: c.code,
-          name: c.name,
-          fee: c.fee,
-          marketCap: c.marketCap,
-          return1y: c.return1y,
-          deviation: c.deviation,
-          held: heldCodes.has(c.code),
-          chosen: c.code === pick.chosen.code,
-          note: pick.notes.get(c.code) ?? "",
-        }));
-      feeWhy = pick.why;
-    }
+    const heldCodes = new Set(view.holdings.filter((h) => h.accountKey === accountKey).map((h) => h.code));
+    feeCompare = [...choice.pool]
+      .sort((a, b) => a.fee - b.fee || (b.marketCap ?? 0) - (a.marketCap ?? 0))
+      .map((c) => ({
+        code: c.code,
+        name: c.name,
+        fee: c.fee,
+        marketCap: c.marketCap,
+        return1y: c.return1y,
+        deviation: c.deviation,
+        held: heldCodes.has(c.code),
+        chosen: c.code === pick.chosen.code,
+        note: pick.notes.get(c.code) ?? "",
+      }));
+    feeWhy = pick.why;
   }
   const buyHint = buyRow
     ? !taxAdvantaged && /TR/i.test(buyRow.name)
