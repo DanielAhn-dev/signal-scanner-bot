@@ -123,8 +123,11 @@ export default function AccumulatePage() {
   // 계산기 처음 값은 '내 계획' 매달 금액(계획이 없거나 0이면 50만원). 사용자가 고친 뒤에는 계획이 바뀌어도 덮지 않는다
   const [planMonthly, setPlanMonthly] = useState(0)
   const amountTouched = useRef(false)
+  // 계획을 읽기 전에는 '계획으로 정하기' 버튼을 띄우지 않는다 (기본 50만원과 계획 0원이 달라 보여 잠깐 깜빡였다)
+  const [planLoaded, setPlanLoaded] = useState(false)
   const onPlanMonthly = useCallback((m: number) => {
     setPlanMonthly(m)
+    setPlanLoaded(true)
     if (m > 0 && !amountTouched.current) {
       setAmount(String(m))
       setFreq('month')
@@ -148,6 +151,8 @@ export default function AccumulatePage() {
   const [goalYearsPick, setGoalYearsPick] = useState<number | null>(null)
   const [planKey, setPlanKey] = useState(0)
   const [planSaveMsg, setPlanSaveMsg] = useState<string | null>(null)
+  // 저장 결과 문구를 누른 자리에만 보인다 — 2번 금액 칸 / 4번 선택지
+  const [planSaveFrom, setPlanSaveFrom] = useState<'amount' | 'goal'>('goal')
   const planSavingRef = useRef(false)
   const [income, setIncome] = useState<IncomeView>(null)
   const [recMonth, setRecMonth] = useState(ym)
@@ -245,16 +250,19 @@ export default function AccumulatePage() {
   const planSum = planSim ? summarize(planSim) : null
   const today = kstToday()
 
-  const savePlanMonthly = async (amount: number) => {
+  const savePlanMonthly = async (amount: number, from: 'amount' | 'goal' = 'goal') => {
     if (planSavingRef.current) return
     planSavingRef.current = true
     setPlanSaveMsg(null)
+    setPlanSaveFrom(from)
     try {
       const res = await apiFetch('/api/ui/investment-prefs', { method: 'POST', cacheMs: 0, timeoutMs: 15_000, body: JSON.stringify({ plan: { monthly: amount } }) })
       if (res?.error) throw new Error(String(res.error))
       // 저장이 성공한 뒤에만 바꾼다. 내 계획 카드는 다시 읽게 새로 그린다
       setPlanKey((k) => k + 1)
       window.dispatchEvent(new Event(PLAN_CHANGED_EVENT))
+      // 계산기 금액이 곧 계획이 됐으니 앞으로 계획이 바뀌면 계산기도 따라간다
+      amountTouched.current = false
       setPlanSaveMsg(`내 계획을 매달 ${formatKrwReadable(amount)}으로 바꿨어요`)
     } catch (e) {
       setPlanSaveMsg(`바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`)
@@ -350,7 +358,7 @@ export default function AccumulatePage() {
       <section className="acc-card" aria-labelledby="acc-amount">
         <h2 id="acc-amount">2. 얼마를 모을까</h2>
         <p className="acc-note">
-          아래 계산용 금액입니다. 여기서 바꿔도 위 '내 계획'은 바뀌지 않습니다.
+          아래 계산용 금액입니다. 바꿔 보기만 하면 위 &lsquo;내 계획&rsquo;은 그대로이고, 이 금액으로 정하려면 맨 아래 버튼을 누르세요.
           {mode === 'direct' && planMonthly > 0 && (num(amount) !== planMonthly || freq !== 'month') && (
             <> <button type="button" className="acc-link" onClick={resetToPlan}>내 계획({man(planMonthly)})으로 되돌리기</button></>
           )}
@@ -393,6 +401,14 @@ export default function AccumulatePage() {
           <label className="acc-field"><span>이미 가진 성장 자산(원)</span><input type="number" inputMode="numeric" min="0" placeholder="0" value={lumpText} onChange={(e) => setLumpText(e.target.value)} onBlur={() => update({ lump: num(lumpText) })} /><AmountHint value={lumpText} /></label>
         </div>
         <p className="acc-summary">매달 <strong>{won(monthly)}</strong> × {years}년 = 총 납입 <strong>{man(monthly * years * 12 + lump)}</strong></p>
+        {/* 바꿔 본 금액을 그 자리에서 계획으로 — 다른 화면으로 가지 않아도 되게 (2026-10-19 사용자 요청). 매일·매주는 한 달 금액으로 바꿔 저장한다 */}
+        {planLoaded && mode === 'direct' && monthly >= 10_000 && monthly !== planMonthly && (
+          <div className="acc-plan-save">
+            <button type="button" className="acc-primary" onClick={() => savePlanMonthly(monthly, 'amount')}>매달 {formatKrwReadable(monthly)}을 내 계획으로 정하기</button>
+            <p className="acc-note">{planMonthly > 0 ? `지금 내 계획은 매달 ${formatKrwReadable(planMonthly)}입니다. ` : ''}정하면 홈 &lsquo;이번 달 할 일&rsquo;과 가상 계좌 월 입금도 이 금액으로 바뀝니다.</p>
+          </div>
+        )}
+        {planSaveFrom === 'amount' && planSaveMsg && <p className="acc-note" role="status">{planSaveMsg}</p>}
       </section>
 
       <section className="acc-card" aria-labelledby="acc-result">
@@ -491,8 +507,8 @@ export default function AccumulatePage() {
             today={today}
             raise={state.raise ?? null}
             onRaise={(next) => update({ raise: next ?? undefined })}
-            onSavePlan={savePlanMonthly}
-            saveMsg={planSaveMsg}
+            onSavePlan={(a) => savePlanMonthly(a, 'goal')}
+            saveMsg={planSaveFrom === 'goal' ? planSaveMsg : null}
             onOpenMix={() => navigate('/mix')}
           />
         )}

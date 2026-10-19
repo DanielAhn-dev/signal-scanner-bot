@@ -85,7 +85,7 @@ describe('모아가기', () => {
     await screen.findByText('추천')
     const input = screen.getByLabelText(/^금액($|=)/) as HTMLInputElement
     expect(input.value).toBe('1220000')
-    expect(screen.getByText(/위 '내 계획'은 바뀌지 않습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/위 ‘내 계획’은 그대로/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /으로 되돌리기/ })).not.toBeInTheDocument()
     fireEvent.change(input, { target: { value: '500000' } })
     fireEvent.click(screen.getByRole('button', { name: '내 계획(122만원)으로 되돌리기' }))
@@ -197,5 +197,18 @@ describe('모아가기', () => {
     await screen.findByText('직접 정한 구성')
     expect(screen.getByLabelText<HTMLSelectElement>("같은 지수의 다른 후보").value).toMatch(/^[0-9A-Z]{6}$/)
     expect(screen.queryByText(/아직 구성을 정하지 않았어요/)).toBeNull()
+  })
+
+  it('2번에서 바꾼 금액을 그 자리에서 내 계획으로 정한다', async () => {
+    planMock.monthly = 1_220_000
+    renderPage()
+    await screen.findAllByText('처음이면 이걸로')
+    expect(screen.queryByRole('button', { name: /을 내 계획으로 정하기$/ })).toBeNull()
+    fireEvent.change(screen.getByLabelText(/^금액($|=)/), { target: { value: '2000000' } })
+    apiFetchMock.mockImplementationOnce(() => Promise.resolve({ data: { plan: { monthly: 2_000_000 } } }))
+    fireEvent.click(screen.getByRole('button', { name: '매달 200만원을 내 계획으로 정하기' }))
+    await screen.findByText('내 계획을 매달 200만원으로 바꿨어요')
+    const [, opts] = apiFetchMock.mock.calls.find(([p, o]) => p === '/api/ui/investment-prefs' && (o as any)?.method === 'POST')!
+    expect(JSON.parse((opts as any).body)).toEqual({ plan: { monthly: 2_000_000 } })
   })
 })
