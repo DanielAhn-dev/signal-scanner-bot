@@ -3,6 +3,8 @@
 .acc-eyebrow { color: var(--color-brand); font-weight: 700; font-size: 12px; }
 .acc header h1 { font-size: 24px; margin: 6px 0; }
 .acc header p { color: var(--color-text-secondary); line-height: 1.55; }
+/* 머리글 아래 첫 카드가 여백 없는 카드(내 모으기 .sp--full 등)여도 붙지 않게 — acc-card의 margin-top 20px과는 겹쳐(collapse) 20px */
+.acc > header { margin-bottom: 20px; }
 .acc-card { margin-top: 20px; padding: 16px; border: 1px solid var(--color-border-default); border-radius: 8px; display: flex; flex-direction: column; gap: 12px; }
 .acc-card h2 { font-size: 16px; }
 .acc-card h3 { font-size: 14px; }
