@@ -12,7 +12,7 @@ import { isExcludedStockName } from "../src/lib/investableUniverse";
  */
 const ROOT = join(__dirname, "..");
 const SCAN_DIRS = ["src", "handlers", "api", "web/src", "scripts"];
-const SKIP = [/node_modules/, /__pycache__/, /\.test\.tsx?$/, /^scripts[\\/]research[\\/]/, /^web[\\/]src[\\/]data[\\/]/];
+const SKIP = [/node_modules/, /__pycache__/, /\.test\.tsx?$/, /[\\/]test_[^\\/]*\.py$/, /^scripts[\\/]research[\\/]/, /^web[\\/]src[\\/]data[\\/]/];
 
 function sourceFiles(): Array<{ path: string; text: string }> {
   const out: Array<{ path: string; text: string }> = [];

@@ -34,6 +34,8 @@ etfTabCode 분포: 1 국내지수 99 · 2 국내업종/테마 342 · 3 국내파
 - 순수 함수 `build_product_type_rows(snapshot_rows, etf_tabs)`를 만들고 RPC를 200행 단위로 호출한다.
 - **안전장치**: ETF 목록이 비었거나 평소의 절반(예: 500종 미만)이면 ETF 필드는 쓰지 않는다. 일시 오류를 "ETF 아님"으로 덮어쓰지 않기 위해서다. 조회 실패를 '없음'으로 취급하지 않는다는 원칙을 따른다.
 - `--dryRun=true`로 바뀔 행 수와 분류별 개수를 먼저 출력해 보고 운영에 쓴다.
+- **구현함 (2026-10-19)**: `market_snapshot.py` `sync_product_types`(스냅샷 저장·신규 상장 등록 뒤 실행)와 즉시 실행용 `scripts/sync_product_types.py [--dry-run]`을 만들었다. 테스트는 `python -m unittest scripts/batch_modules/test_market_snapshot_product_types.py`로 돌린다.
+  - 드라이런 결과(운영 DB 읽기만 함): 4,307종 = stock 2,763 · etf 1,176 · etn 368. ETF 과세는 domestic_equity 441 · other 735이고 건너뛴 종목은 없다. 바뀔 행은 4,281개다. 036에서 미리 채운 26종은 배치 값과 같아서 바뀌지 않는다.
 
 ### 3. 판정 함수 일원화 — `src/lib/securitiesTax.ts`
 - `resolveProductKind({ code, name, productType? })`: DB 값을 먼저 보고, 없으면 지금의 코드 목록과 이름 규칙으로 판정한다.
