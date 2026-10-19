@@ -22,6 +22,8 @@
     "deploy": "vercel --prod",
     "sync:scores": "tsx scripts/sync_scores_from_engine.ts",
     "etl:fundamentals": "tsx scripts/etl_fundamentals.ts",
+    "etl:market-themes": "tsx scripts/collect_market_themes.ts",
+    "etl:market-themes:dry": "tsx scripts/collect_market_themes.ts --dryRun=true --force=true",
     "etl:fundamentals:all500": "tsx scripts/etl_fundamentals.ts --all 500",
     "seed:sectors": "tsx scripts/seedSectors.ts",
     "gen:sectors": "tsx scripts/generateSectorsJson.ts",
