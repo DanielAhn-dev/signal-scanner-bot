@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import MixPage from './index'
+import { planMixFromWeights } from './SetPlanMix'
+
+const apiFetchMock = vi.fn()
+vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
+beforeEach(() => apiFetchMock.mockReset())
 import { MIX_PRESETS, simulateMix } from '../../lib/mix'
 
 describe('섞어보기 화면', () => {
@@ -59,5 +64,30 @@ describe('하락 때 할 일 미리 정하기', () => {
     expect(save.disabled).toBe(false)
     for (const box of screen.getAllByRole('checkbox')) fireEvent.click(box)
     expect(save.disabled).toBe(true)
+  })
+})
+
+describe('이 비중으로 내 계획 정하기', () => {
+  it('코스피200·S&P500·나스닥100만이면 구성으로 바꾸고, 채권·금이 섞이면 null', () => {
+    expect(planMixFromWeights({ kospi200: 60, sp500: 40 })?.map((e) => [e.index, e.weight])).toEqual([['kospi200', 0.6], ['sp500', 0.4]])
+    const three = planMixFromWeights({ kospi200: 35, sp500: 35, nasdaq100: 35 })!
+    expect(three.reduce((s, e) => s + e.weight, 0)).toBeCloseTo(1, 9)
+    expect(planMixFromWeights({ kospi200: 60, kbond10: 40 })).toBeNull()
+    expect(planMixFromWeights({ sp500: 0 })).toBeNull()
+    // 이미 고른 상품·계좌는 남긴다
+    const keep = [{ index: 'sp500' as const, weight: 1, product: { code: '360200', name: 'ACE 미국S&P500' }, account: { broker: '토스', account: 'ISA' } }]
+    expect(planMixFromWeights({ kospi200: 50, sp500: 50 }, keep)![1]).toMatchObject({ product: { code: '360200' }, account: { account: 'ISA' } })
+  })
+
+  it('채권·금이 섞인 예시는 버튼 대신 안내, 주식 반반 예시는 버튼으로 저장(지금 구성을 다시 읽어 합침)', async () => {
+    apiFetchMock.mockImplementation((_u: string, o?: { method?: string; body?: string }) =>
+      Promise.resolve(o?.method === 'POST' ? { data: { plan: JSON.parse(o.body!).plan } } : { data: { plan: { monthly: 0, mix: null } } }))
+    render(<MixPage />)
+    expect(screen.getByText(/채권·금이 섞인 비중은 내 계획 구성으로 정할 수 없어요/)).toBeTruthy()
+    fireEvent.click(screen.getByText('코스피200 50 · 나스닥100 50'))
+    fireEvent.click(screen.getByRole('button', { name: /이 비중을 내 계획 구성으로 정하기/ }))
+    expect(await screen.findByText(/내 계획 구성을 '코스피200 50 · 나스닥100 50'\(으\)로 정했어요/)).toBeTruthy()
+    const post = apiFetchMock.mock.calls.find(([, o]) => o?.method === 'POST')!
+    expect(JSON.parse(post[1].body).plan.mix.map((e: any) => e.index)).toEqual(['kospi200', 'nasdaq100'])
   })
 })

@@ -4,6 +4,7 @@ import { MIX_ASOF, MIX_ASSETS } from '../../data/mixData'
 import { MIX_PRESETS, STRESS_PRESETS, fmtYm, normalize, simulateMix, stressTest, type Rebalance, type Shocks, type Weights } from '../../lib/mix'
 import BehaviorGap from './BehaviorGap'
 import DropPlanCard from './DropPlanCard'
+import SetPlanMix from './SetPlanMix'
 import '../accumulate/accumulate.css'
 import './mix.css'
 
@@ -102,6 +103,7 @@ export default function MixPage() {
             <option value="none">하지 않음</option>
           </select>
         </div>
+        <SetPlanMix weights={weights} />
       </section>
 
       {result ? (
