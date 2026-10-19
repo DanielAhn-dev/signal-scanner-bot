@@ -588,6 +588,8 @@ export type GoalTrackerView = {
   normalRange: typeof NORMAL_MONTHLY_RANGE;
   /** 월 입금이 계정의 월 자동 입금 설정에서 온 값인지 (그러면 목표 트래커에서 따로 바꾸지 않는다) */
   contributionLinked: boolean;
+  /** 지나온 길 그래프용 — 기록의 월별 마지막 평가액(최근 120개월). 지금 값은 equity */
+  trail: Array<{ date: string; total: number }>;
   /** 눈에 보이는 진행: 넣은 원금 vs 불어난 돈, 복리가 월 입금을 추월하는 시점 */
   progress: {
     principal: number;
@@ -677,6 +679,11 @@ export function buildGoalTrackerView(input: {
       .filter((p) => p.date.slice(0, 7) < now.date.slice(0, 7))
       .sort((a, b) => a.date.localeCompare(b.date))
       .pop()?.total ?? now.total;
+  const lastOfMonth = new Map<string, EquityPoint>();
+  for (const p of [...file.history].sort((x, y) => x.date.localeCompare(y.date))) {
+    if (p.date < now.date && p.date >= s.startDate.slice(0, 10)) lastOfMonth.set(p.date.slice(0, 7), p);
+  }
+  const trail = [...lastOfMonth.values()].slice(-120).map((p) => ({ date: p.date, total: Math.round(p.total) }));
   return {
     today: now.date,
     settings: s,
@@ -707,6 +714,7 @@ export function buildGoalTrackerView(input: {
     life,
     normalRange: NORMAL_MONTHLY_RANGE,
     contributionLinked,
+    trail,
     progress: (() => {
       const principal = Math.round(now.principal ?? s.startEquity);
       const cross = compoundingCrossover({ equity: now.total, planAnnualPct: s.planAnnualPct, monthlyContribution: s.monthlyContribution });

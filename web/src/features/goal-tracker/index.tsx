@@ -8,6 +8,7 @@ import { man, signed, useGoalTracker } from './useGoalTracker'
 import { judgeRealism, requiredAnnualPct } from '../../lib/startPlan'
 import { monthsUntil } from '../../../../src/services/goalTracker'
 import LifePlanCard from './LifePlanCard'
+import GoalPathChart from './GoalPathChart'
 import './goal-tracker.css'
 
 const UP = 'var(--color-stock-up)'
@@ -295,6 +296,7 @@ export default function GoalTrackerPage() {
         >
           <div style={{ width: `${pct}%` }} />
         </div>
+        <GoalPathChart view={view} />
         <div className="goal-note">
           <strong>{view.phase.title}</strong>: {view.phase.text}
         </div>

@@ -132,3 +132,24 @@ test("compoundingCrossover: 100만 + 월 50만, 연 10%면 약 7.2년 뒤 월 �
   assert.equal(compoundingCrossover({ equity: 100_000_000, planAnnualPct: 10, monthlyContribution: 500_000 })!.months, 0);
   assert.equal(compoundingCrossover({ equity: 20_000_000, planAnnualPct: 8, monthlyContribution: 0 }), null);
 });
+
+test("buildGoalTrackerView: trail은 시작일 이후 월별 마지막 기록만, 오늘 기록은 빼고 날짜순", () => {
+  const v = buildGoalTrackerView({
+    file: {
+      settings,
+      history: [
+        { date: "2026-10-31", seed: 1, total: 21_000_000 },
+        { date: "2026-09-01", seed: 1, total: 19_000_000 }, // 시작일 전
+        { date: "2026-10-02", seed: 1, total: 20_100_000 },
+        { date: "2026-09-30", seed: 1, total: 20_000_000 },
+        { date: "2026-11-10", seed: 1, total: 21_500_000 }, // 오늘 — equity로 따로 그린다
+      ],
+    },
+    now: { date: "2026-11-10", seed: 1, total: 21_500_000, cash: 0, holdings: 21_500_000 },
+    realized: { swing: 0, sweep: 0, sells: 0, wins: 0 },
+  });
+  assert.deepEqual(v.trail, [
+    { date: "2026-09-30", total: 20_000_000 },
+    { date: "2026-10-31", total: 21_000_000 },
+  ]);
+});

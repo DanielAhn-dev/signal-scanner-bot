@@ -35,6 +35,8 @@ export type GoalView = {
   life?: LifePlan | null
   normalRange: { plusMonthsPct: number; p10: number; worst: number; maxLosingStreak: number; source: string }
   contributionLinked?: boolean
+  /** 월말 평가액 기록 — 배포 전 API에는 없다 */
+  trail?: Array<{ date: string; total: number }>
   progress?: {
     principal: number
     growth: number
