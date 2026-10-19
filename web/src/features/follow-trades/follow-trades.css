@@ -34,6 +34,12 @@
 .follow-table th, .follow-table td { padding: 7px 8px; border-bottom: 1px solid var(--color-border-default); text-align: right; }
 .follow-table th[scope="row"], .follow-table thead th:first-child { text-align: left; }
 .follow-table thead th { color: var(--color-text-secondary); font-weight: 400; font-size: 12px; }
+.follow-kept { font-size: 15px; margin-bottom: 10px; }
+.follow-kept strong { font-size: 20px; margin-left: 6px; color: var(--color-brand); }
+.follow-ok { color: var(--color-brand); font-weight: 700; }
+.follow-muted-cell { color: var(--color-text-tertiary); }
+.follow-pva th, .follow-pva td { word-break: keep-all; }
+.follow-pva th[scope="col"] .account-tag { margin-left: 4px; }
 @media (max-width: 560px) { .follow-cards { grid-template-columns: 1fr; } }
 @media print {
   body * { visibility: hidden !important; }

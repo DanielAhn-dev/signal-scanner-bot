@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { Printer } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { useCurrentClientId } from '../../stores/profileStore'
+import { useUserState } from '../../lib/userState'
+import { monthLabel } from '../../lib/monthTask'
+import { buildPlanVsActual, type PlanVsActualRow } from '../../lib/planVsActual'
+import type { AccumulateState } from '../../lib/accumulate'
+import AccountTag from '../../components/ui/AccountTag'
 import { buildFollowMemo, parseFollowMemo, type FollowComparison, type FollowTrade } from '../../../../src/services/followReport'
 import './follow-trades.css'
 
@@ -47,6 +52,23 @@ export function buildHeadlines(c: FollowComparison): string[] {
   return lines
 }
 
+const ymLabel = (ym: string) => `${ym.slice(0, 4)}년 ${monthLabel(ym)}`
+const qtyText = (name: string | null, qty: number | null) => [name, qty != null ? `${qty.toLocaleString('ko-KR')}주` : null].filter(Boolean).join(' ')
+
+function planCell(r: PlanVsActualRow) {
+  if (r.plan.source === 'virtual') return qtyText(r.plan.name, r.plan.qty)
+  if (r.plan.qty != null) return `약 ${qtyText(r.plan.name, r.plan.qty)}`
+  return r.plan.amount > 0 ? `${won(r.plan.amount)} 넣기` : '—'
+}
+
+function actualCell(r: PlanVsActualRow) {
+  if (r.actual.status === 'skipped') return '건너뜀'
+  if (r.actual.status === 'later') return '다음 달부터 시작'
+  return qtyText(r.actual.name, r.actual.qty) || '샀어요'
+}
+
+const RESULT_LABEL: Record<PlanVsActualRow['result'], string> = { kept: '지킴', skipped: '건너뜀', notStarted: '시작 전' }
+
 export default function FollowTradesPage() {
   const clientId = useCurrentClientId()
   const [report, setReport] = useState<Report | null>(null)
@@ -72,6 +94,19 @@ export default function FollowTradesPage() {
   }, [])
 
   useEffect(() => { if (clientId) void load(); else setLoading(false) }, [clientId, load])
+
+  // 계획 vs 실제 — 홈 '이번 달 할 일' 답과 내 계획 금액
+  const { value: accRaw } = useUserState<AccumulateState>('accumulate')
+  const [monthly, setMonthly] = useState(0)
+  useEffect(() => {
+    if (!clientId) return
+    let active = true
+    apiFetch('/api/ui/investment-prefs', { cacheMs: 60_000, retries: 1 })
+      .then((res) => { if (active) setMonthly(Number(res?.data?.plan?.monthly) || 0) })
+      .catch(() => { /* 계획 금액을 못 읽으면 계획 칸은 가상 계좌 거래로만 채운다 */ })
+    return () => { active = false }
+  }, [clientId])
+  const pva = buildPlanVsActual({ tasks: accRaw?.tasks, monthly, bot: report?.bot ?? [], real: report?.real ?? [] })
 
   const followedBy = new Map<string, FollowTrade>()
   for (const t of report?.real ?? []) { const id = parseFollowMemo(t.memo); if (id) followedBy.set(id, t) }
@@ -111,6 +146,30 @@ export default function FollowTradesPage() {
 
       {loading && <p className="follow-muted">불러오는 중입니다.</p>}
       {error && <p className="follow-bad" role="alert">불러오기 실패: {error}</p>}
+
+      <section aria-label="계획 vs 실제">
+        <h2>계획 vs 실제 <small>달마다</small></h2>
+        {pva.rows.length === 0
+          ? <p className="follow-muted">홈의 '이번 달 할 일'에 답하면 달마다 계획대로 했는지 여기에 쌓여요.</p>
+          : <>
+            <p className="follow-kept">계획을 지킨 달 <strong>{pva.kept}/{pva.counted}</strong></p>
+            <table className="follow-table follow-pva">
+              <thead><tr>
+                <th scope="col">달</th>
+                <th scope="col">계획 <AccountTag kind="virtual" /></th>
+                <th scope="col">실제 <AccountTag kind="real" /></th>
+                <th scope="col">결과</th>
+              </tr></thead>
+              <tbody>{pva.rows.map((r) => <tr key={r.ym}>
+                <th scope="row">{ymLabel(r.ym)}</th>
+                <td>{planCell(r)}</td>
+                <td>{actualCell(r)}</td>
+                <td className={r.result === 'kept' ? 'follow-ok' : r.result === 'skipped' ? 'follow-bad' : 'follow-muted-cell'}>{RESULT_LABEL[r.result]}</td>
+              </tr>)}</tbody>
+            </table>
+            <p className="follow-muted">계획 칸은 가상 계좌가 그달 산 지수 ETF이고, 기록이 없으면 계획 금액으로 살 수 있었던 주수(약)입니다. '다음 달부터 시작'한 달은 세지 않아요.</p>
+          </>}
+      </section>
 
       {report && <>
         <section aria-label="봇의 최근 거래">
