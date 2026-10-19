@@ -12,6 +12,7 @@
  *   - 커버드콜은 장기 연 4~11%p 뒤처짐, 리츠는 2022 금리 상승기 −34~−54%, 레버리지는 세후 이득 없음.
  *   - 필요 인출률(생활비 ÷ 자산)이 갈림길: 50:50에서 4%까지는 15년 뒤 실질 원금 100% 유지, 8%면 15%.
  */
+import type { GuideAdvice } from "./guideAdherence";
 import { isExchangeTradedProduct } from "./securitiesTax";
 
 export type AssetBucket =
@@ -602,12 +603,16 @@ export type GuideHistoryEntry = {
   auto?: boolean;
   /** 그때 종목별 수량 — "가만히 뒀다면"을 지금 가격으로 다시 계산해 시장 몫과 내 매매 몫을 나눈다 */
   holdings?: Array<{ code: string; name: string; quantity: number }>;
+  /** 그달 가이드가 안내한 것 — 다음 기록과 맞춰 따름/다르게 함을 판정한다 (src/lib/guideAdherence.ts, 2026-10-19~) */
+  advice?: GuideAdvice;
+  /** 기록한 날 가격 — 보유 종목과 안내 상품(이번·지난 기록). '안내대로였다면'을 이 가격으로 계산한다 */
+  prices?: Record<string, number>;
 };
 
 export function toHistoryEntry(
   view: IncomeGuideView,
   note?: string,
-  extra?: { holdings?: GuideHolding[]; auto?: boolean },
+  extra?: { holdings?: GuideHolding[]; auto?: boolean; advice?: GuideAdvice | null; prices?: Record<string, number> },
 ): GuideHistoryEntry {
   const qty = new Map<string, { code: string; name: string; quantity: number }>();
   for (const h of extra?.holdings ?? []) {
@@ -623,15 +628,22 @@ export function toHistoryEntry(
     ...(note ? { note: String(note).slice(0, 200) } : {}),
     ...(extra?.auto ? { auto: true } : {}),
     ...(qty.size ? { holdings: [...qty.values()] } : {}),
+    ...(extra?.advice ? { advice: extra.advice } : {}),
+    ...(extra?.prices && Object.keys(extra.prices).length ? { prices: extra.prices } : {}),
   };
 }
 
 /** 이번 달 기록이 없으면 자동 기록을 하나 더한다. 더했으면 새 이력, 아니면 null */
-export function withMonthlyEntry(history: GuideHistoryEntry[], view: IncomeGuideView, holdings: GuideHolding[]): GuideHistoryEntry[] | null {
+export function withMonthlyEntry(
+  history: GuideHistoryEntry[],
+  view: IncomeGuideView,
+  holdings: GuideHolding[],
+  extra?: { advice?: GuideAdvice | null; prices?: Record<string, number> },
+): GuideHistoryEntry[] | null {
   if (view.total <= 0) return null;
   const month = view.today.slice(0, 7);
   if (history.some((h) => h.date.slice(0, 7) === month)) return null;
-  return appendHistory(history, toHistoryEntry(view, undefined, { holdings, auto: true }));
+  return appendHistory(history, toHistoryEntry(view, undefined, { holdings, auto: true, ...extra }));
 }
 
 /** 바구니 비중이 모두 0.5%p 안이면 같은 상태로 본다 (가격이 조금 움직인 것만으로 새 기록이 되지 않게) */

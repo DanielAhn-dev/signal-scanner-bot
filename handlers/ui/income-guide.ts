@@ -22,16 +22,16 @@ import {
   toHistoryEntry,
   withMonthlyEntry,
 } from '../../src/lib/incomeGuide'
-import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
-import { loadIndexAlternatives } from '../../src/services/indexAlternatives'
-import { isTaxAdvantagedAccount, resolveYieldPct } from '../../src/lib/incomeGuide'
-import { MAX_RECEIPTS, monthSummary, projectNextMonth, sanitizeReceipt } from '../../src/lib/distributionReceipts'
+import { buildGuidePlanSnapshot } from '../../src/services/guidePlanSnapshot'
+import { buildAdherence } from '../../src/lib/guideAdherence'
+import { MAX_RECEIPTS, monthSummary, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
 //   GET  ?summary=1 — 보유 수·직접 남긴 점검 기록 수만 (홈 길잡이용, 시세 조회 없음)
 //   POST { ...설정 } — 가이드 설정 변경 / POST { action: 'record', note } — 오늘 비중을 점검 기록에 남김
 //   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
+//   POST { action: 'adherence-exclude', key, exclude } — 가이드 따름 판정에서 빼기/되돌리기
 // 이번 달 기록이 없으면 열 때 자동 기록을 하나 남긴다(매월 배치 scripts/income_guide_monthly.ts와 같은 규칙).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
@@ -74,7 +74,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body = req.method === 'POST' ? ((typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) ?? {}) : {}
     const isRecord = req.method === 'POST' && body.action === 'record'
     const isReceipt = req.method === 'POST' && (body.action === 'receipt-add' || body.action === 'receipt-delete')
-    if (isReceipt) {
+    const isExclude = req.method === 'POST' && body.action === 'adherence-exclude'
+    if (isExclude) {
+      // 가이드 따름 판정에서 빼기/되돌리기 (입력 실수·다른 이유) — 기록 자체는 지우지 않는다
+      const k = String(body.key ?? '').slice(0, 80)
+      if (!/^\d{4}-\d{2}-\d{2}\|[\w.-]+$/.test(k)) return res.status(400).json({ error: '판정 키가 올바르지 않습니다.' })
+      const set = new Set(file.adherenceExcluded ?? [])
+      if (body.exclude === false) set.delete(k)
+      else set.add(k)
+      file = { ...file, adherenceExcluded: [...set].slice(-500) }
+      const saveErr = await saveGuideFile(supabase, chatId, file)
+      if (saveErr) return res.status(500).json({ error: `판정 저장 실패: ${saveErr}` })
+    } else if (isReceipt) {
       const receipts = [...(file.receipts ?? [])]
       if (body.action === 'receipt-add') {
         const r = sanitizeReceipt(body.receipt, new Date().toISOString(), () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
@@ -91,15 +102,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       file = { ...file, receipts: receipts.slice(-MAX_RECEIPTS) }
       const saveErr = await saveGuideFile(supabase, chatId, file)
       if (saveErr) return res.status(500).json({ error: `분배금 기록 저장 실패: ${saveErr}` })
-    } else if (req.method === 'POST' && !isRecord) {
+    } else if (req.method === 'POST' && !isRecord && !isExclude) {
       file.settings = sanitizeIncomeGuideSettings(body, file.settings)
       const saveErr = await saveGuideFile(supabase, chatId, file)
       if (saveErr) return res.status(500).json({ error: `가이드 설정 저장 실패: ${saveErr}` })
     }
 
     const rows = await loadAccountPositionRows(supabase, chatId)
-    // 지난 기록의 종목(지금은 판 종목 포함)도 시세를 받아 "가만히 뒀다면"을 계산한다
-    const pastCodes = (file.history ?? []).flatMap((h) => (h.holdings ?? []).map((x) => x.code))
+    // 지난 기록의 종목(지금은 판 종목 포함)과 지난 안내 상품도 시세를 받아 "가만히 뒀다면"·"안내대로였다면"을 계산한다
+    const pastCodes = (file.history ?? []).flatMap((h) => [...(h.holdings ?? []).map((x) => x.code), ...(h.advice?.buy ?? []).map((x) => x.code)])
     const { prices, realtimeHits } = await fetchGuidePrices(supabase, [...rows.map((r) => r.code), ...pastCodes])
     const { holdings, priceFallbacks } = toGuideHoldings(rows, prices, realtimeHits)
 
@@ -108,42 +119,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pastCashPcts = (file.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
     const yieldPctByCode = await fetchYieldPctByCode(holdings)
     const view = buildIncomeGuideView({ holdings, settings: file.settings, today, contribution, pastCashPcts, yieldPctByCode })
+    // 계획(같은 지수 상품 비교 포함)과 그달 안내 — 기록에 안내·가격을 같이 남긴다(월 배치와 같은 계산)
+    const { plan, projection, advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file, view, yieldPctByCode, today, prices, alternativesTimeoutMs: 6_000 })
     let history = file.history ?? []
     if (isRecord) {
       if (view.total <= 0) return res.status(400).json({ error: '기록할 계좌 보유가 없습니다.' })
-      history = appendHistory(history, toHistoryEntry(view, typeof body.note === 'string' ? body.note : undefined, { holdings }))
+      history = appendHistory(history, toHistoryEntry(view, typeof body.note === 'string' ? body.note : undefined, { holdings, advice, prices: entryPrices }))
       const saveErr = await saveGuideFile(supabase, chatId, { ...file, history })
       if (saveErr) return res.status(500).json({ error: `점검 기록 저장 실패: ${saveErr}` })
     } else {
-      const next = withMonthlyEntry(history, view, holdings)
+      const next = withMonthlyEntry(history, view, holdings, { advice, prices: entryPrices })
       // 자동 기록 저장이 실패해도 화면은 그대로 보여 준다 (다음에 열 때 다시 시도)
       if (next && !(await saveGuideFile(supabase, chatId, { ...file, history: next }))) history = next
     }
     // 분배금 받은 기록 → 이번 달 합계와 다음 달 예상(기록 없는 종목은 분배율 추정, 일반 계좌는 15.4% 뗌)
     const receipts = file.receipts ?? []
-    const estimateMonthlyNet = (code: string) =>
-      view.holdings
-        .filter((h) => h.code === code)
-        .reduce((s, h) => s + (h.value * resolveYieldPct(h.code, h.bucket, h.name, yieldPctByCode).pct) / 100 / 12 * (isTaxAdvantagedAccount(h.accountLabel) ? 1 : 0.846), 0)
-    const projection = projectNextMonth({ receipts, holdings: view.holdings, estimateMonthlyNet, today })
     const month = today.slice(0, 7)
     const prevMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()
     const yearAgoMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 12 ? `${y}-01` : `${y - 1}-${String(m + 1).padStart(2, '0')}` })()
-    // 받은 기록이 하나라도 있으면 월 인컴은 기록 기반 예상을 쓴다. 예전 '실제 월 분배금' 숫자 칸은 화면에서 없앴으므로(고칠 수 없는 값)
-    // 기록이 없을 때도 쓰지 않고 분배율 추정으로 둔다
-    const planSettings = { ...file.settings, actualMonthlyNet: projection.receiptCodes > 0 ? projection.total : undefined }
     const ctx = { settings: file.settings, today, priceOf: (code: string) => prices.get(code) }
-    // 같은 지수 상품 비교(리포트와 같은 자료·같은 함수) — 오래 걸리면 비교 없이 보유 상품으로
-    const growth = view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name }))
-    const indexAlt = await Promise.race([
-      loadIndexAlternatives(supabase, growth),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 6_000)),
-    ])
     return res.status(200).json({
       ok: true,
       data: {
         ...view,
-        plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: planSettings, cashPlan: view.cashPlan, yieldPctByCode, today, etf: indexAlt?.etf, feeAlternatives: indexAlt?.alternatives }),
+        plan,
         // 'distributions'(금융소득 상한)는 view에 이미 있다 — 이름을 따로 둔다
         distributionReceipts: {
           thisMonth: monthSummary(receipts, month),
@@ -152,6 +151,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // 최근 12개월 — 화면이 달별로 묶어 지난달 대비 증감을 보여 준다
           recent: receipts.filter((r) => r.month >= yearAgoMonth).sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.localeCompare(a.createdAt)),
         },
+        // 가이드 따름 기록 — 안내와 다음 기록의 보유 변화 비교 (내 선택 돌아보기)
+        adherence: buildAdherence({ history, today, priceOf: (code) => prices.get(code), receipts, excluded: file.adherenceExcluded }),
         priceFallbacks,
         history, comparison: compareWithHistory(view, history, ctx), health: healthTrend(view, history, ctx) },
     })

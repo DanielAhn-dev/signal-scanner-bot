@@ -25,6 +25,8 @@ export type GuideFile = {
   history: GuideHistoryEntry[];
   /** 실계좌 분배금 받은 기록(src/lib/distributionReceipts.ts) */
   receipts?: DistributionReceipt[];
+  /** 가이드 따름 판정에서 사용자가 뺀 항목 키(입력 실수 등, src/lib/guideAdherence.ts) */
+  adherenceExcluded?: string[];
 };
 
 const pathOf = (chatId: string | number) => `${DIR}/${chatId}.json`;
@@ -34,12 +36,13 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
   const { data, error } = await supabase.storage.from(BUCKET).download(pathOf(chatId), { cacheNonce: String(Date.now()) });
   if (error || !data) return null;
   try {
-    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown };
+    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown; adherenceExcluded?: unknown };
     if (!parsed.settings) return null;
     return {
       settings: sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS),
       history: Array.isArray(parsed.history) ? parsed.history : [],
       receipts: sanitizeReceipts(parsed.receipts),
+      adherenceExcluded: Array.isArray(parsed.adherenceExcluded) ? parsed.adherenceExcluded.map(String).slice(-500) : [],
     };
   } catch {
     return null;

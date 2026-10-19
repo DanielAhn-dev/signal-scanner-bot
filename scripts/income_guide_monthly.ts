@@ -10,8 +10,10 @@ import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { toKstDateKey } from "../src/lib/krxCalendar";
 import { buildIncomeGuideView, DEFAULT_INCOME_GUIDE_SETTINGS, withMonthlyEntry } from "../src/lib/incomeGuide";
+import { buildGuidePlanSnapshot } from "../src/services/guidePlanSnapshot";
 import {
   fetchGuidePrices,
+  fetchYieldPctByCode,
   loadAccountPositionRows,
   loadGuideFile,
   saveGuideFile,
@@ -43,8 +45,15 @@ async function main() {
     try {
       const file = (await loadGuideFile(supabase, chatId)) ?? { settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS }, history: [] };
       const { holdings } = toGuideHoldings(userRows, prices, realtimeHits);
-      const view = buildIncomeGuideView({ holdings, settings: file.settings, today });
-      const next = withMonthlyEntry(file.history, view, holdings);
+      if (file.history.some((h) => h.date.slice(0, 7) === today.slice(0, 7))) {
+        skipped += 1;
+        continue;
+      }
+      // 화면과 같은 분배율·계획으로 — 그달 안내(새 돈 살 곳·더 사지 말 것)와 가격을 기록에 같이 남겨 가이드 따름 판정에 쓴다
+      const yieldPctByCode = await fetchYieldPctByCode(holdings);
+      const view = buildIncomeGuideView({ holdings, settings: file.settings, today, yieldPctByCode });
+      const { advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file, view, yieldPctByCode, today, prices });
+      const next = withMonthlyEntry(file.history, view, holdings, { advice, prices: entryPrices });
       if (!next) {
         skipped += 1;
         continue;
