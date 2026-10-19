@@ -1,4 +1,4 @@
-import { ACCUMULATE_ASOF, INDEX_ETF_CANDIDATES, KODEX200_MONTHLY, type IndexEtfCandidate } from '../data/accumulateData'
+import { ACCUMULATE_ASOF, INDEX_ETF_CANDIDATES, KODEX200_MONTHLY, OVERSEAS_ETF_CANDIDATES, type IndexEtfCandidate, type OverseasEtfCandidate } from '../data/accumulateData'
 import { MIX_ASOF, MIX_ASSETS } from '../data/mixData'
 import type { MonthTaskRecord } from './monthTask'
 
@@ -170,7 +170,8 @@ export type PeriodResult = {
 // ── 시뮬레이션에 쓰는 이력 ─────────────────────────────────
 
 export type HistorySeries = {
-  id: 'kospi200' | 'nasdaq100' | 'sp500'
+  /** mix = 내 계획 구성(여러 지수를 매달 비중대로 맞춘 이력, lib/planMix.ts) */
+  id: 'kospi200' | 'nasdaq100' | 'sp500' | 'mix'
   name: string
   /** 가격 출처 (화면 한계 안내용) */
   source: string
@@ -358,8 +359,20 @@ export type Recommendation = {
  */
 export function recommendCandidate(goal: Goal, cands: IndexEtfCandidate[] = INDEX_ETF_CANDIDATES, asOf = ACCUMULATE_ASOF): Recommendation {
   const kind = goal === 'growth' ? 'tr' : 'plain'
-  const eligible = cands
-    .filter((c) => c.kind === kind && c.feePct != null)
+  return pickByStructure(cands.filter((c) => c.kind === kind), asOf)
+}
+
+/**
+ * 해외지수(S&P500·나스닥100) 국내 상장 후보 — 코스피200과 같은 구조 규칙. 일반형·TR형 구분 없이 고른다
+ * (후보가 모두 분배금을 내는 상품이라 목적에 따라 나눌 것이 없다).
+ */
+export function recommendOverseas(index: 'sp500' | 'nasdaq100', cands: OverseasEtfCandidate[] = OVERSEAS_ETF_CANDIDATES, asOf = ACCUMULATE_ASOF): Recommendation {
+  return pickByStructure(cands.filter((c) => c.index === index), asOf)
+}
+
+function pickByStructure<T extends IndexEtfCandidate>(pool: T[], asOf: string): Recommendation & { pick: T | null; eligible: T[] } {
+  const eligible = pool
+    .filter((c) => c.feePct != null)
     .filter((c) => c.marketCapEok >= MIN_CAP_EOK && c.tradingValueMil >= MIN_TRADING_MIL && yearsSince(c.listed, asOf) >= MIN_LISTED_YEARS)
     .sort((a, b) => b.marketCapEok - a.marketCapEok)
   if (!eligible.length) return { pick: null, eligible, reasons: [] }

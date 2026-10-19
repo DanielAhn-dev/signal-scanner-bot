@@ -23,6 +23,12 @@ OUT = ".research-cache/index_etfs"
 # (코드, 구분). 이름은 목록에서 읽는다.
 PLAIN = ["069500", "102110", "148020", "105190", "152100", "069660", "293180"]
 TR = ["278530", "294400", "295040", "361580", "310960", "332930", "332500", "491220"]
+# 해외지수 후보(국내 상장, 환노출) — 모아가기 1번 '지수마다 상품'용 (docs/plan-screen-map-2026-10-19.md, 2026-10-19 추가).
+# 목록은 scripts/recommended_etfs.json의 '해외지수 후보'와 같게 둔다.
+OVERSEAS = {
+    "sp500": ["360750", "379800", "360200", "379780"],
+    "nasdaq100": ["133690", "379810", "367380", "368590"],
+}
 
 
 def http(url: str) -> str:
@@ -53,14 +59,15 @@ def main() -> None:
     listing = json.loads(http("https://finance.naver.com/api/sise/etfItemList.nhn"))["result"]["etfItemList"]
     by_code = {it["itemcode"]: it for it in listing}
     info = {}
-    for kind, codes in (("plain", PLAIN), ("tr", TR)):
+    groups = [("plain", "kospi200", PLAIN), ("tr", "kospi200", TR)] + [("plain", idx, codes) for idx, codes in OVERSEAS.items()]
+    for kind, index, codes in groups:
         for code in codes:
             try:
                 px = fetch_prices(code)
                 json.dump(px, open(f"{OUT}/px_{code}.json", "w", encoding="utf-8"))
                 meta = fetch_info(code)
                 li = by_code.get(code, {})
-                meta.update({"kind": kind, "first_date": px[0][0] if px else None, "last_date": px[-1][0] if px else None,
+                meta.update({"kind": kind, "index": index, "first_date": px[0][0] if px else None, "last_date": px[-1][0] if px else None,
                              "days": len(px), "market_cap_eok": li.get("marketSum"), "trading_value_mil": li.get("amonut"),
                              "now": li.get("nowVal"), "nav_list": li.get("nav")})
                 info[code] = meta

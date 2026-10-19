@@ -3,7 +3,7 @@
 웹 '모아가기' 화면용 정적 데이터 생성 (web/src/data/accumulateData.ts).
 
 입력: .research-cache/index_etfs/ (fetch_index_etfs.py 결과)
-출력: KODEX 200 월말 수정주가(2002-10~, 분배금 반영 = 세전 재투자 수익) + 후보 ETF 비용·규모 스냅샷.
+출력: KODEX 200 월말 수정주가(2002-10~, 분배금 반영 = 세전 재투자 수익) + 후보 ETF 비용·규모 스냅샷(코스피200·해외지수 따로).
 후보 지표(보수·시총·거래대금)는 시간이 지나면 낡는다 — asOf를 화면에 보여주고 오래되면 경고한다.
 갱신: python scripts/research/fetch_index_etfs.py && python scripts/research/build_accumulate_data.py
 """
@@ -28,12 +28,19 @@ def pct(v: str | None) -> float | None:
 
 
 cands = []
+overseas = []
 for code, m in info.items():
-    cands.append({
+    row = {
         "code": code, "name": m["name"], "kind": m["kind"], "feePct": pct(m["fee"]),
         "marketCapEok": m["market_cap_eok"], "tradingValueMil": m["trading_value_mil"],
         "listed": m["first_date"], "issuer": m["issuer"],
-    })
+    }
+    # 예전 info.json에는 index가 없다(코스피200만 모았다)
+    index = m.get("index", "kospi200")
+    if index == "kospi200":
+        cands.append(row)
+    else:
+        overseas.append({**row, "index": index})
 
 as_of = px[-1][0]
 as_of_iso = f"{as_of[:4]}-{as_of[4:6]}-{as_of[6:]}"
@@ -44,7 +51,10 @@ body = (
     f"/** 후보 지표 기준일 (보수·시총·거래대금) */\nexport const ACCUMULATE_ASOF = '{as_of_iso}'\n\n"
     "/** KODEX 200 월말 수정주가 [YYYYMM, 가격] — 분배금 반영(세전 재투자). 모든 코스피200 추종 상품의 장기 이력 대용 */\n"
     f"export const KODEX200_MONTHLY: Array<[string, number]> = {json.dumps(months)}\n\n"
-    f"export const INDEX_ETF_CANDIDATES: IndexEtfCandidate[] = {json.dumps(cands, ensure_ascii=False, indent=2)}\n"
+    f"export const INDEX_ETF_CANDIDATES: IndexEtfCandidate[] = {json.dumps(cands, ensure_ascii=False, indent=2)}\n\n"
+    "/** 해외지수(S&P500·나스닥100) 국내 상장 후보 — 모아가기 1번 '지수마다 상품'. 코스피200 후보와 따로 둬 만기·할 일 추천에 섞이지 않게 한다 */\n"
+    "export type OverseasEtfCandidate = IndexEtfCandidate & { index: 'sp500' | 'nasdaq100' }\n\n"
+    f"export const OVERSEAS_ETF_CANDIDATES: OverseasEtfCandidate[] = {json.dumps(overseas, ensure_ascii=False, indent=2)}\n"
 )
 open(OUT, "w", encoding="utf-8", newline="\n").write(body)
-print(OUT, len(months), "개월", len(cands), "후보", as_of_iso)
+print(OUT, len(months), "개월", len(cands), "후보", len(overseas), "해외", as_of_iso)
