@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import More from '../../components/ui/More'
 import { Trash2 } from 'lucide-react'
 import { formatKrwMan } from '../../lib/format'
 import { useUserState } from '../../lib/userState'
@@ -47,9 +48,9 @@ export default function MaturityTab() {
       <section className="acc-card">
         <h2>만기 예·적금, 어디로 보낼지 미리</h2>
         <p className="acc-note">
-          만기 날 금리나 지수를 보고 판단하면 미루거나 흔들리기 쉽습니다. 만기일과 이 돈을 쓸 시점만 적어 두면, 만기 때 갈 곳을 한 줄로 보여드립니다.
-          상품을 추천하거나 수익을 비교하지 않습니다.
+          만기일과 이 돈을 쓸 시점만 적으면, 만기 때 갈 곳을 한 줄로 보여드립니다.
         </p>
+        <More label="왜 미리 정하나"><p className="acc-note">만기 날 금리나 지수를 보고 판단하면 미루거나 흔들리기 쉽습니다. 상품을 추천하거나 수익을 비교하지 않습니다.</p></More>
         {summary.next && (
           <p className="acc-note">
             남은 만기 <strong>{summary.count}건 · {formatKrwMan(summary.amount)}</strong>.
@@ -80,7 +81,7 @@ export default function MaturityTab() {
             {(Object.keys(HORIZON_LABEL) as MaturityHorizon[]).map((h) => <option key={h} value={h}>{HORIZON_LABEL[h]}</option>)}
           </select>
         </label>
-        <p className="acc-note mf-small">잘 모르겠으면 "3~5년 뒤"로 두세요. 지수 비중을 절반 안팎으로 제한하는 안전한 쪽입니다. 비상금은 이 목록에 넣지 않고 따로 둡니다.</p>
+        <p className="acc-note mf-small">잘 모르겠으면 "3~5년 뒤"로 두세요. 비상금은 여기 넣지 않습니다.</p>
         <button type="button" className="acc-primary" disabled={!canAdd} onClick={add}>추가</button>
         {items.length >= MAX_ITEMS && <p className="acc-note mf-small">최대 {MAX_ITEMS}건까지 적을 수 있습니다. 처리한 항목을 지우고 추가하세요.</p>}
       </section>
@@ -131,7 +132,8 @@ export default function MaturityTab() {
               )
             })}
           </ul>
-          <p className="acc-note mf-small">수익을 보장하지 않습니다. 같은 규칙을 만기마다 반복해 판단을 줄이는 용도입니다. 이자 소득이 합쳐서 연 1,000만원(건보료)·2,000만원(종합과세)을 넘는지는 직접 확인하세요.</p>
+          <p className="acc-note mf-small">수익을 보장하지 않습니다.</p>
+          <More label="이 안내의 용도·세금 확인"><p className="acc-note mf-small">같은 규칙을 만기마다 반복해 판단을 줄이는 용도입니다. "3~5년 뒤"는 지수 비중을 절반 안팎으로 제한하는 안전한 쪽입니다. 이자 소득이 합쳐서 연 1,000만원(건보료)·2,000만원(종합과세)을 넘는지는 직접 확인하세요.</p></More>
         </section>
       )}
     </>

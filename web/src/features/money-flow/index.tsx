@@ -295,7 +295,8 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
             <button type="button" aria-pressed={scope === 'home'} className={scope === 'home' ? 'is-active' : ''} onClick={() => setScope('home')}>우리 집 합계</button>
             <button type="button" aria-pressed={scope === 'me'} className={scope === 'me' ? 'is-active' : ''} onClick={() => setScope('me')}>배우자 것 빼고</button>
           </div>
-          <p className="acc-note">배우자가 공유한 기록도 함께 셉니다. '배우자 것 빼고'는 누가 적었든 배우자 것으로 표시한 기록만 뺍니다(공용은 남김). 서로의 기록을 고치거나 지울 수 있고, 누가 고치고 지웠는지 표시됩니다. 지운 기록은 둘 다 되돌릴 수 있습니다.</p>
+          <p className="acc-note">배우자가 공유한 기록도 함께 셉니다.</p>
+          <More label="배우자 기록 고치기·되돌리기"><p className="acc-note">'배우자 것 빼고'는 누가 적었든 배우자 것으로 표시한 기록만 뺍니다(공용은 남김). 서로의 기록을 고치거나 지울 수 있고, 누가 고치고 지웠는지 표시됩니다. 지운 기록은 둘 다 되돌릴 수 있습니다.</p></More>
         </section>
       )}
 
@@ -307,7 +308,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
           <MonthTotals month={month} thisMonth={thisMonth} today={today} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} cardDetail={monthDetail.card} cashDetail={monthDetail.cash} records={monthEntries} plan={checkForMonth(checks, month)?.input ?? null} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
 
           <details className="acc-card mf-detail">
-            <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">현금·계좌이체로 낸 돈과 환급만 적으면 계산은 끝납니다. 나머지는 쓰고 싶을 때만 — 아까웠던 지출만 적어도 다음 달에 줄일 곳이 보입니다.</span></summary>
+            <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">현금·계좌이체로 낸 돈과 환급만 적으면 됩니다. 나머지는 쓰고 싶을 때만.</span></summary>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
               <small className="acc-note">가게 이름과 금액만 적어도 됩니다. 자세한 규칙은 아래 "쓰는 법"에서 봅니다.</small>
@@ -631,7 +632,7 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
               <li key={c.categoryId}><span>{categoryById(c.categoryId)?.label}</span><span className={c.difference > 0 ? 'is-up' : 'is-down'}>{c.difference > 0 ? '+' : '−'}{krw(Math.abs(c.difference))}</span></li>
             ))}
           </ul>
-          <p className="acc-note">마지막으로 기록한 달과 비교합니다. 기록한 것만 비교하므로, 한쪽 달을 덜 적었으면 차이가 크게 보일 수 있습니다.</p>
+          <p className="acc-note">마지막으로 기록한 달과 비교합니다. 한쪽 달을 덜 적었으면 차이가 크게 보입니다.</p>
         </section>
       )}
     </>

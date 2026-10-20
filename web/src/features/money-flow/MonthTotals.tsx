@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import More from '../../components/ui/More'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { MAX_TOTAL_SLOTS, fixedCashOf, irregularForMonth, fixedOutsideCardOf, matchesIrregular, monthSpending, slotsForMonth, type FlowCheckInput, type FlowSummary, type Payment, type TotalKind } from '../../../../src/lib/moneyFlow'
@@ -122,8 +123,10 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
       {!ready ? <p className="acc-note">합계 칸은 준비 중입니다(서버 설정 대기). 아래 세부 기록은 그대로 쓸 수 있습니다.</p> : (
         <>
           {upcoming
-            ? <p className="acc-note">{monthNo}월에 빠져나갈 카드값입니다. 카드 앱의 "다음 결제 예정금액"을 칸별로 적고, 앱을 볼 때마다 고쳐 저장하세요. 결제일이 지나면 그 금액이 그대로 {monthNo}월 결제금액이 됩니다. 아래 투자 가능액은 예상입니다.</p>
-            : <p className="acc-note">{monthNo}월에 통장에서 빠져나간 카드 결제금액(명세서 결제금액)을 적는 칸입니다. 지난달에 쓴 돈이 이 달에 나가므로, 이 달 수입에서 빼야 실제로 남는 돈이 나옵니다. 다음 달 예정금액은 오른쪽 "{Number(shiftMonth(month, 1).slice(5))}월{shiftMonth(month, 1) > thisMonth ? ' 예정' : ''}" 버튼으로 넘어가 미리 적을 수 있습니다. 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다.</p>}
+            ? <><p className="acc-note">카드 앱의 "다음 결제 예정금액"을 칸별로 적으세요. 아래 투자 가능액은 예상입니다.</p>
+              <More label="결제일이 지나면"><p className="acc-note">앱을 볼 때마다 고쳐 저장하세요. 결제일이 지나면 그 금액이 그대로 {monthNo}월 결제금액이 됩니다.</p></More></>
+            : <><p className="acc-note">{monthNo}월에 통장에서 나간 카드 결제금액(명세서 결제금액)을 적으세요.</p>
+              <More label="왜 결제금액인가요 · 다음 달 미리 적기"><p className="acc-note">지난달에 쓴 돈이 이 달에 나가므로, 이 달 수입에서 빼야 실제로 남는 돈이 나옵니다. 다음 달 예정금액은 오른쪽 "{Number(shiftMonth(month, 1).slice(5))}월{shiftMonth(month, 1) > thisMonth ? ' 예정' : ''}" 버튼으로 넘어가 미리 적을 수 있습니다. 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다.</p></More></>}
           {lastEdited && <p className="acc-note">마지막 수정 {lastEdited.slice(5, 10).replace('-', '/')}</p>}
           <div className="mf-slots" role="group" aria-label="합계 칸">
             {slots.map((s, i) => (
@@ -152,7 +155,8 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
                   {!upcoming && <input type="number" inputMode="numeric" min="1" aria-label={`${r.label} 실제`} value={actual[r.label] ?? ''} placeholder="실제 안 적음" onChange={(e) => setActual((cur) => ({ ...cur, [r.label]: e.target.value }))} />}
                 </div>
               ))}
-              <p className="acc-note">매달 1/12씩 떼어 둔 돈에서 내는 것으로 봅니다. 실제 금액을 적으면 그 이름으로 세부 기록에 남아 작년과 비교되고, 안 적으면 예상 금액으로 계산합니다. 예산에 없는 비정기(경조사 등)는 자세히 적기에서 분류를 골라 적으면 함께 빠집니다.</p>
+              <p className="acc-note">매달 1/12씩 떼어 둔 돈에서 내는 것으로 봅니다.</p>
+              <More label="실제 금액 적기"><p className="acc-note">실제 금액을 적으면 그 이름으로 세부 기록에 남아 작년과 비교되고, 안 적으면 예상 금액으로 계산합니다. 예산에 없는 비정기(경조사 등)는 자세히 적기에서 분류를 골라 적으면 함께 빠집니다.</p></More>
             </div>
           )}
           <dl className="acc-facts mf-reconcile" aria-label="합계와 세부 기록">
@@ -166,7 +170,8 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
             {rest !== null && <div><dt>고정 · 비정기</dt><dd>{krw(fixed!)} · {krw(irregularPreview)}</dd></div>}
             {rest !== null && <div><dt>나머지(변동)</dt><dd>{krw(rest)}</dd></div>}
           </dl>
-          <p className="acc-note">현금·계좌이체·서울페이로 낸 돈은 칸에 적지 않고, 쓸 때 아래 "자세히 적기"에 "현금"을 붙여 적으면(예: 축의금 100000원 현금) 여기 더해집니다. 나중에 기억으로 적으면 빠지기 쉽습니다.</p>
+          <p className="acc-note">현금으로 낸 돈은 아래 "자세히 적기"에 "현금"을 붙여 적으면 여기 더해집니다.</p>
+          <More label="예시"><p className="acc-note">현금·계좌이체·서울페이로 낸 돈은 칸에 적지 않고, 쓸 때 적습니다(예: 축의금 100000원 현금). 나중에 기억으로 적으면 빠지기 쉽습니다.</p></More>
           {irregular.emergency > 0 && <p className="acc-warn">1년 예산에 없던 비정기 {krw(irregular.emergency)}은 비상금에서 나간 돈으로 봅니다. 변동 지출에는 넣지 않으니, 다음 달 비상금 적립에 더해 채워 넣으세요.</p>}
           {(preview.overCash || preview.overPoint) && <p className="acc-warn">카드 세부 기록이 카드 합계보다 많습니다. 다른 달 기록이 섞였거나 합계를 덜 적었을 수 있어요. 저장은 됩니다.</p>}
           {refunds > 0 && entered.some((s) => s.kind === 'cash') && <p className="acc-note">세부 기록의 돌려받은 돈(환급·캐시백) {krw(refunds)}은 카드 이용금액과 별개라 통장에서 나간 돈을 셀 때 따로 뺍니다.</p>}

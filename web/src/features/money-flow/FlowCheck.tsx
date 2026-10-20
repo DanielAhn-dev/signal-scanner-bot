@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import More from '../../components/ui/More'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { futureValue, REALISTIC_ANNUAL_PCT, suggestMonthly } from '../../lib/startPlan'
@@ -333,7 +334,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
     <>
       <section className="acc-card">
         <h2>예산</h2>
-        <p className="acc-note">한 번 해 두면 다음 점검 때 그대로 불러옵니다. 바뀐 것만 고치면 됩니다. 금액은 모두 한 달 기준입니다(비정기는 1년 합계).</p>
+        <p className="acc-note">한 번 해 두면 다음에 그대로 불러옵니다. 바뀐 것만 고치세요.</p>
+        <More label="금액 기준"><p className="acc-note">금액은 모두 한 달 기준입니다(비정기는 1년 합계).</p></More>
         <h3>우리 집 수입</h3>
         <div className="acc-seg" role="group" aria-label="가구 형태">
           {HOUSEHOLDS.map(([value, label]) => <button key={value} type="button" aria-pressed={household.household === value} className={household.household === value ? 'is-active' : ''} onClick={() => editHousehold(withHousehold(household, value))}>{label}</button>)}
@@ -342,7 +344,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
           <label className="acc-field"><span>{household.household === 'solo' ? '월 수입(세후)' : '본인 월 수입(세후)'}</span><input type="number" inputMode="numeric" min="0" value={household.ownIncome || ''} onChange={(e) => editHousehold({ ...household, ownIncome: num(e.target.value) })} placeholder="0" /></label>
           {dual && <label className="acc-field"><span>배우자 월 수입(세후)</span><input type="number" inputMode="numeric" min="0" value={household.partnerIncome || ''} onChange={(e) => editHousehold({ ...household, partnerIncome: num(e.target.value) })} placeholder="0" /></label>}
         </div>
-        <p className="acc-note">{dual && household.partnerIncome > 0 ? `합계 ${krw(householdTotal(household))}. ` : ''}시작하기·이번 달 투자금와 같은 값이라 여기서 고치면 바로 저장되고 거기에도 반영됩니다. 성과급처럼 가끔 들어오는 돈은 이번 달 투자금의 그달 추가 수입에 적습니다.</p>
+        {dual && household.partnerIncome > 0 && <p className="acc-note">합계 {krw(householdTotal(household))}</p>}
+        <More label="성과급·다른 화면과의 관계"><p className="acc-note">시작하기·이번 달 투자금과 같은 값이라 여기서 고치면 바로 저장되고 거기에도 반영됩니다. 성과급처럼 가끔 들어오는 돈은 이번 달 투자금의 그달 추가 수입에 적습니다.</p></More>
         <div className="acc-row">
           <label className="acc-field"><span>매달 비상자금으로 떼는 돈</span><input type="number" inputMode="numeric" min="0" value={reserve} onChange={(e) => setReserve(e.target.value)} placeholder="0" /></label>
         </div>
@@ -350,13 +353,15 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
 
       <section className="acc-card">
         <h2>고정지출</h2>
-        <p className="acc-note">매달 같은 날 거의 같은 금액(월세·관리비·통신·보험·구독·학원 등). 이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다. 공과금처럼 달마다 조금씩 다른 건 평소 금액(높은 쪽)을 적으세요. 기록이 있으면 옆에 실제 금액이 보이고, 바꿀지는 직접 고릅니다. 대출 원리금처럼 카드가 아니라 통장에서 바로 나가는 건 "카드 밖(계좌 자동이체)"을 체크하면 매달 따로 적지 않아도 그달 지출에 더해집니다.</p>
+        <p className="acc-note">매달 거의 같은 금액으로 나가는 돈(월세·관리비·통신·보험·구독·학원 등).</p>
+        <More label="적는 법 — 환급·공과금·통장 자동이체"><p className="acc-note">이름은 내가 알아보기 쉽게 적으면 됩니다. 돌려받는 돈(교통 환급·캐시백)은 같은 분류로 한 줄 더 넣고 결제 수단을 '환급·캐시백'으로 고르면 그만큼 빠집니다. 공과금처럼 달마다 조금씩 다른 건 평소 금액(높은 쪽)을 적으세요. 기록이 있으면 옆에 실제 금액이 보이고, 바꿀지는 직접 고릅니다. 대출 원리금처럼 카드가 아니라 통장에서 바로 나가는 건 "카드 밖(계좌 자동이체)"을 체크하면 매달 따로 적지 않아도 그달 지출에 더해집니다.</p></More>
         <ItemRows kind="fixed" rows={fixed} setRows={setFixed} actual={fixedActual} kids={kids} />
       </section>
 
       <section className="acc-card">
         <h2>저축·투자</h2>
-        <p className="acc-note">IRP·연금저축·ISA·적금처럼 매달 계좌로 옮겨 모으는 돈. 쓴 돈이 아니라 지출 합계·지출 통계에는 넣지 않고, 남는 돈을 셀 때만 뺍니다. 빠른 기록이나 카드 합계에는 적지 않아도 됩니다.</p>
+        <p className="acc-note">매달 계좌로 옮겨 모으는 돈(IRP·연금저축·ISA·적금). 지출로 세지 않습니다.</p>
+        <More label="어떻게 계산하나"><p className="acc-note">지출 합계·지출 통계에는 넣지 않고, 남는 돈을 셀 때만 뺍니다. 빠른 기록이나 카드 합계에는 적지 않아도 됩니다.</p></More>
         <ItemRows kind="saving" rows={savingRows} setRows={setSavingRows} kids={kids} />
       </section>
 
@@ -377,7 +382,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
               </tbody>
             </table>
           </div>
-          <p className="acc-note">달마다의 고정지출(최근 {history.months.length}달)입니다. 한 달에 여러 번 저장하면 그 달 마지막 저장만 봅니다. 공과금이 바뀌면 위 금액을 고쳐 저장하면 됩니다. 포인트로 낸 건 빼고, 환급은 뺀 금액입니다.</p>
+          <p className="acc-note">최근 {history.months.length}달의 고정지출입니다.</p>
+          <More label="계산 방식"><p className="acc-note">한 달에 여러 번 저장하면 그 달 마지막 저장만 봅니다. 공과금이 바뀌면 위 금액을 고쳐 저장하면 됩니다. 포인트로 낸 건 빼고, 환급은 뺀 금액입니다.</p></More>
         </section>
       )}
 
@@ -391,7 +397,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
 
       <section className="acc-card">
         <h2>비정기 지출</h2>
-        <p className="acc-note">1년에 몇 번 나가는 돈(재산세·자동차보험·명절·여행 등). 1년 합계와 나가는 달을 고르면 평소 매달 떼어 둘 금액을 계산합니다.</p>
+        <p className="acc-note">1년에 몇 번 나가는 돈(재산세·자동차보험·명절·여행 등). 1년 합계와 나가는 달을 고르면 매달 떼어 둘 금액이 나옵니다.</p>
         <IrregularRows rows={irregular} setRows={setIrregular} />
       </section>
 
@@ -416,7 +422,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
               </tbody>
             </table>
           </div>
-          <p className="acc-note">지출 기록 합계 칸의 "이번 달 비정기"나 세부 기록에 항목 이름 그대로 적은 금액을 모읍니다. 실제가 예산과 계속 다르면 위 1년 예산을 고쳐 저장하세요. 올해 열은 아직 안 낸 달이 있으면 예산보다 적게 보입니다.</p>
+          <p className="acc-note">1년 예산과 실제로 낸 금액을 해마다 비교합니다.</p>
+          <More label="계산 방식"><p className="acc-note">지출 기록 합계 칸의 "이번 달 비정기"나 세부 기록에 항목 이름 그대로 적은 금액을 모읍니다. 실제가 예산과 계속 다르면 위 1년 예산을 고쳐 저장하세요. 올해 열은 아직 안 낸 달이 있으면 예산보다 적게 보입니다.</p></More>
         </section>
       )}
 
@@ -440,7 +447,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
             <div><dt>고정지출 비율</dt><dd>{result.fixedRatio === null ? '-' : `${Math.round(result.fixedRatio * 100)}%`}</dd></div>
           </dl>
           {result.summary.pointRegular + result.summary.pointOnce + result.summary.refundRegular + result.summary.refundOnce > 0 && (
-            <p className="acc-note">포인트·환급이 없으면 투자 가능액은 <strong>{krw(result.availableWithoutPoints)}</strong>입니다.{result.summary.pointOnce + result.summary.refundOnce > 0 && ` "이번만" 포인트·환급(${krw(result.summary.pointOnce + result.summary.refundOnce)})이 끝나면 ${krw(result.availableWithoutOncePoints)}.`}{result.summary.refundRegular > 0 && ` 매달 돌려받는 ${krw(result.summary.refundRegular)}은 투자 가능액에 이미 들어 있습니다.`}</p>
+            <><p className="acc-note">포인트·환급이 없으면 <strong>{krw(result.availableWithoutPoints)}</strong></p>
+            {(result.summary.pointOnce + result.summary.refundOnce > 0 || result.summary.refundRegular > 0) && <More label="포인트·환급 자세히"><p className="acc-note">{result.summary.pointOnce + result.summary.refundOnce > 0 && ` "이번만" 포인트·환급(${krw(result.summary.pointOnce + result.summary.refundOnce)})이 끝나면 ${krw(result.availableWithoutOncePoints)}.`}{result.summary.refundRegular > 0 && ` 매달 돌려받는 ${krw(result.summary.refundRegular)}은 투자 가능액에 이미 들어 있습니다.`}</p></More>}</>
           )}
           {result.topCuttable.length > 0 && (
             <>
@@ -461,7 +469,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
             </>
           )}
           <h3>비상자금 기준</h3>
-          <p className="acc-note">못 줄이는 생활비 한 달 <strong>{krw(result.mustMonthly)}</strong> → 3개월 {man(result.mustMonthly * 3)} · 6개월 {man(result.mustMonthly * 6)}. 위기 때는 끊을 수 있는 건 끊으므로 전체 지출보다 이 기준이 현실적입니다.</p>
+          <p className="acc-note">못 줄이는 생활비 한 달 <strong>{krw(result.mustMonthly)}</strong> → 3개월 {man(result.mustMonthly * 3)} · 6개월 {man(result.mustMonthly * 6)}</p>
+          <More label="왜 이 기준인가"><p className="acc-note">위기 때는 끊을 수 있는 건 끊으므로 전체 지출보다 못 줄이는 생활비 기준이 현실적입니다.</p></More>
           {dueMonths.length > 0 && <p className="acc-note">목돈이 나가는 달: {dueMonths.map(([m, v]) => `${m}월 ${man(v)}`).join(' · ')}. 평소 매달 {krw(input.irregular.reduce((s, i) => s + Math.round(i.yearlyAmount / 12), 0))}씩 떼어 두면 그 달에 투자를 멈추지 않아도 됩니다.</p>}
 
           {result.available > 0 ? (
@@ -475,7 +484,8 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
                   ))}
                 </tbody>
               </table>
-              <p className="acc-note mf-basis">가정: 지수 장기 평균 연 {REALISTIC_ANNUAL_PCT}%로 매달 말 적립(물가 반영 전 금액). 과거 평균일 뿐 보장이 아니며, 중간에 크게 떨어지는 해가 있습니다. 해마다 범위는 <Link to="/plan">계획 점검</Link>, 무엇을 살지는 <Link to="/accumulate">모아가기</Link>에서 봅니다. 절반을 기본으로 두는 이유는 예상 밖 지출에도 적립을 멈추지 않기 위해서입니다.</p>
+              <p className="acc-note mf-basis">과거 평균 연 {REALISTIC_ANNUAL_PCT}% 가정 · 보장 아님 · 해마다 범위는 <Link to="/plan">계획 점검</Link></p>
+              <More label="가정과 절반을 기본으로 두는 이유"><p className="acc-note mf-basis">지수 장기 평균 연 {REALISTIC_ANNUAL_PCT}%로 매달 말 적립한 금액(물가 반영 전)입니다. 과거 평균일 뿐 보장이 아니며, 중간에 크게 떨어지는 해가 있습니다. 무엇을 살지는 <Link to="/accumulate">모아가기</Link>에서 봅니다. 절반을 기본으로 두는 이유는 예상 밖 지출에도 적립을 멈추지 않기 위해서입니다.</p></More>
             </>
           ) : <p className="acc-warn">지금은 지출이 수입보다 많거나 남는 돈이 없습니다. 이런 달은 투자보다 지출 점검이 먼저입니다. 가상 계좌 연습은 괜찮습니다.</p>}
 
