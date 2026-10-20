@@ -405,7 +405,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             quantity,
             invested_amount: investedAmount,
             status: 'holding',
-            buy_date: buyDate,
+            // 매수일을 비워 보냈으면 이미 있던 날짜를 오늘로 덮지 않는다
+            ...(normalizeYmdDate(body.buy_date) ? { buy_date: buyDate } : {}),
             memo: 'web-restore:v1',
             broker_name: brokerName,
             account_name: accountName,

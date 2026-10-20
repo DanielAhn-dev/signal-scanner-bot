@@ -39,7 +39,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
     if (mode === 'holdingrestore') {
       setMaintCode('')
       setMaintBuyPrice('')
-      setMaintBuyDate(getTodayLocalYmd())
+      setMaintBuyDate('') // 선택 입력 — 비우면 서버가 오늘(기록일)로 둔다
       setMaintQty(1)
       setMaintBrokerName('')
       setMaintAccountName('')
@@ -68,7 +68,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
       if (maintMode === 'holdingedit' || maintMode === 'holdingrestore') {
         body.code = maintCode
         body.buy_price = maintBuyPrice
-        body.buy_date = maintBuyDate
+        if (maintBuyDate) body.buy_date = maintBuyDate
         body.quantity = Number(maintQty)
         body.broker_name = String(maintBrokerName || '').trim()
         body.account_name = String(maintAccountName || '').trim()
