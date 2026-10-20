@@ -142,8 +142,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // build base query
     let base = withCount
-      ? supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))', { count: 'exact' })
-      : supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))')
+      ? supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,product_type,etf_tax_class,sector_id,sector:sectors(id,name))', { count: 'exact' })
+      : supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,product_type,etf_tax_class,sector_id,sector:sectors(id,name))')
 
     base = base.eq(filterColumn, filterValue)
 
@@ -206,7 +206,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ETF 분배율·보수·수익률 — 카드 "이 종목 대응"이 종목별 숫자로 말하게 (6시간 캐시, 늦으면 없이 응답)
     const etfCodes = Array.from(new Set((data ?? [])
-      .filter((r: any) => r.code && isExchangeTradedProduct(String(r.code), r.stock?.name))
+      .filter((r: any) => r.code && isExchangeTradedProduct(String(r.code), r.stock?.name, r.stock?.product_type))
       .map((r: any) => String(r.code).trim())))
     const etfKeyPromise: Promise<Map<string, EtfKeyIndicator>> = etfCodes.length > 0
       ? Promise.race([
@@ -219,7 +219,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 실계좌 개별주의 매수일(기록일) 뒤 최고 종가 — 보유 카드 '고점 대비 내준 폭' (src/lib/peakGiveback.ts). 늦으면 없이 응답
     const peakTargets = (data ?? []).filter((r: any) =>
       r.code && String(r.account_name || r.broker_name || '').trim() && Number(r.quantity) > 0
-      && normalizeDateKey(r.buy_date || r.created_at) && !isExchangeTradedProduct(String(r.code), r.stock?.name))
+      && normalizeDateKey(r.buy_date || r.created_at) && !isExchangeTradedProduct(String(r.code), r.stock?.name, r.stock?.product_type))
     const peakSeriesPromise: Promise<Map<string, Array<{ date: string; close: number }>>> = peakTargets.length > 0
       ? Promise.race([
           (async () => {
@@ -523,6 +523,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         unrealized_pct: percent,
         hold_days: holdDays,
         stock_name: row.stock?.name ?? null,
+        // stocks.product_type·etf_tax_class — 웹의 ETF 판정·매도 비용이 이름 규칙보다 먼저 쓴다(securitiesTax)
+        stock_product_type: row.stock?.product_type ?? null,
+        stock_etf_tax_class: row.stock?.etf_tax_class ?? null,
         total_score: score?.totalScore ?? null,
         score_signal: score?.signal ?? null,
         entry_grade: pullback?.entryGrade ?? null,

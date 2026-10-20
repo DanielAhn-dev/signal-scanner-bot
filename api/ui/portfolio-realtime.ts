@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from '../../handlers/ui/_accessControl'
 import { resolveUiUserContext } from '../../handlers/ui/_userContext'
 import { fetchRealtimePriceBatch, type RealtimeStockData } from '../../src/utils/fetchRealtimePrice'
+import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 
 const REALTIME_BATCH_TOTAL_TIMEOUT_MS = Math.max(1000, Number(process.env.UI_REALTIME_BATCH_TIMEOUT_MS || 4000))
 
@@ -40,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 1) 활성 포지션 조회
     const { data: positions, error: posErr } = await supabase
       .from('virtual_positions')
-      .select('*')
+      .select('*, stock:stocks(name, product_type, etf_tax_class)')
       .eq('chat_id', chatId)
       .gt('quantity', 0)
 
@@ -128,7 +129,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const currentValue = Number(pos.quantity || 0) * currentPrice
       totalCurrentValue += currentValue
-      totalTradeCost += invested * (BUY_FEE_RATE_PCT / 100) + (currentValue > 0 ? currentValue * (SELL_FEE_RATE_PCT / 100) : 0)
+      // ETF·ETN은 증권거래세가 없어 매도도 수수료만 (웹 tradeCost.resolveSellCostPct와 같은 판정)
+      const stock = Array.isArray(pos.stock) ? pos.stock[0] : pos.stock
+      const sellPct = isExchangeTradedProduct(code, stock?.name ?? null, stock?.product_type ?? null) ? BUY_FEE_RATE_PCT : SELL_FEE_RATE_PCT
+      totalTradeCost += invested * (BUY_FEE_RATE_PCT / 100) + (currentValue > 0 ? currentValue * (sellPct / 100) : 0)
 
       const pnlAmount = currentValue - invested
       const pnlPercent = invested > 0 ? (pnlAmount / invested) * 100 : 0
@@ -152,6 +156,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       positionsWithPrice.push({
         id: pos.id,
         code: pos.code,
+        name: stock?.name ?? null,
+        product_type: stock?.product_type ?? null,
         quantity: pos.quantity,
         buy_price: pos.buy_price,
         invested_amount: invested,

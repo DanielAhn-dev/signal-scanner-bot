@@ -20,7 +20,15 @@ export const SATELLITE_MAX_WEIGHT_PCT = 10
 export const SATELLITE_SELL_WEIGHT_PCT = SATELLITE_MAX_WEIGHT_PCT + REBALANCE_BAND_PP
 export const SATELLITE_LOSS_LIMIT_PCT = -15
 
-export type SatelliteHolding = { code: string; name: string; quantity: number; avgPrice: number; currentPrice: number }
+export type SatelliteHolding = {
+  code: string
+  name: string
+  quantity: number
+  avgPrice: number
+  currentPrice: number
+  /** 서버 stocks.product_type — 있으면 ETF 판정에 먼저 쓴다 */
+  productType?: string | null
+}
 
 export type SatelliteStatus = {
   weightPct: number
@@ -47,7 +55,7 @@ export function satelliteStatus(holdings: SatelliteHolding[]): SatelliteStatus |
     const value = h.quantity * price
     if (!(value > 0)) continue
     totalValue += value
-    if (isExchangeTradedProduct(h.code, h.name)) continue
+    if (isExchangeTradedProduct(h.code, h.name, h.productType)) continue
     stockValue += value
     stockCost += h.quantity * h.avgPrice
     stockCount++

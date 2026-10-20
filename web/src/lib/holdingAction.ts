@@ -13,6 +13,8 @@
  *   - 목표 비중 ±10%p 밴드 리밸런싱 (REBALANCE_BAND_PP), 새 돈 우선 (H14)
  *   - 개별주 한도 10%·손실 −15%에서 추가매수 중단 (holdingAdvice.ts, 보수적 가정)
  *   - 개별주 평단 대비 +20%면 절반을 지수로, 다시 사지 않음 (C54, data/trimToIndexFacts.ts). 매수 뒤 이미 팔았으면 끈다
+ *   - 개별주 평단 대비 −15% 이하면 물타기 멈추고 지수로 옮기기를 권함, 다른 종목으로 갈아타는 손절은 권하지 않음 (C69, data/loserSwitchFacts.ts).
+ *     "팔면 손실 확정" 같은 말은 쓰지 않는다 — 손실은 이미 평가금에 들어 있고, 팔아도 시드는 비용(0.25%)만큼만 준다
  *   - 레버리지는 세후 이득 없음
  * 안내만 하며 주문하지 않는다. 순수 함수만 둔다.
  */
@@ -20,6 +22,7 @@ import { classifyHolding, REBALANCE_BAND_PP, type AssetBucket } from '../../../s
 import { ETF_HISTORY, ETF_HISTORY_META, type EtfHistoryFact } from '../data/etfHistoryFacts'
 import { SINGLE_STOCK_LIMIT_PCT } from './holdingAdvice'
 import { TRIM_TO_INDEX_FACTS } from '../data/trimToIndexFacts'
+import { LOSER_SWITCH_FACTS } from '../data/loserSwitchFacts'
 
 export type ActionTone = 'keep' | 'watch' | 'act'
 export type HoldingAction = {
@@ -99,10 +102,11 @@ const LOSS_STOP_ADD_PCT = -15
 /** 개별주가 평단 대비 이만큼 오르면 절반을 지수로 (C54) */
 export const TRIM_TO_INDEX_PCT = TRIM_TO_INDEX_FACTS.triggerPct
 /** 연구 숫자를 만든 지 180일이 넘으면 낡음 표시 (planGuide.isFactStale과 같은 기준) */
-const trimFactsStale = (today: Date) => {
-  const t = Date.parse(TRIM_TO_INDEX_FACTS.generatedAt)
+const factsStale = (generatedAt: string, today: Date) => {
+  const t = Date.parse(generatedAt)
   return Number.isFinite(t) && (today.getTime() - t) / 86_400_000 > 180
 }
+const trimFactsStale = (today: Date) => factsStale(TRIM_TO_INDEX_FACTS.generatedAt, today)
 const STOCK_LIMIT_PCT = SINGLE_STOCK_LIMIT_PCT.balanced
 /** 코스피200 ETF 중 가장 싼 보수 수준 — 이보다 크게 비싸면 새 돈은 저보수 상품으로 */
 const KR_INDEX_CHEAP_FEE_PCT = 0.05
@@ -493,12 +497,30 @@ export function resolveHoldingAction(input: HoldingActionInput): HoldingAction {
           ...src,
         }
       }
+      // 손실 중(C69): 들고 버티기보다 지수로 옮기는 쪽이 1년 뒤 대개 더 남았다. 다른 종목으로 갈아타는 손절은 같은 운을 다시 사는 것이라 권하지 않는다
+      if (bucket === 'stock' && pnl != null && pnl <= LOSS_STOP_ADD_PCT) {
+        const f = LOSER_SWITCH_FACTS
+        return {
+          bucket, role, tone: 'act', verdict: '지수로 옮기기',
+          todo: '물타기는 멈추고, 이 종목은 지수 ETF로 옮기는 쪽을 권해요. 다른 종목으로 갈아타는 손절은 권하지 않아요.',
+          now: `평단보다 ${pct(pnl)}. 줄어든 돈은 이미 평가금에 들어 있어요 — 팔아도 시드는 비용(약 0.25%)만큼만 줄고, 담긴 곳만 지수로 바뀝니다.`,
+          when: '한 번에 옮기는 게 평균으로는 낫지만, 마음이 힘들면 2~3달에 나눠도 돼요. 옮긴 뒤 이 종목을 다시 사려고 기다리지 않아요.',
+          facts: [
+            `${f.period} 평단 ${pct(f.triggerPct, 0)} 사건 ${f.events.toLocaleString('ko-KR')}건, 그날부터 1년: 계속 보유 중앙 ${pct(f.holdMedPct)} · 지수로 옮김 중앙 ${pct(f.switchMedPct)}`,
+            `1년 뒤 −30% 이하까지 더 빠진 경우: 보유 ${f.holdDeepPct}% · 옮김 ${f.switchDeepPct}%`,
+            `1년 안에 평단을 한 번이라도 다시 찍은 경우는 ${f.holdRecoverPct}%였지만, 1년 끝에는 보유가 나았던 경우가 ${f.holdWinPct}%뿐이에요`,
+            `2025~26 급등을 빼도 중앙 ${f.preRallyDiffMedPp}%p 차이. 지수가 늘 이긴다는 뜻은 아니에요`,
+          ],
+          source: `가설 장부 C69 · 분기말 거래대금 상위 300을 샀다고 가정, 수정주가·상장폐지 포함, 전환 비용 0.25% · ${f.generatedAt} 생성`
+            + (factsStale(f.generatedAt, input.today ?? new Date()) ? ' (180일 지난 자료 — 다시 검증 필요)' : ''),
+        }
+      }
       if (pnl != null && pnl <= LOSS_STOP_ADD_PCT) {
         return {
           bucket, role, tone: 'watch', verdict: '추가매수 멈춤',
           todo: '물타기는 하지 말고, 새 돈은 지수에 넣으세요.',
-          now: `평단보다 ${pct(pnl)} — 지금 팔면 손실이 확정돼요.`,
-          when: '반등을 기다릴지, 정리하고 지수로 옮길지 미리 정해 두세요. 이 종목이 오를지는 시스템도 맞히지 못해요.',
+          now: `평단보다 ${pct(pnl)}.`,
+          when: '테마 ETF는 개별주와 따로 검증하지 않았어요. 비중이 크면 일부를 지수로 옮기는 것도 방법이에요.',
           ...src,
         }
       }

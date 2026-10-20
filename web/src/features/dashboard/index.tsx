@@ -20,9 +20,8 @@ import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 import { adviseHoldings, type Holding } from '../../lib/holdingAdvice'
 import { satelliteStatus, SATELLITE_LOSS_LIMIT_PCT, SATELLITE_MAX_WEIGHT_PCT, SATELLITE_SELL_WEIGHT_PCT } from '../../lib/satelliteGuard'
 import { formatKrw } from '../../lib/format'
-import { readUserState, useUserState } from '../../lib/userState'
+import { useUserState } from '../../lib/userState'
 import { sanitizeDropPlan, type DropPlan } from '../../lib/dropPlan'
-import { personalSetup, type InvestorProfile } from '../../lib/startPlan'
 import type { DropDayView } from '../../lib/dropDay'
 import { renderDropDayRows } from './dropDayRows'
 import { useFillerRows } from '../../hooks/useFillerRows'
@@ -268,8 +267,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
   const advice = (() => {
     if (!realHoldings) return null
-    const profile = readUserState<InvestorProfile>('investorProfile')
-    const level = profile ? personalSetup(profile, 0).level : 'safe'
+    // 한도는 종목 카드(holdingAction)·개별주 묶음 경고(satelliteGuard)와 같은 10%. 프로필의 level은 종목 봇 기본값이라 쓰지 않는다
+    const level = 'balanced' as const
     const { buyFeeRatePct, sellFeeRatePct } = loadTradeCostSettings()
     return adviseHoldings({ holdings: realHoldings, level, sellCostPct: (code) => resolveSellCostPct({ code, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct }) })
   })()

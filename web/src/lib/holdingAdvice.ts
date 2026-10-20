@@ -4,6 +4,7 @@
  * 단일 종목 비중 한도(안전형 5% · 균형형 10%)는 검증값이 아니라 보수적 가정이다.
  * 한도를 넘어도 바로 팔라고 하지 않는다: 한도 +10%p(REBALANCE_BAND_PP)까지는 추가매수만 멈추고 새 돈을 지수로 넣어
  * 자연스럽게 비중을 낮춘다. 그 선을 넘을 때만 한도까지 줄이라고 안내한다(적립 우선 + 10%p 넘을 때만 매도, C14).
+ * 평단 −15% 이하 개별주는 물타기 멈추고 지수로 옮기기를 권한다(C69, 종목 카드 holdingAction.ts와 같은 말).
  */
 import { REBALANCE_BAND_PP } from '../../../src/lib/incomeGuide'
 import { INDEX_ETF_CODES } from './indexEtf'
@@ -61,8 +62,8 @@ export function adviseHoldings(input: {
     if (pnlPct <= LOSS_REDIRECT_PCT) {
       return {
         ...base, action: 'redirect',
-        headline: '지금 팔지 말고 추가 매수만 멈추기',
-        detail: `평단보다 ${Math.abs(pnlPct).toFixed(0)}% 내려 있어 팔면 손실이 확정됩니다. 물타기 대신 이번 달 적립은 KODEX 200에 넣고, 이 종목은 반등을 기다릴지 정리할지 정해 두세요.`,
+        headline: '물타기 멈추고 지수로 옮기기',
+        detail: `평단보다 ${Math.abs(pnlPct).toFixed(0)}% 내려 있습니다. 줄어든 돈은 이미 평가금에 들어 있어, 팔아도 시드는 비용만큼만 줄어듭니다. 다른 종목으로 갈아타지 말고 지수 ETF로 옮기세요(나눠서 옮겨도 됩니다).`,
       }
     }
     return {

@@ -6,8 +6,15 @@ import { isExchangeTradedProduct } from '../../../src/lib/securitiesTax'
 export { isExchangeTradedProduct }
 
 /** 매도 요율(%) — ETF·ETN이면 매수수수료와 같은 수수료만 (기본 매도 요율 = 수수료 + 거래세) */
-export function resolveSellCostPct(input: { code?: string | null; name?: string | null; sellRatePct: number; feeRatePct: number }): number {
-  return isExchangeTradedProduct(input.code, input.name) ? input.feeRatePct : input.sellRatePct
+export function resolveSellCostPct(input: {
+  code?: string | null
+  name?: string | null
+  /** 서버 stocks.product_type (positions 응답 stock_product_type) — 있으면 이름보다 먼저 */
+  productType?: string | null
+  sellRatePct: number
+  feeRatePct: number
+}): number {
+  return isExchangeTradedProduct(input.code, input.name, input.productType) ? input.feeRatePct : input.sellRatePct
 }
 
 // 포트폴리오·대시보드가 같은 매매비용 설정(사용자별 저장, lib/userState.ts)을 읽도록 한 곳에 둔다

@@ -19,7 +19,7 @@ export function realHoldingTotal(rows: HoldingRow[]): number {
  * addValue: 추가매수 창에서 입력한 매수 금액(보유 카드에서는 0).
  */
 export function holdingSizing(r: HoldingRow, totalValue: number, addValue = 0): StockSizing | null {
-  if (!isRealRow(r) || isExchangeTradedProduct(r.code, r.stock_name)) return null
+  if (!isRealRow(r) || isExchangeTradedProduct(r.code, r.stock_name, r.stock_product_type)) return null
   const current = holdingValue(r)
   return stockSizing({
     totalValue: totalValue + Math.max(0, addValue),

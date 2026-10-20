@@ -55,6 +55,12 @@ etfTabCode 분포: 1 국내지수 99 · 2 국내업종/테마 342 · 3 국내파
   - 확인된 빈틈: 종목 봇 매도 경로(`SellStep`)에는 기타 ETF 매매차익세가 아예 없다. 지금은 종목 봇이 ETF를 사지 않아 영향이 없지만, 같은 함수로 통일한다.
 - 리포트·가이드: `rebalanceReport.ts`, `incomeGuide.ts`, `handlers/ui/rebalance-report.ts`, `handlers/ui/positions.ts`
 - 웹: `web/src/lib/tradeCost.ts`는 손으로 옮긴 사본이다. API 응답에 `product_type`을 실어 보내 웹이 그 값을 먼저 쓰게 하고, 코드 목록은 서버와 맞춘다(`diff`로 확인).
+- **구현함 (2026-10-20)**
+  - **가상매매 매도**: 봇 매도(SellStep)·스윕·지수 모드 정리·웹 수동 매도·웹 전체 매도가 stocks의 `product_type`·`etf_tax_class`를 읽는다. 기타 ETF 매매차익세는 **가상(봇) 계좌에만** 붙인다. 실계좌 기록은 계좌 종류(ISA·연금)를 몰라서 증권사가 실제로 뗀 금액과 어긋날 수 있기 때문이다.
+  - **리포트·가이드**: `loadAccountPositionRows`가 두 값을 읽는다. `GuideHolding` → 가이드 화면 행 → `PlanHolding` → 리포트 매도 비용까지 그대로 전달된다. 바구니 분류(`classifyHolding`)도 상품 유형을 먼저 본다.
+  - **API·웹**: positions 응답에 `stock_product_type`·`stock_etf_tax_class`를 넣었다. 웹의 매도 비용·개별주 비중·담을 크기 계산이 이 값을 쓴다.
+  - **함께 고친 것**: 대시보드 손익(`portfolio-realtime`)이 ETF에도 매도세 0.195%를 매기고 있었다. 홈 보유 대응(`adviseHoldings`)은 코드만 넘겨 대부분의 ETF에 거래세를 붙이고 있었다.
+  - **남은 것**: 텔레그램 명령(마켓픽·관심종목·브리핑)과 공시·배당 조회는 아직 이름 규칙으로 판정한다. 세금과 관계없는 분류라 후순위다.
 
 ### 5. 유니버스 제외 (후순위)
 - `refresh_universe_membership.py`·`investableUniverse.ts`가 이름 규칙 대신 `product_type in ('etf','etn')`을 쓰게 한다. 보호 목록(스윕·레짐 프록시·사용자 보유)은 지금 동작을 유지한다.

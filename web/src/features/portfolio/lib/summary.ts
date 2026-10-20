@@ -17,7 +17,7 @@ export function rowTradeCost(r: HoldingRow, opts: TradeCostOptions): number {
   const invested = Number(r.quantity || 0) * Number(r.avg_price || 0)
   const currentValue = invested + Number(r.unrealized_pnl || 0)
   const buyCost = invested * (opts.buyFeeRatePct / 100)
-  const sellPct = resolveSellCostPct({ code: r.code ?? r.ticker, name: r.stock_name, sellRatePct: opts.sellFeeRatePct, feeRatePct: opts.buyFeeRatePct })
+  const sellPct = resolveSellCostPct({ code: r.code ?? r.ticker, name: r.stock_name, productType: r.stock_product_type, sellRatePct: opts.sellFeeRatePct, feeRatePct: opts.buyFeeRatePct })
   const sellCost = currentValue > 0 ? currentValue * (sellPct / 100) : 0
   return buyCost + sellCost
 }

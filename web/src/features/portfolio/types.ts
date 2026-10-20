@@ -56,6 +56,9 @@ export type HoldingRow = {
   ticker?: string
   symbol?: string
   stock_name?: string | null
+  /** stocks.product_type·etf_tax_class (없으면 이름 규칙으로 판정) */
+  stock_product_type?: string | null
+  stock_etf_tax_class?: string | null
   broker_name?: string | null
   account_name?: string | null
   quantity?: number

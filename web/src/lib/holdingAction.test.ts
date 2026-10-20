@@ -25,14 +25,28 @@ describe('resolveHoldingAction', () => {
     const under = resolveHoldingAction({ ...base, code: '0094M0', name: 'RISE 코리아밸류업위클리고정커버드콜', coveredCallShareOfIncomePct: 30 })
     expect(under.verdict).toBe('계속 보유')
   })
-  it('개별주는 비중 초과 → 줄이기, 과열 → 추가 멈춤, 큰 손실 → 추가 멈춤, 그 외 보유', () => {
+  it('개별주는 비중 초과 → 줄이기, 과열 → 추가 멈춤, 큰 손실 → 지수로 옮기기, 그 외 보유', () => {
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', accountWeightPct: 25 }).verdict).toBe('일부 줄이기')
     // 한도 10% ~ 20%는 팔지 않고 추가매수만 멈춘다
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', accountWeightPct: 15 }).verdict).toBe('추가매수 멈춤')
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', accountWeightPct: 15 }).tone).toBe('watch')
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', weightCaution: { level: 'caution', message: '과열' } }).verdict).toBe('추가매수 멈춤')
-    expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', pnlPct: -20 }).verdict).toBe('추가매수 멈춤')
+    expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', pnlPct: -20 }).verdict).toBe('지수로 옮기기')
     expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자' }).verdict).toBe('보유 · 추가는 지수로')
+  })
+  it('개별주 평단 −15% 이하면 지수로 옮기기(C69): 손실 확정이라는 말 대신 시드는 비용만큼만 준다고, 다른 종목 손절은 권하지 않음', () => {
+    const a = resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', pnlPct: -22, today: new Date('2026-10-20') })
+    expect(a.tone).toBe('act')
+    expect(a.todo).toMatch(/다른 종목으로 갈아타는 손절은 권하지 않아요/)
+    expect(a.now).toMatch(/팔아도 시드는 비용\(약 0.25%\)만큼만/)
+    expect(a.now).not.toMatch(/확정/)
+    expect(a.when).toMatch(/나눠도 돼요/)
+    expect(a.facts.length).toBe(4)
+    expect(a.source).toMatch(/C69/)
+    expect(a.source).not.toMatch(/180일 지난/)
+    expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', pnlPct: -22, today: new Date('2027-06-01') }).source).toMatch(/180일 지난/)
+    // −15%보다 덜 빠졌으면 그대로 보유
+    expect(resolveHoldingAction({ ...base, code: '005930', name: '삼성전자', pnlPct: -14 }).verdict).toBe('보유 · 추가는 지수로')
   })
   it('개별주 +20%면 절반을 지수로(C54), 매수 뒤 이미 팔았으면 끈다', () => {
     const up = { ...base, code: '035420', name: 'NAVER', pnlPct: 23, today: new Date('2026-10-14') }

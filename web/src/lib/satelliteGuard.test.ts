@@ -5,6 +5,13 @@ const etf = (value: number) => ({ code: '069500', name: 'KODEX 200', quantity: 1
 const stock = (avg: number, cur: number) => ({ code: '007660', name: '이수페타시스', quantity: 1, avgPrice: avg, currentPrice: cur })
 
 describe('satelliteStatus', () => {
+  it('서버 상품 유형이 있으면 이름보다 먼저 — 브랜드 목록에 없는 새 운용사 ETF도 지수 쪽으로 센다', () => {
+    const newBrandEtf = { code: '999990', name: '새운용 코스피200', quantity: 1, avgPrice: 900, currentPrice: 900, productType: 'etf' }
+    expect(satelliteStatus([newBrandEtf, stock(100, 100)])!.weightPct).toBeCloseTo(10)
+    // 상품 유형을 모르면 이름으로 판정해 개별주로 센다
+    expect(satelliteStatus([{ ...newBrandEtf, productType: null }, stock(100, 100)])!.weightPct).toBeCloseTo(100)
+  })
+
   it('개별주가 없으면 null', () => {
     expect(satelliteStatus([etf(1000)])).toBeNull()
     expect(satelliteStatus([])).toBeNull()
