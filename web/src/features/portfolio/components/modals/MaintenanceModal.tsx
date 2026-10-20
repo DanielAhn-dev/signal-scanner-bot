@@ -272,14 +272,14 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
           />
           <div style={{ marginTop: 'var(--space-3)' }}>
             <Input
-              label="최초 매수일 (선택)"
+              label="처음 산 날 (선택)"
               type="date"
               value={maintBuyDate}
               max={getTodayLocalYmd()}
               onChange={(e: any) => setMaintBuyDate(String(e?.target?.value || ''))}
             />
             <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              몰라도 됩니다. 비우면 오늘을 기준으로 보유 기간·고점 대비를 셉니다.
+              나눠 샀다면 첫 매수일, 모르면 비워 두세요. 비우면 오늘부터 고점 대비를 셉니다.
             </div>
           </div>
           <div className="caption muted" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
