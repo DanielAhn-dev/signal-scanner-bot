@@ -40,7 +40,7 @@ export const ETF_BRANDS = [
   "WOORI", "BNK", "UNICORN", "FOCUS", "TREX", "VITA", "마이다스", "에셋플러스", "히어로즈", "파워", "마이티", "KTOP",
   "1Q", "DAISHIN343", "WON",
   // 2026-10-20 네이버 ETF 목록 1,176종 대조로 빠진 브랜드 74종 확인 — 개별주 이름과 겹치지 않음(stocks 전수 확인)
-  "TIME", "KoAct", "KCGI", "MIDAS", "DS", "HK", "IBK", "아이엠에셋", "DAISHIN", "TRUSTON", "더제이",
+  "TIME", "KoAct", "KCGI", "MIDAS", "DS", "HK", "IBK", "아이엠에셋", "DAISHIN", "TRUSTON", "더제이", "ITF",
 ] as const;
 
 /** 이름 맨 앞의 브랜드 (같은 지수 상품 묶기에서 떼어 낼 때도 쓴다) */

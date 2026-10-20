@@ -65,6 +65,11 @@ etfTabCode 분포: 1 국내지수 99 · 2 국내업종/테마 342 · 3 국내파
 ### 5. 유니버스 제외 (후순위)
 - `refresh_universe_membership.py`·`investableUniverse.ts`가 이름 규칙 대신 `product_type in ('etf','etn')`을 쓰게 한다. 보호 목록(스윕·레짐 프록시·사용자 보유)은 지금 동작을 유지한다.
 - 유니버스 구성이 바뀔 수 있으니 `--dryRun`으로 승격·강등 차이를 먼저 본다. 차이가 생기면 별도 커밋으로 나눈다.
+- **구현함 (2026-10-20)**: `refresh_universe_membership.py` `is_eligible_candidate`에서 `product_type`이 etf·etn이면 이름 규칙과 무관하게 제외한다. 이름 규칙은 그대로 둔다. 상품 유형이 stock인 스팩·우선주·리츠를 거르는 데 계속 필요하다.
+  - 영향(운영 DB 읽기만 해서 계산): 새로 빠지는 ETF·ETN은 320행이고 모두 이미 tail이다. 그래서 **core·extended 구성은 바뀌지 않는다**. 전체 드라이런은 KRX 종목명 조회를 수천 번 해서 돌리지 않았다.
+  - TS 후보 함수(`investableUniverse.ts`)는 core·extended 행만 받으므로 손대지 않았다. 아무도 넘기지 않는 인자는 죽은 설정이 된다.
+  - 브랜드 ITF를 추가했다(ITF 200). stocks와 대조해 개별주 이름과 겹치지 않는 것을 확인했다.
+  - **새로 발견**: stocks에 이름 대신 종목코드가 저장된 행이 473개 있다(ETF 171·ETN 148·stock 21·미분류 133). 검색과 이름 기반 판정에서 빠지는 원인이다. 후속 작업으로 남긴다.
 
 ### 6. 테스트
 - `tests/securitiesTax.test.ts`: DB 값 우선, 덮어쓰기 우선, null이면 이름 규칙으로 판정하는지 본다. 코어 프로필 7종이 모두 기대한 분류가 되는지도 확인한다.

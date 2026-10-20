@@ -68,7 +68,7 @@ ETF_BRANDS = [
     "KODEX", "TIGER", "KBSTAR", "RISE", "ACE", "SOL", "HANARO", "KOSEF", "ARIRANG", "PLUS", "KIWOOM", "TIMEFOLIO",
     "WOORI", "BNK", "UNICORN", "FOCUS", "TREX", "VITA", "마이다스", "에셋플러스", "히어로즈", "파워", "마이티", "KTOP",
     "1Q", "DAISHIN343", "WON",
-    "TIME", "KoAct", "KCGI", "MIDAS", "DS", "HK", "IBK", "아이엠에셋", "DAISHIN", "TRUSTON", "더제이",
+    "TIME", "KoAct", "KCGI", "MIDAS", "DS", "HK", "IBK", "아이엠에셋", "DAISHIN", "TRUSTON", "더제이", "ITF",
 ]
 EXCLUDED_NAME_PATTERNS.append(r"^(" + "|".join(ETF_BRANDS) + r")(?=\s|$)")
 
@@ -348,9 +348,23 @@ def build_universe_level(rank: int, close_price: int, cfg: UniverseConfig) -> st
     return "tail"
 
 
-def is_eligible_candidate(code: str, name: str, market: str, close_price: int, market_cap: int, liquidity: int, cfg: UniverseConfig) -> bool:
+def is_eligible_candidate(
+    code: str,
+    name: str,
+    market: str,
+    close_price: int,
+    market_cap: int,
+    liquidity: int,
+    cfg: UniverseConfig,
+    product_type: Optional[str] = None,
+) -> bool:
     if code in CASH_SWEEP_WHITELIST_CODES or code in REGIME_PROXY_WHITELIST_CODES or code in INDEX_MODE_WHITELIST_CODES:
         return True
+    # stocks.product_type(일일 배치가 네이버에서 채움, db/migrations/036)이 ETF·ETN이면 이름과 무관하게 뺀다.
+    # 이름이 종목코드로만 저장된 ETF·ETN 319행은 이름 규칙으로는 걸러지지 않았다(2026-10-20, 모두 tail이라 실제 편입은 없었음).
+    # 스팩·우선주·리츠는 상품 유형이 stock이라 이름 규칙이 계속 거른다.
+    if str(product_type or "").lower() in ("etf", "etn"):
+        return False
     if should_exclude_name(name):
         return False
     if market and market.upper() not in cfg.allowed_markets:
@@ -371,7 +385,7 @@ def fetch_existing_map(supabase: Client) -> Dict[str, dict]:
     while True:
         res = (
             supabase.table("stocks")
-            .select("code,name,is_active,universe_level,mcap_rank,market")
+            .select("code,name,is_active,universe_level,mcap_rank,market,product_type")
             .range(offset, offset + page_size - 1)
             .execute()
         )
@@ -675,6 +689,7 @@ def main() -> int:
                 market_cap=mcap,
                 liquidity=int(liquidity or 0),
                 cfg=cfg,
+                product_type=prev.get("product_type"),
             )
             universe_level = build_universe_level(rank, close_price, cfg) if eligible else "tail"
             # 보호 대상(스윕 ETF·레짐 프록시 ETF·사용자 보유 종목)은 시가총액 순위와 무관하게
