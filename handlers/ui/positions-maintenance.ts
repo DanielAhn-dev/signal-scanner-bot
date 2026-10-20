@@ -42,6 +42,10 @@ function scopeByAccount<T extends { is: Function; eq: Function }>(query: T, brok
 /** 같은 계좌에 같은 종목이 이미 있어 고유키에 걸렸을 때 날 오류 대신 보여 줄 문구 */
 function duplicateAccountMessage(error: { code?: string; message?: string } | null): string | null {
   if (error?.code !== '23505') return null
+  // 옛 고유키(증권사 없음)에 걸렸으면 실제로는 '다른 증권사의 같은 계좌명'에 있는 것 — 038 STEP 2 미실행
+  if (String(error.message || '').includes('virtual_positions_chat_code_account_uq')) {
+    return '계좌명이 같은 다른 증권사 계좌에 이 종목이 있어 저장하지 못했습니다. (DB 옛 고유키가 남아 있음 — 038 STEP 2 실행 필요)'
+  }
   return '같은 계좌에 이 종목이 이미 있습니다. 그 줄을 수정해 주세요.'
 }
 
