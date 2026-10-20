@@ -513,7 +513,8 @@ export default function IncomeGuidePage() {
           {/* 포트폴리오 실제 계좌 탭과 같은 순서(증권사·계좌 이름 순) */}
           {[...accountList].sort((x, y) => x.label.localeCompare(y.label, 'ko')).map((a) => (
             <option key={a.key} value={a.key}>
-              {a.label} · {KIND_LABEL[a.kind]} · {man(a.total)}{a.ownTargets ? ' · 전용 목표' : ''}
+              {/* 이름에 종류가 이미 있으면(삼성 / 일반) 한 번만 */}
+              {a.label}{a.label.includes(KIND_LABEL[a.kind]) ? '' : ` · ${KIND_LABEL[a.kind]}`} · {man(a.total)}{a.ownTargets ? ' · 전용 목표' : ''}
             </option>
           ))}
           {accountList.length > 1 && <option value={ALL}>전체 합산 (참고용)</option>}
