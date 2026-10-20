@@ -8,6 +8,8 @@ interface StockSearchInputProps {
   onSelect: (stock: StockItem) => void
   placeholder?: string
   disabled?: boolean
+  /** 비었거나 잘못돼 다시 입력해야 할 때 — 빨간 테두리(aria-invalid) */
+  invalid?: boolean
 }
 
 export default function StockSearchInput({
@@ -16,6 +18,7 @@ export default function StockSearchInput({
   onSelect,
   placeholder = '종목 코드 또는 한글명 입력',
   disabled = false,
+  invalid = false,
 }: StockSearchInputProps) {
   const [suggestions, setSuggestions] = useState<StockItem[]>([])
   const [isOpen, setIsOpen] = useState(false)
@@ -126,6 +129,7 @@ export default function StockSearchInput({
         onKeyDown={handleKeyDown}
         onFocus={() => value.trim().length > 0 && suggestions.length > 0 && setIsOpen(true)}
         disabled={disabled}
+        aria-invalid={invalid || undefined}
         autoComplete="off"
       />
 

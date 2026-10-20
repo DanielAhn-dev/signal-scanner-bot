@@ -65,6 +65,7 @@ select:disabled {
 }
 
 .ui-text[aria-invalid='true'],
+.input[aria-invalid='true'],
 .ui-textarea[aria-invalid='true'],
 .ui-select[aria-invalid='true'] {
   border-color: var(--color-border-error);

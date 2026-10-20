@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch, invalidateCache } from '../../../lib/api'
+import { apiErrorText, apiFetch, invalidateCache } from '../../../lib/api'
 import { useToast } from '../../../components/ToastProvider'
 import type { AccountFolder } from '../types'
 import { getTodayLocalYmd } from '../lib/dates'
@@ -20,6 +20,8 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
   const [maintAccountName, setMaintAccountName] = useState('')
   const [maintLoading, setMaintLoading] = useState(false)
   const [maintError, setMaintError] = useState<string | null>(null)
+  // 보유 추가(한 종목)에서 빠진 칸 — 오류 상자 대신 그 칸에 포커스·빨간 테두리·아래 안내로 알린다
+  const [maintFieldError, setMaintFieldError] = useState<'code' | 'qty' | 'price' | null>(null)
   const [maintStep, setMaintStep] = useState<1 | 2>(1)
   const [maintAccountMode, setMaintAccountMode] = useState<'select' | 'manual'>('select')
 
@@ -44,6 +46,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
       setMaintBrokerName('')
       setMaintAccountName('')
       setMaintStep(1)
+      setMaintFieldError(null)
       setMaintAccountMode(accountFolders.length > 0 ? 'select' : 'manual')
     }
     if (mode === 'holdingdelete') {
@@ -57,7 +60,16 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
   }
 
   const runMaintenance = async () => {
-    if ((maintMode === 'holdingedit' || maintMode === 'holdingrestore') && !(Number(maintQty) >= 1)) {
+    if (maintMode === 'holdingrestore') {
+      const missing = !String(maintCode || '').trim() ? 'code' : !(Number(maintQty) >= 1) ? 'qty' : !(Number(maintBuyPrice) > 0) ? 'price' : null
+      setMaintFieldError(missing)
+      if (missing) return
+    }
+    if (maintMode === 'holdingedit' && !(Number(maintBuyPrice) > 0)) {
+      setMaintError('평균 매수가를 입력해 주세요')
+      return
+    }
+    if (maintMode === 'holdingedit' && !(Number(maintQty) >= 1)) {
       setMaintError('보유 수량을 1주 이상으로 입력해 주세요')
       return
     }
@@ -106,7 +118,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
       setDeleteConfirmOpen(false)
       await load({ soft: true, force: true })
     } catch (e: any) {
-      setMaintError(String(e?.message || e))
+      setMaintError(apiErrorText(e))
     } finally {
       setMaintLoading(false)
     }
@@ -130,7 +142,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
         if (json?.error) results.push({ code: it.code, ok: false, error: String(json.error) })
         else results.push({ code: it.code, ok: true, created: !!json?.created })
       } catch (e: any) {
-        results.push({ code: it.code, ok: false, error: String(e?.message || e) })
+        results.push({ code: it.code, ok: false, error: apiErrorText(e) })
       }
     }
     if (results.some((r) => r.ok)) {
@@ -147,6 +159,8 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
     maintMode,
     setMaintMode,
     maintRow,
+    maintFieldError,
+    setMaintFieldError,
     deleteConfirmOpen,
     setDeleteConfirmOpen,
     deleteConfirmCode,

@@ -237,3 +237,15 @@ export async function apiFetch(
   if (method === 'GET') __inflight.set(cacheKey, promise)
   return promise
 }
+
+/** apiFetch 오류에서 서버가 보낸 {"error": "..."} 문장만 꺼낸다. 화면에 URL·상태코드 원문을 그대로 보이지 않게 */
+export function apiErrorText(e: unknown): string {
+  const msg = String((e as any)?.message || e || '')
+  const m = msg.match(/^API request failed \((\d+)\) from [^:]+(?::\/\/[^:]+)?: (.*)$/s)
+  if (!m) return msg
+  try {
+    const parsed = JSON.parse(m[2])
+    if (parsed && typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim()
+  } catch { /* JSON이 아니면 아래 */ }
+  return `서버 오류 ${m[1]}: ${m[2]}`
+}

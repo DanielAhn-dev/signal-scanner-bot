@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import Button from '../../../../components/ui/Button'
 import Input from '../../../../components/ui/Input'
@@ -36,9 +36,21 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
     setMaintError,
     maintLoading,
     runMaintenance,
+    maintFieldError,
+    setMaintFieldError,
   } = maint
   // 2단계 입력 방식: 한 종목씩 칸에 적기 / 여러 종목을 메모장 형식으로 붙여넣기
   const [entryMode, setEntryMode] = useState<'single' | 'paste'>('single')
+  // 빠진 칸으로 포커스를 옮긴다. 같은 칸이 연달아 비어도 저장을 누를 때마다 다시 옮기도록 시도 횟수를 함께 본다
+  const singleFormRef = useRef<HTMLDivElement>(null)
+  const [saveAttempt, setSaveAttempt] = useState(0)
+  useEffect(() => {
+    if (!maintFieldError) return
+    singleFormRef.current?.querySelector<HTMLInputElement>(`[data-field="${maintFieldError}"] input`)?.focus()
+  }, [maintFieldError, saveAttempt])
+  const fieldHint = (field: 'code' | 'qty' | 'price', text: string) => maintFieldError === field && (
+    <div className="caption" role="alert" style={{ color: 'var(--color-error)', marginTop: 'var(--space-1)' }}>{text}</div>
+  )
   return (
     <Modal
       isOpen={maintModalOpen}
@@ -245,31 +257,39 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
       )}
 
       {maintMode === 'holdingrestore' && maintStep === 2 && entryMode === 'single' && (
-        <>
-          <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
+        <div ref={singleFormRef}>
+          <div className="ui-field" data-field="code" style={{ marginBottom: 'var(--space-3)' }}>
             <label className="ui-label">종목코드</label>
             <StockSearchInput
               value={maintCode}
-              onChange={(v) => setMaintCode(v.toUpperCase())}
+              onChange={(v) => { setMaintCode(v.toUpperCase()); if (maintFieldError === 'code') setMaintFieldError(null) }}
               onSelect={(s) => setMaintCode(s.code)}
               placeholder="예) 005930 또는 종목명"
+              invalid={maintFieldError === 'code'}
             />
+            {fieldHint('code', '종목을 입력해 주세요. 종목명을 치고 목록에서 고르면 됩니다.')}
           </div>
-          <div style={{ marginBottom: 'var(--space-3)' }}>
+          <div data-field="qty" style={{ marginBottom: 'var(--space-3)' }}>
             <Input
               label="보유 수량"
               type="number"
               value={maintQty === '' ? '' : String(maintQty)}
-              onChange={(e: any) => setMaintQty(e?.target?.value === '' ? '' : Math.max(0, Math.floor(Number(e.target.value))))}
+              aria-invalid={maintFieldError === 'qty' || undefined}
+              onChange={(e: any) => { setMaintQty(e?.target?.value === '' ? '' : Math.max(0, Math.floor(Number(e.target.value)))); if (maintFieldError === 'qty') setMaintFieldError(null) }}
             />
+            {fieldHint('qty', '1주 이상 입력해 주세요.')}
           </div>
-          <Input
-            label="평균 매수가 (원)"
-            type="number"
-            placeholder="예) 75000"
-            value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
-            onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
-          />
+          <div data-field="price">
+            <Input
+              label="평균 매수가 (원)"
+              type="number"
+              placeholder="예) 75000"
+              value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
+              aria-invalid={maintFieldError === 'price' || undefined}
+              onChange={(e: any) => { setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value)); if (maintFieldError === 'price') setMaintFieldError(null) }}
+            />
+            {fieldHint('price', '평균 매수가를 입력해 주세요.')}
+          </div>
           <div style={{ marginTop: 'var(--space-3)' }}>
             <Input
               label="처음 산 날 (선택)"
@@ -291,13 +311,13 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
             </div>
           )}
           <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-            <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
+            <Button variant="primary" onClick={() => { setSaveAttempt((n) => n + 1); runMaintenance() }} disabled={maintLoading}>
               {maintLoading ? '저장 중…' : '종목 저장'}
             </Button>
             <Button variant="secondary" onClick={() => { setMaintError(null); setMaintStep(1) }}><ArrowLeft size={14} aria-hidden /> 계좌 수정</Button>
             <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
           </div>
-        </>
+        </div>
       )}
 
       {maintMode === 'liquidateall' && (
