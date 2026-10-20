@@ -104,6 +104,8 @@ type Props = {
   saveSettings: (patch: Record<string, unknown>) => Promise<boolean>
   /** 예수금을 계좌별로 받을 실계좌 목록 */
   accounts: Array<{ key: string; label: string }>
+  /** 계좌별 보기면 그 계좌 이름 — 매달 넣는 돈을 그 계좌 몫으로 저장한다 */
+  scopeLabel?: string | null
   /** 요약 바로 아래에 넣을 '받은 분배금' 카드 */
   receiptsSlot?: React.ReactNode
   /** 내 계획 구성(여러 지수)이면 새 돈을 지수마다 나눈 줄 — 홈 '이번 달 할 일'과 같은 나누기(src/lib/planMixGuide.ts). 없으면 한 곳 */
@@ -153,7 +155,7 @@ const inlineRow: React.CSSProperties = { display: 'flex', alignItems: 'center', 
  * 리밸런싱 첫 화면 — "그래서 뭘 하면 되는지"만 쉬운 말로. 숫자 근거·바구니 표는 아래 "자세히 보기"에 둔다.
  * ① 새 돈은 한 곳으로 ② 겹치는 종목 합치기 ③ 파는 건 인컴 하한을 지키는 만큼만
  */
-export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot, planMix }: Props) {
+export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot, planMix, scopeLabel }: Props) {
   const savingRef = useRef(false)
   const [saving, setSaving] = useState(false)
   // 결과는 토스트로 — 저장하면 설정이 바뀌어 이 컴포넌트가 새로 마운트되므로(key=settings) 안의 상태 메시지는 사라진다
@@ -392,13 +394,13 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           </ul>
         )}
         <div style={inlineRow}>
-          <span>내 계좌에 직접 넣는 돈 (매달)</span>
+          <span>{scopeLabel ? `${scopeLabel}에 직접 넣는 돈 (매달)` : '내 계좌에 직접 넣는 돈 (매달)'}</span>
           <UnitInput unit="만원" width={120} inputMode="numeric" placeholder="0" aria-label="내 계좌에 매달 직접 넣는 돈" value={contribMan} onChange={(e) => setContribMan(e.target.value)} />
-          <Button size="sm" variant="secondary" onClick={() => void save({ monthlyContribution: toWon(contribMan) }, '내 계좌에 넣는 돈을 저장했습니다.')}>
+          <Button size="sm" variant="secondary" onClick={() => void save({ monthlyContribution: toWon(contribMan) }, scopeLabel ? '이 계좌에 넣는 돈을 저장했습니다.' : '내 계좌에 넣는 돈을 저장했습니다.')}>
             저장
           </Button>
         </div>
-        <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다.</div>
+        <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다.{scopeLabel ? ' 계좌마다 따로 적습니다.' : ''}</div>
         <More label="가상 계좌 입금과의 관계"><div style={faint}>[가상] 가상 계좌(봇)의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div></More>
         {hold ? null : growth.needByNewMoney > 0 ? (
           <div style={{ marginTop: 6 }}>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import More from '../../components/ui/More'
 import { formatKrwMan } from '../../lib/format'
 import { useNavigate } from 'react-router-dom'
@@ -110,6 +110,40 @@ type View = {
   holdings: Array<{ code: string; name: string; accountLabel: string; value: number; quantity: number; label?: string; bucket: string; group: Group; pct: number }>
   /** 분배금 받은 기록·다음 달 예상 (handlers/ui/income-guide.ts) */
   distributionReceipts?: DistributionReceiptsData
+  /** 계좌 고르기 목록 — 평가금 큰 순 (src/lib/guideAccountScope.ts). 배포 전 API에는 없다 */
+  accountList?: AccountOption[]
+  /** 지금 보는 계좌. 전체 합산이면 null */
+  account?: (AccountOption & {
+    targets: Record<string, unknown> | null
+    monthlyContribution: { amount: number; source: 'account' | 'common' | 'none' }
+  }) | null
+}
+type AccountKind = 'general' | 'cma' | 'isa' | 'irp' | 'pension'
+type AccountOption = { key: string; label: string; total: number; holdingCount: number; ownTargets: boolean; kind: AccountKind; kindChosen: boolean }
+const KIND_LABEL: Record<AccountKind, string> = { general: '일반', cma: 'CMA', isa: 'ISA', irp: 'IRP', pension: '연금저축' }
+const KIND_HINT: Record<AccountKind, string> = {
+  general: '매매차익·분배금이 바로 과세됩니다. 국내 주식형 ETF·고배당을 두기 좋은 곳입니다.',
+  cma: '대기 자금·비상금 자리입니다. 현금성 비중으로 봅니다.',
+  isa: '분배금·해외 ETF 과세가 미뤄지고 줄어듭니다. 해외 지수·커버드콜처럼 과세가 큰 상품을 먼저 둡니다.',
+  irp: '노후용 계좌입니다. 위험자산 한도(70%)가 있어 안전자산 30%를 채워야 합니다.',
+  pension: '노후용 계좌입니다. 과세가 미뤄지니 해외 지수·분배형을 두기 좋습니다.',
+}
+/** 마지막으로 본 계좌 — 이 브라우저에만 저장 (편의용) */
+const ACCOUNT_STORE = 'income-guide:account'
+const ALL = '__all'
+function readStoredAccount(): string {
+  try {
+    return window.localStorage.getItem(ACCOUNT_STORE) || 'auto'
+  } catch {
+    return 'auto'
+  }
+}
+function storeAccount(key: string) {
+  try {
+    window.localStorage.setItem(ACCOUNT_STORE, key)
+  } catch {
+    /* 저장 못 해도 화면은 그대로 */
+  }
 }
 
 const GROUP_LABEL: Record<Group, string> = { growth: '성장 (지수)', income: '인컴 (분배형)', satellite: '위성 (개별주·테마)', cash: '현금성' }
@@ -196,36 +230,87 @@ export default function IncomeGuidePage() {
   const navigate = useNavigate()
   const [view, setView] = useState<View | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
+  // 'common' = 공통 설정, 'account' = 지금 보는 계좌 목표, null = 닫힘
+  const [editing, setEditing] = useState<null | 'common' | 'account'>(null)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ needMan: '', incomeStart: '', satCap: '', overseas: '', incomePct: '', cashPct: '', capMan: '', ageBand: '' })
   const [contribMan, setContribMan] = useState('')
   const [appliedContrib, setAppliedContrib] = useState(0)
   const [note, setNote] = useState('')
   const [recordMsg, setRecordMsg] = useState<string | null>(null)
+  const [accountMsg, setAccountMsg] = useState<string | null>(null)
+  // 보는 계좌 — 처음엔 마지막으로 본 계좌(없으면 가장 큰 계좌, 서버가 auto를 풀어 준다)
+  const [accountSel, setAccountSel] = useState<string>(readStoredAccount)
+  const accountRef = useRef(accountSel)
+  accountRef.current = accountSel
 
-  const load = useCallback(async (init?: { method: string; body: string }, contribution = 0): Promise<boolean> => {
+  /** 가이드 경로 — 보는 계좌와 넣을 돈을 붙인다 */
+  const guideUrl = (contribution: number, account = accountRef.current) => {
+    const p = new URLSearchParams({ account })
+    if (contribution > 0) p.set('contribution', String(Math.round(contribution)))
+    return `/api/ui/income-guide?${p.toString()}`
+  }
+
+  const load = useCallback(async (init?: { method: string; body: string }, contribution = 0, account?: string): Promise<boolean> => {
     try {
-      const q = contribution > 0 ? `?contribution=${Math.round(contribution)}` : ''
-      const res = await apiFetch(`/api/ui/income-guide${q}`, { cacheMs: 0, timeoutMs: 20_000, ...(init ?? {}) })
+      const res = await apiFetch(guideUrl(contribution, account), { cacheMs: 0, timeoutMs: 20_000, ...(init ?? {}) })
       if (!res?.data) {
         setError(res?.error ?? '가이드를 불러오지 못했습니다.')
         return false
       }
-      setView(res.data)
+      const data = res.data as View
+      setView(data)
+      // auto·없어진 계좌는 서버가 고른 계좌로 맞춘다
+      const shown = data.account?.key ?? ALL
+      if (data.accountList && shown !== accountRef.current) {
+        accountRef.current = shown
+        setAccountSel(shown)
+      }
+      if (data.accountList) storeAccount(shown)
       setError(null)
       return true
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
       return false
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (chatId) void load()
   }, [chatId, load])
 
-  const startEdit = () => {
+  // 연타로 두 번 불러오지 않게 (모바일 더블탭)
+  const busyRef = useRef(false)
+  const switchAccount = async (key: string) => {
+    if (busyRef.current || key === accountSel) return
+    busyRef.current = true
+    accountRef.current = key
+    setAccountSel(key)
+    setEditing(null)
+    setAccountMsg(null)
+    setRecordMsg(null)
+    // 넣을 돈 배분은 계좌마다 다르니 비운다
+    setAppliedContrib(0)
+    setContribMan('')
+    setBusy(true)
+    await load(undefined, 0, key)
+    setBusy(false)
+    busyRef.current = false
+  }
+  const saveAccount = async (body: Record<string, unknown>, done: string) => {
+    if (busyRef.current) return false
+    busyRef.current = true
+    setBusy(true)
+    setAccountMsg(null)
+    const ok = await load({ method: 'POST', body: JSON.stringify(body) }, appliedContrib)
+    setBusy(false)
+    busyRef.current = false
+    setAccountMsg(ok ? done : '저장하지 못했습니다.')
+    return ok
+  }
+
+  const startEdit = (mode: 'common' | 'account') => {
     if (!view) return
     setForm({
       needMan: String(Math.round(view.settings.monthlyNeed / 10_000)),
@@ -237,29 +322,29 @@ export default function IncomeGuidePage() {
       capMan: String(Math.round((view.settings.financialIncomeCap ?? 10_000_000) / 10_000)),
       ageBand: view.settings.ageBand ?? '',
     })
-    setEditing(true)
+    setEditing(mode)
   }
+  // 계좌 목표는 해외 비중도 이 계좌 값으로 정한다(내 계획 구성은 전체 기준)
+  const overseasLocked = editing !== 'account' && view?.overseasFromPlan != null
   const save = async () => {
+    const values = {
+      monthlyNeed: Number(form.needMan) * 10_000,
+      incomeStart: form.incomeStart,
+      satelliteCapPct: Number(form.satCap),
+      // 내 계획 구성이 정한 값이면 보내지 않는다 — 여기서 고칠 수 없다(모아가기 1번이 정한다)
+      ...(!overseasLocked ? { overseasPct: Number(form.overseas) } : {}),
+      // 빈 칸은 단계 기본값으로 되돌린다
+      customTargets: { income: form.incomePct, cash: form.cashPct },
+      financialIncomeCap: Number(form.capMan) * 10_000,
+      ageBand: form.ageBand,
+    }
     setBusy(true)
     const ok = await load(
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          monthlyNeed: Number(form.needMan) * 10_000,
-          incomeStart: form.incomeStart,
-          satelliteCapPct: Number(form.satCap),
-          // 내 계획 구성이 정한 값이면 보내지 않는다 — 여기서 고칠 수 없다(모아가기 1번이 정한다)
-          ...(view?.overseasFromPlan == null ? { overseasPct: Number(form.overseas) } : {}),
-          // 빈 칸은 단계 기본값으로 되돌린다
-          customTargets: { income: form.incomePct, cash: form.cashPct },
-          financialIncomeCap: Number(form.capMan) * 10_000,
-          ageBand: form.ageBand,
-        }),
-      },
+      { method: 'POST', body: JSON.stringify(editing === 'account' ? { action: 'account-targets', targets: values } : values) },
       appliedContrib,
     )
     setBusy(false)
-    if (ok) setEditing(false)
+    if (ok) setEditing(null)
   }
   const applyContribution = async () => {
     const amount = Math.max(0, Number(contribMan) * 10_000)
@@ -300,8 +385,7 @@ export default function IncomeGuidePage() {
   // 분배금 기록은 검증 실패(400) 이유를 그 자리에 보여 준다 — 화면 전체 오류로 바꾸지 않는다
   const submitReceipt = async (body: Record<string, unknown>): Promise<string | null | { note: string }> => {
     try {
-      const q = appliedContrib > 0 ? `?contribution=${Math.round(appliedContrib)}` : ''
-      const res = await apiFetch(`/api/ui/income-guide${q}`, { method: 'POST', body: JSON.stringify(body), cacheMs: 0, retries: 0, timeoutMs: 20_000 })
+      const res = await apiFetch(guideUrl(appliedContrib), { method: 'POST', body: JSON.stringify(body), cacheMs: 0, retries: 0, timeoutMs: 20_000 })
       if (!res?.data) return res?.error ?? '저장하지 못했습니다.'
       setView(res.data)
       // 이번 달 기록은 서버가 그 계좌 예수금도 맞춘다(applyReceiptToCash)
@@ -321,11 +405,42 @@ export default function IncomeGuidePage() {
             {view.stage.yearsToIncome != null && view.stage.yearsToIncome > 0 ? ` · 인컴 시작까지 ${view.stage.yearsToIncome.toFixed(1)}년` : ''}
           </strong>
           {!editing && (
-            <Button size="sm" variant="secondary" onClick={startEdit}>
-              가이드 설정
-            </Button>
+            <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+              {view.account ? (
+                <>
+                  <Button size="sm" variant="secondary" onClick={() => startEdit('account')}>
+                    {view.account.ownTargets ? '이 계좌 목표 고치기' : '이 계좌 목표 따로 정하기'}
+                  </Button>
+                  {view.account.ownTargets ? (
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => void saveAccount({ action: 'account-targets', targets: null }, '이 계좌를 공통 설정으로 되돌렸습니다.')}>
+                      공통 설정으로 되돌리기
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="ghost" onClick={() => startEdit('common')}>
+                      공통 설정 고치기
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <Button size="sm" variant="secondary" onClick={() => startEdit('common')}>
+                  가이드 설정
+                </Button>
+              )}
+            </span>
           )}
         </div>
+        {view.account && (
+          <div style={{ color: 'var(--color-text-secondary)' }}>
+            {view.account.ownTargets
+              ? `${view.account.label} 전용 목표로 계산합니다. 공통 설정을 고쳐도 이 계좌는 바뀌지 않습니다.`
+              : `${view.account.label}은 공통 설정을 씁니다. 가족 계좌처럼 목적이 다르면 이 계좌 목표를 따로 정하세요.`}
+          </div>
+        )}
+        {editing && view.account && (
+          <div style={{ marginTop: 4, fontWeight: 600 }}>
+            {editing === 'account' ? `${view.account.label} 목표` : '공통 설정 (목표를 따로 정하지 않은 모든 계좌)'}
+          </div>
+        )}
         <div style={{ margin: '4px 0' }}>{view.stage.text}</div>
         {view.age ? (
           <div style={{ margin: '4px 0' }}>
@@ -346,7 +461,7 @@ export default function IncomeGuidePage() {
             위성 상한(%)
             <input style={inputStyle} value={form.satCap} onChange={(e) => setForm({ ...form, satCap: e.target.value })} />
             성장 중 해외 비중(%)
-            {view?.overseasFromPlan != null
+            {overseasLocked
               ? <span>{view.overseasFromPlan}% <Button size="sm" variant="ghost" onClick={() => navigate('/accumulate')}>내 계획 구성에서 정함 · 모아가기에서 바꾸기</Button></span>
               : <input style={inputStyle} value={form.overseas} onChange={(e) => setForm({ ...form, overseas: e.target.value })} />}
             내 목표 — 인컴(%)
@@ -367,7 +482,7 @@ export default function IncomeGuidePage() {
             <Button size="sm" disabled={busy} onClick={() => void save()}>
               저장
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
               취소
             </Button>
             <div style={{ width: '100%', color: 'var(--color-text-tertiary)' }}><More label="칸마다 무슨 뜻인가요">
@@ -379,7 +494,7 @@ export default function IncomeGuidePage() {
           </div>
         )}
         <div>
-          계좌 보유 {view.holdingCount}개 · 평가 {man(view.total)} · 월 {man(view.settings.monthlyNeed)} 생활비에 필요한 원금: 분배형만으로{' '}
+          {view.account ? '이 계좌' : '계좌'} 보유 {view.holdingCount}개 · 평가 {man(view.total)} · 월 {man(view.settings.monthlyNeed)} 생활비에 필요한 원금: 분배형만으로{' '}
           {man(view.need.capitalByDistribution)}(분배율 4.5%) · 지수에서 연 4%씩 꺼내면 {man(view.need.capitalByWithdrawal4)}
         </div>
         {view.priceFallbacks ? (
@@ -388,8 +503,63 @@ export default function IncomeGuidePage() {
       </div>
   )
 
+  const accountList = view.accountList ?? []
+  const acct = view.account ?? null
+  const accountPicker = accountList.length > 0 && (
+    <>
+      <div className="ig-accounts" role="group" aria-label="리밸런싱할 계좌">
+        {accountList.map((a) => (
+          <button key={a.key} type="button" disabled={busy} className={accountSel === a.key ? 'is-active' : ''} aria-pressed={accountSel === a.key} onClick={() => void switchAccount(a.key)}>
+            <span>{a.label}</span>
+            <small>
+              {KIND_LABEL[a.kind]} · {man(a.total)}
+              {a.ownTargets ? ' · 전용 목표' : ''}
+            </small>
+          </button>
+        ))}
+        {accountList.length > 1 && (
+          <button type="button" disabled={busy} className={`is-all${accountSel === ALL ? ' is-active' : ''}`} aria-pressed={accountSel === ALL} onClick={() => void switchAccount(ALL)}>
+            <span>전체 합산</span>
+            <small>참고용</small>
+          </button>
+        )}
+      </div>
+      {acct ? (
+        <div style={{ ...box, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <strong style={{ fontSize: 14 }}>{acct.label}</strong>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            계좌 종류
+            <select
+              value={acct.kind}
+              disabled={busy}
+              onChange={(e) => void saveAccount({ action: 'account-kind', kind: e.target.value }, `계좌 종류를 ${KIND_LABEL[e.target.value as AccountKind]}(으)로 정했습니다.`)}
+            >
+              {(Object.keys(KIND_LABEL) as AccountKind[]).map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!acct.kindChosen && <span style={{ color: 'var(--color-text-tertiary)' }}>이름으로 추정했습니다. 다르면 골라 주세요.</span>}
+          {accountMsg && <span role="status" style={{ color: 'var(--color-text-secondary)' }}>{accountMsg}</span>}
+          <div style={{ width: '100%', color: 'var(--color-text-secondary)' }}>
+            {KIND_HINT[acct.kind]} 이 계좌의 보유·예수금만으로 비중과 할 일을 계산합니다.
+            {acct.monthlyContribution.source === 'common' ? ' 매달 넣는 돈(공통)은 가장 큰 계좌인 이 계좌에 붙였습니다 — 계좌마다 따로 적으면 그 값을 씁니다.' : ''}
+          </div>
+        </div>
+      ) : accountList.length > 1 ? (
+        <div style={{ ...box, color: 'var(--color-text-secondary)' }}>
+          <strong style={{ color: 'var(--color-text-primary)' }}>전체 합산은 참고용입니다.</strong> 일반·ISA·연금 계좌는 세금과 목적이 달라 합쳐서 맞추면 실제로 어느 계좌에서
+          팔고 살지 정하기 어렵습니다. 매도·정리는 위에서 계좌를 골라서 하세요. 이 보기의 기록은 예전부터 쌓인 합산 기록입니다.
+        </div>
+      ) : null}
+    </>
+  )
+
   return (
     <div style={{ paddingBottom: 24 }}>
+      {accountPicker}
       {view.holdingCount === 0 ? (
         <div style={box}>
           아직 입력한 실계좌 보유가 없습니다. 포트폴리오의 <strong>계좌/보유 추가</strong>에서 증권사·계좌명과 보유 종목을 넣으면, 계좌마다 어떤 바구니에
@@ -404,11 +574,12 @@ export default function IncomeGuidePage() {
         <>
           {view.plan && (
             <PlanSteps
-              key={JSON.stringify(view.settings)}
+              key={`${acct?.key ?? ALL}|${JSON.stringify(view.settings)}`}
               plan={view.plan}
               settings={view.settings}
               saveSettings={saveSettings}
               accounts={view.accounts}
+              scopeLabel={acct?.label ?? null}
               planMix={view.planMix ?? null}
               receiptsSlot={view.distributionReceipts ? (
                 <DistributionReceipts
@@ -702,7 +873,7 @@ export default function IncomeGuidePage() {
             </div>
           )}
 
-          <div style={box}>
+          {!acct && <div style={box}>
             <strong>계좌별</strong>
             <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 6 }}>
@@ -735,7 +906,7 @@ export default function IncomeGuidePage() {
               </tbody>
             </table>
             </div>
-          </div>
+          </div>}
 
           <div style={box}>
             <strong>보유 분류</strong>
