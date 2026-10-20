@@ -26,6 +26,8 @@ export type DistributionReceipt = {
   /** 실제 입금액(세후, 원). 없으면 15.4%를 떼고 계산하고 '추정'으로 표시한다 */
   net: number | null;
   createdAt: string;
+  /** 이 기록 때문에 예수금에 더한 금액(원). 없으면 예수금과 무관한 기록(예전 기록·지난달·계좌를 못 찾음) */
+  cashApplied?: number;
 };
 
 const isMonth = (v: unknown): v is string => typeof v === "string" && /^20\d{2}-(0[1-9]|1[0-2])$/.test(v);
@@ -77,6 +79,7 @@ export function sanitizeReceipts(list: unknown): DistributionReceipt[] {
       perShare: Number(r.perShare),
       net: r.net == null ? null : Number(r.net),
       createdAt: String(r.createdAt ?? ""),
+      ...(Number.isFinite(Number(r.cashApplied)) && r.cashApplied != null ? { cashApplied: Number(r.cashApplied) } : {}),
     }))
     .slice(-MAX_RECEIPTS);
 }
@@ -220,10 +223,12 @@ export function estimateReinvest(input: {
   const items = input.receipts.filter((r) => r.month === month);
   const received = items.reduce((s, r) => s + receiptNet(r), 0);
   if (received <= 0) return null;
-  // 예수금이 분배금을 적은 날 이후에 저장돼야 입금이 반영된 숫자로 본다(같은 날은 반영으로 본다)
-  const lastReceiptDay = items.map((r) => kstDate(r.createdAt)).sort().pop() ?? "";
+  // 예수금이 분배금을 적은 날 이후에 저장돼야 입금이 반영된 숫자로 본다(같은 날은 반영으로 본다).
+  // 적을 때 예수금에 바로 더한 기록(cashApplied)은 이미 반영돼 있다
+  const unapplied = items.filter((r) => r.cashApplied == null);
+  const lastReceiptDay = unapplied.map((r) => kstDate(r.createdAt)).sort().pop() ?? "";
   const updated = input.cashUpdatedAt ?? null;
-  if (!updated || updated < `${month}-01` || updated < lastReceiptDay) return { status: "stale-cash", month, received, cashUpdatedAt: updated };
+  if (!updated || (unapplied.length > 0 && (updated < `${month}-01` || updated < lastReceiptDay))) return { status: "stale-cash", month, received, cashUpdatedAt: updated };
   const base = [...input.history].filter((h) => h.date < `${month}-01`).sort((a, b) => a.date.localeCompare(b.date)).pop();
   if (!base) return { status: "no-baseline", month, received };
   const baselineApprox = base.cash == null;

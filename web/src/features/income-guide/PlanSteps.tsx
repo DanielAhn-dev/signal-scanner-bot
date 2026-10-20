@@ -261,7 +261,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 아래에 받은 분배금을 적으면 실제 기준으로 바뀝니다.'}
         </div>
         <div style={{ marginTop: 6 }}>
-          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 원 단위로. 분배금이 들어온 직후에 적으면 가장 정확합니다. 보유 화면에서 매수·매도를 기록하면 그 계좌 예수금에서 자동으로 빼고 더합니다.</span>
+          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 원 단위로. 분배금이 들어온 직후에 적으면 가장 정확합니다. 보유 화면에서 매수·매도를 기록하거나 이번 달 받은 분배금을 적으면 그 계좌 예수금에서 자동으로 빼고 더합니다.</span>
           {[...accounts.map((a) => ({ key: a.key, label: a.label })), ...(LEGACY_CASH in cashWon ? [{ key: LEGACY_CASH, label: '계좌 미지정 (예전 입력)' }] : [])].map((a) => (
             <div key={a.key} style={{ ...inlineRow, marginTop: 4 }}>
               <span style={{ minWidth: 140 }}>{a.label}</span>

@@ -224,11 +224,31 @@ export function applyTradeToCash(
   const before = settings.cashByAccount?.[trade.accountKey];
   if (before == null || !(before > 0) || !(trade.netAmount > 0)) return null;
   if (settings.cashUpdatedAt && settings.cashUpdatedAt > trade.tradeDate) return null;
-  const after = Math.max(0, Math.round(trade.side === "BUY" ? before - trade.netAmount : before + trade.netAmount));
+  return shiftAccountCash(settings, trade.accountKey, trade.side === "BUY" ? -trade.netAmount : trade.netAmount);
+}
+
+/**
+ * 받은 분배금 기록을 그 계좌 예수금에 반영한다 — 새로 적으면 세후만큼 더하고, 고치면 차액, 지우면 뺀다(delta).
+ * 2026-10-20 사용자: 분배금을 적어도 예수금 칸이 그대로라 두 숫자가 어긋났다(매수·매도 기록은 이미 반영 중).
+ * 예수금을 적은 적 없는 계좌는 건드리지 않는다(applyTradeToCash와 같은 규칙). 반영할 게 없으면 null.
+ */
+export function applyReceiptToCash(
+  settings: IncomeGuideSettings,
+  accountKey: string,
+  delta: number,
+): { settings: IncomeGuideSettings; before: number; after: number } | null {
+  const before = settings.cashByAccount?.[accountKey];
+  if (before == null || !(before > 0) || !Number.isFinite(delta) || Math.round(delta) === 0) return null;
+  return shiftAccountCash(settings, accountKey, delta);
+}
+
+function shiftAccountCash(settings: IncomeGuideSettings, accountKey: string, delta: number) {
+  const before = settings.cashByAccount?.[accountKey] ?? 0;
+  const after = Math.max(0, Math.round(before + delta));
   const cashByAccount = { ...settings.cashByAccount };
   // 0이 되면 칸을 비운다(sanitize가 0 이하를 지우는 것과 같은 규칙)
-  if (after > 0) cashByAccount[trade.accountKey] = Math.min(1e9, after);
-  else delete cashByAccount[trade.accountKey];
+  if (after > 0) cashByAccount[accountKey] = Math.min(1e9, after);
+  else delete cashByAccount[accountKey];
   const { cashByAccount: _drop, ...rest } = settings;
   return { settings: { ...rest, ...(Object.keys(cashByAccount).length ? { cashByAccount } : {}) }, before, after };
 }

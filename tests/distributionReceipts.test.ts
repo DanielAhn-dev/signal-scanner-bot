@@ -123,3 +123,19 @@ test("estimateReinvest: 체크인한 월입금은 들어온 돈에 더하고, �
   const unknown = estimateReinvest({ ...base, cashNow: 1_000_000, deposit: null });
   assert.equal(unknown?.status === "ok" && unknown.depositUnknown, true);
 });
+
+test("estimateReinvest: 적을 때 예수금에 바로 더한 기록(cashApplied)은 예수금을 다시 고치지 않아도 반영으로 본다", () => {
+  const history = [{ date: "2026-09-30", total: 1, cash: 100_000, groups: [] }];
+  const applied = [R({ net: 300_000, createdAt: "2026-10-15T00:00:00Z", cashApplied: 300_000 })];
+  const ok = estimateReinvest({ receipts: applied, history, cashNow: 400_000, cashUpdatedAt: "2026-09-29", today: "2026-10-19" });
+  assert.equal(ok?.status, "ok");
+  assert.equal(ok?.status === "ok" && ok.reinvested, 0);
+  // 하나라도 예수금과 무관한 기록이 섞이면 예전처럼 예수금 저장을 기다린다
+  const mixed = [...applied, R({ id: "y", code: "069500", net: 50_000, createdAt: "2026-10-15T00:00:00Z" })];
+  assert.equal(estimateReinvest({ receipts: mixed, history, cashNow: 400_000, cashUpdatedAt: "2026-09-29", today: "2026-10-19" })?.status, "stale-cash");
+  // 예수금을 한 번도 적지 않았으면 판단하지 않는다
+  assert.equal(estimateReinvest({ receipts: applied, history, cashNow: 400_000, cashUpdatedAt: null, today: "2026-10-19" })?.status, "stale-cash");
+  // 저장·읽기에서 cashApplied가 남는다
+  assert.equal(sanitizeReceipts(applied)[0].cashApplied, 300_000);
+  assert.equal(sanitizeReceipts([R({})])[0].cashApplied, undefined);
+});

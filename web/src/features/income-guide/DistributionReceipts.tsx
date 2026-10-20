@@ -50,7 +50,8 @@ type Props = {
   holdings: Array<{ code: string; name: string; quantity: number }>
   buyName: string | null
   /** 서버에 보내고 성공하면 null, 실패하면 이유 */
-  submit: (body: Record<string, unknown>) => Promise<string | null>
+  /** 실패면 이유 문자열, 성공이면 null 또는 덧붙일 안내({ note }) */
+  submit: (body: Record<string, unknown>) => Promise<string | null | { note: string }>
   /** 목표 월 인컴(세후, settings.monthlyNeed) — 막대 그래프의 목표선 */
   monthlyGoal?: number | null
 }
@@ -215,9 +216,13 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
     setPending(true)
     setMsg(null)
     try {
-      const err = await submit(body)
-      setMsg(err ?? done)
-      return err == null
+      const out = await submit(body)
+      if (typeof out === 'string') {
+        setMsg(out)
+        return false
+      }
+      setMsg(out ? `${done} ${out.note}` : done)
+      return true
     } finally {
       busy.current = false
       setPending(false)

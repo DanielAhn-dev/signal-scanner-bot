@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
+  applyReceiptToCash,
   applyTradeToCash,
   buildIncomeGuideView,
   buildNpsReference,
@@ -414,4 +415,15 @@ test("applyTradeToCash: 예수금을 적지 않은 계좌·체결 뒤에 적은 
   // 10/17 체결을 10/19에 늦게 기록 — 10/19에 적은 예수금엔 이미 들어 있다
   assert.equal(applyTradeToCash(base, { accountKey: "키움|ISA", side: "BUY", netAmount: 1000, tradeDate: "2026-10-17" }), null);
   assert.equal(applyTradeToCash(base, { accountKey: "키움|ISA", side: "BUY", netAmount: 1000, tradeDate: "2026-10-19" })?.after, 299_000);
+});
+
+test("applyReceiptToCash: 분배금은 그 계좌 예수금에 더하고(고치면 차액·지우면 빼기), 예수금을 적지 않은 계좌는 건드리지 않는다", () => {
+  const key = "키움|인컴계좌(일반)";
+  const base = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashByAccount: { [key]: 322_603 }, cashUpdatedAt: "2026-10-18" };
+  const add = applyReceiptToCash(base, key, 137_799);
+  assert.deepEqual(add && { before: add.before, after: add.after }, { before: 322_603, after: 460_402 });
+  assert.equal(add?.settings.cashUpdatedAt, "2026-10-18");
+  assert.equal(applyReceiptToCash(base, key, -400_000)?.settings.cashByAccount?.[key], undefined);
+  assert.equal(applyReceiptToCash(base, key, 0), null);
+  assert.equal(applyReceiptToCash(base, "키움|ISA", 10_000), null);
 });

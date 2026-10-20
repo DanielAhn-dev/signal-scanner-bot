@@ -297,13 +297,15 @@ export default function IncomeGuidePage() {
 
   const saveSettings = (patch: Record<string, unknown>) => load({ method: 'POST', body: JSON.stringify(patch) }, appliedContrib)
   // 분배금 기록은 검증 실패(400) 이유를 그 자리에 보여 준다 — 화면 전체 오류로 바꾸지 않는다
-  const submitReceipt = async (body: Record<string, unknown>): Promise<string | null> => {
+  const submitReceipt = async (body: Record<string, unknown>): Promise<string | null | { note: string }> => {
     try {
       const q = appliedContrib > 0 ? `?contribution=${Math.round(appliedContrib)}` : ''
       const res = await apiFetch(`/api/ui/income-guide${q}`, { method: 'POST', body: JSON.stringify(body), cacheMs: 0, retries: 0, timeoutMs: 20_000 })
       if (!res?.data) return res?.error ?? '저장하지 못했습니다.'
       setView(res.data)
-      return null
+      // 이번 달 기록은 서버가 그 계좌 예수금도 맞춘다(applyReceiptToCash)
+      const adj = res.cashAdjust as { before: number; after: number } | null | undefined
+      return adj ? { note: `계좌 예수금 ${adj.before.toLocaleString('ko-KR')}원 → ${adj.after.toLocaleString('ko-KR')}원` } : null
     } catch (e: unknown) {
       const text = e instanceof Error ? e.message : String(e)
       return text.match(/"error":"([^"]+)"/)?.[1] ?? '저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.'

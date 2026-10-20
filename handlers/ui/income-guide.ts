@@ -21,6 +21,7 @@ import {
   buildIncomeGuideView,
   compareWithHistory,
   healthTrend,
+  applyReceiptToCash,
   sanitizeIncomeGuideSettings,
   toHistoryEntry,
   withMonthlyEntry,
@@ -28,13 +29,14 @@ import {
 import { buildGuidePlanSnapshot } from '../../src/services/guidePlanSnapshot'
 import { buildAdherence } from '../../src/lib/guideAdherence'
 import { readOwnUserState } from './user-state'
-import { MAX_RECEIPTS, estimateReinvest, monthSummary, sanitizeReceipt } from '../../src/lib/distributionReceipts'
+import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
 //   GET  ?summary=1 — 보유 수·직접 남긴 점검 기록 수만 (홈 길잡이용, 시세 조회 없음)
 //   POST { ...설정 } — 가이드 설정 변경 / POST { action: 'record', note } — 오늘 비중을 점검 기록에 남김
 //   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
+//     이번 달 기록은 그 계좌 예수금에 더하고 고치면 차액·지우면 뺀다 → 응답 cashAdjust { before, after }
 //   POST { action: 'adherence-exclude', key, exclude } — 가이드 따름 판정에서 빼기/되돌리기
 // 이번 달 기록이 없으면 열 때 자동 기록을 하나 남긴다(매월 배치 scripts/income_guide_monthly.ts와 같은 규칙).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -79,6 +81,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isRecord = req.method === 'POST' && body.action === 'record'
     const isReceipt = req.method === 'POST' && (body.action === 'receipt-add' || body.action === 'receipt-delete')
     const isExclude = req.method === 'POST' && body.action === 'adherence-exclude'
+    // 분배금 기록이 바꾼 계좌 예수금(화면 안내용)
+    let cashAdjust: { before: number; after: number } | null = null
     if (isExclude) {
       // 가이드 따름 판정에서 빼기/되돌리기 (입력 실수·다른 이유) — 기록 자체는 지우지 않는다
       const k = String(body.key ?? '').slice(0, 80)
@@ -91,19 +95,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (saveErr) return res.status(500).json({ error: `판정 저장 실패: ${saveErr}` })
     } else if (isReceipt) {
       const receipts = [...(file.receipts ?? [])]
+      // 이번 달 기록은 그 종목을 가진 계좌 예수금에 바로 더한다(매수·매도 기록과 같은 방식). 지난달 기록은 이미 증권사 숫자에 들어 있다고 본다
+      const thisMonth = kstDateKey().slice(0, 7)
+      const accountOf = async (code: string) => {
+        const keys = new Set((await loadAccountPositionRows(supabase, chatId)).filter((r) => String(r.code ?? '').trim() === code).map((r) => `${String(r.broker_name ?? '').trim()}|${String(r.account_name ?? '').trim()}`))
+        return keys.size === 1 ? [...keys][0] : null // 두 계좌에 나눠 있으면 어느 쪽에 들어왔는지 모른다
+      }
+      let settings = file.settings
+      const shift = (accountKey: string, delta: number) => {
+        const applied = applyReceiptToCash(settings, accountKey, delta)
+        if (!applied) return false
+        settings = applied.settings
+        cashAdjust = { before: applied.before, after: applied.after }
+        return true
+      }
       if (body.action === 'receipt-add') {
         const r = sanitizeReceipt(body.receipt, new Date().toISOString(), () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
         if (typeof r === 'string') return res.status(400).json({ error: r })
         // 같은 달·같은 종목을 다시 적으면 고친 것으로 본다(두 번 눌러 쌓이지 않게)
         const i = receipts.findIndex((x) => x.month === r.month && x.code === r.code)
-        if (i >= 0) receipts[i] = { ...r, id: receipts[i].id }
-        else receipts.push(r)
+        const prev = i >= 0 ? receipts[i] : null
+        const next: typeof r = { ...r, ...(prev ? { id: prev.id } : {}) }
+        // 예수금과 무관했던 예전 기록을 고칠 때는 더하지 않는다(이미 증권사 숫자에 들어 있을 수 있다)
+        if (r.month === thisMonth && (!prev || prev.cashApplied != null)) {
+          const key = await accountOf(r.code)
+          const already = prev?.cashApplied ?? 0
+          if (key && (receiptNet(r) === already || shift(key, receiptNet(r) - already))) next.cashApplied = receiptNet(r)
+          else if (already) next.cashApplied = already
+        }
+        if (i >= 0) receipts[i] = next
+        else receipts.push(next)
       } else {
         const i = receipts.findIndex((x) => x.id === String(body.id ?? ''))
         if (i < 0) return res.status(404).json({ error: '지울 기록이 없습니다.' })
+        const gone = receipts[i]
+        if (gone.cashApplied) {
+          const key = await accountOf(gone.code)
+          if (key) shift(key, -gone.cashApplied)
+        }
         receipts.splice(i, 1)
       }
-      file = { ...file, receipts: receipts.slice(-MAX_RECEIPTS) }
+      file = { ...file, settings, receipts: receipts.slice(-MAX_RECEIPTS) }
       const saveErr = await saveGuideFile(supabase, chatId, file)
       if (saveErr) return res.status(500).json({ error: `분배금 기록 저장 실패: ${saveErr}` })
     } else if (req.method === 'POST' && !isRecord && !isExclude) {
@@ -157,6 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     return res.status(200).json({
       ok: true,
+      cashAdjust,
       data: {
         ...view,
         plan,
