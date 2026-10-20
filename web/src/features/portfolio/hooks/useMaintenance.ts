@@ -76,6 +76,10 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
       if (maintMode === 'holdingdelete') {
         body.code = maintCode
       }
+      // 같은 종목이 여러 계좌에 있을 수 있어 수정·삭제는 행 id로 정확히 집는다
+      if ((maintMode === 'holdingedit' || maintMode === 'holdingdelete') && maintRow?.id != null) {
+        body.position_id = maintRow.id
+      }
 
       const json = await apiFetch('/api/ui/positions-maintenance', {
         method: 'POST',

@@ -32,10 +32,17 @@ function normalizeLabel(input: unknown): string | null {
   return v ? v : null
 }
 
-/** virtual_positions가 이제 UNIQUE(chat_id, code, account_name)라, 조회도 account_name까지 같이 걸러야
- * 다른 계좌(또는 종목봇)의 같은 종목 행을 잘못 집지 않는다. */
-function scopeByAccountName<T extends { is: Function; eq: Function }>(query: T, accountName: string | null): T {
-  return accountName == null ? query.is('account_name', null) : query.eq('account_name', accountName)
+/** virtual_positions는 UNIQUE(chat_id, code, broker_name, account_name)라(038), 조회도 증권사·계좌명을 함께 걸러야
+ * 다른 계좌(또는 종목봇)의 같은 종목 행을 잘못 집지 않는다. NULL은 is로 맞춘다. */
+function scopeByAccount<T extends { is: Function; eq: Function }>(query: T, brokerName: string | null, accountName: string | null): T {
+  const q = brokerName == null ? query.is('broker_name', null) : query.eq('broker_name', brokerName)
+  return accountName == null ? q.is('account_name', null) : q.eq('account_name', accountName)
+}
+
+/** 같은 계좌에 같은 종목이 이미 있어 고유키에 걸렸을 때 날 오류 대신 보여 줄 문구 */
+function duplicateAccountMessage(error: { code?: string; message?: string } | null): string | null {
+  if (error?.code !== '23505') return null
+  return '같은 계좌에 이 종목이 이미 있습니다. 그 줄을 수정해 주세요.'
 }
 
 function normalizeYmdDate(input: unknown): string | null {
@@ -110,13 +117,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!buyPrice) return res.status(400).json({ error: 'buy_price must be > 0' })
       if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'quantity must be >= 1' })
 
-      const { data: position, error: posErr } = await scopeByAccountName(
-        supabase
-          .from('virtual_positions')
-          .select('id,code,chat_id,buy_price,quantity,buy_date,status,broker_name,account_name')
-          .eq('chat_id', chatId)
-          .eq('code', code),
-        accountName
+      // 웹은 고칠 행의 id를 보낸다 — 수정 화면에서 계좌 이름표를 바꿔도 원래 행을 찾도록. 없으면 새 계좌 이름표로 찾는다.
+      const editPositionId = String(body.position_id || '').trim()
+      const editBase = supabase
+        .from('virtual_positions')
+        .select('id,code,chat_id,buy_price,quantity,buy_date,status,broker_name,account_name')
+        .eq('chat_id', chatId)
+        .eq('code', code)
+      const { data: position, error: posErr } = await (editPositionId
+        ? editBase.eq('id', editPositionId)
+        : scopeByAccount(editBase, brokerName, accountName)
       ).maybeSingle()
 
       if (posErr) return res.status(500).json({ error: posErr.message })
@@ -173,17 +183,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select('id,code,buy_price,quantity,invested_amount,status,buy_date,broker_name,account_name')
         .single()
 
+      const editDup = duplicateAccountMessage(upErr)
+      if (editDup) return res.status(409).json({ error: editDup })
       if (upErr) return res.status(500).json({ error: upErr.message })
 
       // 3. 미결 lot(remaining_quantity > 0)을 교체: 누적 방지
       // 기존 미결 lot을 삭제하고 수정된 수량/단가로 단일 lot 재생성.
-      // 이미 매칭 완료된 lot(remaining=0)은 거래이력이므로 보존.
+      // 이미 매칭 완료된 lot(remaining=0)은 거래이력이므로 보존. 다른 계좌의 같은 종목 lot은 건드리지 않게 이 행의 lot만.
       try {
         await supabase
           .from('virtual_trade_lots')
           .delete()
-          .eq('chat_id', chatId)
-          .eq('code', code)
+          .eq('position_id', position.id)
           .gt('remaining_quantity', 0)
       } catch { /* best-effort: 실패해도 포지션 수정은 진행 */ }
 
@@ -300,25 +311,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const code = normalizeCode(body.code)
       if (!code) return res.status(400).json({ error: 'code required' })
 
-      // 포지션 조회
-      const { data: position, error: posErr } = await supabase
+      // 포지션 조회 — 같은 종목이 여러 계좌에 있을 수 있어 행 id로 찾는다(id가 없는 옛 요청은 종목이 한 줄일 때만)
+      const deleteId = String(body.position_id || '').trim()
+      const deleteBase = supabase
         .from('virtual_positions')
-        .select('id,code,chat_id')
+        .select('id,code,chat_id,broker_name,account_name')
         .eq('chat_id', chatId)
         .eq('code', code)
-        .maybeSingle()
+      const { data: matches, error: posErr } = await (deleteId ? deleteBase.eq('id', deleteId) : deleteBase).limit(2)
 
       if (posErr) return res.status(500).json({ error: posErr.message })
-      if (!position) return res.status(404).json({ error: 'position not found' })
+      if (!matches || matches.length === 0) return res.status(404).json({ error: 'position not found' })
+      if (matches.length > 1) return res.status(409).json({ error: '이 종목이 여러 계좌에 있어 어느 줄을 지울지 모릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.' })
+      const position = matches[0] as any
 
-      const positionId = (position as any).id
+      const positionId = position.id
 
-      // 1. 거래 기록 삭제 (해당 종목의 모든 거래)
-      const { error: tradeDelErr } = await supabase
-        .from('virtual_trades')
-        .delete()
-        .eq('chat_id', chatId)
-        .eq('code', code)
+      // 1. 거래 기록 삭제 — 이 계좌의 이 종목 거래만 (예전엔 봇 가상 계좌·다른 계좌의 같은 종목 거래까지 지웠다)
+      const { error: tradeDelErr } = await scopeByAccount(
+        supabase
+          .from('virtual_trades')
+          .delete()
+          .eq('chat_id', chatId)
+          .eq('code', code),
+        normalizeLabel(position.broker_name),
+        normalizeLabel(position.account_name)
+      )
       if (tradeDelErr) {
         console.warn('거래 기록 삭제 실패:', tradeDelErr.message)
         // 계속 진행
@@ -379,20 +397,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const nowIso = new Date().toISOString()
       const acquiredAtIso = `${buyDate}T00:00:00.000Z`
 
-      // 기존 포지션 조회 (없으면 신규 생성) — 같은 종목이어도 다른 계좌 행은 못 보게 증권사·계좌명까지 건다.
-      // 계좌명 없이 증권사만 있는 계좌가 봇 가상 계좌(둘 다 NULL) 행을 집지 않게 broker_name도 맞춘다.
-      // 단 계좌명이 있으면 고유키(chat_id, code, account_name)에 증권사가 없으므로 증권사로 거르지 않는다 —
-      // 걸렀다가는 증권사만 다른 같은 계좌명 행을 못 찾고 insert하다 고유키 위반(500)이 났다. 다르면 아래 충돌 검사가 409로 알린다.
-      const scoped = scopeByAccountName(
+      // 기존 포지션 조회 (없으면 신규 생성) — 같은 종목이어도 다른 계좌 행은 못 보게 증권사·계좌명까지 건다(고유키와 같은 기준).
+      const { data: existing, error: posErr } = await scopeByAccount(
         supabase
           .from('virtual_positions')
           .select('id,code,chat_id,quantity,status,broker_name,account_name')
           .eq('chat_id', chatId)
           .eq('code', code),
+        brokerName,
         accountName
-      )
-      const byBroker = accountName != null ? scoped : brokerName == null ? scoped.is('broker_name', null) : scoped.eq('broker_name', brokerName)
-      const { data: existing, error: posErr } = await byBroker.maybeSingle()
+      ).maybeSingle()
       if (posErr) return res.status(500).json({ error: posErr.message })
       const restoreConflict = findPositionAccountConflict({ mode: 'holdingrestore', existing: existing as any, brokerName, accountName })
       if (restoreConflict) return res.status(409).json({ error: restoreConflict })
@@ -435,6 +449,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           })
           .select('id')
           .single()
+        const insDup = duplicateAccountMessage(insErr)
+        if (insDup) return res.status(409).json({ error: insDup })
         if (insErr) return res.status(500).json({ error: insErr.message })
         positionId = (inserted as any).id
       }
