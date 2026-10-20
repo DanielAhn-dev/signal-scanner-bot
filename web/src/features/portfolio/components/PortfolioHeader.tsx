@@ -1,4 +1,5 @@
 import React from 'react'
+import { Check } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 import EconomicEventBadge from '../../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../../components/SheetHeaderBar'
@@ -28,12 +29,19 @@ function AccountTab({ active, onClick, title, children }: { active: boolean; onC
   )
 }
 
+// 선택 표시는 회색 배경 대신 강조색 글자+체크로 — 회색 띠는 모달 머리말과 비슷해 보였다
 const pickerRowStyle = (active: boolean): React.CSSProperties => ({
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 48, padding: '0 var(--space-3)',
-  border: 'none', borderBottom: '1px solid var(--color-border)', background: active ? 'var(--color-bg-secondary)' : 'transparent',
-  color: 'var(--color-text-primary)', fontWeight: active ? 'var(--font-weight-bold)' : 'normal', fontSize: 'var(--font-size-sm)',
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 48, padding: '0 var(--space-4)',
+  border: 'none', background: 'transparent',
+  color: active ? 'var(--color-brand)' : 'var(--color-text-primary)', fontWeight: active ? 'var(--font-weight-bold)' : 'normal', fontSize: 'var(--font-size-sm)',
   textAlign: 'left', cursor: 'pointer',
 })
+const pickerCount = (count: number, active: boolean) => (
+  <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+    <span className="caption muted">{count}종목</span>
+    <Check size={16} aria-hidden style={{ visibility: active ? 'visible' : 'hidden', color: 'var(--color-brand)' }} />
+  </span>
+)
 
 type PortfolioHeaderProps = {
   aliases: AccountAliases
@@ -235,24 +243,25 @@ export default function PortfolioHeader({
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {selectedFolder && <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: accountDotColor(selectedFolder.key), flexShrink: 0 }} />}
-                  {selectedFolder ? `${folderName(selectedFolder)} (${selectedFolder.count})` : `전부 (${realCount})`}
+                  {selectedFolder ? `${folderName(selectedFolder)} (${selectedFolder.count})` : `모든 계좌 (${realCount})`}
                 </span>
                 <span className="caption muted" style={{ flexShrink: 0 }}>계좌 {accountFolders.length}개 · 고르기</span>
               </button>
             )}
             <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title="계좌 고르기" size="sm">
-              <div role="listbox" aria-label="실제 계좌" style={{ display: 'flex', flexDirection: 'column', maxHeight: '60vh', overflowY: 'auto' }}>
+              {/* 모달 안쪽 여백을 상쇄해 목록을 가장자리까지 채운다(모달 공통 여백은 그대로) */}
+              <div role="listbox" aria-label="실제 계좌" style={{ display: 'flex', flexDirection: 'column', maxHeight: '60vh', overflowY: 'auto', margin: 'calc(-1 * var(--space-4)) calc(-1 * var(--spacing-card-lg)) calc(-1 * var(--spacing-card-lg))' }}>
                 <button
                   type="button"
                   role="option"
                   aria-selected={selectedAccountKey === 'real'}
                   onClick={() => { onSelectAccount('real'); setPickerOpen(false) }}
-                  style={pickerRowStyle(selectedAccountKey === 'real')}
+                  style={{ ...pickerRowStyle(selectedAccountKey === 'real'), borderBottom: '1px solid var(--color-border)' }}
                 >
-                  <span>전부</span><span className="caption muted">{realCount}</span>
+                  <span>모든 계좌</span>{pickerCount(realCount, selectedAccountKey === 'real')}
                 </button>
                 {accountFolders.map((account) => (
-                  <div key={account.key} style={{ display: 'flex', alignItems: 'stretch' }}>
+                  <div key={account.key} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--color-border)', paddingRight: 'var(--space-3)' }}>
                     <button
                       type="button"
                       role="option"
@@ -264,9 +273,9 @@ export default function PortfolioHeader({
                         <span aria-hidden style={{ width: 10, height: 10, borderRadius: '50%', background: accountDotColor(account.key), flexShrink: 0 }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folderName(account)}</span>
                       </span>
-                      <span className="caption muted">{account.count}</span>
+                      {pickerCount(account.count, selectedAccountKey === account.key)}
                     </button>
-                    <Button variant="secondary" size="sm" onClick={() => { setPickerOpen(false); openRename(account.key) }}>이름</Button>
+                    <Button variant="ghost" size="sm" style={{ flexShrink: 0 }} onClick={() => { setPickerOpen(false); openRename(account.key) }}>수정</Button>
                   </div>
                 ))}
               </div>
