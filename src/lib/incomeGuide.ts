@@ -145,9 +145,14 @@ export function classifyHolding(code: string, name: string | null | undefined, p
   return "other_etf";
 }
 
-/** ISA·연금·IRP처럼 분배금·해외 ETF 과세가 미뤄지거나 줄어드는 계좌인지 (계좌 이름으로 판별) */
+/**
+ * ISA·연금·IRP처럼 분배금·해외 ETF 과세가 미뤄지거나 줄어드는 계좌인지 (계좌 이름으로 판별).
+ * 사용자가 고른 종류는 이름 끝 "(ISA)"·"(일반)"처럼 붙는다(src/lib/guideAccountScope.ts labelWithKind) — 일반·CMA로 고른 계좌는 이름에 연금이 있어도 아니다.
+ */
 export function isTaxAdvantagedAccount(label: string | null | undefined): boolean {
-  return /ISA|연금|IRP|퇴직/i.test(String(label ?? ""));
+  const s = String(label ?? "");
+  if (/\((일반|CMA)\)$/.test(s)) return false;
+  return /ISA|연금|IRP|퇴직/i.test(s);
 }
 
 export type IncomeGuideSettings = {

@@ -1,6 +1,6 @@
 /**
  * 리밸런싱 가이드 저장·조회 — 웹 경로(handlers/ui/income-guide.ts)와 월 자동 기록 배치(scripts/income_guide_monthly.ts)가 같이 쓴다.
- * 파일: market-snapshots/income-guide/{chatId}.json = { settings, history }
+ * 파일: market-snapshots/income-guide/{chatId}.json = { settings, history, receipts, adherenceExcluded, accounts }
  * 계좌 보유 = virtual_positions 중 증권사·계좌명이 있는 행("계좌/보유 추가"로 입력). 봇 가상 계좌는 넣지 않는다.
  */
 import { fetchRealtimePriceBatch, type RealtimeStockData } from "../utils/fetchRealtimePrice";
@@ -8,6 +8,7 @@ import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
 import { selectPaged } from "./supabasePaging";
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import { sanitizeReceipts, type DistributionReceipt } from "../lib/distributionReceipts";
+import { sanitizeAccountGuideMap, type AccountGuideMap } from "../lib/guideAccountScope";
 import { overseasPctOfMix, readInvestPlan, type MixEntry } from "./userPlan";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
@@ -28,6 +29,8 @@ export type GuideFile = {
   receipts?: DistributionReceipt[];
   /** 가이드 따름 판정에서 사용자가 뺀 항목 키(입력 실수 등, src/lib/guideAdherence.ts) */
   adherenceExcluded?: string[];
+  /** 계좌별 종류·목표·월 넣는 돈·점검 기록 (src/lib/guideAccountScope.ts). 키는 accountKey("증권사|계좌") */
+  accounts?: AccountGuideMap;
 };
 
 const pathOf = (chatId: string | number) => `${DIR}/${chatId}.json`;
@@ -37,10 +40,12 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
   const { data, error } = await supabase.storage.from(BUCKET).download(pathOf(chatId), { cacheNonce: String(Date.now()) });
   if (error || !data) return null;
   try {
-    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown; adherenceExcluded?: unknown };
+    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown; adherenceExcluded?: unknown; accounts?: unknown };
     if (!parsed.settings) return null;
+    const settings = sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS);
     return {
-      settings: sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS),
+      settings,
+      accounts: sanitizeAccountGuideMap(parsed.accounts, settings),
       history: Array.isArray(parsed.history) ? parsed.history : [],
       receipts: sanitizeReceipts(parsed.receipts),
       adherenceExcluded: Array.isArray(parsed.adherenceExcluded) ? parsed.adherenceExcluded.map(String).slice(-500) : [],
