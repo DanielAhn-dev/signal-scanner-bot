@@ -431,6 +431,7 @@ function TaxShelterCard() {
     <section className="acc-card">
       <h2>연금저축·IRP에 넣으면 돌려받는 돈</h2>
       <p className="acc-note"><strong>넣는 순간 연말정산에서 세금을 돌려받습니다</strong>. 단 연금으로 받기 전에 꺼내면 환급받은 세금(기타소득세 {(EARLY_WITHDRAWAL_TAX_RATE * 100).toFixed(1)}%)을 다시 내므로 오래 묶어 둘 돈만 넣으세요.</p>
+      <More label="왜 확실한가"><p className="acc-note">투자 수익과 별개인 혜택이고, 같은 돈을 일반 계좌에 두면 없는 혜택이라 가장 확실한 수익입니다.</p></More>
       <div className="acc-row">
         <label className="acc-field">
           <span>내 소득 구간</span>
