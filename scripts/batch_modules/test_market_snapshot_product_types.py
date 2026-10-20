@@ -36,6 +36,19 @@ class ProductTypeTest(unittest.TestCase):
         self.assertIsNone(etf_tax_class_for(None))
         self.assertIsNone(etf_tax_class_for(8))
 
+    def test_domestic_tab_leverage_is_other(self):
+        # 네이버는 단일종목·업종 레버리지를 2(국내 업종)에 둔다 — 파생형이라 기타 ETF
+        self.assertEqual(etf_tax_class_for(2, "KODEX 삼성전자단일종목레버리지"), "other")
+        self.assertEqual(etf_tax_class_for(2, "SOL SK하이닉스선물단일종목인버스2X"), "other")
+        self.assertEqual(etf_tax_class_for(2, "HANARO 26-12 은행채(AA+이상)액티브"), "other")
+        self.assertEqual(etf_tax_class_for(2, "KODEX 인도Nifty미드캡100"), "other")
+        self.assertEqual(etf_tax_class_for(1, "KODEX 삼성전자채권혼합"), "other")
+        # 국내 종목 ETF 이름의 "글로벌"·"다우존스"는 해외가 아니다
+        self.assertEqual(etf_tax_class_for(1, "KODEX 코스닥글로벌"), "domestic_equity")
+        self.assertEqual(etf_tax_class_for(2, "TIGER 코리아배당다우존스"), "domestic_equity")
+        self.assertEqual(etf_tax_class_for(2, "KODEX 반도체"), "domestic_equity")
+        self.assertEqual(etf_tax_class_for(1, "KODEX 200TR"), "domestic_equity")
+
     def test_parse_etf_categories(self):
         payload = {"result": {"etfItemList": [
             {"itemcode": "069500", "etfTabCode": 1},

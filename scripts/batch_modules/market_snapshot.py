@@ -19,6 +19,7 @@ import csv
 import gzip
 import io
 import json
+import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -38,6 +39,9 @@ PRODUCT_TYPES = ("stock", "etf", "etn")
 # etfTabCode 1 국내 시장지수 · 2 국내 업종/테마 → 국내주식형(매매차익 비과세).
 # 3 국내 파생 · 4 해외 주식 · 5 원자재 · 6 채권 · 7 기타 → 기타 ETF(매매차익 배당소득세 15.4%)
 DOMESTIC_EQUITY_ETF_CATEGORIES = (1, 2)
+# 1·2 탭에 섞인 국내주식형이 아닌 상품 — 파생형(레버리지·인버스·선물)·채권·채권혼합·이름에 나라가 분명한 해외 ETF.
+# "글로벌"·"다우존스"·"중국"은 국내 종목 ETF 이름에도 쓰여(코스닥글로벌·코리아배당다우존스·중국소비테마) 넣지 않는다.
+NOT_DOMESTIC_EQUITY_NAME = re.compile(r"(레버리지|인버스|선물|채권|은행채|금융채|국채|미국|인도|일본|베트남)")
 PRODUCT_TYPE_RPC_BATCH = 500
 
 
@@ -154,9 +158,16 @@ def normalize_product_type(raw) -> str | None:
     return s if s in PRODUCT_TYPES else "other"
 
 
-def etf_tax_class_for(category) -> str | None:
-    """etfTabCode → etf_tax_class. 1~7 밖이면 None."""
+def etf_tax_class_for(category, name: str = "") -> str | None:
+    """etfTabCode(+이름) → etf_tax_class. 1~7 밖이면 None.
+
+    네이버는 단일종목·업종 레버리지·인버스(예: KODEX 삼성전자단일종목레버리지)와 일부 채권·해외 ETF
+    (HANARO 은행채·KODEX 인도Nifty미드캡100·KODEX 삼성전자채권혼합)를 1·2(국내)에 둔다. 세법상 기타 ETF라
+    이름으로 골라 other로 돌린다(2026-10-20 1,176종 대조, 31종).
+    """
     if category in DOMESTIC_EQUITY_ETF_CATEGORIES:
+        if NOT_DOMESTIC_EQUITY_NAME.search(str(name or "")):
+            return "other"
         return "domestic_equity"
     if isinstance(category, int) and 3 <= category <= 7:
         return "other"
@@ -231,7 +242,7 @@ def build_product_type_rows(snapshot_rows: list[dict], etf_categories: dict[str,
             "code": code,
             "product_type": product_type,
             "etf_category": category,
-            "etf_tax_class": etf_tax_class_for(category),
+            "etf_tax_class": etf_tax_class_for(category, r.get("name") or ""),
         })
     return out, skipped
 
