@@ -507,22 +507,17 @@ export default function IncomeGuidePage() {
   const acct = view.account ?? null
   const accountPicker = accountList.length > 0 && (
     <>
-      <div className="ig-accounts" role="group" aria-label="리밸런싱할 계좌">
-        {accountList.map((a) => (
-          <button key={a.key} type="button" disabled={busy} className={accountSel === a.key ? 'is-active' : ''} aria-pressed={accountSel === a.key} onClick={() => void switchAccount(a.key)}>
-            <span>{a.label}</span>
-            <small>
-              {KIND_LABEL[a.kind]} · {man(a.total)}
-              {a.ownTargets ? ' · 전용 목표' : ''}
-            </small>
-          </button>
-        ))}
-        {accountList.length > 1 && (
-          <button type="button" disabled={busy} className={`is-all${accountSel === ALL ? ' is-active' : ''}`} aria-pressed={accountSel === ALL} onClick={() => void switchAccount(ALL)}>
-            <span>전체 합산</span>
-            <small>참고용</small>
-          </button>
-        )}
+      <div className="ig-account-pick">
+        <label htmlFor="ig-account-select">리밸런싱할 계좌</label>
+        <select id="ig-account-select" value={accountSel} disabled={busy} onChange={(e) => void switchAccount(e.target.value)}>
+          {/* 포트폴리오 실제 계좌 탭과 같은 순서(증권사·계좌 이름 순) */}
+          {[...accountList].sort((x, y) => x.label.localeCompare(y.label, 'ko')).map((a) => (
+            <option key={a.key} value={a.key}>
+              {a.label} · {KIND_LABEL[a.kind]} · {man(a.total)}{a.ownTargets ? ' · 전용 목표' : ''}
+            </option>
+          ))}
+          {accountList.length > 1 && <option value={ALL}>전체 합산 (참고용)</option>}
+        </select>
       </div>
       {acct ? (
         <div style={{ ...box, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
