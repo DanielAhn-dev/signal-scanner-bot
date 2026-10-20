@@ -86,8 +86,8 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
   if (r.market) {
     const m = r.market
     const text = m.drawdown
-      ? `코스피 ${e(m.asOf)} 기준 최근 60거래일 고점 대비 <b>${pct(m.fromHighPct)}</b>(전일 대비 ${pct(m.changePct)}). 하락 구간에서 손실 종목을 팔면 손실이 확정되고 반등을 놓칩니다. 이 리포트의 매도는 <b>평단 이상(수익 구간) 종목만</b>입니다.${r.conditionals.length ? ' 손실 구간이라 미룬 종목은 5번 가격 조건부 목록에 있습니다.' : ''}`
-      : `코스피 ${e(m.asOf)} 기준 최근 60거래일 고점 대비 ${pct(m.fromHighPct)}(전일 대비 ${pct(m.changePct)}). 매도는 평단 이상(수익 구간) 종목만 다룹니다.`
+      ? `코스피 ${e(m.asOf)} 기준 최근 60거래일 고점 대비 <b>${pct(m.fromHighPct)}</b>(전일 대비 ${pct(m.changePct)}). 하락 구간이라도 계획은 그대로입니다. ETF끼리 옮기는 것은 이득이 작아 급하지 않으니 <b>평단 이상일 때만</b> 하고${r.conditionals.length ? ', 손실 구간이라 미룬 것은 5번 가격 조건부 목록에 있습니다' : ''}. 평단 −15% 이하 개별주는 예외로 지금 지수로 옮깁니다 — 같은 날 지수를 사므로 시장에서 빠져나오는 것이 아닙니다.`
+      : `코스피 ${e(m.asOf)} 기준 최근 60거래일 고점 대비 ${pct(m.fromHighPct)}(전일 대비 ${pct(m.changePct)}). ETF끼리 옮기기는 평단 이상일 때만, 평단 −15% 이하 개별주는 지금 지수로 옮깁니다.`
     parts.push(`<div class="${m.drawdown ? 'rb-alert' : 'rb-headline'}">${text}</div>`)
   }
 
@@ -122,11 +122,11 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
         <td class="rb-l">${e(s.reason)}</td></tr>`)
       .join('')
     const total = r.sells.reduce((s, x) => s + x.net, 0)
-    parts.push(section('3. 지금 팔 것 (수익 구간만)', `
-      <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>현재가</th><th>금액</th><th>확정 손익</th><th>비용</th><th>월 분배금 변화</th><th>옮길 곳</th><th>이유</th></tr></thead><tbody>${rows}</tbody></table></div>
+    parts.push(section('3. 지금 팔 것', `
+      <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>현재가</th><th>금액</th><th>실현 손익</th><th>비용</th><th>월 분배금 변화</th><th>옮길 곳</th><th>이유</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="rb-muted">비용을 뺀 매도 대금 합계 약 ${money(total)}.${r.sells.some((s) => s.paysDistribution) ? ' 분배금이 나오는 종목은 분배락일 직전이면 분배금을 받은 뒤 팝니다.' : ''}</p>`))
   } else {
-    parts.push(section('3. 지금 팔 것 (수익 구간만)', `<p>지금 수익 구간에서 정리할 종목은 없습니다.${r.rows.some((x) => x.pnlPct != null && x.pnlPct < 0) ? ' 손실 종목은 팔지 않고,' : ''} 새 돈과 분배금 방향만 바꿉니다.</p>`))
+    parts.push(section('3. 지금 팔 것', `<p>지금 정리할 종목은 없습니다.${r.rows.some((x) => x.pnlPct != null && x.pnlPct < 0) ? ' 손실 ETF는 팔지 않고,' : ''} 새 돈과 분배금 방향만 바꿉니다.</p>`))
   }
 
   // 4. 살 것
@@ -205,7 +205,7 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
     title: `리밸런싱 가이드 · ${a.label}`,
     topic: '리밸런싱',
     sourceLabel: `${r.today} 기준 · 생성 ${generatedAt} · 실계좌 입력 보유 기준`,
-    description: '실계좌 리밸런싱 가이드 — 수익 구간 정리, 분배금 통합, 지수로 옮기는 순서',
+    description: '실계좌 리밸런싱 가이드 — 수익 구간 정리, 손실 개별주 지수로, 분배금 통합, 지수로 옮기는 순서',
     contentHtml: parts.join('\n'),
   })
 }

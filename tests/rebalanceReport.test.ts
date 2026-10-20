@@ -79,10 +79,35 @@ test("월 인컴 목표를 넘었거나 커버드콜이 인컴의 1/3을 넘으�
   assert.ok(r.income.lines.some((s) => s.includes("C48")), "하락장 인컴 매수 근거를 함께 보여 준다");
 });
 
-test("코스피 하락 구간이면 헤드라인에 손실 종목 보유를 밝힌다", () => {
+test("코스피 하락 구간이면 헤드라인에 손실 ETF 보유를 밝힌다", () => {
   const r = reportFor([H("069500", "KODEX 200", 50_000, 50, 55_000)], {}, "a", { asOf: "2026-10-15", changePct: -1.2, fromHighPct: -14.3 });
   assert.ok(r.market?.drawdown);
-  assert.match(r.headline, /손실 종목은 팔지 않습니다/);
+  assert.match(r.headline, /손실 ETF는 팔지 않습니다/);
+});
+
+test("개별주 평단 −15% 이하는 하락 구간에도 지금 전량 지수로 (C69), −15%보다 덜 빠졌으면 +20% 조건부 그대로", () => {
+  const r = reportFor([
+    H("278530", "KODEX 200TR", 15_000, 100, 14_000),
+    H("005930", "삼성전자", 40_000, 10, 50_000), // −20%
+    H("000660", "SK하이닉스", 90_000, 4, 100_000), // −10%
+  ], {}, "a", { asOf: "2026-10-15", changePct: -1.2, fromHighPct: -14.3 });
+  const sell = r.sells.find((s) => s.code === "005930")!;
+  assert.equal(sell.shares, 10, "전량");
+  assert.equal(sell.to?.code, "278530");
+  assert.ok(sell.realizedGain < 0);
+  assert.match(sell.reason, /C69/);
+  assert.equal(r.rows.find((x) => x.code === "005930")!.action, "sell");
+  assert.ok(!r.sells.some((s) => s.code === "000660"));
+  assert.ok(r.conditionals.some((c) => c.code === "000660"));
+  assert.match(r.headline, /손실 개별주 1건 지수로/);
+  assert.match(r.headline, /손실 ETF는 팔지 않습니다/, "하이닉스(−10%)는 남으니 손실 보유가 있다");
+  const step = r.steps.find((s) => s.startsWith("평단 −15% 이하 개별주는 지수로"))!;
+  assert.match(step, /삼성전자 10주/);
+  assert.match(step, /다른 종목으로 갈아타지 않고/);
+  assert.ok(!r.steps.some((s) => s.startsWith("수익 구간 종목부터")), "수익 구간 매도가 없으면 그 줄도 없다");
+  const html = renderRebalanceReportHtml(r, "2026-10-15 10:00");
+  assert.ok(!html.includes("손실이 확정"), "손실 확정이라는 말은 쓰지 않는다");
+  assert.match(html, /평단 −15% 이하 개별주는 예외로 지금 지수로/);
 });
 
 test("다른 계좌 종목은 리포트에 넣지 않고, 살 곳도 같은 계좌에서 찾는다", () => {

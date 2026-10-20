@@ -5,8 +5,11 @@
  * 목표·인컴 하한은 계좌 하나가 아니라 전체 실계좌 기준이다(buildIncomeGuideView·buildRebalancePlan을 그대로 받는다).
  * 여기서는 고른 계좌의 종목만 골라 판정한다 — 매도 대금은 그 계좌 안에서만 쓸 수 있으므로 살 곳도 같은 계좌에서 찾는다.
  *
- * 매도 원칙: 평단 이상(수익 구간)일 때만 판다. 같은 이유로 팔 종목이 손실 구간이면 "평단 회복 시 정리" 조건부 목록에 둔다.
+ * 매도 원칙: ETF끼리 옮기는 것(합치기·커버드콜 일부·같은 지수 상품)은 평단 이상일 때만 한다. 이득(보수·겹침 차이)이 작아 급하지 않으므로
+ *   손실 구간이면 "평단 회복 시" 조건부 목록에 둔다.
  *   - 개별주 평단 대비 +20%면 절반을 지수로 (C54, 실계좌 카드와 같은 규칙)
+ *   - 개별주 평단 대비 −15% 이하면 지금 전량 지수로 (C69, 실계좌 카드와 같은 규칙). 손실 구간 예외 — 계속 보유보다 1년 뒤 중앙 22%p 덜 남았고
+ *     평단 회복을 기다리면 큰 손실 꼬리가 남았다. 같은 날 지수를 사므로 시장 노출은 그대로다.
  *   - 겹치는 인컴 종목 합치기 (rebalancePlan merges — 같은 계좌·같은 지역·같은 바구니)
  *   - 커버드콜 일부를 지수로 (rebalancePlan trim — 월 인컴 하한을 지키는 최대치, hold 모드면 없음)
  * 근거 문장은 판정 등록부(docs/investment-idea-registry-2026-10-07.md)의 C48·C54와 블로그 3편 수치만 쓴다.
@@ -22,7 +25,7 @@ export const SELL_FEE_RATE = 0.00015;
 const DISTRIBUTION_TAX = 0.154;
 /** 개별주 평단 대비 이만큼 오르면 절반을 지수로 (C54) */
 export const STOCK_TRIM_PCT = 20;
-/** 개별주 손실이 이보다 크면 추가매수 멈춤 (satelliteGuard와 같은 값) */
+/** 개별주 손실이 이 이하면 지수로 옮긴다 (C69, holdingAction·satelliteGuard와 같은 값) */
 export const STOCK_LOSS_STOP_PCT = -15;
 /** 커버드콜은 인컴의 1/3 이하 (holdingAction과 같은 값) */
 export const COVERED_CALL_MAX_SHARE_PCT = 100 / 3;
@@ -323,10 +326,18 @@ export function buildRebalanceReport(input: {
     if (p >= STOCK_TRIM_PCT) {
       pushSell(h, half, `개별주 평단 대비 ${signedPct(p)} — 절반을 지수로 (C54). 이미 한 번 절반을 판 종목이면 건너뜁니다.`, buyTarget);
       sellNote.set(h.code, `절반(${half}주) 팔아 지수로`);
-    } else if (p >= STOCK_LOSS_STOP_PCT) {
+    } else if (p > STOCK_LOSS_STOP_PCT) {
       const trigger = Math.ceil(h.avgPrice * (1 + STOCK_TRIM_PCT / 100));
       conditionals.push({ code: h.code, name: h.name, triggerPrice: trigger, price: h.price, shares: half, reason: `평단 +${STOCK_TRIM_PCT}%에 처음 닿으면 절반을 지수로 (C54)` });
     }
+  }
+  // ①-2 개별주 평단 −15% 이하는 지금 전량 지수로 (C69) — 다른 종목이 아니라 지수로, 같은 날 사므로 시장 노출은 그대로
+  for (const h of held) {
+    if (h.bucket !== "stock" || !h.avgPrice || sellNote.has(h.code)) continue;
+    const p = (h.price / h.avgPrice - 1) * 100;
+    if (p > STOCK_LOSS_STOP_PCT || h.quantity <= 0) continue;
+    pushSell(h, h.quantity, `개별주 평단 대비 ${signedPct(p)} — 지수로 옮기기 (C69: 계속 보유보다 1년 뒤 대개 더 남았고 큰 추가 손실이 적었다). 줄어든 돈은 이미 평가금에 들어 있어 팔아도 시드는 비용만큼만 줄어듭니다.`, buyTarget);
+    sellNote.set(h.code, `손실 ${signedPct(p)} — 전량 지수로 옮기기 (C69)`);
   }
 
   // ② 겹치는 인컴 합치기 — 이 계좌 것만, 수익 구간이면 지금, 손실 구간이면 평단 회복 시
@@ -441,9 +452,6 @@ export function buildRebalanceReport(input: {
       } else if (h.group === "income" && stopReasons.length > 0) {
         action = "stop-add";
         actionText = pnlPct != null && pnlPct < 0 ? "손실 구간 — 팔지 않고, 더 사지도 않습니다" : "더 사지 않습니다 (분배금은 지수로)";
-      } else if (h.bucket === "stock" && pnlPct != null && pnlPct <= STOCK_LOSS_STOP_PCT) {
-        action = "stop-add";
-        actionText = `손실 ${signedPct(pnlPct)} — 물타기 금지, 더 사지 않습니다`;
       } else if (h.bucket === "leveraged") {
         action = "stop-add";
         actionText = "레버리지는 세후 이득이 없어 더 사지 않습니다";
@@ -525,7 +533,12 @@ export function buildRebalanceReport(input: {
   const idleRow = plan?.idleCash?.accounts.find((a) => a.accountKey === acc.key) ?? null;
   const fromCash = buyTarget ? Math.max(0, idleRow?.spendable ?? 0) : 0;
   const buyShares = buyTarget && buyTarget.price > 0 ? Math.floor((fromSells + fromCash) / buyTarget.price) : 0;
-  const hasLoss = rows.some((r) => r.pnlPct != null && r.pnlPct < 0);
+  // 지금 팔지 않고 두는 손실 종목(ETF 등) — 지수로 옮기는 손실 개별주는 빼고 센다
+  const hasLoss = rows.some((r) => r.pnlPct != null && r.pnlPct < 0 && r.action !== "sell");
+  // 손실 개별주를 지수로 옮기는 매도(C69)와 수익 구간 매도를 나눠 말한다
+  const lossStockCodes = new Set(held.filter((h) => h.bucket === "stock" && h.avgPrice && (h.price / h.avgPrice - 1) * 100 <= STOCK_LOSS_STOP_PCT).map((h) => h.code));
+  const lossStockSells = sells.filter((x) => lossStockCodes.has(x.code));
+  const profitSells = sells.filter((x) => !lossStockCodes.has(x.code));
   // hold 현금 목표를 채우는 중이면 분배금·새 돈은 지수가 아니라 현금으로 (할 일 화면과 같은 규칙)
   const cashRule = plan?.cash ?? null;
   const fillingCash = cashRule?.state === "filling" && cashRule.amount > 0;
@@ -533,9 +546,10 @@ export function buildRebalanceReport(input: {
   // 맨 위 한 줄
   const parts: string[] = [];
   if (market?.drawdown)
-    parts.push(`코스피가 최근 고점 대비 ${market.fromHighPct.toFixed(1)}%인 하락 구간${hasLoss ? " — 손실 종목은 팔지 않습니다" : ""}`);
-  if (sells.length) parts.push(`수익 구간 ${sells.length}건 정리 → ${buyTarget ? buyTarget.name : "지수"}`);
-  else parts.push("지금 팔 종목은 없습니다(수익 구간에 정리 대상 없음)");
+    parts.push(`코스피가 최근 고점 대비 ${market.fromHighPct.toFixed(1)}%인 하락 구간${hasLoss ? " — 손실 ETF는 팔지 않습니다" : ""}`);
+  if (lossStockSells.length) parts.push(`손실 개별주 ${lossStockSells.length}건 지수로`);
+  if (profitSells.length) parts.push(`수익 구간 ${profitSells.length}건 정리 → ${buyTarget ? buyTarget.name : "지수"}`);
+  else if (!lossStockSells.length) parts.push("지금 팔 종목은 없습니다(수익 구간에 정리 대상 없음)");
   if (conditionals.length) parts.push(`가격 조건부 ${conditionals.length}건 대기`);
   if (stopReasons.length && incomeValue > 0) parts.push("인컴 추가매수 멈춤");
   if (fillingCash) parts.push(`현금 목표 ${cashRule!.targetPct.toFixed(0)}%까지 분배금은 현금으로`);
@@ -552,7 +566,10 @@ export function buildRebalanceReport(input: {
     const dist = sells.filter((x) => x.paysDistribution);
     if (dist.length) extra.push(`${dist.map((x) => x.name).join(", ")}은 분배금이 나오는 종목이라, 분배락일 직전이면 분배금을 받은 뒤 팝니다.`);
     if (sellAmount < Math.max(100_000, total * 0.005)) extra.push(`금액이 ${money(sellAmount)}으로 작아 급하지 않습니다. 다음 점검 때 함께 처리해도 됩니다.`);
-    steps.push(`수익 구간 종목부터 팝니다: ${sells.map((x) => `${x.name} ${x.shares.toLocaleString("ko-KR")}주(${money(x.amount)})`).join(", ")}.${extra.length ? ` ${extra.join(" ")}` : ""}`);
+    const list = (xs: ReportSell[]) => xs.map((x) => `${x.name} ${x.shares.toLocaleString("ko-KR")}주(${money(x.amount)})`).join(", ");
+    if (profitSells.length) steps.push(`수익 구간 종목부터 팝니다: ${list(profitSells)}.${extra.length && !lossStockSells.length ? ` ${extra.join(" ")}` : ""}`);
+    if (lossStockSells.length)
+      steps.push(`평단 −${Math.abs(STOCK_LOSS_STOP_PCT)}% 이하 개별주는 지수로 옮깁니다: ${list(lossStockSells)}. 같은 날 지수를 사므로 하락장에 팔고 반등을 놓치는 것과 다릅니다. 다른 종목으로 갈아타지 않고, 옮긴 뒤 다시 사려고 기다리지 않습니다. 한 번에 옮기는 게 평균으로는 낫지만, 마음이 힘들면 2~3달에 나눠도 됩니다.${extra.length ? ` ${extra.join(" ")}` : ""}`);
     // 옮길 곳별로 묶는다 — 합치기 대금은 남길 인컴 종목으로, 나머지는 지수로
     const byDest = new Map<string, { name: string; price: number; net: number; cash: number }>();
     for (const x of sells) {

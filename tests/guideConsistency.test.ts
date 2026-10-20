@@ -83,8 +83,8 @@ for (const c of cases()) {
       const idle = plan.idleCash?.accounts.find((a) => a.accountKey === accountKey);
       if (idle && report.buy.target) assert.equal(report.buy.fromCash, Math.max(0, idle.spendable), `${where} 예수금 사용액이 할 일과 다르다`);
 
-      // 3) 리포트가 판다고 한 종목은 수익 구간이어야 한다 (하락 구간 "손실 종목은 팔지 않습니다")
-      for (const s of report.sells) assert.ok(s.realizedGain >= 0, `${where} 손실 종목 매도 안내: ${s.name}`);
+      // 3) 리포트가 판다고 한 종목은 수익 구간이어야 한다 — 예외는 평단 −15% 이하 개별주를 지수로 옮기기(C69, 종목 카드와 같은 말)
+      for (const s of report.sells) assert.ok(s.realizedGain >= 0 || /C69/.test(s.reason), `${where} 손실 종목 매도 안내: ${s.name}`);
 
       // 4) 가이드가 "지금 옮기는 것이 좋다"고 하면 리포트 마지막 단계도 벗어남을 말한다 (반대도 마찬가지)
       const last = report.steps[report.steps.length - 1];

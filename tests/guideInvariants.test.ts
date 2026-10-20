@@ -154,7 +154,13 @@ test(`무작위 계좌 ${N}개: 가이드·할 일·리포트 불변 성질`, ()
         if (s.shares <= 0) fail(`${where} 0주 매도 ${s.name}`);
         if (s.shares > (qtyOf.get(`${acc.label}|${s.code}`) ?? 0)) fail(`${where} 보유보다 많이 매도 ${s.name}`);
         if (s.net > s.amount) fail(`${where} 손에 남는 돈이 매도 금액보다 큼 ${s.name}`);
-        if (market.fromHighPct <= -10 && s.realizedGain < 0) fail(`${where} 하락 구간 손실 종목 매도 ${s.name}`);
+        // 손실 매도는 평단 −15% 이하 개별주를 지수로 옮기는 것(C69)뿐 — 하락 구간이어도 같다. 다른 종목·인컴으로 옮기지 않는다
+        if (s.realizedGain < 0) {
+          const row = report.rows.find((x) => x.code === s.code)
+          const lossPct = row?.avgPrice ? (s.price / row.avgPrice - 1) * 100 : null
+          if (!/C69/.test(s.reason) || lossPct == null || lossPct > -15) fail(`${where} C69가 아닌 손실 종목 매도 ${s.name}`);
+          if ((s.to?.code ?? null) !== (report.buy.target?.code ?? null)) fail(`${where} 손실 개별주를 지수 아닌 곳으로 ${s.name}→${s.to?.name}`);
+        }
       }
       for (const c of report.conditionals) {
         if (c.triggerPrice <= c.price) fail(`${where} 이미 닿은 조건부 ${c.name} ${c.triggerPrice}≤${c.price}`);
