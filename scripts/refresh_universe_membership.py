@@ -249,6 +249,28 @@ def _get_market_cap_with_retry(trading_date: str, market: str, max_back_days: in
     return None
 
 
+def known_stock_name(code: str, raw) -> Optional[str]:
+    """조회한 종목명이 쓸 만하면 그 이름, 아니면 None(모름).
+
+    pykrx get_market_ticker_name은 실패하면 예외 대신 빈 값·DataFrame을 돌려주기도 하고,
+    예전 실행이 이름 대신 코드를 써 둔 행(2026-10-20 473개)도 있어 코드와 같은 이름은 모름으로 본다.
+    """
+    if not isinstance(raw, str):
+        return None
+    name = raw.strip()
+    if not name or name == str(code).strip():
+        return None
+    return name
+
+
+def resolve_stock_name(code: str, fetched: Optional[str], prev_name) -> str:
+    """upsert에 쓸 이름 — 조회 실패를 값으로 쓰지 않는다: 새 이름 > 기존 이름 > (둘 다 없을 때만) 코드.
+
+    name은 NOT NULL이라 처음 보는 종목은 코드라도 넣지만, 이미 이름이 있는 행은 덮지 않는다.
+    """
+    return known_stock_name(code, fetched) or known_stock_name(code, prev_name) or str(code)
+
+
 def load_market_frames(trading_date: str) -> Tuple[pd.DataFrame, Dict[str, str], Dict[str, str]]:
     market_tickers = {
         "KOSPI": stock.get_market_ticker_list(trading_date, market="KOSPI"),
@@ -261,9 +283,12 @@ def load_market_frames(trading_date: str) -> Tuple[pd.DataFrame, Dict[str, str],
         for code in tickers:
             market_by_code[code] = market
             try:
-                name_by_code[code] = stock.get_market_ticker_name(code)
+                name = known_stock_name(code, stock.get_market_ticker_name(code))
             except Exception:
-                name_by_code[code] = code
+                name = None
+            # 이름을 못 받으면 비워 둔다 — 코드를 넣으면 upsert가 기존 이름을 코드로 덮었다
+            if name:
+                name_by_code[code] = name
 
     cap_frames: List[pd.DataFrame] = []
     for market in ("KOSPI", "KOSDAQ"):
@@ -313,7 +338,9 @@ def load_market_frame_from_db(supabase: Client) -> Tuple[pd.DataFrame, Dict[str,
         code = str(row.get("code") or "").strip()
         if not code:
             continue
-        name_by_code[code] = str(row.get("name") or code)
+        name = known_stock_name(code, row.get("name"))
+        if name:
+            name_by_code[code] = name
         market_by_code[code] = str(row.get("market") or "")
         normalized.append(
             {
@@ -679,7 +706,7 @@ def main() -> int:
             mcap = int(row.get("시가총액") or 0)
             value = row.get("거래대금")
             liquidity = int(value) if pd.notnull(value) else None
-            name = name_by_code.get(code, prev.get("name") or code)
+            name = resolve_stock_name(code, name_by_code.get(code), prev.get("name"))
             market = market_by_code.get(code) or prev.get("market")
             eligible = is_eligible_candidate(
                 code=code,
