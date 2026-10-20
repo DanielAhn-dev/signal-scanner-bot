@@ -199,10 +199,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 지난 기록의 종목(지금은 판 종목 포함)과 지난 안내 상품도 시세를 받아 "가만히 뒀다면"·"안내대로였다면"을 계산한다
     const allHistories = [file.history ?? [], ...Object.values(accountsMap).map((a) => a.history ?? [])]
     const pastCodes = allHistories.flat().flatMap((h) => [...(h.holdings ?? []).map((x) => x.code), ...(h.advice?.buy ?? []).map((x) => x.code)])
-    const { prices, realtimeHits } = await fetchGuidePrices(supabase, [...rows.map((r) => r.code), ...pastCodes])
+    // 사용자 상태(포트폴리오 계좌 별칭·이번 달 월입금)는 시세와 같이 받는다
+    const [{ prices, realtimeHits }, userState] = await Promise.all([
+      fetchGuidePrices(supabase, [...rows.map((r) => r.code), ...pastCodes]),
+      readOwnUserState(supabase, user).catch(() => null),
+    ])
     const converted = toGuideHoldings(rows, prices, realtimeHits)
-    // 고른 계좌 종류를 이름에 반영 — 절세 판정이 이름 대신 고른 종류를 따른다
-    const allHoldings = applyAccountKinds(converted.holdings, accountsMap)
+    // 계좌 이름은 포트폴리오 별칭 + 고른 계좌 종류 — 절세 판정이 이름 대신 고른 종류를 따른다
+    const aliases = (userState?.accountAliases?.value as { aliases?: Record<string, unknown> } | null | undefined)?.aliases
+    const allHoldings = applyAccountKinds(converted.holdings, accountsMap, aliases)
     const accountList = listGuideAccounts(allHoldings, accountsMap, file.settings.cashByAccount)
     // 계좌별 보기면 그 계좌만, 아니면 전체
     const accountKey = requested ? resolveGuideAccount(requested, accountList) : null
@@ -250,7 +255,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 이번 달 월입금 — 모아가기 '이번 달 넣었어요' 체크인(user-state 'accumulate'.deposits). 받은 분배금이 있을 때만 읽는다
     let deposit: number | null = 0
     if (monthSummary(receipts, month).net > 0) {
-      const state = await readOwnUserState(supabase, user).catch(() => null)
+      const state = userState
       const deposits = (state?.accumulate?.value as { deposits?: Array<[string, number]> } | null | undefined)?.deposits
       deposit = state == null ? null : Number((Array.isArray(deposits) ? deposits : []).find((d) => Array.isArray(d) && d[0] === month)?.[1]) || 0
     }

@@ -148,11 +148,28 @@ export type GuideAccountOption = {
   kindChosen: boolean;
 };
 
-/** 보유 행의 계좌 이름에 고른 종류를 반영 (labelWithKind) — toGuideHoldings 바로 뒤에 부른다 */
-export function applyAccountKinds<T extends { accountKey: string; accountLabel: string }>(holdings: T[], accounts: AccountGuideMap): T[] {
+/** 포트폴리오에서 바꾼 계좌 별칭(user-state 'accountAliases'.aliases) — 키는 "증권사|||계좌명"이라 accountKey로 바꿔 찾는다 */
+export function aliasOf(aliases: Record<string, unknown> | null | undefined, accountKey: string): string | null {
+  const [broker, ...rest] = accountKey.split("|");
+  const v = aliases?.[`${broker}|||${rest.join("|")}`];
+  return typeof v === "string" && v.trim() ? v.trim().slice(0, 40) : null;
+}
+
+/**
+ * 보유 행의 계좌 이름 = 포트폴리오 별칭(있으면) + 고른 종류(labelWithKind) — toGuideHoldings 바로 뒤에 부른다.
+ * 2026-10-20 별칭이 '인컴계좌(일반)' → '카카오 / 일반'처럼 바뀌어도 가이드가 옛 이름을 보였다.
+ * 종류를 고르지 않았으면 원래 이름으로 추정한 종류를 쓴다 — 별칭에 'ISA'가 빠져도 절세 판정이 바뀌지 않게.
+ */
+export function applyAccountKinds<T extends { accountKey: string; accountLabel: string }>(
+  holdings: T[],
+  accounts: AccountGuideMap,
+  aliases?: Record<string, unknown> | null,
+): T[] {
   return holdings.map((h) => {
-    const kind = accounts[h.accountKey]?.kind;
-    return kind ? { ...h, accountLabel: labelWithKind(h.accountLabel, kind) } : h;
+    const alias = aliasOf(aliases, h.accountKey);
+    const kind = accounts[h.accountKey]?.kind ?? (alias ? guessAccountKind(h.accountLabel) : undefined);
+    const base = alias ?? h.accountLabel;
+    return alias || kind ? { ...h, accountLabel: labelWithKind(base, kind) } : h;
   });
 }
 

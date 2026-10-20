@@ -11,6 +11,7 @@ import { loadIndexAlternatives, toEtfYield } from '../../src/services/indexAlter
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView } from '../../src/lib/incomeGuide'
+import { readOwnUserState } from './user-state'
 import { applyAccountKinds, listGuideAccounts, scopeSettingsToAccount } from '../../src/lib/guideAccountScope'
 import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
 import { buildRebalanceReport, type EtfYield } from '../../src/lib/rebalanceReport'
@@ -46,9 +47,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let file = await loadGuideFile(supabase, chatId)
     const accountsMap = file?.accounts ?? {}
+    // 포트폴리오에서 바꾼 계좌 별칭 — 가이드 화면과 같은 이름으로
+    const userState = await readOwnUserState(supabase, user).catch(() => null)
+    const aliases = (userState?.accountAliases?.value as { aliases?: Record<string, unknown> } | null | undefined)?.aliases
     if (!accountKey) {
       // 계좌 목록은 시세 없이 매수가 기준 규모만 — 고르는 데만 쓴다
-      const accounts = listGuideAccounts(applyAccountKinds(toGuideHoldings(rows, new Map()).holdings, accountsMap), accountsMap)
+      const accounts = listGuideAccounts(applyAccountKinds(toGuideHoldings(rows, new Map()).holdings, accountsMap, aliases), accountsMap)
         .map(({ key, label, total, holdingCount }) => ({ key, label, total, holdingCount }))
       return res.status(200).json({ ok: true, data: { accounts } })
     }
@@ -61,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     const { prices, realtimeHits } = await fetchGuidePrices(supabase, rows.map((r) => r.code))
-    const allHoldings = applyAccountKinds(toGuideHoldings(rows, prices, realtimeHits).holdings, accountsMap)
+    const allHoldings = applyAccountKinds(toGuideHoldings(rows, prices, realtimeHits).holdings, accountsMap, aliases)
     const largestKey = listGuideAccounts(allHoldings, accountsMap, file.settings.cashByAccount)[0]?.key ?? null
     const holdings = allHoldings.filter((h) => h.accountKey === accountKey)
     if (!holdings.length) return res.status(404).json({ error: '이 계좌에 입력된 보유가 없습니다.' })

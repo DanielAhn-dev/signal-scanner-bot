@@ -100,3 +100,19 @@ test("계좌별 보기 비중은 그 계좌 보유만으로 100%가 된다", () 
   assert.equal(view.total, 1_400_000);
   assert.ok(Math.abs(income.actualPct + cash.actualPct - 100) < 0.01);
 });
+
+test("포트폴리오 별칭이 있으면 그 이름으로, 절세 판정은 원래 이름으로 추정한 종류를 지킨다", () => {
+  const rows = [
+    { accountKey: "|인컴계좌(일반)", accountLabel: "인컴계좌(일반)" },
+    { accountKey: "키움|ISA", accountLabel: "키움 / ISA" },
+    { accountKey: "토스|일반", accountLabel: "토스 / 일반" },
+  ];
+  const aliases = { "|||인컴계좌(일반)": "카카오 / 일반", "키움|||ISA": "내 절세", "토스|||일반": "" };
+  const out = applyAccountKinds(rows, {}, aliases);
+  assert.equal(out[0].accountLabel, "카카오 / 일반");
+  // 별칭에 ISA가 없어도 ISA로 본다
+  assert.equal(out[1].accountLabel, "내 절세 (ISA)");
+  assert.equal(isTaxAdvantagedAccount(out[1].accountLabel), true);
+  // 빈 별칭은 무시
+  assert.equal(out[2].accountLabel, "토스 / 일반");
+});
