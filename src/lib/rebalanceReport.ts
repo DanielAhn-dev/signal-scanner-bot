@@ -292,7 +292,7 @@ export function buildRebalanceReport(input: {
     if (shares <= 0) return;
     const amount = Math.round(shares * h.price);
     const gain = h.avgPrice ? Math.round((h.price - h.avgPrice) * shares) : 0;
-    const cost = estimateSellCost({ code: h.code, name: h.name, amount, gain, taxAdvantaged });
+    const cost = estimateSellCost({ code: h.code, name: h.name, productType: h.productType, etfTaxClass: h.etfTaxClass, amount, gain, taxAdvantaged });
     const net = amount - cost;
     const lost = monthlyOf(h.code, h.bucket, h.name, amount);
     const toRow = to ? held.find((x) => x.code === to.code) : null;

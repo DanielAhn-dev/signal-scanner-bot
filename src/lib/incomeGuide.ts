@@ -122,12 +122,12 @@ const FOREIGN_WORDS = /(미국|중국|일본|인도|베트남|대만|유럽|독�
 const KR_SECTOR_WORDS = /(\bIT\b|금융|에너지|헬스케어|철강|건설|중공업|소비재|커뮤니케이션|산업재|중소형|반도체|2차전지|바이오|자동차|조선|방산)/;
 
 /**
- * 종목명·코드로 바구니를 정한다. stocks 테이블에 상품 유형 컬럼이 없어 이름 규칙으로 판별한다(securitiesTax.ts와 같은 방식).
+ * 종목명·코드로 바구니를 정한다. ETF 여부는 stocks.product_type이 있으면 그 값, 없으면 이름 규칙(securitiesTax.ts).
  * 순서가 중요하다 — "배당커버드콜"은 커버드콜, "채권혼합"은 기타, "AI전력인프라" ETF는 테마로 본다.
  */
-export function classifyHolding(code: string, name: string | null | undefined): AssetBucket {
+export function classifyHolding(code: string, name: string | null | undefined, productType?: string | null): AssetBucket {
   const n = String(name ?? "").trim();
-  const etp = isExchangeTradedProduct(code, n);
+  const etp = isExchangeTradedProduct(code, n, productType);
   if (/레버리지|인버스|곱버스|\b[23]X\b/i.test(n)) return "leveraged";
   if (/커버드콜|프리미엄/.test(n)) return "covered_call";
   if (/리츠|부동산/.test(n)) return "reit_infra";
@@ -427,6 +427,9 @@ export type GuideHolding = {
   accountLabel: string;
   /** 평균 매수가 — 팔 때 확정되는 손익 계산용 (없으면 손익을 보여 주지 않는다) */
   avgPrice?: number | null;
+  /** stocks.product_type·etf_tax_class — ETF 판정·매매차익세에 먼저 쓴다 (없으면 이름 규칙) */
+  productType?: string | null;
+  etfTaxClass?: string | null;
 };
 
 export type GuideOrder = {
@@ -846,8 +849,10 @@ const PLAN_BUCKET: Partial<Record<PlanKey, AssetBucket>> = { kr: "kr_index", glo
 const planKeyOf = (bucket: AssetBucket): PlanKey =>
   bucket === "kr_index" ? "kr" : bucket === "global_index" ? "global" : (BUCKET_GROUP[bucket] as PlanKey);
 /** 더 사 넣지 않는 종목 — 커버드콜(장기 연 4~11%p 뒤처짐)과 개별 리츠, 레버리지·개별주·테마 */
-const isBuyable = (r: { bucket: AssetBucket; code: string; name: string }) =>
-  r.bucket !== "covered_call" && BUCKET_GROUP[r.bucket] !== "satellite" && !(r.bucket === "reit_infra" && /리츠/.test(r.name) && !isExchangeTradedProduct(r.code, r.name));
+const isBuyable = (r: { bucket: AssetBucket; code: string; name: string; productType?: string | null }) =>
+  r.bucket !== "covered_call" &&
+  BUCKET_GROUP[r.bucket] !== "satellite" &&
+  !(r.bucket === "reit_infra" && /리츠/.test(r.name) && !isExchangeTradedProduct(r.code, r.name, r.productType));
 
 type PlanRow = GuideHolding & { value: number; bucket: AssetBucket; group: BucketGroup };
 
@@ -991,7 +996,7 @@ export function buildIncomeGuideView(input: {
   const rows = input.holdings
     .filter((h) => h.quantity > 0 && h.price > 0 && h.code !== CASH_BALANCE_CODE)
     .map((h) => {
-      const bucket = classifyHolding(h.code, h.name);
+      const bucket = classifyHolding(h.code, h.name, h.productType);
       return { ...h, value: Math.round(h.quantity * h.price), bucket, group: BUCKET_GROUP[bucket] };
     });
   // 투자 종목만 — 분배금 추정·세금·계좌 배치는 예수금을 빼고 본다
@@ -1204,7 +1209,7 @@ export function buildIncomeGuideView(input: {
         text: "2014년 대표 고배당·금융주 31종목 중 하나에만 집중했다면 KODEX 200을 넘은 경우는 6개였고, 대부분 −45~−82% 낙폭을 겪었습니다. 성공 사례는 그중 잘된 몇 개입니다.",
       });
     }
-    if (r.bucket === "reit_infra" && !isExchangeTradedProduct(r.code, r.name) && p > 10 && /리츠/.test(r.name)) {
+    if (r.bucket === "reit_infra" && !isExchangeTradedProduct(r.code, r.name, r.productType) && p > 10 && /리츠/.test(r.name)) {
       warnings.push({
         level: "warn",
         title: `${r.name} 비중 ${p.toFixed(0)}%`,
@@ -1259,7 +1264,7 @@ export function buildIncomeGuideView(input: {
   const taxableTaxedEtf = investRows.filter(
     (r) =>
       !isTaxAdvantagedAccount(r.accountLabel) &&
-      isExchangeTradedProduct(r.code, r.name) &&
+      isExchangeTradedProduct(r.code, r.name, r.productType) &&
       (r.bucket === "global_index" || r.bucket === "dividend" || r.bucket === "covered_call" || r.bucket === "bond_cash")
   );
   if (taxableTaxedEtf.length > 0) {

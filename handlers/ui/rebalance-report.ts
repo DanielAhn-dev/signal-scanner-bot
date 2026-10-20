@@ -77,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const indexAlt = await loadIndexAlternatives(supabase, view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name })))
     const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan, yieldPctByCode, today, etf: indexAlt.etf, feeAlternatives: indexAlt.alternatives })
 
-    const etfCodes = holdings.filter((h) => h.accountKey === accountKey).filter((h) => isExchangeTradedProduct(h.code, h.name)).map((h) => h.code)
+    const etfCodes = holdings.filter((h) => h.accountKey === accountKey).filter((h) => isExchangeTradedProduct(h.code, h.name, h.productType)).map((h) => h.code)
     const [etfMap, drop] = await Promise.all([
       fetchEtfKeyIndicators(etfCodes).catch(() => new Map()),
       fetchDropDayContext(null, null).catch(() => null),

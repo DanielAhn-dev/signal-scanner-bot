@@ -83,6 +83,7 @@ export async function saveGuideFile(supabase: any, chatId: string | number, file
   return error ? String(error.message) : null;
 }
 
+type PositionStock = { name?: string; close?: number; product_type?: string | null; etf_tax_class?: string | null };
 type PositionRow = {
   chat_id?: string | number;
   code: string;
@@ -91,7 +92,7 @@ type PositionRow = {
   status: string | null;
   broker_name: string | null;
   account_name: string | null;
-  stock: { name?: string; close?: number } | Array<{ name?: string; close?: number }> | null;
+  stock: PositionStock | PositionStock[] | null;
 };
 
 /** 계좌 보유 행 — chatId를 주면 그 사용자만, 안 주면 계좌 보유가 있는 모든 사용자 */
@@ -101,7 +102,7 @@ export async function loadAccountPositionRows(supabase: any, chatId?: string | n
     async (from, to) => {
       let q = supabase
         .from("virtual_positions")
-        .select("id, chat_id, code, quantity, buy_price, status, broker_name, account_name, stock:stocks(name, close)")
+        .select("id, chat_id, code, quantity, buy_price, status, broker_name, account_name, stock:stocks(name, close, product_type, etf_tax_class)")
         .gt("quantity", 0)
         .or("broker_name.not.is.null,account_name.not.is.null")
         .order("id", { ascending: true });
@@ -165,6 +166,8 @@ export function toGuideHoldings(
       avgPrice: buy > 0 ? buy : null,
       accountKey: `${broker}|${account}`,
       accountLabel: label || "계좌",
+      productType: stock?.product_type ?? null,
+      etfTaxClass: stock?.etf_tax_class ?? null,
     };
   });
   return { holdings, priceFallbacks };
@@ -174,8 +177,11 @@ export function toGuideHoldings(
  * ETF 종목별 최근 12개월 실제 분배율(네이버) — 가이드·할 일·리포트가 같은 값을 쓰게 한다(resolveYieldPct).
  * 느리거나 실패하면 빈 값을 돌려주고 상품 유형별 가정으로 계산된다(화면을 막지 않는다).
  */
-export async function fetchYieldPctByCode(holdings: Array<{ code: string; name: string }>, timeoutMs = 5_000): Promise<YieldPctByCode> {
-  const codes = holdings.filter((h) => isExchangeTradedProduct(h.code, h.name)).map((h) => h.code);
+export async function fetchYieldPctByCode(
+  holdings: Array<{ code: string; name: string; productType?: string | null }>,
+  timeoutMs = 5_000,
+): Promise<YieldPctByCode> {
+  const codes = holdings.filter((h) => isExchangeTradedProduct(h.code, h.name, h.productType)).map((h) => h.code);
   if (!codes.length) return {};
   type Indicators = Awaited<ReturnType<typeof fetchEtfKeyIndicators>>;
   let timer: ReturnType<typeof setTimeout> | undefined;
