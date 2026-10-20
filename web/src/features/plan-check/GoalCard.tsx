@@ -22,7 +22,7 @@ export default function GoalCard({ basis }: { basis: ReactNode }) {
     <>
       <section className="acc-card">
         <h2>이 계좌는 언제 쓸 돈인가요</h2>
-        <p className="acc-note">정하지 않은 계좌는 지금처럼 지수만 꾸준히 사면 됩니다. 쓸 날을 정하면 <strong>날짜가 다가오는 만큼</strong> 주식 비중을 미리 정한 표대로 내리도록 안내합니다. 시장을 예측해서 내리는 것이 아니고, 이 화면은 주문을 내지 않습니다.</p>
+        <p className="acc-note">쓸 날을 정하면 <strong>날짜가 다가오는 만큼</strong> 주식 비중을 미리 정한 표대로 내리도록 안내합니다. 정하지 않은 계좌는 지금처럼 지수만 꾸준히 사면 됩니다.</p>
       </section>
       {state.goals.map((g) => <GoalItem key={g.id} goal={g} today={today} onChange={(n) => save(state.goals.map((x) => (x.id === g.id ? n : x)))} onRemove={() => save(state.goals.filter((x) => x.id !== g.id))} />)}
       {state.goals.length < MAX_GOALS && <AddGoal today={today} onAdd={(g) => save([...state.goals, g])} />}

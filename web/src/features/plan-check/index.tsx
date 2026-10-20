@@ -62,7 +62,7 @@ export default function PlanCheckPage() {
       <header>
         <p className="acc-eyebrow">계획 점검</p>
         <h1>넣기 전에, 내 돈에 맞는 속도와 크기 보기</h1>
-        <p>과거 자료로 "이 정도는 각오해야 한다"는 범위를 보여 드립니다. 종목 추천이나 주문은 없습니다. 모든 숫자는 과거 결과이고 미래를 약속하지 않습니다.</p>
+        <p>과거 자료로 "이 정도는 각오해야 한다"는 범위를 봅니다. 모든 숫자는 과거 결과이고 미래를 약속하지 않습니다.</p>
       </header>
       <section className="acc-card">
         <div className="acc-seg" role="tablist">
@@ -101,7 +101,8 @@ function ToleranceCard() {
         <div><dt>주식 비중 상한</dt><dd>{cap.cap}%</dd></div>
         <div className="is-main"><dt>처음엔 이 정도부터</dt><dd>{cap.recommended}%</dd></div>
       </dl>
-      <p className="acc-note">사람들은 실제 하락을 겪기 전에 자기 감내를 높게 잡는 경향이 있다고 알려져 있습니다(이 연구에서 검증한 것은 아닙니다). 잘못 잡았을 때의 비용이 비대칭이라(너무 높으면 바닥에서 팝니다) 한 칸 낮은 값을 기본으로 제안합니다. 나머지는 현금성·채권으로 둡니다.</p>
+      <p className="acc-note">한 칸 낮은 값을 기본으로 제안합니다. 나머지는 현금성·채권으로 둡니다.</p>
+      <More label="왜 한 칸 낮게"><p className="acc-note">사람들은 실제 하락을 겪기 전에 자기 감내를 높게 잡는 경향이 있다고 알려져 있습니다(이 연구에서 검증한 것은 아닙니다). 잘못 잡았을 때의 비용이 비대칭입니다(너무 높으면 바닥에서 팝니다).</p></More>
       <table className="acc-table plan-table">
         <thead><tr><th>주식 비중</th><th>나쁜 10%에서</th><th>가장 나빴을 때</th></tr></thead>
         <tbody>
@@ -153,7 +154,8 @@ function SleeveCard() {
   return (
     <section className="acc-card">
       <h2>지루하면 오래 못 갑니다 — 재미 몫을 정해 두기</h2>
-      <p className="acc-note">매달 분배금이 들어오는 커버드콜·고배당은 꾸준히 보게 만드는 힘이 있습니다. 문제는 오르는 장에서 포기하는 몫이 크다는 점입니다. 그래서 <strong>금지가 아니라 한도</strong>를 정해 두는 걸 권합니다. 지수를 기본으로 두고 재미 몫만 따로 떼어 두세요.</p>
+      <p className="acc-note"><strong>금지가 아니라 한도</strong>를 정해 두세요. 지수를 기본으로 두고 재미 몫만 따로 떼어 둡니다.</p>
+      <More label="왜 한도인가"><p className="acc-note">매달 분배금이 들어오는 커버드콜·고배당은 꾸준히 보게 만드는 힘이 있습니다. 문제는 오르는 장에서 포기하는 몫이 크다는 점입니다.</p></More>
       <label className="acc-field plan-slider">
         <span>재미(인컴) 몫 <b>{w}%</b></span>
         <input type="range" min={0} max={100} step={10} value={w} onChange={(e) => setW(Number(e.target.value))} />
@@ -190,7 +192,8 @@ function SplitCard() {
           ))}
         </tbody>
       </table>
-      <p className="acc-note">주식 100%, 미국 자료 기준입니다. 첫해에 가장 많이 줄어 보이는 시점의 평가액을 넣은 돈 대비로 계산했습니다. 12개월 분할은 첫해 화면은 가장 편하지만 5년 뒤 평균 격차가 가장 큽니다. 부담이 크다면 <strong>3~6개월 분할</strong>이 비용 대비 무난합니다. 분할 기간 동안 아직 안 넣은 돈은 현금성 상품에 두세요.</p>
+      <p className="acc-note">부담이 크다면 <strong>3~6개월 분할</strong>이 비용 대비 무난합니다. 아직 안 넣은 돈은 현금성 상품에 두세요.</p>
+      <More label="계산 기준·12개월 분할은"><p className="acc-note">주식 100%, 미국 자료 기준입니다. 첫해에 가장 많이 줄어 보이는 시점의 평가액을 넣은 돈 대비로 계산했습니다. 12개월 분할은 첫해 화면은 가장 편하지만 5년 뒤 평균 격차가 가장 큽니다.</p></More>
       <Basis id="split" />
     </section>
   )
@@ -207,7 +210,8 @@ function CheckingCard() {
           {CHECK_FREQUENCY.map((r) => <tr key={r.label}><td>{r.label}</td><td>{r.kospi}번</td><td>{r.sp500}번</td></tr>)}
         </tbody>
       </table>
-      <p className="acc-note">월 1회만 봐도 3년 안에 −10%를 한 번이라도 볼 확률은 코스피 53%, S&P500 37%입니다. "안 보면 안 아프다"가 아니라 <strong>마주쳤을 때 할 일을 미리 정해 두자</strong>가 정직한 말입니다. 하락 때 할 일은 섞어보기 화면의 "하락 때 할 일 미리 정해 두기"에서 적어 둘 수 있습니다.</p>
+      <p className="acc-note">월 1회만 봐도 3년 안에 −10%를 한 번은 볼 확률이 코스피 53%, S&P500 37%입니다. <strong>마주쳤을 때 할 일을 미리 정해 두세요.</strong></p>
+      <More label="어디에 적어 두나"><p className="acc-note">"안 보면 안 아프다"가 아니라 미리 정해 두는 쪽이 정직한 방법입니다. 하락 때 할 일은 섞어보기 화면의 "하락 때 할 일 미리 정해 두기"에서 적어 둘 수 있습니다.</p></More>
       <Basis id="checking" />
     </section>
   )
@@ -426,7 +430,7 @@ function TaxShelterCard() {
   return (
     <section className="acc-card">
       <h2>연금저축·IRP에 넣으면 돌려받는 돈</h2>
-      <p className="acc-note">투자 수익과 별개로, <strong>넣는 순간 연말정산에서 세금을 돌려받습니다</strong>. 같은 돈을 일반 계좌에 두면 없는 혜택이라 가장 확실한 수익입니다. 단 연금으로 받기 전에 꺼내면 환급받은 세금(기타소득세 {(EARLY_WITHDRAWAL_TAX_RATE * 100).toFixed(1)}%)을 다시 내므로 오래 묶어 둘 돈만 넣으세요.</p>
+      <p className="acc-note"><strong>넣는 순간 연말정산에서 세금을 돌려받습니다</strong>. 단 연금으로 받기 전에 꺼내면 환급받은 세금(기타소득세 {(EARLY_WITHDRAWAL_TAX_RATE * 100).toFixed(1)}%)을 다시 내므로 오래 묶어 둘 돈만 넣으세요.</p>
       <div className="acc-row">
         <label className="acc-field">
           <span>내 소득 구간</span>
@@ -463,7 +467,8 @@ function TaxShelterCard() {
         <div className="is-main"><dt>연금계좌 + 환급 (세후)</dt><dd>{manRound(compare.pensionWon)}</dd></div>
         <div><dt>차이</dt><dd>{compare.diffWon >= 0 ? '+' : '-'}{manRound(Math.abs(compare.diffWon))}</dd></div>
       </dl>
-      <p className="acc-note">연금계좌와 일반 계좌에 같은 금액을 나눠 담는다면, <strong>해외 지수 ETF는 연금계좌에, 국내 주식형 ETF는 일반 계좌에</strong> 두는 쪽이 세후로 유리했습니다(과거 경로 10년 중앙값 +3.6%, 모든 시작월에서 같은 방향). 같은 수익률을 가정하면 차이는 연 6%에서 약 +1.5%로 줄고, 연 2% 이하에서는 거의 없습니다. 환급과는 별개이며, 건보료·종합과세는 반영하지 않았습니다. <strong>단 IRP는 위험자산(주식형 ETF 등)을 70%까지만 담을 수 있고 나머지 30%는 예금·채권형 등이어야 합니다</strong>(연금저축은 제한 없음, 여러 안내 자료가 일치하는 내용이며 법령 원문은 확인하지 못했습니다). 그래서 해외 지수 ETF는 연금저축 쪽에 먼저 두세요.</p>
+      <p className="acc-note"><strong>해외 지수 ETF는 연금저축에, 국내 주식형 ETF는 일반 계좌에</strong> 두는 쪽이 세후로 유리했습니다(과거 경로 10년 중앙값 +3.6%).</p>
+      <More label="근거·IRP 70% 제한"><p className="acc-note">연금계좌와 일반 계좌에 같은 금액을 나눠 담는 경우이며, 모든 시작월에서 같은 방향이었습니다. 같은 수익률을 가정하면 차이는 연 6%에서 약 +1.5%로 줄고, 연 2% 이하에서는 거의 없습니다. 환급과는 별개이며, 건보료·종합과세는 반영하지 않았습니다. <strong>단 IRP는 위험자산(주식형 ETF 등)을 70%까지만 담을 수 있고 나머지 30%는 예금·채권형 등이어야 합니다</strong>(연금저축은 제한 없음, 여러 안내 자료가 일치하는 내용이며 법령 원문은 확인하지 못했습니다). 그래서 해외 지수 ETF는 연금저축 쪽에 먼저 두세요.</p></More>
       <More label="계산 가정과 세부 규칙 보기">
       <p className="acc-note">공제 인정 금액({manRound(plan.eligibleWon)})을 매년 초에 넣고, 분배금은 재투자한다고 가정했습니다. 일반 계좌는 국내 주식형 ETF라 매매차익은 비과세·분배금만 15.4%, 연금계좌는 세금을 미뤘다가 연금으로 받을 때 5.5%(나이가 많으면 더 낮음)를 냅니다. 환급받은 세금은 일반 계좌에 같은 자산으로 굴린다고 봤습니다. 수익률은 예측이 아니라 가정이며, 해외·채권 ETF는 매매차익도 과세라 연금계좌 쪽이 더 유리합니다. 55세 전에 꺼내면 이 계산이 맞지 않습니다.</p>
       <p className="acc-note"><strong>국내 상장 해외 ETF와 해외 직접 보유를 비교하면</strong>, 과거 경로(월 적립 10년)에서는 대부분 국내 상장이 세후로 유리했습니다(직접은 연 1,000만원 적립 시 연말 250만원 실현을 해도 약 −400만원, 비용 편도 0.3% 가정). 단일 매도 기준 이익이 약 833만원 이하면 직접(22%, 250만원 공제)이 더 낫고 그 위면 국내 상장(15.4%)이 낫습니다. 다만 국내 상장은 이익을 한 해에 크게 실현하면 금융소득 종합과세(연 2천만원 초과)와 건보료 영향을 받을 수 있어 이 계산에는 넣지 않았습니다. 그래도 해외주식을 <strong>직접</strong> 보유한다면 양도차익이 연 250만원까지는 세금이 없으니(초과분 22%), 해마다 연말에 이익 250만원어치만 팔았다가 다시 사 두면 취득가가 올라 나중 세금이 줄어듭니다. 연 1,000만원씩 10년 적립한 과거 경로에서 일괄 매도보다 중앙 +354만원(모든 시작월에서 유리, 수수료 0.25% 반영)이었습니다. 이익이 250만원에 못 미치는 해에는 효과가 없고, 결제일이 연말을 넘기지 않게 12월 중순까지 거래해야 하며, 다음 해 5월에 양도세 신고가 필요합니다. 배우자에게 증여한 뒤 1년 안에 팔면 증여자의 취득가가 적용되는 이월과세에 주의하세요.</p>
