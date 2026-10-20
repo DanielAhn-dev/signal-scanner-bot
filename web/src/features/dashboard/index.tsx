@@ -231,6 +231,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
         setRealHoldings(rows.filter((r) => r?.account_kind === 'account').map((r) => ({
           code: String(r.code ?? ''), name: String(r.stock_name ?? r.name ?? r.code ?? ''),
           quantity: Number(r.quantity) || 0, avgPrice: Number(r.avg_price) || 0, currentPrice: Number(r.current_price) || 0,
+          productType: r.stock_product_type ?? null,
         })))
       })
       .catch(() => {})
@@ -270,7 +271,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     // 한도는 종목 카드(holdingAction)·개별주 묶음 경고(satelliteGuard)와 같은 10%. 프로필의 level은 종목 봇 기본값이라 쓰지 않는다
     const level = 'balanced' as const
     const { buyFeeRatePct, sellFeeRatePct } = loadTradeCostSettings()
-    return adviseHoldings({ holdings: realHoldings, level, sellCostPct: (code) => resolveSellCostPct({ code, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct }) })
+    // 코드만으로는 알려진 몇 종목 말고는 ETF를 못 알아봐 거래세를 붙였다 — 이름·상품 유형을 함께 넘긴다
+    const byCode = new Map(realHoldings.map((h) => [h.code, h]))
+    return adviseHoldings({
+      holdings: realHoldings,
+      level,
+      sellCostPct: (code) =>
+        resolveSellCostPct({ code, name: byCode.get(code)?.name, productType: byCode.get(code)?.productType, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct }),
+    })
   })()
 
   const satellite = realHoldings ? satelliteStatus(realHoldings) : null
@@ -286,7 +294,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     const cost = (portfolio.positions ?? []).reduce((acc: number, p: any) => {
       const invested = Number(p.invested_amount || 0)
       const value = Number(p.current_value || 0)
-      const sellPct = resolveSellCostPct({ code: p.code, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
+      const sellPct = resolveSellCostPct({ code: p.code, name: p.name, productType: p.product_type, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
       return acc + invested * (buyFeeRatePct / 100) + (value > 0 ? value * (sellPct / 100) : 0)
     }, 0)
     const gross = (portfolio.positions ?? []).reduce((acc: number, p: any) => acc + Number(p.pnl_amount || 0), 0)

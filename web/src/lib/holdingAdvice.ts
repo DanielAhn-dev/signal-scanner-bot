@@ -9,7 +9,15 @@
 import { REBALANCE_BAND_PP } from '../../../src/lib/incomeGuide'
 import { INDEX_ETF_CODES } from './indexEtf'
 
-export type Holding = { code: string; name: string; quantity: number; avgPrice: number; currentPrice: number }
+export type Holding = {
+  code: string
+  name: string
+  quantity: number
+  avgPrice: number
+  currentPrice: number
+  /** 서버 stocks.product_type — 매도 비용·ETF 판정에 쓴다 */
+  productType?: string | null
+}
 export type AdviceAction = 'keep' | 'trim' | 'redirect'
 export type HoldingAdvice = {
   code: string; name: string; weightPct: number; pnlPct: number; action: AdviceAction
