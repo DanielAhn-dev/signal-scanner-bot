@@ -520,11 +520,12 @@ export default function IncomeGuidePage() {
         </select>
       </div>
       {acct ? (
-        <div style={{ ...box, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-          <strong style={{ fontSize: 14 }}>{acct.label}</strong>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ ...box, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 12px' }}>
+          <strong style={{ fontSize: 14, width: '100%', wordBreak: 'keep-all' }}>{acct.label}</strong>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 220px', maxWidth: 320, whiteSpace: 'nowrap' }}>
             계좌 종류
             <select
+              style={{ flex: 1, minWidth: 140, minHeight: 36 }}
               value={acct.kind}
               disabled={busy}
               onChange={(e) => void saveAccount({ action: 'account-kind', kind: e.target.value }, `계좌 종류를 ${KIND_LABEL[e.target.value as AccountKind]}(으)로 정했습니다.`)}
@@ -536,7 +537,7 @@ export default function IncomeGuidePage() {
               ))}
             </select>
           </label>
-          {!acct.kindChosen && <span style={{ color: 'var(--color-text-tertiary)' }}>이름으로 추정했습니다. 다르면 골라 주세요.</span>}
+          {!acct.kindChosen && <span style={{ color: 'var(--color-text-tertiary)', wordBreak: 'keep-all' }}>이름으로 추정했습니다. 다르면 골라 주세요.</span>}
           {accountMsg && <span role="status" style={{ color: 'var(--color-text-secondary)' }}>{accountMsg}</span>}
           <div style={{ width: '100%', color: 'var(--color-text-secondary)' }}>
             {KIND_HINT[acct.kind]} 이 계좌의 보유·예수금만으로 비중과 할 일을 계산합니다.
