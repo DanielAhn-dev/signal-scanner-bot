@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
-import { resolveBaseSellTaxRate, resolveSellTaxRate } from '../../src/lib/securitiesTax'
+import { resolveBaseSellTaxRate, resolveOtherEtfGainTax, resolveSellTaxRate } from '../../src/lib/securitiesTax'
 import { getUserInvestmentPrefs } from '../../src/services/userService'
 import { loadGuideFile, saveGuideFile } from '../../src/services/incomeGuideStore'
 import { applyTradeToCash } from '../../src/lib/incomeGuide'
@@ -117,13 +117,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (sideUpper === 'SELL') {
       const { data: stockRow, error: stockErr } = await supabase
         .from('stocks')
-        .select('name')
+        .select('name, product_type, etf_tax_class')
         .eq('code', String(code))
         .maybeSingle()
       if (stockErr) return res.status(500).json({ error: stockErr.message })
+      const product = {
+        code: String(code),
+        name: (stockRow as any)?.name ?? null,
+        productType: (stockRow as any)?.product_type ?? null,
+        etfTaxClass: (stockRow as any)?.etf_tax_class ?? null,
+      }
       const baseTaxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate)
-      const taxRate = resolveSellTaxRate({ code: String(code), name: (stockRow as any)?.name ?? null, baseRate: baseTaxRate })
+      const taxRate = resolveSellTaxRate({ ...product, baseRate: baseTaxRate })
       taxAmount = Math.round(gross * taxRate)
+      // 가상(봇) 계좌는 일반 계좌로 본다 — 기타 ETF(해외·채권·금·파생) 이익의 15.4%를 뺀다.
+      // 실계좌 기록은 계좌 종류(ISA·연금 등)를 몰라 증권사가 실제로 뗀 금액과 다를 수 있어 붙이지 않는다.
+      if (isBotAccount) {
+        const { data: posRow, error: posErr } = await supabase
+          .from('virtual_positions')
+          .select('quantity, invested_amount, buy_price')
+          .eq(filterColumn, filterValue)
+          .eq('code', String(code))
+          .is('broker_name', null)
+          .is('account_name', null)
+          .gt('quantity', 0)
+          .order('quantity', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (posErr) return res.status(500).json({ error: posErr.message })
+        const posQty = Number((posRow as any)?.quantity)
+        const invested = Number((posRow as any)?.invested_amount)
+        const avg = posQty > 0 && invested > 0 ? invested / posQty : Number((posRow as any)?.buy_price)
+        // 원가를 모르면(보유 행 없음) 매매차익세를 붙이지 않는다 — 매도 자체는 RPC가 보유 수량으로 다시 막는다
+        if (avg > 0) taxAmount += resolveOtherEtfGainTax({ ...product, gain: gross - feeAmount - Math.round(avg * qty) })
+      }
       netAmount = Math.max(0, gross - feeAmount - taxAmount)
     }
 

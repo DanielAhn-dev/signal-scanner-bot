@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 import { denyIfUnauthorizedRead } from './_accessControl'
-import { resolveBaseSellTaxRate, resolveSellTaxRate } from '../../src/lib/securitiesTax'
+import { resolveBaseSellTaxRate, resolveOtherEtfGainTax, resolveSellTaxRate } from '../../src/lib/securitiesTax'
 import { findPositionAccountConflict } from '../../src/lib/positionAccountGuard'
 import { getUserInvestmentPrefs, setUserInvestmentPrefs } from '../../src/services/userService'
 
@@ -209,7 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mode === 'liquidateall') {
       const { data: holdings, error: holdErr } = await supabase
         .from('virtual_positions')
-        .select('id,code,quantity,buy_price,status,broker_name,account_name,stock:stocks(close,name)')
+        .select('id,code,quantity,buy_price,status,broker_name,account_name,stock:stocks(close,name,product_type,etf_tax_class)')
         .eq('chat_id', chatId)
         .gt('quantity', 0)
 
@@ -232,9 +232,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const qty = Math.max(0, Number(row.quantity || 0))
         const px = asPositiveNumber(row?.stock?.close) || asPositiveNumber(row.buy_price) || 0
         const gross = Math.round(qty * px)
-        const taxRate = resolveSellTaxRate({ code: String(row.code), name: row?.stock?.name ?? null, baseRate: baseTaxRate })
+        const product = {
+          code: String(row.code),
+          name: row?.stock?.name ?? null,
+          productType: row?.stock?.product_type ?? null,
+          etfTaxClass: row?.stock?.etf_tax_class ?? null,
+        }
+        const taxRate = resolveSellTaxRate({ ...product, baseRate: baseTaxRate })
         const feeAmount = Math.round(gross * feeRate)
-        const taxAmount = Math.round(gross * taxRate)
+        const cost = Math.round(Math.max(0, Number(row.buy_price || 0)) * qty)
+        // 가상(봇) 계좌 행만 기타 ETF 매매차익세 — 실계좌 행은 계좌 종류(ISA·연금)를 몰라 붙이지 않는다 (virtual-trade.ts와 같음)
+        const isBotRow = !String(row?.broker_name || '').trim() && !String(row?.account_name || '').trim()
+        const gainTax = isBotRow && cost > 0 ? resolveOtherEtfGainTax({ ...product, gain: gross - feeAmount - cost }) : 0
+        const taxAmount = Math.round(gross * taxRate) + gainTax
         const net = Math.max(0, gross - feeAmount - taxAmount)
         totalNet += net
         totalCost += Math.round(Math.max(0, Number(row.buy_price || 0)) * qty)

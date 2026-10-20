@@ -23,12 +23,13 @@ export function createHarness(options: {
     from(table: string) {
       let op: Write["op"] | null = null;
       let values: unknown;
+      let single = false;
       const builder = {
         select: () => builder,
         eq: () => builder,
         in: () => builder,
         is: () => builder,
-        maybeSingle: () => builder,
+        maybeSingle: () => ((single = true), builder),
         insert: (v: unknown) => ((op = "insert"), (values = v), builder),
         update: (v: unknown) => ((op = "update"), (values = v), builder),
         delete: () => ((op = "delete"), builder),
@@ -38,8 +39,9 @@ export function createHarness(options: {
             writes.push({ table, op, values });
             return Promise.resolve({ data: null, error: null }).then(resolve);
           }
-          const data = table === "stocks" ? options.stocks ?? [] : options.positions ?? [];
-          return Promise.resolve({ data, error: null }).then(resolve);
+          const rows = table === "stocks" ? options.stocks ?? [] : options.positions ?? [];
+          // maybeSingle은 첫 행 하나(없으면 null) — 실제 supabase와 같게
+          return Promise.resolve({ data: single ? rows[0] ?? null : rows, error: null }).then(resolve);
         },
       };
       return builder;

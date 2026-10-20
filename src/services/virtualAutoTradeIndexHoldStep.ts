@@ -125,12 +125,24 @@ export function createIndexHoldSteps(deps: IndexHoldDeps) {
     );
 
     const priceCodes = [...new Set([...INDEX_MODE_CODES, ...stockBotRows.map((row) => row.code)])];
-    const { data: priceRows } = await payload.supabase.from("stocks").select("code, name, close").in("code", priceCodes);
+    const { data: priceRows } = await payload.supabase
+      .from("stocks")
+      .select("code, name, close, product_type, etf_tax_class")
+      .in("code", priceCodes);
     const prices = new Map<string, number>();
     const names = new Map<string, string>();
-    for (const row of (priceRows ?? []) as Array<{ code: string; name: string | null; close: number | null }>) {
+    // 매도 세금 판정용 상품 유형 (securitiesTax — 없으면 이름·코드로 대신 판정)
+    const products = new Map<string, { productType: string | null; etfTaxClass: string | null }>();
+    for (const row of (priceRows ?? []) as Array<{
+      code: string;
+      name: string | null;
+      close: number | null;
+      product_type?: string | null;
+      etf_tax_class?: string | null;
+    }>) {
       if (toNumber(row.close, 0) > 0) prices.set(row.code, toNumber(row.close, 0));
       names.set(row.code, row.name ?? row.code);
+      products.set(row.code, { productType: row.product_type ?? null, etfTaxClass: row.etf_tax_class ?? null });
     }
     await deps.overlayIntradayPrices(prices, priceCodes);
     const label = (code: string) => `${names.get(code) ?? code}(${code})`;
@@ -205,6 +217,7 @@ export function createIndexHoldSteps(deps: IndexHoldDeps) {
         price: prices.get(row.code) ?? 0,
         quantity: order.quantity,
         invested_amount: Math.max(0, toNumber(row.invested_amount, 0)),
+        ...products.get(row.code),
       };
       if (payload.dryRun) {
         summary.notes.push(`${tag}[테스트] ${label(row.code)} ${order.quantity}주 전량 매도 예정 (평가액 ${fmtKrw(order.quantity * holding.price)})`);

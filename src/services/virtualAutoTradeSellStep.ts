@@ -7,7 +7,7 @@
  */
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 import { AUTO_TRADE_STRATEGY_ID, buildStrategyMemo } from "../lib/strategyMemo";
-import { resolveSellTaxRate } from "../lib/securitiesTax";
+import { resolveOtherEtfGainTax, resolveSellTaxRate } from "../lib/securitiesTax";
 import { resolveVirtualExecutionPrice } from "./virtualAutoTradeExecution";
 import { buildPositionStrategyMemo } from "./virtualAutoTradePositionStrategy";
 import type * as LotService from "./virtualLotService";
@@ -244,18 +244,22 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     const executionPrice = execution.executionPrice;
     const gross = Math.round(executionPrice * sellQty);
     const feeAmount = Math.round(gross * payload.feeRate);
-    // ETF·ETN은 증권거래세 면제 — 보유 종목이 ETF인지 이름으로 확인한다
+    // ETF·ETN은 증권거래세 면제, 기타 ETF(해외·채권·금·파생)는 이익에 15.4% — stocks의 상품 유형으로 판정한다
     const { data: stockNameRow } = await payload.supabase
       .from("stocks")
-      .select("name")
+      .select("name, product_type, etf_tax_class")
       .eq("code", payload.holding.code)
       .maybeSingle();
-    const effectiveTaxRate = resolveSellTaxRate({
+    const product = {
       code: payload.holding.code,
       name: (stockNameRow as { name?: string } | null)?.name ?? null,
-      baseRate: payload.taxRate,
-    });
-    const taxAmount = Math.round(gross * effectiveTaxRate);
+      productType: (stockNameRow as { product_type?: string | null } | null)?.product_type ?? null,
+      etfTaxClass: (stockNameRow as { etf_tax_class?: string | null } | null)?.etf_tax_class ?? null,
+    };
+    const effectiveTaxRate = resolveSellTaxRate({ ...product, baseRate: payload.taxRate });
+    // 스윕 매도(estimateSweepSell)와 같은 방식 — 수수료 뺀 대금에서 판 수량의 원가를 뺀 이익에 매긴다
+    const gainTax = resolveOtherEtfGainTax({ ...product, gain: gross - feeAmount - soldCost });
+    const taxAmount = Math.round(gross * effectiveTaxRate) + gainTax;
     const net = Math.max(0, gross - feeAmount - taxAmount);
     const pnl = net - soldCost;
     const isTakeProfit = payload.reason === "take-profit-partial" || payload.reason === "take-profit-final";

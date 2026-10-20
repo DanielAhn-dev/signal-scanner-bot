@@ -21,7 +21,19 @@ import {
 
 type SupabaseClientAny = any;
 
-export type SweepHolding = { id: number; code: string; name: string; price: number; quantity: number; invested_amount: number };
+export type SweepHolding = {
+  id: number;
+  code: string;
+  name: string;
+  price: number;
+  quantity: number;
+  invested_amount: number;
+  /** stocks.product_type·etf_tax_class — 있으면 세금 판정에 먼저 쓴다(securitiesTax) */
+  productType?: string | null;
+  etfTaxClass?: string | null;
+};
+
+type SweepPrice = { close: number; name: string; productType: string | null; etfTaxClass: string | null };
 
 export type CashSweepTradeLog = {
   supabase: SupabaseClientAny;
@@ -77,10 +89,10 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
   /** 스윕 ETF 후보의 종가(장중이면 실시간가로 덮어씀)·이름. 가격이 없으면 close=0 */
   async function loadSweepPrices(
     supabase: SupabaseClientAny
-  ): Promise<Map<string, { close: number; name: string }>> {
+  ): Promise<Map<string, SweepPrice>> {
     const { data: priceRows } = await supabase
       .from("stocks")
-      .select("code, name, close")
+      .select("code, name, close, product_type, etf_tax_class")
       .in("code", CASH_SWEEP_CANDIDATE_CODES);
     const rows = (priceRows ?? []) as Record<string, unknown>[];
     const closes = new Map(rows.map((row) => [String(row.code ?? ""), toNumber(row.close, 0)] as [string, number]));
@@ -88,7 +100,12 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     return new Map(
       rows.map((row) => [
         String(row.code ?? ""),
-        { close: closes.get(String(row.code ?? "")) ?? 0, name: String(row.name ?? "") },
+        {
+          close: closes.get(String(row.code ?? "")) ?? 0,
+          name: String(row.name ?? ""),
+          productType: (row.product_type as string | null | undefined) ?? null,
+          etfTaxClass: (row.etf_tax_class as string | null | undefined) ?? null,
+        },
       ])
     );
   }
@@ -144,7 +161,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
    */
   function hasUnpricedSweepHolding(
     rows: Record<string, unknown>[],
-    prices: Map<string, { close: number; name: string }>
+    prices: Map<string, SweepPrice>
   ): boolean {
     return rows.some((row) => toNumber(row.quantity, 0) > 0 && !((prices.get(String(row.code ?? ""))?.close ?? 0) > 0));
   }
@@ -155,7 +172,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
    */
   function loadSweepHolding(
     rows: Record<string, unknown>[],
-    prices: Map<string, { close: number; name: string }>
+    prices: Map<string, SweepPrice>
   ): SweepHolding | null {
     for (const row of rows) {
       const code = String(row.code ?? "");
@@ -166,6 +183,8 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
         id: toNumber(row.id, 0),
         code,
         name: prices.get(code)?.name || code,
+        productType: prices.get(code)?.productType ?? null,
+        etfTaxClass: prices.get(code)?.etfTaxClass ?? null,
         price,
         quantity,
         invested_amount: Math.max(0, toNumber(row.invested_amount, 0)),
@@ -301,12 +320,23 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     sellQty: number
   ): { net: number; feeAmount: number; taxAmount: number; soldInvested: number } {
     const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
-    const taxRate = resolveSellTaxRate({ code: holding.code, baseRate: resolveBaseSellTaxRate(prefs.virtual_tax_rate as number | null | undefined) });
+    const taxRate = resolveSellTaxRate({
+      code: holding.code,
+      name: holding.name,
+      productType: holding.productType,
+      baseRate: resolveBaseSellTaxRate(prefs.virtual_tax_rate as number | null | undefined),
+    });
     const gross = Math.round(holding.price * sellQty);
     const feeAmount = Math.round(gross * feeRate);
     const avgBuyPrice = holding.quantity > 0 ? holding.invested_amount / holding.quantity : holding.price;
     const soldInvested = Math.round(avgBuyPrice * sellQty);
-    const gainTax = resolveOtherEtfGainTax({ code: holding.code, gain: gross - feeAmount - soldInvested });
+    const gainTax = resolveOtherEtfGainTax({
+      code: holding.code,
+      name: holding.name,
+      productType: holding.productType,
+      etfTaxClass: holding.etfTaxClass,
+      gain: gross - feeAmount - soldInvested,
+    });
     const taxAmount = Math.round(gross * taxRate) + gainTax;
     return { net: Math.max(0, gross - feeAmount - taxAmount), feeAmount, taxAmount, soldInvested };
   }

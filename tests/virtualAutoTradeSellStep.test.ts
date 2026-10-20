@@ -15,9 +15,11 @@ function createSellHarness(options: {
   failTradeLog?: boolean;
   failApplyFifo?: boolean;
   duplicate?: boolean;
+  stocks?: Record<string, unknown>[];
 }) {
   const h = createHarness({
     prefs: { virtual_cash: 0, virtual_realized_pnl: options.realizedPnl ?? 0 },
+    stocks: options.stocks,
     failPositionWrite: options.failPositionWrite,
     failSetPrefsCall: options.failSetPrefsCall,
     failTradeLog: options.failTradeLog,
@@ -152,6 +154,27 @@ test("executeAutoTradeSell: 중복 실행이면 아무것도 바꾸지 않는다
   assert.equal(result.sold, false);
   assert.equal(h.writes.length, 0);
   assert.deepEqual(h.calls.actionLogs, ["duplicate-execution"]);
+});
+
+test("executeAutoTradeSell: 기타 ETF(stocks.etf_tax_class=other)는 거래세 없이 이익의 15.4%를 세금으로 뺀다", async () => {
+  const h = createSellHarness({ stocks: [{ name: "TIGER 미국S&P500", product_type: "etf", etf_tax_class: "other" }] });
+  const result = await h.executeAutoTradeSell({ ...sellInput(h.supabase), taxRate: 0.002 });
+
+  assert.equal(result.sold, true);
+  const log = h.tradeLogs[0];
+  // 원가 500,000원(previewFifoSale), 수수료 0 — 거래세 0.20%는 붙지 않고 이익분 15.4%만
+  assert.equal(log.taxAmount, Math.round((log.grossAmount - 500_000) * 0.154));
+  assert.equal(log.pnlAmount, log.grossAmount - log.taxAmount - 500_000);
+});
+
+test("executeAutoTradeSell: 국내주식형 ETF는 매도 세금 0, 개별주는 거래세만", async () => {
+  const etf = createSellHarness({ stocks: [{ name: "KODEX 200", product_type: "etf", etf_tax_class: "domestic_equity" }] });
+  await etf.executeAutoTradeSell({ ...sellInput(etf.supabase), taxRate: 0.002 });
+  assert.equal(etf.tradeLogs[0].taxAmount, 0);
+
+  const stock = createSellHarness({ stocks: [{ name: "삼성전자", product_type: "stock", etf_tax_class: null }] });
+  await stock.executeAutoTradeSell({ ...sellInput(stock.supabase), taxRate: 0.002 });
+  assert.equal(stock.tradeLogs[0].taxAmount, Math.round(stock.tradeLogs[0].grossAmount * 0.002));
 });
 
 test("sellReasonSummary: 익절만 익절로 적고, 섹터 정리·비중 축소·손실 축소는 각자 이름으로 남긴다", () => {
