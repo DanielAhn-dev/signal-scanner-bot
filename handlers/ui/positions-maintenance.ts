@@ -381,6 +381,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // 기존 포지션 조회 (없으면 신규 생성) — 같은 종목이어도 다른 계좌 행은 못 보게 증권사·계좌명까지 건다.
       // 계좌명 없이 증권사만 있는 계좌가 봇 가상 계좌(둘 다 NULL) 행을 집지 않게 broker_name도 맞춘다.
+      // 단 계좌명이 있으면 고유키(chat_id, code, account_name)에 증권사가 없으므로 증권사로 거르지 않는다 —
+      // 걸렀다가는 증권사만 다른 같은 계좌명 행을 못 찾고 insert하다 고유키 위반(500)이 났다. 다르면 아래 충돌 검사가 409로 알린다.
       const scoped = scopeByAccountName(
         supabase
           .from('virtual_positions')
@@ -389,8 +391,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .eq('code', code),
         accountName
       )
-      const { data: existing, error: posErr } = await (brokerName == null ? scoped.is('broker_name', null) : scoped.eq('broker_name', brokerName))
-        .maybeSingle()
+      const byBroker = accountName != null ? scoped : brokerName == null ? scoped.is('broker_name', null) : scoped.eq('broker_name', brokerName)
+      const { data: existing, error: posErr } = await byBroker.maybeSingle()
       if (posErr) return res.status(500).json({ error: posErr.message })
       const restoreConflict = findPositionAccountConflict({ mode: 'holdingrestore', existing: existing as any, brokerName, accountName })
       if (restoreConflict) return res.status(409).json({ error: restoreConflict })
