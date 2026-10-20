@@ -13,6 +13,7 @@ DB(무료 500MB) 대신 Storage(무료 1GB, 별도 한도)에 하루 1개 gzip C
 
 같은 응답의 상품 유형(stockEndType)과 네이버 ETF 목록의 분류(etfTabCode)로 stocks.product_type·etf_category·
 etf_tax_class도 고친다(db/migrations/036, docs/plan-etf-product-type-and-tax-2026-10-19.md).
+이름이 코드로 저장된 행(name == code)은 같은 응답의 종목명으로 채운다(repair_code_names).
 """
 
 import csv
@@ -305,6 +306,81 @@ def sync_product_types(supabase, snapshot_rows: list[dict], dry_run: bool = Fals
         return -1
 
 
+def build_name_repairs(snapshot_rows: list[dict], current_names: dict[str, str]) -> tuple[list[dict], list[str]]:
+    """stocks에서 name이 코드인 행 → 스냅샷 종목명으로 채울 행.
+
+    반환: ([{code, name}], 스냅샷에 없어 그대로 둘 코드). 스냅샷 이름도 비었거나 코드면 건드리지 않는다.
+    """
+    snapshot_names: dict[str, str] = {}
+    for r in snapshot_rows:
+        code = str(r.get("code") or "").strip()
+        name = str(r.get("name") or "").strip()
+        if code and name and name != code and code not in snapshot_names:
+            snapshot_names[code] = name
+    repairs: list[dict] = []
+    missing: list[str] = []
+    for code in sorted(current_names):
+        if str(current_names[code] or "").strip() != code:
+            continue
+        name = snapshot_names.get(code)
+        if name:
+            repairs.append({"code": code, "name": name})
+        else:
+            missing.append(code)
+    return repairs, missing
+
+
+def _fetch_current_names(supabase) -> dict[str, str] | None:
+    """stocks의 {코드: 이름}. 조회 실패는 None."""
+    names: dict[str, str] = {}
+    offset = 0
+    try:
+        while True:
+            res = supabase.table("stocks").select("code, name").order("code").range(offset, offset + 999).execute()
+            data = res.data or []
+            for row in data:
+                names[str(row.get("code") or "")] = str(row.get("name") or "")
+            if len(data) < 1000:
+                return names
+            offset += 1000
+    except Exception as e:
+        print(f"   current names lookup failed: {e}")
+        return None
+
+
+def repair_code_names(supabase, snapshot_rows: list[dict], dry_run: bool = False) -> int:
+    """name이 코드로 저장된 stocks 행을 스냅샷 종목명으로 채운다. 실패해도 배치는 계속.
+
+    유니버스 갱신이 이름 조회 실패 때 코드를 써 넣던 행(2026-10-20 473개)의 자가복구다. 스냅샷에 없는 행
+    (상장폐지 등)은 그대로 둔다. 갱신은 name이 아직 코드일 때만(eq name=code) 해서 그새 바뀐 이름을 덮지 않는다.
+    반환: 바뀐(dry_run이면 바뀔) 행 수. 실패는 -1.
+    """
+    try:
+        current = _fetch_current_names(supabase)
+        if current is None or len(current) < 1000:
+            print(f"   name repair skipped: stocks lookup looks incomplete ({len(current or {})})")
+            return -1
+        repairs, missing = build_name_repairs(snapshot_rows, current)
+        if not repairs and not missing:
+            return 0
+        sample = ", ".join(f"{r['code']}→{r['name']}" for r in repairs[:10])
+        print(f"   code-as-name rows: {len(repairs)} fixable · {len(missing)} not in snapshot (kept)"
+              + (f" · e.g. {sample}" if sample else ""))
+        if missing:
+            print(f"     not in snapshot: {', '.join(missing[:20])}{' …' if len(missing) > 20 else ''}")
+        if dry_run:
+            return len(repairs)
+        changed = 0
+        for r in repairs:
+            res = supabase.table("stocks").update({"name": r["name"]}).eq("code", r["code"]).eq("name", r["code"]).execute()
+            changed += len(res.data or [])
+        print(f"   names repaired: {changed} rows")
+        return changed
+    except Exception as e:
+        print(f"   name repair failed (non-fatal): {e}")
+        return -1
+
+
 def collect_market_snapshot(supabase) -> bool:
     """전 종목 스냅샷을 수집해 Storage에 올린다. 장중(마감 전)이면 저장하지 않는다."""
     print("\n[8/8] Collecting full-market snapshot (Naver)...")
@@ -340,6 +416,7 @@ def collect_market_snapshot(supabase) -> bool:
         register_new_listings(supabase, all_rows)
         # 신규 상장 등록 뒤에 돌려야 새 ETF도 같은 날 분류된다
         sync_product_types(supabase, all_rows)
+        repair_code_names(supabase, all_rows)
         return True
     except Exception as e:
         print(f"   snapshot failed (non-fatal): {e}")
