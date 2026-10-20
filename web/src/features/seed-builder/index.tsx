@@ -1,5 +1,6 @@
 import Detail from '../../components/ui/Detail'
 import { useEffect, useState } from 'react'
+import More from '../../components/ui/More'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Save, Wallet } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
@@ -517,7 +518,7 @@ export default function SeedBuilderPage() {
           {latestCheck && <button type="button" className="seed-secondary" onClick={fillFromCheck}>예산에서 가져오기</button>}
           <label>한 달 지출 합계(대략) <input type="number" inputMode="numeric" min="0" step="10000" value={expenseTotal || ''} placeholder="0" aria-describedby="hint-ob-expense" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...emptyRecord().expenses, other: Number.isFinite(value) ? value : 0 } })) }} /> <span>원</span></label>
           <AmountHint id="hint-ob-expense" value={expenseTotal} />
-          <p className="seed-payday-help">항목을 나누지 않고 합계만 적어도 됩니다. 지금은 &lsquo;기타&rsquo;로 기록되고, 나중에 항목별로 나눌 수 있습니다. 카드대금까지 포함한 대략의 금액이면 충분합니다.</p>
+          <p className="seed-payday-help">카드대금까지 포함한 대략의 합계면 충분합니다. 나중에 항목별로 나눌 수 있습니다.</p>
         </div>}
         {onboardStep === 2 && <div className="seed-input-group">
           <h3>이번 달 시드 목표</h3>
@@ -650,7 +651,8 @@ export default function SeedBuilderPage() {
             {visibleRows.map((entry) => <div key={entry.key}><strong>{entry.label}{oneOffKeys.includes(entry.key) && <em className="seed-oneoff">일시</em>}</strong><span>{krw(entry.previous)} → {krw(entry.current)}</span><span className={entry.difference > 0 && !oneOffKeys.includes(entry.key) ? 'seed-rise' : ''}>{entry.difference === 0 ? '변동 없음' : `${entry.difference > 0 ? '+' : '-'}${krw(Math.abs(entry.difference))}`}</span></div>)}
           </div>
           {changedRows.length > 3 && <button type="button" className="seed-link-button" aria-expanded={showAllChanges} onClick={() => setShowAllChanges(!showAllChanges)}>{showAllChanges ? '변동 큰 3개만 보기' : `전체 ${changedRows.length}개 항목 보기`}</button>}
-          {riseTip && <p className="seed-insight-tip">{riseTip.label} 지출이 지난달보다 {krw(riseTip.difference)} 늘었습니다. 반복되는 지출인지 확인해 보세요. 이 중 월 {krw(Math.min(riseTip.difference, 10_000))}을 실제로 줄여 시드로 확보한다면 1년 추가 원금은 {krw(Math.min(riseTip.difference, 10_000) * 12)}입니다. 자동으로 모인 돈은 아닙니다. 세금·공과금 같은 일시 항목은 반복 지출로 판단하지 않습니다.</p>}
+          {riseTip && <p className="seed-insight-tip">{riseTip.label} 지출이 지난달보다 {krw(riseTip.difference)} 늘었습니다. 반복되는 지출인지 확인해 보세요. </p>}
+          {riseTip && <More label="줄이면 얼마나 모이나"><p className="seed-insight-tip">이 중 월 {krw(Math.min(riseTip.difference, 10_000))}을 실제로 줄여 시드로 확보한다면 1년 추가 원금은 {krw(Math.min(riseTip.difference, 10_000) * 12)}입니다. 자동으로 모인 돈은 아닙니다. 세금·공과금 같은 일시 항목은 반복 지출로 판단하지 않습니다.</p></More>}
         </> : <p className="seed-empty">이번 달과 지난달 기록을 저장하면 항목별 변화가 보입니다.</p>}
       </section></Detail>
       <Detail><p className="seed-next-note">지난달 기록은 변화 비교에만 사용합니다. 새 달 수입·급여일은 우리 집 수입으로 미리 채우고, 카드대금·고정비·비정기 항목은 그달 금액을 직접 입력하거나 점검 값으로 채운 뒤 투자 여력을 확인합니다.</p></Detail>
