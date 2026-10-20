@@ -11,6 +11,12 @@
 .sp__goal { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .sp__bar { display: inline-block; width: 120px; height: 6px; border-radius: 3px; background: var(--color-bg-tertiary); overflow: hidden; }
 .sp__bar > span { display: block; height: 100%; min-width: 2px; background: var(--color-brand); }
+.sp__ladder { display: grid; gap: 4px; }
+.sp__passed { display: inline-flex; align-items: center; gap: 3px; color: var(--color-success); }
+.sp__rungs { margin: 2px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.sp__rungs li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.sp__rungs li.is-passed .sp__rung-name { color: var(--color-success); }
+.sp__rung-name { display: inline-flex; align-items: center; gap: 3px; min-width: 9em; }
 .sp__month { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .sp__primary { padding: 6px 14px; border: 0; border-radius: 4px; background: var(--color-brand); color: var(--color-text-inverse); font: inherit; font-weight: 600; cursor: pointer; }
 .sp__secondary { padding: 4px 10px; border: 1px solid var(--color-border-default); border-radius: 4px; background: transparent; color: var(--color-text-primary); font: inherit; cursor: pointer; }

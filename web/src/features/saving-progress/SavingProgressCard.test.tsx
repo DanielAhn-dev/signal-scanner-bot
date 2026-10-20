@@ -92,6 +92,46 @@ describe('내 모으기', () => {
     expect(await screen.findByRole('button', { name: '예산의 저축에 연금을 적으면 계산됩니다' })).toBeInTheDocument()
   })
 
+  // 원금 5,950만 × 4% ÷ 12 = 월 약 19.8만 → 휴대폰(누적 8만)은 넘고 보험(누적 23만)의 86%
+  const fixed = [{ label: '관리비', amount: 250_000 }, { label: '휴대폰', amount: 80_000 }, { label: '보험', amount: 150_000 }]
+
+  it('고정비 사다리: 홈은 넘은 칸과 다음 칸 한 줄, 모아가기는 전체 계단과 계산 근거', async () => {
+    apiFetchMock.mockResolvedValue({ data: data({ ladder: { fixed, withdrawalPct: 4, addedThisMonth: 0 } }) })
+    const { unmount } = renderCard('home')
+    expect(await screen.findByText('월 20만원')).toBeInTheDocument()
+    expect(screen.getByText(/다음 보험 86%/)).toBeInTheDocument()
+    expect(screen.queryByText(/누적 48만원/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/이번 달로/)).not.toBeInTheDocument()
+    unmount()
+    renderCard('full')
+    expect(await screen.findByText(/누적 23만원의 86%/)).toBeInTheDocument()
+    expect(screen.getByText(/누적 48만원/)).toBeInTheDocument()
+    expect(screen.getByText(/넣은 원금 × 연 4% ÷ 12/)).toBeInTheDocument()
+  })
+
+  it('고정비 사다리: 이번 달 넣은 돈으로 새 칸을 넘으면 한 줄로 알려 준다', async () => {
+    apiFetchMock.mockResolvedValue({ data: data({ ladder: { fixed, withdrawalPct: 4, addedThisMonth: 40_000_000 } }) })
+    renderCard()
+    expect(await screen.findByText(/이번 달로 휴대폰까지 넘었어요/)).toBeInTheDocument()
+  })
+
+  it('고정비 사다리: 예산 기록이 없으면 예산으로 안내, 조회 실패(null)면 숨긴다', async () => {
+    apiFetchMock.mockResolvedValue({ data: data({ ladder: { fixed: [], withdrawalPct: 4, addedThisMonth: 0 } }) })
+    const { unmount } = renderCard()
+    expect(await screen.findByRole('button', { name: /예산에 고정지출을 적으면/ })).toBeInTheDocument()
+    unmount()
+    apiFetchMock.mockResolvedValue({ data: data({ ladder: { fixed: null, withdrawalPct: 4, addedThisMonth: 0 } }) })
+    renderCard()
+    await screen.findByText('5,950만원')
+    expect(screen.queryByText(/대신 내 주는 고정비/)).not.toBeInTheDocument()
+  })
+
+  it('시장이 10% 넘게 빠진 달에 넣었으면 그 횟수를 센다(넣지 않은 빠진 달은 세지 않음)', async () => {
+    apiFetchMock.mockResolvedValue({ data: data({ dropMonths: { months: ['2025-04', prev], since: '2025-03' } }) })
+    renderCard()
+    expect(await screen.findByText(/빠진 달에도/)).toHaveTextContent('코스피가 고점보다 10% 넘게 빠진 달에도 1번 넣었어요')
+  })
+
   it('응답 모양이 다르면(빈 data) 아무것도 그리지 않는다', async () => {
     apiFetchMock.mockResolvedValue({ data: {} })
     const { container } = renderCard()

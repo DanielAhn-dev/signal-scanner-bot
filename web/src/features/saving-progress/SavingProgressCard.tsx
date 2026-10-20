@@ -9,6 +9,7 @@ import { useCurrentChatId, useCurrentClientId } from '../../stores/profileStore'
 import { EMPTY_STATE, currentYmKst, type AccumulateState } from '../../lib/accumulate'
 import {
   DISTRIBUTION_TAX_RATE,
+  costLadder,
   doneMonths,
   extraUnitsPct,
   monthGrid,
@@ -23,6 +24,8 @@ import './saving-progress.css'
  * 평가금은 맨 아래 작게 둔다. 수익률을 자주 볼수록 손실을 크게 느껴 그만두기 쉽기 때문이다.
  * 홈(variant="home")은 요약, 모아가기(variant="full")는 2년 달력·세금 계산 근거까지.
  * 계산은 src/lib/savingProgress.ts, 서버 값은 /api/ui/saving-progress, 체크인은 user-state 'accumulate'.deposits.
+ * 큰 숫자가 실감 나지 않는 시기를 위해 원금을 "대신 내 주는 우리 집 고정비"로 바꿔 보여 주고(사다리),
+ * 그만두기 가장 쉬운 때(시장이 빠진 달)에 넣은 횟수를 센다. 홈은 한 줄씩, 모아가기는 전체 사다리.
  */
 export type SavingProgressData = {
   principal: { cost: number; cash: number; total: number }
@@ -39,9 +42,15 @@ export type SavingProgressData = {
   goal: { requiredSeed: number; monthlyNeed: number } | null
   plan: { monthly: number; depositDay: number } | null
   market: { asOf: string; fromHighPct: number } | null
+  /** 코스피가 최근 60거래일 고점보다 10% 넘게 빠진 날이 있던 달, 판정 시작 달 */
+  dropMonths?: { months: string[]; since: string } | null
+  /** 고정비 사다리 재료 — fixed가 null이면 가계부 조회 실패(사다리 숨김) */
+  ladder?: { fixed: Array<{ label: string; amount: number }> | null; withdrawalPct: number; addedThisMonth: number }
 }
 
 const man = formatKrwMan
+/** 만원 아래 작은 금액도 0만원이 되지 않게 */
+const manSmall = (v: number) => (v >= 10_000 ? man(v) : `${(Math.round(v / 1_000) * 1_000).toLocaleString('ko-KR')}원`)
 const STATE_LABEL: Record<MonthCell['state'], string> = { done: '넣음', missed: '쉰 달', pending: '이번 달 남음', future: '', before: '기록 전' }
 
 function MonthStrip({ cells }: { cells: MonthCell[] }) {
@@ -92,6 +101,11 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
   const goalPct = data.goal ? Math.min(100, (data.principal.total / data.goal.requiredSeed) * 100) : null
   const extra = data.market && data.market.fromHighPct <= -10 ? extraUnitsPct(data.market.fromHighPct) : 0
   const noHoldings = data.holdingCount === 0 && data.principal.cash === 0
+  const ladder = !noHoldings && data.ladder?.fixed
+    ? costLadder({ fixed: data.ladder.fixed, principal: data.principal.total, withdrawalPct: data.ladder.withdrawalPct, addedThisMonth: Math.max(data.ladder.addedThisMonth, thisMonth) })
+    : null
+  const lastPassed = ladder && ladder.passedCount > 0 ? ladder.rungs[ladder.passedCount - 1] : null
+  const dropDone = data.dropMonths ? data.dropMonths.months.filter((m) => done.has(m)).length : 0
 
   return (
     <section className={`sp sp--${variant}`} aria-label="내 모으기">
@@ -114,6 +128,52 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
           <span className="sp__bar" aria-hidden="true"><span style={{ width: `${Math.max(0, goalPct)}%` }} /></span>
           <span>목표 {man(data.goal.requiredSeed)}의 {goalPct < 10 ? goalPct.toFixed(1) : goalPct.toFixed(0)}%</span>
           <span className="sp__muted">월 {man(data.goal.monthlyNeed)} 꺼내 쓰기 기준 · 원금 기준</span>
+        </div>
+      )}
+
+      {/* 1-1. 이 돈이 대신 내 주는 고정비 — 원금 × 인출률(목표 트래커와 같은 값) ÷ 12를 가계부 고정지출 계단에 대 본다 */}
+      {ladder && (
+        <div className="sp__ladder">
+          {ladder.newlyPassed && (
+            <span className="sp__done"><Check size={14} aria-hidden /> 이번 달로 {ladder.newlyPassed.label}까지 넘었어요</span>
+          )}
+          <span><span className="sp__label">이 돈이 대신 내 주는 고정비</span> <strong>월 {manSmall(ladder.monthly)}</strong></span>
+          {ladder.rungs.length === 0 ? (
+            <button type="button" className="sp__link" onClick={() => navigate('/budget')}>예산에 고정지출을 적으면 우리 집 고정비로 보여 줘요 <ChevronRight size={12} aria-hidden /></button>
+          ) : variant === 'home' ? (
+            <span className="sp__goal">
+              {lastPassed && <span className="sp__passed"><Check size={12} aria-hidden /> {lastPassed.label}{ladder.passedCount > 1 ? `까지 ${ladder.passedCount}개` : ''}</span>}
+              {ladder.next ? (
+                <>
+                  <span className="sp__bar" aria-hidden="true"><span style={{ width: `${ladder.next.pct}%` }} /></span>
+                  <span>다음 {ladder.next.label} {ladder.next.pct < 10 ? ladder.next.pct.toFixed(1) : ladder.next.pct.toFixed(0)}%</span>
+                </>
+              ) : <span>적어 둔 고정비를 모두 넘었어요</span>}
+            </span>
+          ) : (
+            <ol className="sp__rungs">
+              {ladder.rungs.map((r, i) => {
+                const passed = i < ladder.passedCount
+                const isNext = i === ladder.passedCount
+                return (
+                  <li key={r.label} className={passed ? 'is-passed' : ''}>
+                    <span className="sp__rung-name">{passed ? <Check size={12} aria-label="넘음" /> : null}{r.label} {man(r.amount)}</span>
+                    {isNext && ladder.next ? (
+                      <span className="sp__goal">
+                        <span className="sp__bar" aria-hidden="true"><span style={{ width: `${ladder.next.pct}%` }} /></span>
+                        <span className="sp__muted">누적 {man(r.cumulative)}의 {ladder.next.pct < 10 ? ladder.next.pct.toFixed(1) : ladder.next.pct.toFixed(0)}%</span>
+                      </span>
+                    ) : <span className="sp__muted">누적 {man(r.cumulative)}</span>}
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+          {variant === 'full' && (
+            <span className="sp__muted">
+              넣은 원금 × 연 {data.ladder!.withdrawalPct}% ÷ 12(목표와 같은 꺼내 쓰기 비율). 예산의 고정지출을 작은 것부터 쌓았습니다. 원금 기준이라 시장이 빠져도 줄지 않습니다. 지금 꺼내 쓰라는 뜻이 아니라, 모은 돈의 크기를 생활비로 바꿔 본 것입니다.
+            </span>
+          )}
         </div>
       )}
 
@@ -141,6 +201,12 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
           {run.count > 0 ? <><strong>{run.count}개월</strong> 이어서 넣었어요</> : done.size > 0 ? '다시 이어 가는 달' : '첫 달을 기록해 보세요'}
           {run.pendingThisMonth && run.count > 0 ? <span className="sp__muted"> · 이번 달을 넣으면 {run.count + 1}개월</span> : null}
         </span>
+        {dropDone > 0 && (
+          <span>
+            코스피가 고점보다 10% 넘게 빠진 달에도 <strong>{dropDone}번</strong> 넣었어요
+            {variant === 'full' && data.dropMonths ? <span className="sp__muted"> · 가장 그만두기 쉬운 때입니다 ({data.dropMonths.since.replace('-', '.')}부터 셈)</span> : null}
+          </span>
+        )}
         {grid.map((row) => (
           <span key={row.year} className="sp__year">
             {variant === 'full' && <span className="sp__muted">{row.year}</span>}
