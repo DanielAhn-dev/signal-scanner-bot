@@ -21,7 +21,7 @@ export default function LifePlanCard({ view, reload }: { view: GoalView; reload:
       <section className="goal-card" aria-label="은퇴 나이 정하기">
         <h2>언제 은퇴하고 싶나요?</h2>
         <p className="goal-card__lead">
-          태어난 연월과 은퇴하고 싶은 나이를 넣으면, "언젠가"가 아니라 그 나이에 맞춰 매달 모을 금액을 계산합니다. 프로필에서도 바꿀 수 있습니다.
+          태어난 연월과 은퇴하고 싶은 나이를 넣으면 그 나이에 맞춰 매달 모을 금액을 계산합니다. 프로필에서도 바꿀 수 있습니다.
         </p>
         <LifeProfileCard compact onSaved={() => reload()} />
       </section>
