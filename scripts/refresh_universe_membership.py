@@ -68,6 +68,7 @@ ETF_BRANDS = [
     "KODEX", "TIGER", "KBSTAR", "RISE", "ACE", "SOL", "HANARO", "KOSEF", "ARIRANG", "PLUS", "KIWOOM", "TIMEFOLIO",
     "WOORI", "BNK", "UNICORN", "FOCUS", "TREX", "VITA", "마이다스", "에셋플러스", "히어로즈", "파워", "마이티", "KTOP",
     "1Q", "DAISHIN343", "WON",
+    "TIME", "KoAct", "KCGI", "MIDAS", "DS", "HK", "IBK", "아이엠에셋", "DAISHIN", "TRUSTON", "더제이",
 ]
 EXCLUDED_NAME_PATTERNS.append(r"^(" + "|".join(ETF_BRANDS) + r")(?=\s|$)")
 

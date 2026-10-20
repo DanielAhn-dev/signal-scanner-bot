@@ -42,6 +42,12 @@ etfTabCode 분포: 1 국내지수 99 · 2 국내업종/테마 342 · 3 국내파
 - `resolveEtfTaxClass({ code, name, productType?, etfTaxClass? })`: 덮어쓰기 목록 → DB 값 → 이름 규칙 순서로 정한다. 이름 규칙에서 해외 지역명·채권·국채·금·은·원유·선물·레버리지·인버스·합성·혼합이 들어 있으면 `other`로 본다.
 - `resolveOtherEtfGainTax({ code, name?, etfTaxClass?, gain })`: 기존 시그니처를 유지한다. 인자가 늘어도 예전 호출은 그대로 동작한다.
 - `rebalanceReport.ts`의 `FOREIGN` 정규식을 이 함수로 바꾼다. 리포트 숫자가 바뀌므로 `tests/rebalanceReport.test.ts`의 기대값을 확인한다.
+- **구현함 (2026-10-20)**: `isExchangeTradedProduct(code, name, productType?)`, `resolveEtfTaxClass`, `resolveOtherEtfGainTax({code, name?, productType?, etfTaxClass?, gain})`를 만들었다. 리포트 매도 비용과 합치기의 `taxedGain`(rebalancePlan)도 이 함수로 판정한다. 지역별로 묶는 데 쓰는 `FOREIGN`은 과세가 아니라서 그대로 둔다.
+  - 운영 DB 반영: 첫 실행에서 4,278행을 바꿨고, 아래 보정 뒤 34행을 더 바꿨다. 다시 돌린 드라이런은 0행이다.
+  - 네이버 ETF 1,176종과 대조하다 두 가지를 찾았다.
+    - (a) 브랜드 목록에 TIME·KoAct·KCGI·MIDAS·DS·HK·IBK·아이엠에셋·DAISHIN·TRUSTON·더제이가 빠져 있었다(76종). 목록에 추가했고, stocks 전체에서 개별주 이름과 겹치지 않는 것을 확인했다.
+    - (b) 네이버 탭 1·2(국내)에 단일종목·업종 레버리지·인버스, 은행채·채권혼합, 인도·미국 ETF가 섞여 있었다(31종). 배치가 이름으로 골라 `other`로 돌린다(`NOT_DOMESTIC_EQUITY_NAME`).
+  - 이름 규칙만 쓸 때(DB 값이 없을 때) 1,176종 중 약 1,135종이 맞는다. 틀리는 쪽은 둘이다. 하나는 이름에 나라가 없는 해외 ETF(테슬라밸류체인 등)로, 세금을 덜 잡는다. 다른 하나는 국내 리츠·코스닥글로벌 등으로, 세금을 더 잡는다. 그래서 4단계에서 DB 값을 실어 보내는 것이 중요하다.
 
 ### 4. 호출처 배선
 `stocks`를 이미 읽는 곳은 select에 `product_type, etf_tax_class`를 더해 넘긴다.

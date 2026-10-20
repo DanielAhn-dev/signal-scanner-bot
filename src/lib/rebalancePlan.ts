@@ -22,7 +22,7 @@ import {
   type IncomeGuideSettings,
 } from "./incomeGuide";
 import { chooseIndexBuy, newMoneyFromSettings, type EtfYield, type FeeAlternative } from "./indexProductChoice";
-import { ETF_BRAND_PREFIX } from "./securitiesTax";
+import { ETF_BRAND_PREFIX, resolveEtfTaxClass } from "./securitiesTax";
 
 const DISTRIBUTION_TAX = 0.154;
 /** 같은 계좌·같은 종류 안에서 전체의 이 비중(%) 미만이면 "소액"으로 보고 큰 종목에 합치자고 안내한다 */
@@ -43,6 +43,9 @@ export type PlanHolding = {
   bucket: AssetBucket;
   group: BucketGroup;
   avgPrice?: number | null;
+  /** stocks.product_type·etf_tax_class — 있으면 기타 ETF 판정에 먼저 쓴다 */
+  productType?: string | null;
+  etfTaxClass?: string | null;
 };
 
 /** 상품 유형별 분배율 가정 — 정의는 incomeGuide(resolveYieldPct의 대체값)로 옮겼다 */
@@ -105,7 +108,7 @@ export type PlanMerge = {
   reason: string;
   /** 합친 뒤 월 인컴(세후) 변화 추정 */
   monthlyIncomeDelta: number;
-  /** 일반 계좌의 해외 기초 ETF — 매매차익에 15.4%가 붙는다 */
+  /** 일반 계좌의 기타 ETF(해외주식·채권·금 등) — 매매차익에 15.4%가 붙는다 */
   taxedGain: boolean;
 };
 
@@ -284,7 +287,7 @@ export function buildRebalancePlan(input: {
       to: { code: dst.code, name: dst.name, accountLabel: dst.accountLabel, price: dst.price, shares, amount: Math.round(shares * dst.price) },
       reason,
       monthlyIncomeDelta: Math.round(netOf(dst, shares * dst.price) - netOf(src)),
-      taxedGain: !isTaxAdvantagedAccount(src.accountLabel) && FOREIGN.test(src.name),
+      taxedGain: !isTaxAdvantagedAccount(src.accountLabel) && resolveEtfTaxClass(src) === "other",
     });
   };
   const keeperReason = (keeper: PlanHolding, byFee: boolean) =>

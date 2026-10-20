@@ -118,7 +118,7 @@ const wonOrMan = (v: number) => (Math.abs(v) < 10_000 ? won(v) : man(v))
 
 /**
  * 합치기는 같은 지수·같은 종류끼리라 지금 바꾸든 나중에 바꾸든 손익 흐름은 거의 같다 — 서두를 필요가 없다.
- * 예외: 일반 계좌의 해외 기초 ETF는 차익에 15.4% 과세라, 손익이 0 이하인 지금 옮기면 세금이 없다.
+ * 예외: 일반 계좌의 기타 ETF(해외주식·채권·금 등)는 차익에 15.4% 과세라, 손익이 0 이하인 지금 옮기면 세금이 없다.
  */
 function MergeTiming({ taxedGain, gain }: { taxedGain: boolean; gain: number | null }) {
   if (gain == null) return null
@@ -446,7 +446,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                   <MergeTiming taxedGain={m.taxedGain} gain={m.from.realizedGain} />
                   <div style={faint}>
                     {m.reason}
-                    {m.taxedGain ? ' · 일반 계좌의 해외 기초 ETF라 매매차익에 15.4% 과세' : ''}
+                    {m.taxedGain ? ' · 일반 계좌의 기타 ETF(해외·채권·금 등)라 매매차익에 15.4% 과세' : ''}
                     {m.from.realizedGain != null ? ` · 확정 손익 ${m.from.realizedGain >= 0 ? '+' : '−'}${wonOrMan(Math.abs(m.from.realizedGain))}` : ''}
                   </div>
                 </li>

@@ -29,8 +29,6 @@ export const COVERED_CALL_MAX_SHARE_PCT = 100 / 3;
 /** 코스피가 최근 고점 대비 이만큼 빠졌으면 "하락 구간"으로 본다 */
 export const DRAWDOWN_ALERT_PCT = -10;
 
-const FOREIGN = /(미국|나스닥|S&P|다우존스|글로벌|선진|중국|차이나|일본|인도|베트남|유럽)/i;
-
 // 같은 지수 상품 고르기는 가이드와 함께 쓰는 src/lib/indexProductChoice.ts에 있다 (예전 경로로 import하는 곳을 위해 다시 내보낸다)
 export { FEE_SWITCH_PP, MAX_DEVIATION_PCT, MIN_MARKET_CAP, RETURN_GAP_PP, pickIndexProduct, sameIndexKey } from "./indexProductChoice";
 export type { EtfYield, FeeAlternative, IndexCandidate, IndexPick } from "./indexProductChoice";
@@ -181,14 +179,22 @@ const man = (v: number) => `${Math.round(v / 10_000).toLocaleString("ko-KR")}만
 const money = (v: number) => (Math.abs(v) < 100_000 ? won(v) : man(v));
 const signedPct = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
 
-/** 매도 비용 — ETF는 거래세 없음, 개별주 0.20%. 일반 계좌의 해외 기초 ETF·기타 ETF는 매매차익 15.4% */
-export function estimateSellCost(input: { code: string; name: string; amount: number; gain: number; taxAdvantaged: boolean }): number {
-  const { code, name, amount, gain, taxAdvantaged } = input;
-  const tax = taxAdvantaged ? 0 : amount * resolveSellTaxRate({ code, name, baseRate: KRX_SELL_TAX_RATE });
-  let gainTax = 0;
-  if (!taxAdvantaged && gain > 0) {
-    gainTax = FOREIGN.test(name) ? gain * DISTRIBUTION_TAX : resolveOtherEtfGainTax({ code, gain });
-  }
+/**
+ * 매도 비용 — ETF는 거래세 없음, 개별주 0.20%. 일반 계좌의 기타 ETF(해외주식·채권·금·파생 등, 국내주식형이 아닌 ETF)는
+ * 매매차익 15.4%. 기타 ETF 판정은 securitiesTax.resolveEtfTaxClass 하나로 한다(stocks.etf_tax_class가 있으면 그 값).
+ */
+export function estimateSellCost(input: {
+  code: string;
+  name: string;
+  productType?: string | null;
+  etfTaxClass?: string | null;
+  amount: number;
+  gain: number;
+  taxAdvantaged: boolean;
+}): number {
+  const { code, name, productType, etfTaxClass, amount, gain, taxAdvantaged } = input;
+  const tax = taxAdvantaged ? 0 : amount * resolveSellTaxRate({ code, name, productType, baseRate: KRX_SELL_TAX_RATE });
+  const gainTax = taxAdvantaged ? 0 : resolveOtherEtfGainTax({ code, name, productType, etfTaxClass, gain });
   return Math.round(amount * SELL_FEE_RATE + tax + gainTax);
 }
 
@@ -631,7 +637,7 @@ export function buildRebalanceReport(input: {
   const notes = [
     "안내만 하며 주문하지 않습니다. 수익을 보장하지 않으며, 근거는 과거 자료 검증 결과입니다(판정 등록부 C48·C54, 블로그 3편).",
     "분배율은 네이버 최근 12개월 분배율을 쓰고, 없으면 상품 유형별 가정입니다. 분배금은 매달 같지 않습니다.",
-    "매도 비용은 수수료 0.015%, 개별주 거래세 0.20%, 일반 계좌의 해외 기초 ETF 매매차익 15.4%(과표기준가 대신 매매차익으로 근사)를 뺀 추정입니다.",
+    "매도 비용은 수수료 0.015%, 개별주 거래세 0.20%, 일반 계좌의 기타 ETF(해외주식·채권·금 등) 매매차익 15.4%(과표기준가 대신 매매차익으로 근사)를 뺀 추정입니다.",
     "목표 비중·인컴 하한은 이 계좌가 아니라 입력한 실계좌 전체 기준입니다. 예금·입력하지 않은 계좌는 빠져 있습니다.",
   ];
   if (rows.some((r) => r.avgPrice == null)) notes.push("평균 매수가가 없는 종목은 수익 구간 판단 없이 그대로 둡니다.");

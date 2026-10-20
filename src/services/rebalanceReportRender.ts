@@ -167,7 +167,7 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
       .join('')
     const moveRows = c.moves
       .map(
-        (m) => `<tr><td class="rb-l">${e(m.from.name)}</td><td class="rb-l">${e(m.to.name)}</td><td class="rb-l">${m.when === 'now' ? '지금' : e(m.when)}${m.taxedGain && m.when === 'now' ? ' <span class="rb-muted">(해외 기초 ETF 차익은 15.4% 과세)</span>' : ''}</td><td class="${tone(m.monthlyIncomeDelta)}">${won(m.monthlyIncomeDelta)}</td></tr>`,
+        (m) => `<tr><td class="rb-l">${e(m.from.name)}</td><td class="rb-l">${e(m.to.name)}</td><td class="rb-l">${m.when === 'now' ? '지금' : e(m.when)}${m.taxedGain && m.when === 'now' ? ' <span class="rb-muted">(해외·채권·금 등 기타 ETF 차익은 15.4% 과세)</span>' : ''}</td><td class="${tone(m.monthlyIncomeDelta)}">${won(m.monthlyIncomeDelta)}</td></tr>`,
       )
       .join('')
     const blockedRows = c.blocked.length ? `<ul class="rb-list rb-muted">${c.blocked.map((b) => `<li>${e(b.name)}: ${e(b.reason)}</li>`).join('')}</ul>` : ''
