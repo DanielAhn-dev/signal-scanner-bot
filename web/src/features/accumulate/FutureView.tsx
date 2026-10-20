@@ -106,7 +106,8 @@ export default function FutureView({ monthly, lump, years, mix }: { monthly: num
             ))}
           </tbody>
         </table>
-        <p className="acc-note">세 구성이 똑같은 {FUTURE_DEFAULT_PATHS.toLocaleString()}가지 경우를 겪게 해서 비교했습니다. 보통이 높은 구성이 운 나쁜 경우에도 낫다는 보장은 없고, 재료 기간에 강했던 시장이 앞으로도 강하다는 근거도 아닙니다.</p>
+        <p className="acc-note">세 구성이 똑같은 {FUTURE_DEFAULT_PATHS.toLocaleString()}가지 경우를 겪게 해서 비교했습니다.</p>
+        <More label="이 비교의 한계"><p className="acc-note">보통이 높은 구성이 운 나쁜 경우에도 낫다는 보장은 없고, 재료 기간에 강했던 시장이 앞으로도 강하다는 근거도 아닙니다.</p></More>
       </div>
 
       <div className="acc-compare">

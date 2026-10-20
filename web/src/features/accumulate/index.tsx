@@ -270,7 +270,7 @@ export default function AccumulatePage() {
       <header>
         <span className="acc-eyebrow">모아가기</span>
         <h1>꾸준히 모으면 어떻게 되나</h1>
-        <p>증권사 앱의 모아가기로 직접 사는 지수 ETF를, 과거 실제 가격으로 시뮬레이션합니다. 주문은 내지 않습니다. 미래 예측이 아니라 "그때 시작했다면"의 분포입니다.</p>
+        <p>지수 ETF를 매달 모았다면 어땠는지 과거 가격으로 봅니다. 주문은 내지 않습니다.</p>
       </header>
 
       <SavingProgressCard variant="full" />
@@ -305,7 +305,7 @@ export default function AccumulatePage() {
               <div className="acc-pick">
                 <div className="acc-pick-head"><span className="acc-badge">추천</span><strong>{pick.name}</strong><span className="acc-code">{pick.code}</span></div>
                 <ul>{rec.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-                <p className="acc-note">같은 코스피200 지수를 따라가는 상품은 과거 수익률이 거의 같아서(연 0.1%p 안팎) 수익률 순위가 아니라 규모·거래대금·보수로 골랐습니다. {state.goal === 'growth' ? '일반형은 분배금에 세금(15.4%)이 붙어 연 약 0.3%p 불리합니다.' : '분배금이 필요한 목적이라 일반형을 추천합니다.'}</p>
+                <More label="왜 이 상품인가"><p className="acc-note">같은 코스피200 지수를 따라가는 상품은 과거 수익률이 거의 같아서(연 0.1%p 안팎) 수익률 순위가 아니라 규모·거래대금·보수로 골랐습니다. {state.goal === 'growth' ? '일반형은 분배금에 세금(15.4%)이 붙어 연 약 0.3%p 불리합니다.' : '분배금이 필요한 목적이라 일반형을 추천합니다.'}</p></More>
               </div>
             )}
             {custom && (
@@ -349,7 +349,7 @@ export default function AccumulatePage() {
       <section className="acc-card" aria-labelledby="acc-amount">
         <h2 id="acc-amount">2. 얼마를 모을까</h2>
         <p className="acc-note">
-          아래 계산용 금액입니다. 바꿔 보기만 하면 위 &lsquo;내 계획&rsquo;은 그대로이고, 이 금액으로 정하려면 맨 아래 버튼을 누르세요.
+          바꿔 봐도 &lsquo;내 계획&rsquo;은 그대로입니다. 정하려면 맨 아래 버튼을 누르세요.
           {mode === 'direct' && planMonthly > 0 && (num(amount) !== planMonthly || freq !== 'month') && (
             <> <button type="button" className="acc-link" onClick={resetToPlan}>내 계획({man(planMonthly)})으로 되돌리기</button></>
           )}
@@ -432,7 +432,8 @@ export default function AccumulatePage() {
                 {' '}{years}년 끝에는 넣은 돈의 {(sim.deepest.finalRatio * 100).toFixed(0)}%였습니다. 이런 구간에서 멈추지 않는 것이 결과를 정합니다.
               </p>
             )}
-            <p className="acc-note">시작 시점 {sim.starts}가지({history.monthly[0][0].slice(0, 4)}~, {history.name})를 모두 해 본 결과입니다. 원금보다 적었던 경우 {summary.lossPct.toFixed(0)}%, 원금의 +20% 이상이었던 경우 {summary.over20Pct.toFixed(0)}%. 시작점이 겹쳐 서로 독립적이지는 않고, 최근 큰 상승장이 포함되어 있습니다.</p>
+            <p className="acc-note">원금보다 적었던 경우 {summary.lossPct.toFixed(0)}% · 원금의 +20% 이상 {summary.over20Pct.toFixed(0)}% <small>(시작 시점 {sim.starts}가지 · {history.monthly[0][0].slice(0, 4)}~, {history.name})</small></p>
+            <More label="이 숫자의 한계"><p className="acc-note">시작 시점을 모두 해 본 결과입니다. 시작점이 겹쳐 서로 독립적이지는 않고, 최근 큰 상승장이 포함되어 있습니다.</p></More>
             {gain20.median != null && (
               <More>
                 <p className="acc-note"><strong>의미 있는 상승</strong>의 한 기준으로, 원금 대비 +20%에 처음 닿기까지 중앙값 <strong>{Math.round(gain20.median)}개월</strong>(빠른 25% {Math.round(gain20.p25 ?? 0)}개월, 느린 25% {Math.round(gain20.p75 ?? 0)}개월, 최대 {Math.round(gain20.max ?? 0)}개월)이 걸렸습니다.</p>
@@ -454,7 +455,8 @@ export default function AccumulatePage() {
                 <tr><td>KODEX 200TR</td><td>{man(summarize(simTr).median)}</td><td>{man(summarize(simTr).p10)}</td></tr>
               </tbody>
             </table>
-            <p className="acc-note">TR이 중앙값 기준 <strong>{man(summarize(simTr).median - summarize(simPlain).median)}</strong> 앞섭니다(연 약 0.3%p). 크지 않지만 세금으로 새는 몫이 꾸준히 복리로 굴러가는 구조 차이입니다. ISA·연금 계좌에서는 분배금 과세가 미뤄져 차이가 더 작습니다.</p>
+            <p className="acc-note">TR이 중앙값 기준 <strong>{man(summarize(simTr).median - summarize(simPlain).median)}</strong> 앞섭니다(연 약 0.3%p).</p>
+            <More label="왜 차이가 나나"><p className="acc-note">크지 않지만 세금으로 새는 몫이 꾸준히 복리로 굴러가는 구조 차이입니다. ISA·연금 계좌에서는 분배금 과세가 미뤄져 차이가 더 작습니다.</p></More>
           </div>
         )}
       </section>
@@ -492,14 +494,16 @@ export default function AccumulatePage() {
               </More>
             </div>
           )}
-        <p className="acc-note">이 안내는 수익을 올리는 규칙이 아닙니다. 과거 검증에서 "내리면 더 넣고 오르면 줄이기"가 꾸준히 넣는 것보다 나았다는 근거는 없었습니다. 흔들려서 멈추거나 몰아 넣는 실수를 막는 용도입니다.</p>
+        <p className="acc-note">수익을 올리는 규칙이 아니라, 흔들려서 멈추거나 몰아 넣는 실수를 막는 안내입니다.</p>
+        <More label="근거"><p className="acc-note">과거 검증에서 "내리면 더 넣고 오르면 줄이기"가 꾸준히 넣는 것보다 나았다는 근거는 없었습니다.</p></More>
       </section>
 
       <SplitPlanCard />
 
       <section className="acc-card" aria-labelledby="acc-rec">
         <h2 id="acc-rec">내 기록</h2>
-        <p className="acc-note">입금액은 증권사 앱에 보이는 세후 금액 그대로 적습니다. 분배금은 월초·중순·월말에 나눠 들어오니 그달 합계를 적고, 진행 중인 달은 평균에서 제외됩니다.</p>
+        <p className="acc-note">증권사 앱에 보이는 세후 입금액을 그대로 적으세요.</p>
+        <More label="분배금·진행 중인 달"><p className="acc-note">분배금은 월초·중순·월말에 나눠 들어오니 그달 합계를 적고, 진행 중인 달은 평균에서 제외됩니다.</p></More>
         <div className="acc-row">
           <label className="acc-field"><span>월</span><input type="month" value={recMonth} onChange={(e) => setRecMonth(e.target.value)} /></label>
           <label className="acc-field"><span>받은 분배금(세후)</span><input type="number" inputMode="numeric" min="0" value={recReceived} onChange={(e) => setRecReceived(e.target.value)} placeholder={state.received.find(([m]) => m === recMonth)?.[1]?.toString() ?? ''} /><AmountHint value={recReceived} /></label>

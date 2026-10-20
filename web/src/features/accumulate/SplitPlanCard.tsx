@@ -24,7 +24,7 @@ export default function SplitPlanCard() {
   return (
     <section className="acc-card" aria-labelledby="acc-split">
       <h2 id="acc-split">목돈 나눠 넣기</h2>
-      <p className="acc-note">더 오르기 전에 많이 담고 싶은 마음과, 담은 뒤 더 떨어질까 하는 걱정 사이에서 정하는 방식입니다. 날짜를 미리 정해 두면 그날 가격과 상관없이 기계적으로 넣을 수 있습니다.</p>
+      <p className="acc-note">날짜를 미리 정해 두면 그날 가격과 상관없이 기계적으로 넣을 수 있습니다.</p>
       <div className="acc-row">
         <label className="acc-field"><span>넣을 돈(만원)</span><input type="number" inputMode="numeric" min="0" value={totalMan} onChange={(e) => setTotalMan(e.target.value)} /><AmountHint value={totalMan} unit="man" /></label>
         <label className="acc-field"><span>첫 매수일</span><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value || todayKst())} /></label>
@@ -59,7 +59,8 @@ export default function SplitPlanCard() {
           ))}
         </tbody>
       </table>
-      <p className="acc-note">먼저 많이 넣을수록 평균은 높고, 나눠 넣을수록 도중 낙폭이 줄었습니다. 분할은 돈을 더 벌게 하는 방법이 아니라 후회를 줄이는 보험입니다. "더 떨어지면 더 산다" 같은 조건부 방식은 검증된 근거가 없어 넣지 않았습니다.</p>
+      <p className="acc-note">분할은 돈을 더 벌게 하는 방법이 아니라 후회를 줄이는 보험입니다.</p>
+      <More label="근거"><p className="acc-note">먼저 많이 넣을수록 평균은 높고, 나눠 넣을수록 도중 낙폭이 줄었습니다. "더 떨어지면 더 산다" 같은 조건부 방식은 검증된 근거가 없어 넣지 않았습니다.</p></More>
       <More>
         <p className="acc-note">기준 기간·표본: {SPLIT_PLAN_META.sample}</p>
         <p className="acc-note">한계: {SPLIT_PLAN_META.caveat}</p>

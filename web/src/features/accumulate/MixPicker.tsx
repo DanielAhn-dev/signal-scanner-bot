@@ -164,14 +164,15 @@ export default function MixPicker({ saved, draft, onDraft, etfView, kospiSlot, o
       <ul className="acc-limits">
         {draft.map((e) => <li key={e.index}><strong>{MIX_INDEX_LABEL[e.index]}</strong>: {ACCOUNT_HINT[e.index]}</li>)}
       </ul>
-      <p className="acc-note">계좌에 따라 얼마나 차이가 나는지는 아직 측정하지 않았습니다(가설 H18). ISA·연금 계좌는 한도와 인출 조건이 있으니 먼저 확인하세요. 홈 &lsquo;이번 달 할 일&rsquo;에서 지수마다 산 계좌를 고르면 다음 달부터 그 계좌로 안내합니다.</p>
+      <p className="acc-note">ISA·연금 계좌는 한도와 인출 조건이 있으니 먼저 확인하세요.</p>
+      <More label="계좌 배치 자세히"><p className="acc-note">계좌에 따라 얼마나 차이가 나는지는 아직 측정하지 않았습니다(가설 H18). 홈 &lsquo;이번 달 할 일&rsquo;에서 지수마다 산 계좌를 고르면 다음 달부터 그 계좌로 안내합니다.</p></More>
 
       {(dirty || status) && (
         <div className="acc-summary">
           {dirty && (
             <>
               <p><strong>{mixLabel(draft)}</strong>{saved ? '(으)로 내 계획 구성을 바꿀까요?' : '을(를) 내 계획 구성으로 정할까요?'} 아래 2·3번 계산은 벌써 이 구성으로 보여 드리고 있어요.</p>
-              <p className="acc-note">정하면 홈 &lsquo;이번 달 할 일&rsquo;이 지수마다 한 줄씩(계획 금액 × 비중) 안내하고, 리밸런싱 가이드의 해외 비중 목표도 이 구성을 따릅니다. 가상 계좌는 아직 코스피200만 삽니다(규칙 변경은 11/23 판정 뒤).</p>
+              <More label="정하면 무엇이 바뀌나"><p className="acc-note">홈 &lsquo;이번 달 할 일&rsquo;이 지수마다 한 줄씩(계획 금액 × 비중) 안내하고, 리밸런싱 가이드의 해외 비중 목표도 이 구성을 따릅니다. 가상 계좌는 아직 코스피200만 삽니다(규칙 변경은 11/23 판정 뒤).</p></More>
               <button type="button" className="acc-primary" disabled={saving} onClick={save}>{saving ? '정하는 중…' : '이 구성을 내 계획으로 정하기'}</button>
             </>
           )}

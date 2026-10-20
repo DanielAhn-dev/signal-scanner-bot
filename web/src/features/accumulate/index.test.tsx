@@ -73,7 +73,7 @@ describe('모아가기', () => {
     await screen.findByText('추천')
     const input = screen.getByLabelText(/^금액($|=)/) as HTMLInputElement
     expect(input.value).toBe('1220000')
-    expect(screen.getByText(/위 ‘내 계획’은 그대로/)).toBeInTheDocument()
+    expect(screen.getByText(/‘내 계획’은 그대로/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /으로 되돌리기/ })).not.toBeInTheDocument()
     fireEvent.change(input, { target: { value: '500000' } })
     fireEvent.click(screen.getByRole('button', { name: '내 계획(122만원)으로 되돌리기' }))
@@ -164,7 +164,7 @@ describe('모아가기', () => {
     expect(screen.queryByRole('button', { name: '이 구성을 내 계획으로 정하기' })).toBeNull()
 
     fireEvent.click(screen.getByRole('radio', { name: /국내·해외 반반/ }))
-    expect(screen.getByText(/2003~, 코스피200 50 · S&P500 50\)를 모두 해 본 결과/)).toBeInTheDocument()
+    expect(screen.getByText(/2003~, 코스피200 50 · S&P500 50\)/)).toBeInTheDocument()
     expect(screen.getByLabelText('같은 지수의 다른 후보')).toBeInTheDocument()
     expect(apiFetchMock.mock.calls.some(([p, o]) => p === '/api/ui/investment-prefs' && (o as any)?.method === 'POST')).toBe(false)
 
