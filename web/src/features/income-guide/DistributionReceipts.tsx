@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import More from '../../components/ui/More'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import StockSearchInput from '../../components/StockSearchInput'
@@ -275,9 +276,8 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
         </div>
       ))}
       <div style={faint}>
-        받은 기록이 있는 종목은 &lsquo;가장 최근 주당 분배금 × 지금 수량 × 그 종목의 실제 세후 비율&rsquo;로, 기록이 없는 종목은 최근 12개월 분배율로 추정합니다
-        {projection.receiptCodes > 0 ? ` (기록 ${projection.receiptCodes}종목 ${man(projection.fromReceipts)} + 추정 ${man(projection.fromEstimate)})` : ''}.
-        달마다 주당 분배금이 바뀌니 예상치입니다. 위 요약의 월 인컴도 이 값을 씁니다.
+        받은 기록과 최근 분배율로 낸 예상치입니다{projection.receiptCodes > 0 ? ` (기록 ${projection.receiptCodes}종목 ${man(projection.fromReceipts)} + 추정 ${man(projection.fromEstimate)})` : ''}.
+        <More label="어떻게 추정하나">받은 기록이 있는 종목은 &lsquo;가장 최근 주당 분배금 × 지금 수량 × 그 종목의 실제 세후 비율&rsquo;로, 기록이 없는 종목은 최근 12개월 분배율로 추정합니다. 달마다 주당 분배금이 바뀌니 예상치입니다. 위 요약의 월 인컴도 이 값을 씁니다.</More>
       </div>
       <IncomeBars bars={incomeBarSeries(monthGroups, thisMonth.month, projection.total)} goal={monthlyGoal ?? null} />
 
@@ -351,8 +351,9 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
         </div>
       </div>
       <div style={{ ...faint, marginTop: 10 }}>
-        받은 수량은 지금 보유 수량이 기본값입니다. 기준일 뒤에 산 수량은 빼고 적어 주세요. 세후 입금액을 적으면 그 종목의 실제 세금(커버드콜은 15.4%보다 적게 떼는 경우가 있습니다)으로 다음 달을 계산합니다.
-        같은 달·같은 종목을 다시 적으면 고친 것으로 저장합니다.
+        받은 수량은 지금 보유 수량이 기본값입니다. 기준일 뒤에 산 수량은 빼고 적어 주세요.
+        <More label="세후 입금액·다시 적기">세후 입금액을 적으면 그 종목의 실제 세금(커버드콜은 15.4%보다 적게 떼는 경우가 있습니다)으로 다음 달을 계산합니다.
+        같은 달·같은 종목을 다시 적으면 고친 것으로 저장합니다.</More>
       </div>
       {msg && <div style={{ ...muted, marginTop: 8 }}>{msg}</div>}
 

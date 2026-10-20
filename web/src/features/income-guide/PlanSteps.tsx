@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react'
+import More from '../../components/ui/More'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import type { PlanMixLine } from '../../../../src/lib/planMixGuide'
@@ -261,7 +262,8 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 아래에 받은 분배금을 적으면 실제 기준으로 바뀝니다.'}
         </div>
         <div style={{ marginTop: 6 }}>
-          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 원 단위로. 분배금이 들어온 직후에 적으면 가장 정확합니다. 보유 화면에서 매수·매도를 기록하거나 이번 달 받은 분배금을 적으면 그 계좌 예수금에서 자동으로 빼고 더합니다.</span>
+          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 적으세요.</span>
+          <More label="언제 적나 · 자동 반영"><span style={faint}>분배금이 들어온 직후에 적으면 가장 정확합니다. 보유 화면에서 매수·매도를 기록하거나 이번 달 받은 분배금을 적으면 그 계좌 예수금에서 자동으로 빼고 더합니다.</span></More>
           {[...accounts.map((a) => ({ key: a.key, label: a.label })), ...(LEGACY_CASH in cashWon ? [{ key: LEGACY_CASH, label: '계좌 미지정 (예전 입력)' }] : [])].map((a) => (
             <div key={a.key} style={{ ...inlineRow, marginTop: 4 }}>
               <span style={{ minWidth: 140 }}>{a.label}</span>
@@ -396,7 +398,8 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             저장
           </Button>
         </div>
-        <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다. [가상] 가상 계좌(봇)의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div>
+        <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다.</div>
+        <More label="가상 계좌 입금과의 관계"><div style={faint}>[가상] 가상 계좌(봇)의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div></More>
         {hold ? null : growth.needByNewMoney > 0 ? (
           <div style={{ marginTop: 6 }}>
             {idleCash && idleCash.spend > 0 ? '예수금으로 산 뒤에도 ' : ''}새 돈만으로 목표 {growth.targetPct.toFixed(0)}%까지 약 <strong>{man(growth.needByNewMoney)}</strong>
@@ -424,8 +427,8 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         ) : (
           <>
             <div style={muted}>
-              정리할 때 어디로 옮길지 정해 둔 목록입니다. 같은 지수·같은 종류끼리라 지금 바꾸든 오른 뒤에 바꾸든 손익 흐름은 거의 같아 급하지 않습니다.
-              옮길 때는 같은 계좌 안에서 팔고 바로 삽니다. 월 인컴 변화 <strong>{signedMan(plan.mergeIncomeDelta)}</strong> · ETF는 팔 때 거래세가 없습니다.
+              정리할 때 어디로 옮길지 정해 둔 목록입니다(급하지 않음). 월 인컴 변화 <strong>{signedMan(plan.mergeIncomeDelta)}</strong>
+              <More label="왜 급하지 않나 · 옮기는 법">같은 지수·같은 종류끼리라 지금 바꾸든 오른 뒤에 바꾸든 손익 흐름은 거의 같습니다. 옮길 때는 같은 계좌 안에서 팔고 바로 삽니다. ETF는 팔 때 거래세가 없습니다.</More>
             </div>
             <ul className="ig-merge-list">
               {merges.map((m) => (
@@ -489,7 +492,8 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                   </table>
                 </div>
                 <div style={{ ...faint, marginTop: 4 }}>
-                  수량은 지금 가격 기준입니다. 매도가 체결된 뒤 들어온 금액으로 매수 수량을 다시 맞추세요. 국내 커버드콜이 매매차익 비과세 대상인지는 증권사 앱의 종목 정보(과세 유형)에서 확인하세요.
+                  수량은 지금 가격 기준입니다. 매도가 체결된 뒤 들어온 금액으로 매수 수량을 다시 맞추세요.
+                  <More label="과세 유형 확인">국내 커버드콜이 매매차익 비과세 대상인지는 증권사 앱의 종목 정보(과세 유형)에서 확인하세요.</More>
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <strong style={{ fontSize: 12 }}>총보수(연 %, 선택)</strong>
@@ -535,8 +539,9 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--color-border-default)' }}>
           <strong style={{ fontSize: 13 }}>인컴 종목을 더 줄이기</strong>
           <div style={faint}>
-            남기고 싶은 인컴 종목 수를 적으면 한국·해외 × 고배당·커버드콜·리츠 역할마다 대표 하나로 합칩니다. 월 인컴이 하한({man(income.floor)}) 아래로 내려가거나,
-            같은 계좌에 대표가 없으면 합치지 않습니다. 합치기 목록과 리포트(문서 만들기)에 함께 나옵니다.
+            남길 인컴 종목 수를 적으면 역할마다 대표 하나로 합칩니다.
+            <More label="합치는 기준">한국·해외 × 고배당·커버드콜·리츠 역할마다 대표 하나로 합칩니다. 월 인컴이 하한({man(income.floor)}) 아래로 내려가거나,
+            같은 계좌에 대표가 없으면 합치지 않습니다. 합치기 목록과 리포트(문서 만들기)에 함께 나옵니다.</More>
           </div>
           <div style={inlineRow}>
             <UnitInput unit="종" width={72} inputMode="numeric" placeholder="6" aria-label="남길 인컴 종목 수" value={kindsTarget} onChange={(e) => setKindsTarget(e.target.value)} />
@@ -547,8 +552,9 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           <div style={{ marginTop: 10 }}>
             <strong style={{ fontSize: 13 }}>같은 지수 ETF 겹침도 합치기</strong>
             <div style={faint}>
-              KODEX 200·TIGER 200·200TR처럼 운용사만 다른 같은 지수 ETF를 한 종목으로 합칩니다. 같은 계좌 안에서만 옮기고, 일반 계좌는 분배금 과세를 미루는 TR형을 남깁니다.
-              국내 지수 ETF는 팔 때 거래세·매매차익 과세가 없고 같은 날 팔고 사면 시장 노출은 그대로입니다. 수익 구간은 지금, 손실 구간은 평단 회복 시로 안내합니다.
+              KODEX 200·TIGER 200·200TR처럼 운용사만 다른 같은 지수 ETF를 한 종목으로 합칩니다.
+              <More label="옮기는 방식·세금">같은 계좌 안에서만 옮기고, 일반 계좌는 분배금 과세를 미루는 TR형을 남깁니다.
+              국내 지수 ETF는 팔 때 거래세·매매차익 과세가 없고 같은 날 팔고 사면 시장 노출은 그대로입니다. 수익 구간은 지금, 손실 구간은 평단 회복 시로 안내합니다.</More>
             </div>
             <div style={inlineRow}>
               <Button
@@ -637,8 +643,8 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
               </div>
             )}
             <div style={faint}>
-              근거: 새 돈 먼저·목표에서 벗어날 때만 매매(가설 장부 C14). &lsquo;오르면 팔고 내리면 다시 사기&rsquo;를 반복하는 건 지수에서 효과가 없었습니다(C53).
               현금은 수익을 늘리는 장치가 아니라 하락을 버티고 살 돈입니다.
+              <More label="근거">새 돈 먼저·목표에서 벗어날 때만 매매(가설 장부 C14). &lsquo;오르면 팔고 내리면 다시 사기&rsquo;를 반복하는 건 지수에서 효과가 없었습니다(C53).</More>
             </div>
           </>
         ) : !trim ? (

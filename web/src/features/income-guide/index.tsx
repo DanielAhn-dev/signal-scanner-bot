@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import More from '../../components/ui/More'
 import { formatKrwMan } from '../../lib/format'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
@@ -369,12 +370,12 @@ export default function IncomeGuidePage() {
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
               취소
             </Button>
-            <div style={{ width: '100%', color: 'var(--color-text-tertiary)' }}>
+            <div style={{ width: '100%', color: 'var(--color-text-tertiary)' }}><More label="칸마다 무슨 뜻인가요">
               나이대는 생년월일 대신 구간만 받습니다. 고르면 모으기·전환 단계의 현금성 목표 비중에 나이대별 하한(20대 10% … 60대 이상 60%)이 붙습니다.
               "내 목표"는 엑셀로 쓰던 비중이 있으면 넣으세요. 비우면 단계 기본값이고, 성장(지수)은 나머지로 채웁니다.
               인컴 시작 월을 비워 두면 계속 모으는 단계로 봅니다. 시작 5년 전부터 매년 한 번 분배형·현금성 비중을 계단식으로 늘립니다.
               해외 비중 기본 50%는 2003~2026 코스피·S&amp;P500(원화) 반반이 5년 최악을 가장 줄였기 때문입니다.
-            </div>
+            </More></div>
           </div>
         )}
         <div>
@@ -532,10 +533,10 @@ export default function IncomeGuidePage() {
             {view.rebalance.unfilled.map((u, i) => (
               <UnfilledLine key={i} u={u} />
             ))}
-            <div style={{ marginTop: 4, color: 'var(--color-text-tertiary)' }}>
+            <div style={{ marginTop: 4, color: 'var(--color-text-tertiary)' }}><More label="왜 비중으로 정하나">
               손실 중인지 수익 중인지가 아니라 비중으로 정합니다. 새로 넣는 돈으로 모자란 바구니를 먼저 채우면 팔지 않고도 맞출 수 있습니다.
               국내 주식형 ETF끼리는 매매차익이 비과세라 일반 계좌에서도 옮기는 비용이 거의 없습니다.
-            </div>
+            </More></div>
           </div>
 
           <div style={box}>
@@ -551,8 +552,9 @@ export default function IncomeGuidePage() {
                 : `${man(-view.distributions.headroom)} 초과 — 분배율 높은 상품부터 ISA·연금으로 옮기세요.`}
             </div>
             <div style={{ color: 'var(--color-text-tertiary)' }}>
-              분배율은 바구니별 가정(고배당 4.5%, 커버드콜 8.5%, 리츠·인프라 6.5%, 국내 지수 2%, 해외 지수 1.2%)이라 실제와 다를 수 있습니다.
-              분배금으로 ISA·연금 납입을 채우고 남는 돈은 지수형(KODEX 200 TR 등)으로 사면, 과세 소득을 늘리지 않고 원금을 키울 수 있습니다.
+              분배율은 바구니별 가정이라 실제와 다를 수 있습니다.
+              <More label="가정한 분배율·절세 팁">분배율 가정: 고배당 4.5%, 커버드콜 8.5%, 리츠·인프라 6.5%, 국내 지수 2%, 해외 지수 1.2%.
+              분배금으로 ISA·연금 납입을 채우고 남는 돈은 지수형(KODEX 200 TR 등)으로 사면, 과세 소득을 늘리지 않고 원금을 키울 수 있습니다.</More>
             </div>
           </div>
 
@@ -634,7 +636,8 @@ export default function IncomeGuidePage() {
                 <div style={{ color: 'var(--color-text-secondary)' }}>그때 메모: {view.comparison.base.note}</div>
               )}
               <div style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                앞으로 할 일: {view.rebalance.reason} 할 일은 늘 지금 상태로만 계산합니다. "가만히 뒀다면"은 그때 수량을 지금 가격으로 다시 잰 값이고, 내 몫에는 새로 넣은 돈과 목표 변경도 들어갑니다.
+                앞으로 할 일: {view.rebalance.reason}
+                <More label="계산 방식">할 일은 늘 지금 상태로만 계산합니다. "가만히 뒀다면"은 그때 수량을 지금 가격으로 다시 잰 값이고, 내 몫에는 새로 넣은 돈과 목표 변경도 들어갑니다.</More>
               </div>
             </div>
           )}
@@ -775,10 +778,11 @@ export default function IncomeGuidePage() {
       </Collapsible>
 
       <div style={{ ...box, color: 'var(--color-text-tertiary)' }}>
-        근거(2026-10-01 검증, 10-06 보정): 코스피와 S&amp;P500(원화)은 2003~2026 연수익이 같았고(12.0%), 반반 매년 리밸런싱이 5년 최악을 가장 줄였습니다.
+        과거 결과는 미래를 보장하지 않으며, 이 화면은 주문을 내지 않는 안내입니다.
+        <More label="근거 (2026-10-01 검증, 10-06 보정)">코스피와 S&amp;P500(원화)은 2003~2026 연수익이 같았고(12.0%), 반반 매년 리밸런싱이 5년 최악을 가장 줄였습니다.
         리밸런싱은 수익보다 낙폭을 줄였습니다(−41.7%→−36.4%). 국내 고배당 3종에서 같은 생활비를 10년 꺼내 쓰면 2010~2016 시작점 대부분에서
         지수와 비슷하거나 원금을 더 남겼지만(분배금 세금 포함), 지수가 크게 오른 구간에서는 뒤졌습니다. 커버드콜은 장기로 연 4~11%p 뒤처졌습니다.
-        과거 결과는 미래를 보장하지 않으며, 이 화면은 주문을 내지 않는 안내입니다.
+        </More>
       </div>
     </div>
   )
