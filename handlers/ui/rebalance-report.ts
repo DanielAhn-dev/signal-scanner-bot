@@ -11,6 +11,7 @@ import { loadIndexAlternatives, toEtfYield } from '../../src/services/indexAlter
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView } from '../../src/lib/incomeGuide'
+import { applyAccountKinds, listGuideAccounts, scopeSettingsToAccount } from '../../src/lib/guideAccountScope'
 import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
 import { buildRebalanceReport, type EtfYield } from '../../src/lib/rebalanceReport'
 import { renderRebalanceReportHtml } from '../../src/services/rebalanceReportRender'
@@ -19,6 +20,7 @@ import { renderRebalanceReportHtml } from '../../src/services/rebalanceReportRen
 //   GET            → { ok, data: { accounts: [{ key, label, total, holdingCount }] } }  리포트 화면의 계좌 선택용
 //   GET ?account=키 → text/html 리포트 (주문하지 않는다, 기록도 남기지 않는다)
 // 목표·인컴 하한은 리밸런싱 가이드(income-guide) 설정을 그대로 쓴다. 이 경로는 설정을 저장하지 않는다.
+// 가이드의 계좌별 보기와 같은 계산 — 그 계좌 보유·예수금·목표·월 넣는 돈만으로 할 일을 낸다(src/lib/guideAccountScope.ts).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
@@ -42,20 +44,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rows = await loadAccountPositionRows(supabase, chatId)
     const accountKey = String(req.query.account ?? '').trim()
 
+    let file = await loadGuideFile(supabase, chatId)
+    const accountsMap = file?.accounts ?? {}
     if (!accountKey) {
       // 계좌 목록은 시세 없이 매수가 기준 규모만 — 고르는 데만 쓴다
-      const map = new Map<string, { key: string; label: string; total: number; holdingCount: number }>()
-      for (const h of toGuideHoldings(rows, new Map()).holdings) {
-        const a = map.get(h.accountKey) ?? { key: h.accountKey, label: h.accountLabel, total: 0, holdingCount: 0 }
-        a.total += h.quantity * h.price
-        a.holdingCount += 1
-        map.set(h.accountKey, a)
-      }
-      const accounts = [...map.values()].sort((a, b) => b.total - a.total).map((a) => ({ ...a, total: Math.round(a.total) }))
+      const accounts = listGuideAccounts(applyAccountKinds(toGuideHoldings(rows, new Map()).holdings, accountsMap), accountsMap)
+        .map(({ key, label, total, holdingCount }) => ({ key, label, total, holdingCount }))
       return res.status(200).json({ ok: true, data: { accounts } })
     }
 
-    let file = await loadGuideFile(supabase, chatId)
     if (!file) {
       const goal = await loadGoalFile(supabase, chatId).catch(() => null)
       file = {
@@ -64,14 +61,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     const { prices, realtimeHits } = await fetchGuidePrices(supabase, rows.map((r) => r.code))
-    const { holdings } = toGuideHoldings(rows, prices, realtimeHits)
+    const allHoldings = applyAccountKinds(toGuideHoldings(rows, prices, realtimeHits).holdings, accountsMap)
+    const largestKey = listGuideAccounts(allHoldings, accountsMap, file.settings.cashByAccount)[0]?.key ?? null
+    const holdings = allHoldings.filter((h) => h.accountKey === accountKey)
+    if (!holdings.length) return res.status(404).json({ error: '이 계좌에 입력된 보유가 없습니다.' })
     const today = kstDateKey()
-    const pastCashPcts = (file.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
+    const pastCashPcts = (accountsMap[accountKey]?.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
     // 가이드 화면과 같은 분배율(최근 12개월 실제값 → 없으면 가정)로 계산해야 월 인컴이 화면마다 갈리지 않는다
     const yieldPctByCode = await fetchYieldPctByCode(holdings)
     // 가이드 화면과 같은 해외 비중 목표(내 계획 구성이 있으면 그 값)
     const guidePlan = await loadGuidePlan(supabase, chatId).catch(() => null)
-    file = { ...file, settings: withPlanOverseas(file.settings, guidePlan?.overseasPct ?? null) }
+    file = { ...file, settings: scopeSettingsToAccount(withPlanOverseas(file.settings, guidePlan?.overseasPct ?? null), accountsMap, accountKey, largestKey) }
     const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts, yieldPctByCode, planMix: guidePlan?.mix ?? null })
     // 같은 지수 상품 비교 — 가이드 화면과 같은 자료·같은 함수(indexProductChoice)라 살 곳이 화면마다 갈리지 않는다
     const indexAlt = await loadIndexAlternatives(supabase, view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name })))
@@ -89,8 +89,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accountKey,
       etf,
       market: drop ? { asOf: drop.asOf, changePct: drop.changePct, fromHighPct: drop.fromHighPct } : null,
-      // 매달 넣는 돈은 계좌별로 나뉘어 있지 않아, 가장 큰 계좌에만 붙인다
-      monthlyContribution: view.accounts[0]?.key === accountKey ? file.settings.monthlyContribution : 0,
+      // 이 계좌에 매달 넣는 돈 (계좌에 적은 값, 없으면 예전 공통 값은 가장 큰 계좌에만 — scopeSettingsToAccount)
+      monthlyContribution: file.settings.monthlyContribution ?? 0,
       // 내 계획 구성 — 이 계좌가 맡은 지수 몫을 한 줄로 (가이드 ①·홈 할 일과 같은 나누기)
       planMixLines: planMixLines({ mix: guidePlan?.mix, monthly: guidePlan?.monthly ?? 0, held: view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name, accountKey: h.accountKey })) }),
     }
