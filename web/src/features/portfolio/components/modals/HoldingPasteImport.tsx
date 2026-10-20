@@ -16,7 +16,7 @@ export default function HoldingPasteImport({ maint }: { maint: MaintenanceState 
   const today = getTodayLocalYmd()
   const [text, setText] = useState('')
   const [rows, setRows] = useState<Row[]>([])
-  const [defaultDate, setDefaultDate] = useState(today)
+  const [defaultDate, setDefaultDate] = useState('') // 선택 입력 — 비우면 서버가 오늘로 두고, 이미 있는 종목은 원래 매수일을 지킨다
   const [reading, setReading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -54,7 +54,7 @@ export default function HoldingPasteImport({ maint }: { maint: MaintenanceState 
     setSaving(true)
     setNotice(null)
     try {
-      const results = await maint.runBulkRestore(ready.map((r) => ({ code: r.code!, quantity: r.quantity!, avgPrice: r.avgPrice!, buyDate: r.buyDate ?? defaultDate })))
+      const results = await maint.runBulkRestore(ready.map((r) => ({ code: r.code!, quantity: r.quantity!, avgPrice: r.avgPrice!, buyDate: r.buyDate ?? (defaultDate || undefined) })))
       const byCode = new Map(results.map((x) => [x.code, x]))
       setRows((list) => list.map((r) => (r.code && byCode.has(r.code) && !r.result?.ok ? { ...r, result: byCode.get(r.code) } : r)))
       const okCount = results.filter((x) => x.ok).length
@@ -82,12 +82,12 @@ export default function HoldingPasteImport({ maint }: { maint: MaintenanceState 
           style={{ width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
         />
         <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-          칸은 띄어쓰기·탭·쉼표 아무거나 됩니다. 증권사 앱의 보유 목록을 보며 메모장에 옮겨 적은 뒤 붙여 넣으세요. 매수일은 빼도 되고, 빼면 아래 날짜로 저장합니다.
+          칸은 띄어쓰기·탭·쉼표 아무거나 됩니다. 증권사 앱의 보유 목록을 보며 메모장에 옮겨 적은 뒤 붙여 넣으세요. 매수일은 빼도 됩니다. 나눠 샀다면 첫 매수일, 모르면 비워 두세요.
         </div>
       </div>
       <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end', marginBottom: 'var(--space-3)' }}>
         <div style={{ flex: 1 }}>
-          <Input label="매수일 (줄에 없을 때)" type="date" value={defaultDate} max={today} onChange={(e: any) => setDefaultDate(String(e?.target?.value || today))} />
+          <Input label="처음 산 날 (선택 · 줄에 없을 때)" type="date" value={defaultDate} max={today} onChange={(e: any) => setDefaultDate(String(e?.target?.value || ''))} />
         </div>
         <Button variant="secondary" onClick={read} disabled={!text.trim() || reading}>{reading ? '읽는 중…' : '읽기'}</Button>
       </div>
@@ -129,7 +129,7 @@ export default function HoldingPasteImport({ maint }: { maint: MaintenanceState 
                     </td>
                     <td style={{ padding: '6px', textAlign: 'right', whiteSpace: 'nowrap' }}>{r.quantity == null ? '-' : `${r.quantity.toLocaleString('ko-KR')}주`}</td>
                     <td style={{ padding: '6px', textAlign: 'right', whiteSpace: 'nowrap' }}>{won(r.avgPrice)}</td>
-                    <td style={{ padding: '6px', whiteSpace: 'nowrap' }}>{r.buyDate ?? defaultDate}</td>
+                    <td style={{ padding: '6px', whiteSpace: 'nowrap' }}>{r.buyDate ?? (defaultDate || '-')}</td>
                     <td style={{ padding: '6px', textAlign: 'right' }}>
                       {!r.result?.ok && <button type="button" className="caption" style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--color-text-secondary)' }} onClick={() => removeRow(r.key)}>빼기</button>}
                     </td>

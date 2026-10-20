@@ -109,7 +109,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
   }
 
   // 여러 종목 붙여넣기 저장 — 서버는 한 종목씩 받으므로 차례로 보내고 줄마다 결과를 돌려준다(실패한 줄은 남겨 고치게)
-  const runBulkRestore = async (items: Array<{ code: string; quantity: number; avgPrice: number; buyDate: string }>) => {
+  const runBulkRestore = async (items: Array<{ code: string; quantity: number; avgPrice: number; buyDate?: string }>) => {
     const results: Array<{ code: string; ok: boolean; created?: boolean; error?: string }> = []
     for (const it of items) {
       try {
