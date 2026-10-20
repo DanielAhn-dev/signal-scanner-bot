@@ -10,7 +10,6 @@ export function usePositions() {
   const [refreshing, setRefreshing] = useState(false)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [accountFolders, setAccountFolders] = useState<AccountFolder[]>([])
   const [serverTotal, setServerTotal] = useState<number | null>(null)
   const [loadMoreLoading, setLoadMoreLoading] = useState(false)
   const INITIAL_PAGE_SIZE = 20
@@ -27,35 +26,6 @@ export function usePositions() {
       const rows = Array.isArray(json?.data) ? json.data : []
       setAllRows(rows)
       setServerTotal(json?.count != null ? Number(json.count) : null)
-      const nextFolders = Array.isArray(json?.accounts)
-        ? json.accounts
-            .map((item: any) => ({
-              key: buildAccountKey(item?.brokerName, item?.accountName),
-              brokerName: String(item?.brokerName || ''),
-              accountName: String(item?.accountName || ''),
-              count: Number(item?.count || 0),
-            }))
-            .filter((item: AccountFolder) => item.brokerName || item.accountName)
-        : []
-      if (nextFolders.length > 0) {
-        setAccountFolders(nextFolders)
-      } else {
-        const fallbackMap = new Map<string, AccountFolder>()
-        for (const row of rows) {
-          const key = buildAccountKey(row?.broker_name, row?.account_name)
-          const labelBroker = String(row?.broker_name || '').trim()
-          const labelAccount = String(row?.account_name || '').trim()
-          if (!labelBroker && !labelAccount) continue
-          const prev = fallbackMap.get(key)
-          fallbackMap.set(key, {
-            key,
-            brokerName: labelBroker,
-            accountName: labelAccount,
-            count: (prev?.count ?? 0) + 1,
-          })
-        }
-        setAccountFolders(Array.from(fallbackMap.values()))
-      }
       setLastUpdatedAt(Date.now())
     } catch (e: any) {
       setError(e?.message || String(e))
@@ -82,6 +52,21 @@ export function usePositions() {
   }, [allRows.length])
 
   useEffect(() => { load() }, [load])
+
+  // 계좌 목록은 받은 전체 행에서 만든다. 서버 accounts는 그 페이지(첫 20건)만 센 것이라,
+  // 첫 페이지가 한 계좌에 몰려 있으면 계좌가 1개로 보여 실제 계좌 서브 탭이 사라졌다.
+  const accountFolders = useMemo<AccountFolder[]>(() => {
+    const map = new Map<string, AccountFolder>()
+    for (const row of allRows) {
+      const brokerName = String(row?.broker_name || '').trim()
+      const accountName = String(row?.account_name || '').trim()
+      if (!brokerName && !accountName) continue
+      const key = buildAccountKey(brokerName, accountName)
+      map.set(key, { key, brokerName, accountName, count: (map.get(key)?.count ?? 0) + 1 })
+    }
+    return Array.from(map.values()).sort((x, y) =>
+      `${x.brokerName} ${x.accountName}`.trim().localeCompare(`${y.brokerName} ${y.accountName}`.trim(), 'ko'))
+  }, [allRows])
 
   // 초기 페이지(20건) 로드 후 나머지 페이지를 백그라운드로 이어서 불러와
   // 상단 요약(보유 종목 수/평가손익 합계 등)이 일부 데이터가 아닌 전체 보유 기준으로 계산되도록 함.
