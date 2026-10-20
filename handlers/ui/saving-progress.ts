@@ -9,10 +9,13 @@ import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { loadGoalFile, requiredSeed, DEFAULT_WITHDRAWAL_PCT } from '../../src/services/goalTracker'
 import { readInvestPlan } from '../../src/services/userPlan'
 import { classifyHolding, resolveYieldPct } from '../../src/lib/incomeGuide'
-import { accountKind, distributionTaxSaved, isTotalReturnEtf } from '../../src/lib/savingProgress'
+import { accountKind, distributionTaxSaved, dropMonths, isTotalReturnEtf } from '../../src/lib/savingProgress'
+import { cashEffect, categoryById } from '../../src/lib/moneyFlow'
+import { fetchKospiCloses } from '../../src/services/marketFlowCaution'
 
 // 홈·모아가기 "내 모으기" (계산 src/lib/savingProgress.ts)
 //   GET → { ok, data } 실계좌 원금·예수금·평가금, 순매수 있었던 달, 이번 달 실계좌 매수(monthBuys), 분배금 기록, 세금으로 아끼는 돈(추정), 목표, 내 계획, 시장 고점 대비
+//         + 고정비 사다리 재료(가계부 고정지출·인출률·이번 달 순매수), 코스피가 10% 넘게 빠졌던 달
 // 읽기만 한다. 체크인(이번 달 넣었어요)은 웹의 user-state 'accumulate'.deposits에 저장한다.
 
 /** 같은 지수 일반형 분배율을 TR형 절세 추정에 쓴다 */
@@ -88,6 +91,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 세금으로 아끼는 돈 — 예산의 연금 저축(월) × 12, 계좌별 분배금 세금
     let pensionMonthly: number | null = null
+    // 고정비 사다리 — 가계부(예산) 고정지출. 조회 실패면 null(화면이 사다리를 숨긴다), 기록이 없으면 []
+    let fixedCosts: Array<{ label: string; amount: number }> | null = user.clientId ? null : []
     if (user.clientId) {
       const { data: check, error: checkError } = await supabase
         .from('money_flow_checks')
@@ -100,6 +105,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!checkError) {
         const saving = Array.isArray((check as any)?.input?.saving) ? (check as any).input.saving : []
         pensionMonthly = saving.filter((i: any) => i?.categoryId === 'save_pension').reduce((s: number, i: any) => s + Math.max(0, Number(i?.amount) || 0), 0)
+        const fixed = Array.isArray((check as any)?.input?.fixed) ? (check as any).input.fixed : []
+        fixedCosts = fixed
+          .map((i: any) => ({ label: String(i?.label || categoryById(String(i?.categoryId))?.label || '').trim(), amount: cashEffect({ amount: Number(i?.amount) || 0, payment: i?.payment }) }))
+          .filter((i: { label: string; amount: number }) => i.label && i.amount > 0)
       }
     }
     const [yieldPctByCode, underlying] = await Promise.all([
@@ -133,7 +142,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       plan = { monthly: p.monthly, depositDay: p.depositDay }
     }
 
-    const drop = await fetchDropDayContext(null, null).catch(() => null)
+    const [drop, kospi] = await Promise.all([
+      fetchDropDayContext(null, null).catch(() => null),
+      fetchKospiCloses(7).catch(() => new Map<string, number>()),
+    ])
+    // 빠진 달 — 홈 하락 안내와 같은 기준(최근 60거래일 고점 대비 −10%)
+    const drops = dropMonths([...kospi.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, close]) => ({ date, close })))
 
     return res.status(200).json({
       ok: true,
@@ -153,6 +167,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         goal: goalSeed && Number.isFinite(goalSeed) ? { requiredSeed: Math.round(goalSeed), monthlyNeed: goalFile!.settings.targetMonthlyProfit } : null,
         plan,
         market: drop ? { asOf: drop.asOf, fromHighPct: drop.fromHighPct } : null,
+        dropMonths: drops.since ? drops : null,
+        ladder: {
+          fixed: fixedCosts,
+          withdrawalPct: goalFile?.settings?.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT,
+          addedThisMonth: Math.max(0, Math.round(netByMonth.get(thisYm) ?? 0)),
+        },
       },
     })
   } catch (e: any) {

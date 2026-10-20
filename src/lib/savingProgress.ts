@@ -124,3 +124,73 @@ export function extraUnitsPct(fromHighPct: number): number {
   if (!(fromHighPct < 0) || fromHighPct <= -100) return 0;
   return (1 / (1 + fromHighPct / 100) - 1) * 100;
 }
+
+export type LadderRung = { label: string; amount: number; cumulative: number };
+export type CostLadder = {
+  /** 원금 × 인출률 ÷ 12 — 원금으로 매달 꺼내 쓸 수 있다고 보는 돈 */
+  monthly: number;
+  /** 고정비를 작은 것부터 쌓은 계단. cumulative = 이 칸까지 합계 */
+  rungs: LadderRung[];
+  /** 지금 넘은 칸 수 */
+  passedCount: number;
+  /** 다음 칸과 거기까지 온 비율(0~100). 다 넘었으면 null */
+  next: (LadderRung & { pct: number }) | null;
+  /** 이번 달에 넣은 돈으로 새로 넘은 칸 중 가장 높은 것 */
+  newlyPassed: LadderRung | null;
+};
+
+/**
+ * "이 돈이 대신 내 주는 우리 집 고정비" — 가계부 고정지출을 작은 것부터 쌓아, 원금으로 매달 꺼낼 수 있는 돈이 어느 칸까지 왔는지.
+ * 원금 기준이라 시장이 빠져도 칸이 뒤로 가지 않는다. 인출률은 목표 트래커와 같은 값을 받아 같은 카드의 목표 막대와 어긋나지 않게 한다.
+ * 같은 이름은 합치고, 0원 이하(환급 등)는 뺀다.
+ */
+export function costLadder(input: {
+  fixed: Array<{ label: string; amount: number }>;
+  principal: number;
+  withdrawalPct: number;
+  addedThisMonth: number;
+}): CostLadder {
+  const toMonthly = (p: number) => (Math.max(0, p) * Math.max(0, input.withdrawalPct)) / 100 / 12;
+  const monthly = toMonthly(input.principal);
+  const before = toMonthly(input.principal - Math.max(0, input.addedThisMonth));
+  const byLabel = new Map<string, number>();
+  for (const f of input.fixed) {
+    const label = String(f.label ?? "").trim();
+    const amount = Number(f.amount);
+    if (!label || !(amount > 0)) continue;
+    byLabel.set(label, (byLabel.get(label) ?? 0) + amount);
+  }
+  let cumulative = 0;
+  const rungs = [...byLabel.entries()]
+    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+    .map(([label, amount]) => ({ label, amount, cumulative: (cumulative += amount) }));
+  const passed = rungs.filter((r) => r.cumulative <= monthly);
+  const nextRung = rungs[passed.length];
+  const fresh = passed.filter((r) => r.cumulative > before);
+  return {
+    monthly,
+    rungs,
+    passedCount: passed.length,
+    next: nextRung ? { ...nextRung, pct: Math.min(100, (monthly / nextRung.cumulative) * 100) } : null,
+    newlyPassed: fresh.length ? fresh[fresh.length - 1] : null,
+  };
+}
+
+/**
+ * 코스피가 최근 window거래일 고점보다 thresholdPct(음수) 이상 빠진 날이 있었던 달('YYYY-MM').
+ * closes는 오래된 것부터. 처음 window일은 고점을 다 볼 수 없어 판정하지 않고, 판정을 시작한 달을 since로 준다.
+ * "내 모으기"의 '빠진 달에도 넣은 횟수'에 쓴다 — 그만두기 가장 쉬운 때 넣은 것을 센다.
+ */
+export function dropMonths(closes: Array<{ date: string; close: number }>, thresholdPct = -10, window = 60): { months: string[]; since: string | null } {
+  const days = closes.filter((d) => Number.isFinite(d.close) && d.close > 0);
+  const out = new Set<string>();
+  let since: string | null = null;
+  for (let i = window - 1; i < days.length; i += 1) {
+    let high = 0;
+    for (let j = i - window + 1; j <= i; j += 1) high = Math.max(high, days[j].close);
+    const ym = days[i].date.slice(0, 7);
+    if (since == null) since = ym;
+    if ((days[i].close / high - 1) * 100 <= thresholdPct) out.add(ym);
+  }
+  return { months: [...out].sort(), since };
+}

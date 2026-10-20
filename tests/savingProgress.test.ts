@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   accountKind,
+  costLadder,
   distributionTaxSaved,
   doneMonths,
+  dropMonths,
   extraUnitsPct,
   isTotalReturnEtf,
   monthGrid,
@@ -86,4 +88,59 @@ test("고점 대비 하락이면 같은 돈으로 더 많은 수량: −20%면 2
   assert.ok(Math.abs(extraUnitsPct(-21.6) - 27.55) < 0.01);
   assert.equal(extraUnitsPct(0), 0);
   assert.equal(extraUnitsPct(3), 0);
+});
+
+test("고정비 사다리: 작은 것부터 쌓고, 같은 이름은 합치고, 0원·환급은 뺀다", () => {
+  // 원금 3,000만 × 4% ÷ 12 = 월 10만
+  const r = costLadder({
+    fixed: [
+      { label: "관리비", amount: 250_000 },
+      { label: "휴대폰", amount: 50_000 },
+      { label: "휴대폰", amount: 30_000 },
+      { label: "영상·음악", amount: 0 },
+      { label: "", amount: 10_000 },
+      { label: "보험", amount: 150_000 },
+    ],
+    principal: 30_000_000,
+    withdrawalPct: 4,
+    addedThisMonth: 0,
+  });
+  assert.equal(Math.round(r.monthly), 100_000);
+  assert.deepEqual(r.rungs.map((x) => [x.label, x.cumulative]), [["휴대폰", 80_000], ["보험", 230_000], ["관리비", 480_000]]);
+  assert.equal(r.passedCount, 1);
+  assert.equal(r.next?.label, "보험");
+  assert.equal(Math.round(r.next!.pct), 43); // 10만 / 누적 23만
+  assert.equal(r.newlyPassed, null);
+});
+
+test("고정비 사다리: 이번 달 넣은 돈으로 새로 넘은 칸만 알려 준다", () => {
+  const fixed = [{ label: "휴대폰", amount: 80_000 }, { label: "보험", amount: 150_000 }];
+  // 이번 달 전 원금 2,000만(월 6.7만) → 지금 3,000만(월 10만): 휴대폰을 이번 달에 넘음
+  const a = costLadder({ fixed, principal: 30_000_000, withdrawalPct: 4, addedThisMonth: 10_000_000 });
+  assert.equal(a.newlyPassed?.label, "휴대폰");
+  // 이미 지난달에 넘었으면 다시 알리지 않는다
+  const b = costLadder({ fixed, principal: 30_000_000, withdrawalPct: 4, addedThisMonth: 1_000_000 });
+  assert.equal(b.newlyPassed, null);
+});
+
+test("고정비 사다리: 다 넘으면 next 없음, 원금 0이면 0칸", () => {
+  const fixed = [{ label: "휴대폰", amount: 50_000 }];
+  assert.equal(costLadder({ fixed, principal: 100_000_000, withdrawalPct: 4, addedThisMonth: 0 }).next, null);
+  const z = costLadder({ fixed, principal: 0, withdrawalPct: 4, addedThisMonth: 0 });
+  assert.equal(z.passedCount, 0);
+  assert.equal(z.next?.pct, 0);
+  assert.deepEqual(costLadder({ fixed: [], principal: 1e8, withdrawalPct: 4, addedThisMonth: 0 }).rungs, []);
+});
+
+test("빠진 달: 최근 고점 대비 −10% 이하인 날이 있던 달만, 고점 창이 차기 전은 판정 안 함", () => {
+  const days: Array<{ date: string; close: number }> = [];
+  const push = (ym: string, n: number, close: number) => { for (let d = 1; d <= n; d += 1) days.push({ date: `${ym}-${String(d).padStart(2, "0")}`, close }); };
+  push("2026-01", 3, 100);
+  push("2026-02", 3, 95); // −5%
+  push("2026-03", 3, 89); // −11%
+  push("2026-04", 3, 99);
+  const r = dropMonths(days, -10, 7); // 7거래일 창이라 3월 1일부터 1월 고점까지 본다
+  assert.deepEqual(r.months, ["2026-03"]);
+  assert.equal(r.since, "2026-03");
+  assert.deepEqual(dropMonths(days.slice(0, 2), -10, 3), { months: [], since: null });
 });
