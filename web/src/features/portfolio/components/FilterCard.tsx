@@ -259,7 +259,7 @@ export default function FilterCard({
             />
           </div>
           <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-            등급은 종목 점수(total_score), 상태는 점수/수익률/신호/진입·추세·경고 등급과 warn_score 기준을 함께 반영해 자동 분류됩니다.
+            등급은 종목 점수로, 상태는 점수·수익률·신호·경고 등급을 함께 보고 자동으로 나눕니다.
           </div>
 
           {includeCost && (
