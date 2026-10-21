@@ -346,6 +346,8 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
     },
   ]
 
+  // 일반 계좌 기타 ETF가 손실·본전이면 지금 옮겨야 세금이 없다 — 접힌 목록 밖에 한 줄로 알린다 (MergeTiming과 같은 조건)
+  const taxFreeNow = merges.filter((m) => m.taxedGain && m.from.realizedGain != null && m.from.realizedGain <= 0).length
   const feeCodes = [...new Set(merges.flatMap((m) => [m.from.code, m.to.code]))]
 
   return (
@@ -519,9 +521,10 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                 </li>
               ))}
             </ul>
-            <div style={faint}>판 대금이 있으면 같은 계좌 예수금과 합쳐 한 번에 삽니다(리포트). 산 뒤에는 위 예수금 칸을 남은 금액으로 고쳐 주세요.</div>
+            <div style={faint}>판 대금이 있으면 같은 계좌 예수금과 합쳐 한 번에 삽니다(리포트). 산 뒤에는 포트폴리오 계좌 화면의 예수금을 남은 금액으로 고쳐 주세요.</div>
           </div>
         )}
+        <More label="살 곳을 고른 이유 · 매달 넣는 돈 적기">
         <div style={faint}>{plan.buyHint}</div>
         {plan.buyWhy && <div style={faint}>{plan.buyWhy}</div>}
         {/* 계좌마다 살 곳이 다르면 나눠 보여 준다 — 분배금은 그 계좌 안에서만 다시 산다 */}
@@ -543,7 +546,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           </Button>
         </div>
         <div style={faint}>증권사 계좌에 내가 직접 넣는 금액입니다.{scopeLabel ? ' 계좌마다 따로 적습니다.' : ''}</div>
-        <More label="가상 계좌 입금과의 관계"><div style={faint}>[가상] 가상 계좌(봇)의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div></More>
+        <div style={faint}>[가상] 가상 계좌(봇)의 월 입금(내 계획의 &lsquo;매달 투자할 돈&rsquo;)과는 따로이고 서로 바뀌지 않습니다.</div>
         {hold ? null : growth.needByNewMoney > 0 ? (
           <div style={{ marginTop: 6 }}>
             {idleCash && idleCash.spend > 0 ? '예수금으로 산 뒤에도 ' : ''}새 돈만으로 목표 {growth.targetPct.toFixed(0)}%까지 약 <strong>{man(growth.needByNewMoney)}</strong>
@@ -559,6 +562,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         ) : (
           <div style={{ marginTop: 6, ...muted }}>성장 비중은 이미 목표 이상입니다. 새 돈은 같은 곳에 계속 넣으면 됩니다.</div>
         )}
+        </More>
       </div>
 
       {/* ② 합치기 */}
@@ -571,9 +575,13 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         ) : (
           <>
             <div style={muted}>
-              정리할 때 어디로 옮길지 정해 둔 목록입니다(급하지 않음). 월 인컴 변화 <strong>{signedMan(plan.mergeIncomeDelta)}</strong>
-              <More label="왜 급하지 않나 · 옮기는 법">같은 지수·같은 종류끼리라 지금 바꾸든 오른 뒤에 바꾸든 손익 흐름은 거의 같습니다. 옮길 때는 같은 계좌 안에서 팔고 바로 삽니다. ETF는 팔 때 거래세가 없습니다.</More>
+              정리할 때 옮길 곳을 정해 둔 목록입니다(급하지 않음) · 월 인컴 변화 <strong>{signedMan(plan.mergeIncomeDelta)}</strong>
             </div>
+            {taxFreeNow > 0 && (
+              <div style={{ color: 'var(--color-warning)' }}>지금 옮기면 세금이 없는 종목 {taxFreeNow}개 — 오른 뒤엔 차익의 15.4%</div>
+            )}
+            <More label={`합칠 목록 ${merges.length}건 보기`}>
+            <div style={faint}>같은 지수·같은 종류끼리라 지금 바꾸든 오른 뒤에 바꾸든 손익 흐름은 거의 같습니다. 옮길 때는 같은 계좌 안에서 팔고 바로 삽니다. ETF는 팔 때 거래세가 없습니다.</div>
             <ul className="ig-merge-list">
               {merges.map((m) => (
                 <li key={`${m.from.accountLabel}-${m.from.code}`} className="ig-merge-item">
@@ -678,9 +686,16 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                 </div>
               </div>
             )}
+            </More>
           </>
         )}
-        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--color-border-default)' }}>
+        {plan.compress && (
+          <div style={{ marginTop: 4, ...muted }}>
+            인컴 종목 줄이기: {plan.compress.before}종 → {plan.compress.after}종 (목표 {plan.compress.target}종{plan.compress.reached ? '' : ' · 목표까지는 못 줄임'})
+          </div>
+        )}
+        <More label="인컴 종목 수 줄이기 · 같은 지수 겹침 설정">
+        <div style={{ marginTop: 4 }}>
           <strong style={{ fontSize: 13 }}>인컴 종목을 더 줄이기</strong>
           <div style={faint}>
             남길 인컴 종목 수를 적으면 역할마다 대표 하나로 합칩니다.
@@ -714,8 +729,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           {plan.compress && (
             <div style={{ marginTop: 8 }}>
               <div>
-                인컴 종목 <strong>{plan.compress.before}종 → {plan.compress.after}종</strong> (목표 {plan.compress.target}종{plan.compress.reached ? '' : ' · 목표까지는 못 줄임'}) · 압축 뒤 월 인컴{' '}
-                <strong>{man(plan.compress.incomeAfter)}</strong>
+                압축 뒤 월 인컴 <strong>{man(plan.compress.incomeAfter)}</strong>
               </div>
               <ul className="ig-merge-list">
                 {plan.compress.roles.map((r) => {
@@ -758,6 +772,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             </div>
           )}
         </div>
+        </More>
       </div>
 
       {/* ③ 팔기 */}
@@ -787,8 +802,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
               </div>
             )}
             <div style={faint}>
-              현금은 수익을 늘리는 장치가 아니라 하락을 버티고 살 돈입니다.
-              <More label="근거">새 돈 먼저·목표에서 벗어날 때만 매매(가설 장부 C14). &lsquo;오르면 팔고 내리면 다시 사기&rsquo;를 반복하는 건 지수에서 효과가 없었습니다(C53).</More>
+              <More label="현금 규칙 근거">현금은 수익을 늘리는 장치가 아니라 하락을 버티고 살 돈입니다. 새 돈 먼저·목표에서 벗어날 때만 매매(가설 장부 C14). &lsquo;오르면 팔고 내리면 다시 사기&rsquo;를 반복하는 건 지수에서 효과가 없었습니다(C53).</More>
             </div>
           </>
         ) : !trim ? (
