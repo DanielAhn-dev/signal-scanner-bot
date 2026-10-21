@@ -580,6 +580,7 @@ export default function IncomeGuidePage() {
             <PlanSteps
               key={`${acct?.key ?? ALL}|${JSON.stringify(view.settings)}`}
               plan={view.plan}
+              groups={view.groups}
               settings={view.settings}
               saveSettings={saveSettings}
               accounts={view.accounts}

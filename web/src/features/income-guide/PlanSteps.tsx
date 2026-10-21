@@ -11,7 +11,7 @@ import { useToast } from '../../components/ToastProvider'
 export type RebalancePlan = {
   headline: string
   income: { monthlyNet: number; source: 'actual' | 'estimate'; estimateNet: number; floor: number; surplus: number }
-  growth: { actualPct: number; targetPct: number; finalTargetPct?: number | null; needByNewMoney: number; monthlyInflow: number; months: number | null }
+  growth: { actualPct: number; targetPct: number; needByNewMoney: number; monthlyInflow: number; months: number | null }
   buyTarget: { code: string; name: string; accountLabel: string; price: number } | null
   buyHint: string
   /** 같은 지수 상품 비교로 정한 이유 (서버 indexProductChoice — 리포트와 같은 판정) */
@@ -46,7 +46,7 @@ export type RebalancePlan = {
     }>
     blocked: Array<{ code: string; name: string; role: string; reason: string }>
   } | null
-  /** 인컴을 분배금으로만 줄여 가는 중 (가이드 설정 incomeMode 'hold') */
+  /** 인컴 금액 유지·지수로 키우기 (가이드 설정 incomeMode 'hold') — 커버드콜·배당은 월 목표어치를 두고 늘리는 건 지수로. 인컴 비중 목표는 없다 */
   hold: boolean
   /** 입력한 예수금 — 현금 목표 몫(일반 계좌부터)은 두고 넘는 몫으로 그 계좌의 지수를 산다 (hold가 아니고 예수금이 있을 때만) */
   idleCash: {
@@ -97,6 +97,7 @@ type Props = {
     cashBalance?: number
     cashByAccount?: Record<string, number>
     incomeMode?: 'hold'
+    satelliteCapPct?: number
     incomeKindsTarget?: number
     roleKeepers?: Record<string, string>
     indexOverlapMerge?: boolean
@@ -111,6 +112,8 @@ type Props = {
   receiptsSlot?: React.ReactNode
   /** 내 계획 구성(여러 지수)이면 새 돈을 지수마다 나눈 줄 — 홈 '이번 달 할 일'과 같은 나누기(src/lib/planMixGuide.ts). 없으면 한 곳 */
   planMix?: PlanMixLine[] | null
+  /** 바구니별 지금 비중·목표 (가이드 view.groups). hold면 성장·인컴 targetPct는 지금 비중으로 묶여 있어 쓰지 않는다 */
+  groups?: Array<{ group: 'growth' | 'income' | 'satellite' | 'cash'; actualPct: number; targetPct: number }>
 }
 
 const man = formatKrwMan
@@ -139,16 +142,17 @@ function MergeTiming({ taxedGain, gain }: { taxedGain: boolean; gain: number | n
  * 지금 비중 막대 — 목표까지는 브랜드색(초록), 목표를 넘어선 몫은 빨강으로 나눠 칠한다.
  * 목표선은 파랑(info)으로 막대 위아래로 튀어나오고 카드 배경색 테두리를 둘러 초록 위에서도 보인다. now·goal은 막대 위치(0~100)
  */
-function GoalBar({ now, goal, label }: { now: number; goal: number; label: string }) {
+function GoalBar({ now, goal, label }: { now: number; goal: number | null; label: string }) {
   const n = Math.min(100, Math.max(0, now))
-  const g = Math.min(100, Math.max(0, goal))
+  // 목표가 없는 바구니(금액 유지·늘려 가는 쪽)는 지금 비중만 칠한다
+  const g = goal == null ? 100 : Math.min(100, Math.max(0, goal))
   return (
     <div style={{ position: 'relative', marginTop: 4 }} role="img" aria-label={label}>
       <div style={{ display: 'flex', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
         <div style={{ width: `${Math.min(n, g)}%`, background: 'var(--color-brand)' }} />
         {n > g && <div style={{ width: `${n - g}%`, background: 'var(--color-error)' }} />}
       </div>
-      <div
+      {goal != null && <div
         style={{
           position: 'absolute',
           top: -4,
@@ -159,9 +163,18 @@ function GoalBar({ now, goal, label }: { now: number; goal: number; label: strin
           background: 'var(--color-info)',
           boxShadow: '0 0 0 1.5px var(--color-bg-surface)',
         }}
-      />
+      />}
     </div>
   )
+}
+
+/** 바구니 한 줄 — 네 바구니를 같은 0~100% 눈금으로 나란히 그린다. goal이 null이면 비중 목표 없음(금액 유지·늘려 가는 쪽) */
+type MixRow = { key: string; label: string; now: number; goal: number | null; goalText: string; status: string; over?: boolean; note?: string }
+
+const gapText = (now: number, goal: number, digits = 0) => {
+  const d = goal - now
+  if (Math.abs(d) < 0.5) return '목표 도달'
+  return d > 0 ? `${d.toFixed(digits)}%p 모자람` : `${(-d).toFixed(digits)}%p 넘음`
 }
 
 const signedMan =(v: number) => (Math.abs(v) < 5_000 ? '거의 그대로' : `${v > 0 ? '+' : '−'}${man(Math.abs(v))}`)
@@ -185,7 +198,7 @@ const inlineRow: React.CSSProperties = { display: 'flex', alignItems: 'center', 
  * 리밸런싱 첫 화면 — "그래서 뭘 하면 되는지"만 쉬운 말로. 숫자 근거·바구니 표는 아래 "자세히 보기"에 둔다.
  * ① 새 돈은 한 곳으로 ② 겹치는 종목 합치기 ③ 파는 건 인컴 하한을 지키는 만큼만
  */
-export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot, planMix, scopeLabel }: Props) {
+export default function PlanSteps({ plan, settings, saveSettings, accounts, receiptsSlot, planMix, scopeLabel, groups }: Props) {
   const savingRef = useRef(false)
   const [saving, setSaving] = useState(false)
   // 결과는 토스트로 — 저장하면 설정이 바뀌어 이 컴포넌트가 새로 마운트되므로(key=settings) 안의 상태 메시지는 사라진다
@@ -212,13 +225,81 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
   const toWon = (v: string) => (v.trim() === '' ? '' : Number(v) * 10_000)
 
   const { income, growth, merges, trim, buyTarget, hold, cash, idleCash } = plan
-  // 분배금으로만 줄여 가는 중이면 targetPct는 지금 비중과 같다 — 옮겨 갈 원래 목표를 보인다
-  const growthGoal = hold && growth.finalTargetPct != null ? growth.finalTargetPct : growth.targetPct
-  const growthGap = growthGoal - growth.actualPct
-  // 줄여 가는 중이면 월 인컴 목표는 생활비 하한이 아니다 — 모자람을 경고로 보이지 않는다
+  // 금액 유지(hold)면 월 인컴이 모자라도 더 사지 않는다 — 빨간 경고 테두리는 비중대로 맞추는 방식에서만
   const short = !hold && income.surplus < 0
   const filling = cash?.state === 'filling'
   const buyName = buyTarget ? buyTarget.name : '성장 지수 ETF'
+
+  // 바구니별 비중 — hold에서는 성장·인컴의 targetPct가 지금 비중으로 묶여 있어 방향만 적는다
+  const gp = (k: 'growth' | 'income' | 'satellite' | 'cash') => groups?.find((x) => x.group === k)
+  const mixRows: MixRow[] = []
+  const inc = gp('income')
+  if (inc && (inc.actualPct > 0.05 || (!hold && inc.targetPct > 0))) {
+    mixRows.push(
+      hold
+        ? {
+            key: 'income',
+            label: '커버드콜·배당',
+            now: inc.actualPct,
+            goal: null,
+            goalText: income.floor > 0 ? `월 ${man(income.floor)}어치 유지` : '더 사지 않음',
+            status: '지수가 커지면서 비중은 저절로 줄어듭니다',
+          }
+        : { key: 'income', label: '커버드콜·배당', now: inc.actualPct, goal: inc.targetPct, goalText: `목표 ${inc.targetPct.toFixed(0)}%`, status: gapText(inc.actualPct, inc.targetPct), over: inc.actualPct > inc.targetPct + 0.5 },
+    )
+  }
+  const growthNow = gp('growth')?.actualPct ?? growth.actualPct
+  mixRows.push(
+    hold
+      ? {
+          key: 'growth',
+          label: '성장(지수)',
+          now: growthNow,
+          goal: null,
+          goalText: '늘려 감',
+          status: filling ? '현금 목표를 채운 뒤 분배금·새 돈으로' : '분배금·새 돈은 모두 여기로',
+        }
+      : {
+          key: 'growth',
+          label: '성장(지수)',
+          now: growthNow,
+          goal: growth.targetPct,
+          goalText: `목표 ${growth.targetPct.toFixed(0)}%`,
+          status:
+            gapText(growthNow, growth.targetPct) +
+            (growth.targetPct - growthNow >= 0.5 && growth.needByNewMoney > 0 ? ` · 새 돈 약 ${man(growth.needByNewMoney)}` : ''),
+          over: growthNow > growth.targetPct + 0.5,
+        },
+  )
+  const cashNow = cash?.actualPct ?? gp('cash')?.actualPct ?? 0
+  const cashGoal = cash?.targetPct ?? (hold ? null : gp('cash')?.targetPct ?? null)
+  if (cashNow > 0.05 || (cashGoal ?? 0) > 0) {
+    mixRows.push({
+      key: 'cash',
+      label: '현금(예수금 포함)',
+      now: cashNow,
+      goal: cashGoal,
+      goalText: cashGoal != null ? `목표 ${cashGoal.toFixed(0)}%` : '목표 없음',
+      status: cashGoal != null ? gapText(cashNow, cashGoal, 1) : '',
+      over: cashGoal != null && cashNow > cashGoal + 0.5,
+      note: cash
+        ? `${Math.max(0, cash.targetPct - cash.bandPp).toFixed(0)}~${(cash.targetPct + cash.bandPp).toFixed(0)}% 안이면 그대로 둡니다${filling ? ' · 처음엔 분배금·새 돈으로만 채웁니다(지수를 팔지 않음)' : ''}`
+        : undefined,
+    })
+  }
+  const sat = gp('satellite')
+  const cap = settings.satelliteCapPct
+  if (sat && sat.actualPct > 0.05) {
+    mixRows.push({
+      key: 'satellite',
+      label: '개별주·테마',
+      now: sat.actualPct,
+      goal: cap ?? null,
+      goalText: cap != null ? `상한 ${cap.toFixed(0)}%` : '상한 없음',
+      status: cap != null && sat.actualPct > cap + 0.5 ? `${(sat.actualPct - cap).toFixed(0)}%p 넘음 · 추가 매수 안 함` : '상한 아래 · 늘리지 않음',
+      over: cap != null && sat.actualPct > cap + 0.5,
+    })
+  }
 
   const feeCodes = [...new Set(merges.flatMap((m) => [m.from.code, m.to.code]))]
 
@@ -227,48 +308,33 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
       {/* 요약 */}
       <div style={{ ...card, borderColor: short ? 'var(--color-error)' : 'var(--color-border-default)' }}>
         <strong style={{ fontSize: 16 }}>{plan.headline}</strong>
-        {growth.targetPct > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, ...muted }}>
+        <div style={{ marginTop: 8, ...faint }}>바구니별 지금 비중 (같은 0~100% 눈금) · 파란 선이 목표, 넘은 몫은 빨강</div>
+        {mixRows.map((r) => (
+          <div key={r.key} style={{ marginTop: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', ...muted }}>
               <span>
-                성장(지수) 지금 <strong>{growth.actualPct.toFixed(0)}%</strong> → {hold && growth.finalTargetPct != null ? '최종 목표' : '목표'} {growthGoal.toFixed(0)}%
+                {r.label} 지금 <strong>{r.now.toFixed(r.key === 'cash' ? 1 : 0)}%</strong> → {r.goalText}
               </span>
-              <span style={{ whiteSpace: 'nowrap' }}>
-                {Math.abs(growthGap) < 0.5
-                  ? '목표 도달'
-                  : growthGap < 0
-                    ? `${(-growthGap).toFixed(0)}%p 넘음`
-                  : hold && growth.finalTargetPct != null
-                    ? `${growthGap.toFixed(0)}%p 남음 · 분배금·새 돈으로 천천히`
-                    : `${growthGap.toFixed(0)}%p 남음${growth.needByNewMoney > 0 ? ` · 새 돈 약 ${man(growth.needByNewMoney)}` : ''}`}
-              </span>
+              {r.status && <span style={r.over ? { color: 'var(--color-error)' } : undefined}>{r.status}</span>}
             </div>
-            <GoalBar now={growth.actualPct} goal={growthGoal} label={`성장 지금 ${growth.actualPct.toFixed(0)}%, 목표 ${growthGoal.toFixed(0)}%`} />
+            {r.note && <div style={{ ...muted, fontSize: 12 }}>{r.note}</div>}
+            <GoalBar now={r.now} goal={r.goal} label={`${r.label} 지금 ${r.now.toFixed(1)}%, ${r.goalText}`} />
           </div>
-        )}
-        {cash && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, ...muted }}>
-              <span>
-                현금(예수금 포함) 지금 <strong>{cash.actualPct.toFixed(1)}%</strong>({man(cash.value)}) → 목표 {cash.targetPct.toFixed(0)}%
-              </span>
-              <span style={{ whiteSpace: 'nowrap' }}>
-                {Math.abs(cash.targetPct - cash.actualPct) < 0.5
-                  ? '목표 도달'
-                  : cash.actualPct < cash.targetPct
-                    ? `${(cash.targetPct - cash.actualPct).toFixed(1)}%p 모자람`
-                    : `${(cash.actualPct - cash.targetPct).toFixed(1)}%p 많음`}
-              </span>
-            </div>
-            <div style={{ ...muted, fontSize: 12 }}>
-              {Math.max(0, cash.targetPct - cash.bandPp).toFixed(0)}~{(cash.targetPct + cash.bandPp).toFixed(0)}% 안이면 그대로 둡니다 · 파란 선이 목표, 넘은 몫은 빨강</div>
-            <GoalBar now={(cash.actualPct / Math.max(1, cash.targetPct * 2)) * 100} goal={50} label={`현금 지금 ${cash.actualPct.toFixed(1)}%, 목표 ${cash.targetPct.toFixed(0)}%`} />
-          </div>
-        )}
+        ))}
         <div style={{ marginTop: 8 }}>
           월 인컴(세후) <strong>{income.source === 'actual' ? '' : '약 '}{man(income.monthlyNet)}</strong>
           {hold ? (
-            <span style={muted}> · 쓰지 않고 {filling ? '현금' : '지수'}으로 보내는 돈</span>
+            <>
+              {income.floor > 0 && (
+                <>
+                  {' · '}유지할 금액 {man(income.floor)}{' '}
+                  <span style={{ color: income.surplus < 0 ? 'var(--color-warning)' : 'var(--color-success)', fontWeight: 600 }}>
+                    {income.surplus < 0 ? `${man(-income.surplus)} 적음 — 더 사서 채우지는 않습니다` : `여유 ${man(income.surplus)}`}
+                  </span>
+                </>
+              )}
+              <span style={muted}> · 쓰지 않고 {filling ? '현금' : '지수'}으로 보내는 돈</span>
+            </>
           ) : (
             <>
               {' · '}목표 {man(income.floor)}{' '}
@@ -307,9 +373,9 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-          <span>커버드콜·배당 줄이는 방식</span>
-          <Button size="sm" variant={hold ? 'primary' : 'secondary'} onClick={() => void save({ incomeMode: 'hold' }, '분배금으로만 줄이는 방식으로 바꿨습니다.')}>
-            분배금으로만 (팔지 않음)
+          <span>커버드콜·배당 다루는 방식</span>
+          <Button size="sm" variant={hold ? 'primary' : 'secondary'} onClick={() => void save({ incomeMode: 'hold' }, '인컴은 금액만 유지하고 지수로 키우는 방식으로 바꿨습니다.')}>
+            금액 유지 · 지수로 키우기
           </Button>
           <Button size="sm" variant={hold ? 'secondary' : 'primary'} onClick={() => void save({ incomeMode: '' }, '목표 비중대로 맞추는 방식으로 바꿨습니다.')}>
             목표 비중대로
@@ -317,7 +383,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         </div>
         <div style={faint}>
           {hold
-            ? '커버드콜·배당은 더 사지 않고, 들어오는 분배금을 현금·지수로 보내 비중을 저절로 줄입니다. 현금 목표는 처음엔 분배금으로만 채웁니다.'
+            ? `커버드콜·배당은 ${income.floor > 0 ? `월 ${man(income.floor)}어치` : '지금 가진 만큼'} 그대로 두고(사지도 팔지도 않음), 들어오는 분배금과 새 돈은 현금 목표를 채운 뒤 지수로 보냅니다. 인컴 비중은 목표가 아니라 지수가 커지며 저절로 줄어드는 결과입니다. 장기로는 커버드콜이 지수보다 연 4~11%p 뒤처졌습니다.`
             : '인컴 목표 비중에 맞춰 모자라면 사고, 성장이 모자라면 커버드콜을 팔아 옮기는 안까지 보여 줍니다.'}
         </div>
       </div>
