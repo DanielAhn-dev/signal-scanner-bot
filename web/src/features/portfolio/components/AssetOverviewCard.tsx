@@ -91,7 +91,7 @@ export default function AssetOverviewCard({
           </div>
           )}
 
-          <div className="portfolio-allocation-wrap">
+          <div className={showRest ? 'portfolio-allocation-wrap is-expanded' : 'portfolio-allocation-wrap'}>
             <div className="portfolio-allocation-chart-wrap">
               <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
               <div className="portfolio-allocation-chart-center">

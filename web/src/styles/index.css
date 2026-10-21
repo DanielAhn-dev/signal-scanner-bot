@@ -2055,7 +2055,12 @@ textarea:not([class]):not([style*="border"]):focus {
   display: grid;
   grid-template-columns: minmax(260px, 2fr) 3fr;
   gap: var(--space-3);
-  /* 목록이 길면 가운데 정렬된 도넛이 화면 밖으로 밀려 빈 칸만 보였다 */
+  /* 접힌 목록(상위 몇 개)은 화면 안이라 도넛을 카드 세로 가운데에 */
+  align-items: center;
+}
+
+/* 펼친 목록은 길어 가운데 정렬된 도넛이 화면 밖으로 밀려 빈 칸만 보였다 — 위에 붙이고 sticky로 따라오게 */
+.portfolio-allocation-wrap.is-expanded {
   align-items: start;
 }
 
