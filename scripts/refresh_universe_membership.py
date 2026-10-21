@@ -201,6 +201,59 @@ def should_exclude_name(name: str) -> bool:
     return any(regex.search(normalized) for regex in EXCLUDED_NAME_REGEX)
 
 
+def _format_sample_names(codes: List[str], name_by_code: Dict[str, str], limit: int = 5) -> str:
+    valid = [c for c in codes if c]
+    parts = []
+    for code in valid[:limit]:
+        name = str(name_by_code.get(code) or "").strip()
+        parts.append(f"{name}({code})" if name and name != code else code)
+    text = ", ".join(parts)
+    extra = len(valid) - len(parts)
+    return f"{text} 외 {extra}개" if extra > 0 else text
+
+
+def build_universe_alert_text(
+    trading_date: str,
+    listed_count: int,
+    watched_count: int,
+    promoted_count: int,
+    demoted_count: int,
+    inactivated: int,
+    excluded_by_rule: int,
+    promoted_samples: List[str],
+    demoted_samples: List[str],
+    name_by_code: Dict[str, str],
+) -> str:
+    """텔레그램 알림 문구. 내부 용어(core/ext/tail) 대신 무슨 일이 있었고 할 일이 있는지를 쉬운 말로 쓴다."""
+    date_label = (
+        f"{trading_date[:4]}-{trading_date[4:6]}-{trading_date[6:8]}"
+        if len(trading_date) == 8 and trading_date.isdigit()
+        else trading_date
+    )
+    lines = [
+        f"[매일 지켜보는 종목 목록 갱신] {date_label}",
+        "시가총액·거래대금 기준으로 봇이 매일 가격을 챙겨 보는 종목을 다시 골랐습니다. 따로 하실 일은 없습니다.",
+        "",
+        f"· 지켜보는 종목: {watched_count:,}개 (상장 {listed_count:,}개 중)",
+    ]
+    if promoted_count > 0:
+        lines.append(f"· 새로 지켜보기 시작 {promoted_count}개: {_format_sample_names(promoted_samples, name_by_code)}")
+    else:
+        lines.append("· 새로 지켜보기 시작: 없음")
+    if demoted_count > 0:
+        lines.append(f"· 순위가 밀려 목록에서 빠짐 {demoted_count}개: {_format_sample_names(demoted_samples, name_by_code)}")
+    else:
+        lines.append("· 목록에서 빠짐: 없음")
+    if inactivated > 0:
+        lines.append(f"· 상장 목록에서 사라져 거래정지·상장폐지로 본 종목: {inactivated}개")
+    lines.append(
+        f"· 처음부터 제외: {excluded_by_rule:,}개 (ETF·ETN·우선주·스팩이거나 가격·시가총액·거래대금이 기준 미달)"
+    )
+    lines.append("")
+    lines.append("가지고 있는 종목은 순위가 밀려도 목록에서 빼지 않습니다.")
+    return "\n".join(lines)
+
+
 def send_telegram_alert(text: str) -> bool:
     token = str(os.environ.get("TELEGRAM_BOT_TOKEN", "")).strip()
     chat_id = (
@@ -735,6 +788,7 @@ def main() -> int:
         excluded_by_rule = 0
         promoted_samples: List[str] = []
         demoted_samples: List[str] = []
+        sample_name_by_code: Dict[str, str] = {}
 
         for ticker, row in frame.iterrows():
             code = str(ticker)
@@ -746,6 +800,8 @@ def main() -> int:
             liquidity = int(value) if pd.notnull(value) else None
             name = resolve_stock_name(code, name_by_code.get(code), prev.get("name"))
             market = market_by_code.get(code) or prev.get("market")
+            if name:
+                sample_name_by_code[code] = str(name)
             eligible = is_eligible_candidate(
                 code=code,
                 name=name,
@@ -864,14 +920,22 @@ def main() -> int:
 
         changed = (promoted_to_core + promoted_to_extended + demoted_to_tail + inactivated) > 0
         if (cfg.notify_always or changed) and not args.dry_run:
-            alert_lines = [
-                f"[유니버스 자동화] {trading_date}",
-                f"listed={len(listed_codes)} core+={promoted_to_core} ext+={promoted_to_extended} tail+={demoted_to_tail}",
-                f"inactive={inactivated} excludedByRule={excluded_by_rule}",
-                f"samples promoted={','.join(promoted_samples[:5]) if promoted_samples else '-'}",
-                f"samples demoted={','.join(demoted_samples[:5]) if demoted_samples else '-'}",
-            ]
-            sent = send_telegram_alert("\n".join(alert_lines))
+            for code in restore_codes:
+                if code not in sample_name_by_code and existing.get(code, {}).get("name"):
+                    sample_name_by_code[code] = str(existing[code]["name"])
+            alert_text = build_universe_alert_text(
+                trading_date=str(trading_date),
+                listed_count=len(listed_codes),
+                watched_count=status["summary"]["core_count"] + status["summary"]["extended_count"],
+                promoted_count=promoted_to_core + promoted_to_extended,
+                demoted_count=demoted_to_tail,
+                inactivated=inactivated,
+                excluded_by_rule=excluded_by_rule,
+                promoted_samples=promoted_samples,
+                demoted_samples=demoted_samples,
+                name_by_code=sample_name_by_code,
+            )
+            sent = send_telegram_alert(alert_text)
             status["summary"]["telegram_alert_sent"] = bool(sent)
 
         print("[universe-refresh] success")
@@ -883,7 +947,11 @@ def main() -> int:
     except Exception as e:
         status["status"] = "failed"
         status["reason"] = str(e)
-        send_telegram_alert(f"[유니버스 자동화 실패] {trading_date}\nreason={e}")
+        send_telegram_alert(
+            f"[매일 지켜보는 종목 목록 갱신 실패] {trading_date}\n"
+            "이전 목록을 그대로 쓰고, 다음 배치에서 다시 시도합니다.\n"
+            f"원인: {e}"
+        )
         print(f"[universe-refresh] failed: {e}")
         return 1
     finally:
