@@ -8663,3 +8663,6 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 .portfolio-account-overview-table.xls-card-table :is(th, td):not(:first-child) { text-align: right; white-space: nowrap; }
 .portfolio-account-overview-note { margin-top: 2px; font-size: var(--font-size-xs); color: var(--color-warning); word-break: keep-all; }
 .portfolio-account-overview-accounts { margin: var(--space-2) 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--font-size-sm); word-break: keep-all; }
+
+/* 한 계좌 탭: 보유 평가 + 예수금 */
+.portfolio-account-cash-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); font-size: var(--font-size-sm); word-break: keep-all; }

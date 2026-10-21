@@ -46,7 +46,7 @@ export default function AssetOverviewCard({
           <div className="title-md">{isVirtual ? '가상 계좌 자산 구성' : '내 계좌 종목 비중'}</div>
           <div className="caption muted">
             {selectedAccountKey === 'real'
-              ? '직접 매매하는 계좌 전부의 보유 평가금과 종목별 비중입니다. 예수금은 이 앱에 입력하지 않아 빠져 있습니다.'
+              ? '직접 매매하는 계좌 전부의 보유 평가금과 종목별 비중입니다. 예수금은 위 카드와 계좌 화면에서 봅니다.'
               : isVirtual
                 ? '[가상] 봇이 내 계획대로 사고파는 가상 계좌의 시드, 평가금, 현금, 종목별 비중입니다.'
                 : `${accountLabel(

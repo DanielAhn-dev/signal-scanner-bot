@@ -12,6 +12,8 @@ import MacroCard from './components/MacroCard'
 import PolicyCard from './components/PolicyCard'
 import AccountDirectionCard from './components/AccountDirectionCard'
 import AccountOverviewCard from './components/AccountOverviewCard'
+import AccountCashCard from './components/AccountCashCard'
+import { useAccountCash } from './hooks/useAccountCash'
 import { useProfileStore } from '../../stores/profileStore'
 import PerformanceCard from './components/PerformanceCard'
 import TradeModal from './components/modals/TradeModal'
@@ -32,6 +34,7 @@ import { useAccountAliases } from './hooks/useAccountAliases'
 import { useMaintenance } from './hooks/useMaintenance'
 import { useShare } from './hooks/useShare'
 import { realHoldingTotals } from './lib/stockSizing'
+import { holdingAccountKey, holdingValue } from './lib/accountKey'
 import { isHoldingGroupMode, type HoldingGroupMode } from './lib/holdingGroups'
 
 const GROUP_MODE_STORAGE = 'portfolio.groupMode'
@@ -103,6 +106,15 @@ export default function Portfolio() {
   // 담을 크기(C66)의 분모 — 선택한 탭과 상관없이 실계좌 전체(개별주 한도와 같은 기준)
   const realTotals = useMemo(() => realHoldingTotals(holdingAll), [holdingAll])
 
+  // 계좌별 예수금 — 보유를 다시 불러오면(매매 기록이 예수금을 바꿈) 같이 새로 받는다
+  const { cashByKey, cashLoaded, saveCash } = useAccountCash(lastUpdatedAt)
+  const selectedFolder = accountFolders.find((f) => f.key === selectedAccountKey) ?? null
+  const selectedHoldingValue = useMemo(
+    () => (selectedFolder ? holdingAll.filter((r) => holdingAccountKey(r) === selectedFolder.key).reduce((s, r) => s + holdingValue(r), 0) : 0),
+    [holdingAll, selectedFolder],
+  )
+  const selectedCashKey = selectedFolder ? `${selectedFolder.brokerName.trim()}|${selectedFolder.accountName.trim()}` : null
+
   // 모달
   const trade = useTradeModal({ load })
   const maint = useMaintenance({ load, accountFolders })
@@ -159,7 +171,12 @@ export default function Portfolio() {
       )}
 
       {/* 실제 계좌 전체: 유형별로 한 번에 보고 내 계획과 다른 곳만 짚는다 */}
-      {selectedAccountKey === 'real' && realCount > 0 && <AccountOverviewCard rows={holdingAll} />}
+      {selectedAccountKey === 'real' && realCount > 0 && <AccountOverviewCard rows={holdingAll} cashByKey={cashByKey} />}
+
+      {/* 한 계좌 탭: 보유 평가 + 예수금(실제 잔액으로 고치기) */}
+      {selectedCashKey && (
+        <AccountCashCard cashKey={selectedCashKey} holdingValue={selectedHoldingValue} row={cashByKey[selectedCashKey]} loaded={cashLoaded} onSave={saveCash} />
+      )}
 
       {/* 실제 계좌: 방향은 내 계획을 물려받고 계좌마다 고르는 건 사용 시점뿐 */}
       {selectedAccountKey !== 'virtual' && realCount > 0 && (

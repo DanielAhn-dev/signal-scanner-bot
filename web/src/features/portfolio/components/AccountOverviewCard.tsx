@@ -5,6 +5,7 @@ import { formatKrwCompact, formatNumber } from '../../../lib/format'
 import { useCurrentChatId } from '../../../stores/profileStore'
 import { buildAccountOverview, planKrIndexPct } from '../lib/accountOverview'
 import type { HoldingRow } from '../types'
+import type { AccountCashRow } from '../../../../../src/lib/accountCash'
 
 /**
  * 실제 계좌 전체 탭 맨 위 — 계좌 여러 개를 유형별로 한 번에 보고, 내 계획과 다른 곳만 짚는다.
@@ -15,7 +16,10 @@ type Mix = { index: string; weight: number }[] | null
 const signed = (n: number | null) => (n == null ? '-' : `${n > 0 ? '+' : ''}${formatNumber(n, 1)}%`)
 const tone = (n: number | null) => (n == null || Math.abs(n) < 0.05 ? '' : n > 0 ? 'positive' : 'negative')
 
-export default function AccountOverviewCard({ rows }: { rows: HoldingRow[] }) {
+/** 포트폴리오 계좌 키(증권사|||계좌) → 예수금 키(증권사|계좌) */
+const cashKeyOf = (accountKey: string) => accountKey.replace('|||', '|')
+
+export default function AccountOverviewCard({ rows, cashByKey }: { rows: HoldingRow[]; cashByKey: Record<string, AccountCashRow> }) {
   const chatId = useCurrentChatId()
   const [mix, setMix] = useState<Mix>(null)
 
@@ -30,17 +34,21 @@ export default function AccountOverviewCard({ rows }: { rows: HoldingRow[] }) {
 
   const o = useMemo(() => buildAccountOverview(rows, { planKrPct: planKrIndexPct(mix) }), [rows, mix])
   if (o.total <= 0) return null
+  // 예수금은 보유 계좌 것만 더한다. 유형별 비중의 분모에는 넣지 않는다(개별주 한도 등 다른 화면과 같은 분모)
+  const cashOf = (accountKey: string) => cashByKey[cashKeyOf(accountKey)]?.amount ?? 0
+  const cashTotal = o.accounts.reduce((s, a) => s + cashOf(a.key), 0)
 
   return (
     <div className="card mb-4 portfolio-account-overview">
       <div className="title-md">내 돈 한눈에</div>
       <div className="caption muted">
-        실제 계좌 {o.accounts.length}개 · 마지막 종가 기준 · 예수금과 이 앱에 입력하지 않은 계좌는 빠져 있습니다.
+        실제 계좌 {o.accounts.length}개 · 마지막 종가 기준 · 비중은 보유만으로 계산 · 이 앱에 입력하지 않은 계좌는 빠져 있습니다.
       </div>
 
       <div className="portfolio-account-overview-total">
         넣은 돈 {formatKrwCompact(o.cost)} → 지금 {formatKrwCompact(o.total)}{' '}
         <span className={tone(o.returnPct)}>({signed(o.returnPct)})</span>
+        {cashTotal > 0 && <> · 예수금 {formatKrwCompact(cashTotal)} (합계 {formatKrwCompact(o.total + cashTotal)})</>}
       </div>
 
       <table className="portfolio-account-overview-table xls-card-table">
@@ -73,6 +81,7 @@ export default function AccountOverviewCard({ rows }: { rows: HoldingRow[] }) {
             <li key={a.key}>
               <strong>{a.label}</strong> {formatKrwCompact(a.value)} · {a.topLabel} {formatNumber(a.topPct, 0)}% ·{' '}
               <span className={tone(a.returnPct)}>{signed(a.returnPct)}</span>
+              {cashOf(a.key) > 0 && ` · 예수금 ${formatKrwCompact(cashOf(a.key))}`}
             </li>
           ))}
         </ul>

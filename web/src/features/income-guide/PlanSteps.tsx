@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import More from '../../components/ui/More'
 import { formatKrwMan } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -190,16 +191,9 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
   // 결과는 토스트로 — 저장하면 설정이 바뀌어 이 컴포넌트가 새로 마운트되므로(key=settings) 안의 상태 메시지는 사라진다
   const toast = useToast()
   const [contribMan, setContribMan] = useState(settings.monthlyContribution ? String(Math.round(settings.monthlyContribution / 10_000)) : '')
-  // 예수금은 증권사 앱에 보이는 그대로 원 단위로 받는다(만원 칸에 원 금액을 넣어 1만 배로 저장된 일이 있었다)
-  // 계좌별로 받는다 — 분배금·매도 대금이 그 계좌로 들어오고 다시 사는 것도 그 계좌 안에서다. LEGACY_CASH는 계좌를 정하지 않은 예전 입력값
-  const [cashWon, setCashWon] = useState<Record<string, string>>(() => {
-    const fmt = (v: number) => (v > 0 ? Math.round(v).toLocaleString('ko-KR') : '')
-    const init: Record<string, string> = Object.fromEntries(accounts.map((a) => [a.key, fmt(settings.cashByAccount?.[a.key] ?? 0)]))
-    if (settings.cashBalance) init[LEGACY_CASH] = fmt(settings.cashBalance)
-    return init
-  })
-  const digitsOf = (v: string | undefined) => (v ?? '').replace(/[^\d]/g, '')
-  const cashTotal = Object.values(cashWon).reduce((s, v) => s + Number(digitsOf(v) || 0), 0)
+  // 예수금은 포트폴리오 계좌 화면에서 고친다(src/lib/accountCash.ts) — 여기서는 합계만 보여 준다
+  const cashTotal = Object.values(settings.cashByAccount ?? {}).reduce((s, v) => s + Math.max(0, v), 0) + Math.max(0, settings.cashBalance ?? 0)
+  const navigate = useNavigate()
   const [fees, setFees] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(settings.feePctByCode ?? {}).map(([k, v]) => [k, String(v)])),
   )
@@ -290,39 +284,25 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             : '종목별 최근 12개월 분배금(자료가 없으면 상품 유형별 가정)으로 낸 추정이고, 세금 15.4%를 모두 뺀 값입니다. 아래에 받은 분배금을 적으면 실제 기준으로 바뀝니다.'}
         </div>
         <div style={{ marginTop: 6 }}>
-          <span>증권 계좌 예수금</span> <span style={faint}>증권사 앱의 &lsquo;D+2 예수금&rsquo;을 계좌마다 적으세요.</span>
-          <More label="언제 적나 · 자동 반영"><span style={faint}>분배금이 들어온 직후에 적으면 가장 정확합니다. 보유 화면에서 매수·매도를 기록하거나 이번 달 받은 분배금을 적으면 그 계좌 예수금에서 자동으로 빼고 더합니다.</span></More>
-          {[...accounts.map((a) => ({ key: a.key, label: a.label })), ...(LEGACY_CASH in cashWon ? [{ key: LEGACY_CASH, label: '계좌 미지정 (예전 입력)' }] : [])].map((a) => (
+          <span>증권 계좌 예수금</span>{' '}
+          <span style={faint}>포트폴리오의 계좌 화면에서 고칩니다 — 여기서는 읽기만 합니다.</span>
+          {accounts.map((a) => (
             <div key={a.key} style={{ ...inlineRow, marginTop: 4 }}>
               <span style={{ minWidth: 140 }}>{a.label}</span>
-              <UnitInput
-                unit="원"
-                width={150}
-                inputMode="numeric"
-                placeholder="0"
-                aria-label={`${a.label} 예수금(원)`}
-                value={cashWon[a.key] ?? ''}
-                onChange={(e) => {
-                  const digits = e.target.value.replace(/[^\d]/g, '')
-                  setCashWon((cur) => ({ ...cur, [a.key]: digits ? Number(digits).toLocaleString('ko-KR') : '' }))
-                }}
-              />
+              <span>{(settings.cashByAccount?.[a.key] ?? 0) > 0 ? `${Math.round(settings.cashByAccount![a.key]).toLocaleString('ko-KR')}원` : '적지 않음'}</span>
             </div>
           ))}
+          {(settings.cashBalance ?? 0) > 0 && (
+            <div style={{ ...inlineRow, marginTop: 4 }}>
+              <span style={{ minWidth: 140 }}>계좌 미지정 (예전 입력)</span>
+              <span>{Math.round(settings.cashBalance!).toLocaleString('ko-KR')}원</span>
+              <Button size="sm" variant="secondary" disabled={saving} onClick={() => void save({ cashBalance: '' }, '계좌를 정하지 않은 예전 예수금을 지웠습니다. 계좌별 예수금은 포트폴리오에서 적어 주세요.')}>
+                지우기
+              </Button>
+            </div>
+          )}
           <div style={{ ...inlineRow, marginTop: 4 }}>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={saving}
-              onClick={() => {
-                const cashByAccount = Object.fromEntries(accounts.map((a) => [a.key, digitsOf(cashWon[a.key]) === '' ? '' : Number(digitsOf(cashWon[a.key]))]))
-                const patch: Record<string, unknown> = { cashByAccount }
-                if (LEGACY_CASH in cashWon) patch.cashBalance = digitsOf(cashWon[LEGACY_CASH]) === '' ? '' : Number(digitsOf(cashWon[LEGACY_CASH]))
-                void save(patch, `예수금 합계 ${cashTotal > 0 ? man(cashTotal) : '0원'}을 계좌별로 넣어 다시 계산했습니다.`)
-              }}
-            >
-              {saving ? '반영 중…' : '반영'}
-            </Button>
+            <Button size="sm" variant="secondary" onClick={() => navigate('/portfolio')}>포트폴리오에서 고치기</Button>
             {cashTotal > 0 && <span style={faint}>합계 약 {man(cashTotal)}</span>}
           </div>
         </div>
@@ -364,7 +344,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         {filling && cash ? (
           <div>
             현금 목표 {cash.targetPct.toFixed(0)}%까지 <strong>{man(cash.amount)}</strong> 남았습니다. 그때까지 분배금과 새 돈은 사지 말고 계좌에 현금으로 두고,
-            늘어난 예수금을 위에 적어 주세요.
+            늘어난 예수금은 포트폴리오 계좌 화면에서 맞춰 주세요.
             {cash.months != null ? ` 지금 속도면 약 ${cash.months}개월 걸립니다.` : ''} 다 채운 뒤부터는 <strong>{buyName}</strong> 한 곳만 삽니다.
           </div>
         ) : hold ? (
