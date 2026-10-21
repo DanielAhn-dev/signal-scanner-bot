@@ -8,6 +8,11 @@ import {
 } from '../../src/services/virtualAutoTradeService'
 import { replaceTradeLotsForHolding } from '../../src/services/virtualLotService'
 import { parseStrategyMemo } from '../../src/lib/strategyMemo'
+import {
+  buildLotConsistencyIssues,
+  type LotConsistencyIssue,
+  type LotConsistencyLot,
+} from '../../src/lib/lotConsistency'
 import { syncVirtualPortfolio } from '../../src/services/portfolioService'
 import { positivePrice } from '../../src/lib/holdingPrice'
 import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
@@ -118,15 +123,7 @@ type AutoCycleInsights = {
   }>
 }
 
-type ConsistencyIssue = {
-  code: string
-  name: string | null
-  kind: 'mismatch' | 'missing_lots' | 'orphan_lots'
-  position_id: number | null
-  position_qty: number
-  lot_qty: number
-  detail: string
-}
+type ConsistencyIssue = LotConsistencyIssue
 
 type AutoOnlyResetResult = {
   auto_trade_count: number
@@ -1270,73 +1267,67 @@ async function getAutoSellCandidates(supabase: SupabaseClient, chatId: string | 
   }).sort((a: any, b: any) => (a.pct_change ?? Infinity) - (b.pct_change ?? Infinity))
 }
 
+async function fetchOpenLotsForConsistency(
+  supabase: SupabaseClient,
+  chatId: string | number,
+): Promise<LotConsistencyLot[]> {
+  // PostgREST 1000행 잘림 방지
+  const out: LotConsistencyLot[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('virtual_trade_lots')
+      .select('id,code,remaining_quantity,position_id')
+      .eq('chat_id', chatId)
+      .gt('remaining_quantity', 0)
+      .order('id', { ascending: true })
+      .range(from, from + 999)
+    if (error) throw new Error(error.message)
+    const page = Array.isArray(data) ? data : []
+    for (const row of page as Record<string, unknown>[]) {
+      out.push({
+        id: Number(row.id),
+        code: String(row.code || '').trim(),
+        remaining_quantity: Number(row.remaining_quantity || 0),
+        position_id: row.position_id == null ? null : Number(row.position_id),
+      })
+    }
+    if (page.length < 1000) break
+  }
+  return out
+}
+
+async function fetchHoldingPositionsForConsistency(supabase: SupabaseClient, chatId: string | number) {
+  const { data, error } = await supabase
+    .from('virtual_positions')
+    .select('id,code,quantity,buy_price,invested_amount,buy_date,created_at,status,broker_name,account_name,stock:stocks(name)')
+    .eq('chat_id', chatId)
+    .eq('status', 'holding')
+    .gt('quantity', 0)
+  if (error) throw new Error(error.message)
+  return (Array.isArray(data) ? data : []) as Record<string, unknown>[]
+}
+
+// 보유 행(position_id) 단위 점검 — 실계좌·봇 계좌가 같은 종목을 들고 있어도 섞지 않는다
 async function getLotConsistencyReport(
   supabase: SupabaseClient,
   chatId: string | number,
 ) {
-  const [positionsRes, lotsRes] = await Promise.all([
-    supabase
-      .from('virtual_positions')
-      .select('id,code,quantity,buy_price,invested_amount,buy_date,created_at,status,stock:stocks(name)')
-      .eq('chat_id', chatId)
-      .eq('status', 'holding')
-      .gt('quantity', 0),
-    supabase
-      .from('virtual_trade_lots')
-      .select('id,code,remaining_quantity,acquired_quantity,position_id,watchlist_id,seed_position_id')
-      .eq('chat_id', chatId)
-      .gt('remaining_quantity', 0),
+  const [positions, lots] = await Promise.all([
+    fetchHoldingPositionsForConsistency(supabase, chatId),
+    fetchOpenLotsForConsistency(supabase, chatId),
   ])
 
-  if (positionsRes.error) throw new Error(positionsRes.error.message)
-  if (lotsRes.error) throw new Error(lotsRes.error.message)
-
-  const positions = Array.isArray(positionsRes.data) ? positionsRes.data : []
-  const lots = Array.isArray(lotsRes.data) ? lotsRes.data : []
-
-  const lotQtyByCode = new Map<string, number>()
-  for (const lot of lots) {
-    const code = String((lot as Record<string, unknown>)?.code || '').trim()
-    const remaining = Number((lot as Record<string, unknown>)?.remaining_quantity || 0)
-    lotQtyByCode.set(code, (lotQtyByCode.get(code) || 0) + (Number.isFinite(remaining) ? remaining : 0))
-  }
-
-  const issues: ConsistencyIssue[] = []
-  const positionCodes = new Set<string>()
-  for (const position of positions) {
-    const record = position as Record<string, unknown>
-    const code = String(record.code || '').trim()
-    const positionQty = Math.max(0, Math.floor(Number(record.quantity || 0)))
-    const lotQty = Math.max(0, Math.floor(Number(lotQtyByCode.get(code) || 0)))
-    positionCodes.add(code)
-    if (positionQty === lotQty) continue
-
-    const kind = lotQty <= 0 ? 'missing_lots' : 'mismatch'
-    issues.push({
-      code,
+  const issues: ConsistencyIssue[] = buildLotConsistencyIssues(
+    positions.map((record) => ({
+      id: Number(record.id || 0),
+      code: String(record.code || '').trim(),
+      quantity: Number(record.quantity || 0),
+      broker_name: (record.broker_name as string | null) ?? null,
+      account_name: (record.account_name as string | null) ?? null,
       name: String((record.stock as Record<string, unknown> | null)?.name || '').trim() || null,
-      kind,
-      position_id: Number(record.id || 0) || null,
-      position_qty: positionQty,
-      lot_qty: lotQty,
-      detail: kind === 'missing_lots'
-        ? `보유수량 ${positionQty}주인데 열려 있는 FIFO lot 이 없습니다.`
-        : `보유수량 ${positionQty}주와 FIFO lot 합계 ${lotQty}주가 다릅니다.`,
-    })
-  }
-
-  for (const [code, lotQty] of lotQtyByCode.entries()) {
-    if (positionCodes.has(code)) continue
-    issues.push({
-      code,
-      name: null,
-      kind: 'orphan_lots',
-      position_id: null,
-      position_qty: 0,
-      lot_qty: Math.max(0, Math.floor(lotQty)),
-      detail: `보유 포지션은 없는데 FIFO lot ${Math.max(0, Math.floor(lotQty))}주가 열려 있습니다.`,
-    })
-  }
+    })),
+    lots,
+  )
 
   return {
     checked_count: positions.length,
@@ -1349,35 +1340,32 @@ async function repairLotConsistency(
   supabase: SupabaseClient,
   chatId: string | number,
   codeFilter?: string | null,
+  positionIdFilter?: number | null,
 ) {
   const report = await getLotConsistencyReport(supabase, chatId)
-  const positionsRes = await supabase
-    .from('virtual_positions')
-    .select('id,code,quantity,buy_price,invested_amount,buy_date,created_at,status')
-    .eq('chat_id', chatId)
-    .eq('status', 'holding')
-    .gt('quantity', 0)
-
-  if (positionsRes.error) throw new Error(positionsRes.error.message)
-  const positions = Array.isArray(positionsRes.data) ? positionsRes.data : []
-  const positionByCode = new Map<string, Record<string, unknown>>()
+  const positions = await fetchHoldingPositionsForConsistency(supabase, chatId)
+  const positionById = new Map<number, Record<string, unknown>>()
   for (const position of positions) {
-    const code = String((position as Record<string, unknown>)?.code || '').trim()
-    if (code) positionByCode.set(code, position as Record<string, unknown>)
+    const id = Number(position.id || 0)
+    if (id > 0) positionById.set(id, position)
   }
 
   let repairedCount = 0
   const repairedCodes: string[] = []
-  const issues = report.issues.filter((issue) => !codeFilter || issue.code === codeFilter)
+  const issues = report.issues.filter((issue) =>
+    (!codeFilter || issue.code === codeFilter) &&
+    (!positionIdFilter || issue.position_id === positionIdFilter))
   const nowIso = new Date().toISOString()
 
   for (const issue of issues) {
     if (issue.kind === 'orphan_lots') {
+      // 보유 행에 연결되지 않은 그 로트만 닫는다(종목코드로 닫으면 다른 계좌 로트까지 닫힌다)
+      if (!issue.lot_ids.length) continue
       const { error } = await supabase
         .from('virtual_trade_lots')
         .update({ remaining_quantity: 0, closed_at: nowIso, updated_at: nowIso, note: 'ops-consistency-orphan-close' })
         .eq('chat_id', chatId)
-        .eq('code', issue.code)
+        .in('id', issue.lot_ids)
         .gt('remaining_quantity', 0)
       if (error) throw new Error(error.message)
       repairedCount += 1
@@ -1385,7 +1373,7 @@ async function repairLotConsistency(
       continue
     }
 
-    const position = positionByCode.get(issue.code)
+    const position = issue.position_id ? positionById.get(issue.position_id) : undefined
     if (!position) continue
     await replaceTradeLotsForHolding({
       chatId: Number(chatId),
@@ -1670,7 +1658,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (mode === 'consistency_repair') {
         const code = String(body.code || '').trim() || null
-        const result = await repairLotConsistency(supabase, chatId, code)
+        const positionId = Number(body.position_id || 0) || null
+        const result = await repairLotConsistency(supabase, chatId, code, positionId)
         return res.status(200).json({ ok: true, mode, data: result })
       }
 
