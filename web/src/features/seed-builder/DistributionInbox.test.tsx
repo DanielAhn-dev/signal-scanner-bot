@@ -82,4 +82,16 @@ describe('DistributionInbox', () => {
     await waitFor(() => expect(screen.getByText(/카카오 \/ 일반 예수금에 460,402원 더함/)).toBeTruthy())
     expect(onApply).not.toHaveBeenCalled()
   })
+
+  it('서버가 입금 기록을 돌려주지 않으면(배포 전 서버) 성공으로 보지 않고 투자금 기록도 되돌린다', async () => {
+    apiFetch.mockResolvedValueOnce(guide(100_000))
+    apiFetch.mockResolvedValueOnce(guide(100_000))
+    const onApply = vi.fn(async () => true)
+    render(<DistributionInbox month="2026-10" invested={0} onApply={onApply} krw={krw} />, { wrapper: MemoryRouter })
+    await waitFor(() => expect(screen.getByLabelText('입금한 계좌')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('입금한 계좌'), { target: { value: 'NH|일반' } })
+    fireEvent.click(screen.getByText('100,000원 투자금에 넣고 NH / 일반 예수금에 더하기'))
+    await waitFor(() => expect(onApply).toHaveBeenCalledWith(-100_000))
+    expect(screen.getByText(/계좌 예수금에 반영되지 않았습니다/)).toBeTruthy()
+  })
 })

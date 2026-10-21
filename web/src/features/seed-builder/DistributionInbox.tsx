@@ -85,6 +85,11 @@ export default function DistributionInbox({ month, invested, onApply, krw }: Pro
       }
       invalidateCache(GUIDE)
       const next: CashDeposit | null = res.data.distributionReceipts?.cashDeposit ?? null
+      // 서버가 이 요청을 모르면(배포 전) 성공처럼 답하고 아무것도 안 바꾼다 — 돌려받은 기록으로 확인한다
+      if (accountKey && amount > 0 ? next?.accountKey !== accountKey || next?.amount !== Math.round(amount) : next != null) {
+        setMsg('계좌 예수금에 반영되지 않았습니다. 서버가 아직 이 기능을 모르는 것 같습니다 — 잠시 뒤 새로 고쳐 다시 눌러 주세요.')
+        return false
+      }
       setSlice((s) => (s ? { ...s, deposit: next } : s))
       const adj = res.cashAdjust as { before: number; after: number } | null | undefined
       const where = accountKey ?? deposit?.accountKey

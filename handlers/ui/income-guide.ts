@@ -115,6 +115,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isReceipt = req.method === 'POST' && (body.action === 'receipt-add' || body.action === 'receipt-delete')
     const isExclude = req.method === 'POST' && body.action === 'adherence-exclude'
     const isCashDeposit = req.method === 'POST' && body.action === 'cash-deposit'
+    // 모르는 action은 설정 저장으로 흘러가 아무것도 안 바꾸고 성공으로 답했다(2026-10-21 새 화면 + 배포 전 서버) — 거절한다
+    const KNOWN_ACTIONS = ['record', 'receipt-add', 'receipt-delete', 'adherence-exclude', 'account-kind', 'account-targets', 'cash-deposit']
+    if (req.method === 'POST' && body.action != null && !KNOWN_ACTIONS.includes(String(body.action))) {
+      return res.status(400).json({ error: `알 수 없는 요청입니다(${String(body.action).slice(0, 40)}). 화면을 새로 고쳐 주세요.` })
+    }
     const isAccountAction = req.method === 'POST' && (body.action === 'account-kind' || body.action === 'account-targets')
     // 분배금 기록이 바꾼 계좌 예수금(화면 안내용)
     let cashAdjust: { before: number; after: number } | null = null
