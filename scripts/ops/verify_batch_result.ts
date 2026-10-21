@@ -138,6 +138,7 @@ async function runQualityChecks(supabase: SupabaseClient, batchDay: string, late
     limitBreaches: findLimitBreaches(latestBars, prevBars),
     newlyMissing: latestBars.length && prevBars.length ? findNewlyMissing(universe, latestBars.map((b) => b.ticker), prevBars.map((b) => b.ticker)) : [],
     badNames: findBadNames(activeNames),
+    nameByCode: new Map(activeNames.filter((r) => r.name).map((r) => [r.code, String(r.name)])),
   });
   console.log(
     "품질 지표:",

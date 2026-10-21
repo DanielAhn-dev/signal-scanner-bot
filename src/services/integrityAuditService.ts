@@ -10,6 +10,8 @@
  * 오류 대신 "추정치" 상태로 보고해 오탐을 막는다.
  */
 
+import { labelFromNameMap } from "../lib/stockLabel";
+
 export type AuditTradeRow = {
   code: string;
   side: string;
@@ -186,6 +188,8 @@ export type IntegrityReportInput = {
   pendingHoldingCodes?: string[];
   /** dataFreshnessMonitorService의 다이제스트 한 줄 (없으면 생략) */
   freshnessDigest?: string | null;
+  /** 종목 코드 → 이름. 있으면 "이름(코드)"로 적는다 */
+  nameByCode?: Map<string, string>;
 };
 
 export type HoldingUniverseRow = { code: string; universe_level: string | null; is_active: boolean | null };
@@ -230,7 +234,7 @@ export function buildIntegrityReportMessage(input: IntegrityReportInput): string
     lines.push(`❌ 이상 ${issueCount}건 발견 · 계정 ${input.results.length}`);
     for (const result of input.results) {
       for (const issue of result.issues.slice(0, 5)) {
-        const codeText = issue.code ? ` ${issue.code}` : "";
+        const codeText = issue.code ? ` ${labelFromNameMap(issue.code, input.nameByCode)}` : "";
         lines.push(`- chat ${result.chatId}${codeText}: ${issue.detail}`);
       }
       if (result.issues.length > 5) {
@@ -244,14 +248,14 @@ export function buildIntegrityReportMessage(input: IntegrityReportInput): string
   }
 
   if (input.staleHoldingCodes.length > 0) {
-    const head = input.staleHoldingCodes.slice(0, 5).join(", ");
+    const head = input.staleHoldingCodes.slice(0, 5).map((c) => labelFromNameMap(c, input.nameByCode)).join(", ");
     const rest = input.staleHoldingCodes.length - Math.min(5, input.staleHoldingCodes.length);
     lines.push(`⚠️ 시세 누락 보유종목: ${head}${rest > 0 ? ` 외 ${rest}건` : ""} (수집 대상인데 최근 영업일 시세 없음)`);
   }
 
   const pending = input.pendingHoldingCodes ?? [];
   if (pending.length > 0) {
-    const head = pending.slice(0, 5).join(", ");
+    const head = pending.slice(0, 5).map((c) => labelFromNameMap(c, input.nameByCode)).join(", ");
     const rest = pending.length - Math.min(5, pending.length);
     lines.push(`ℹ️ 새로 담아 수집 대기 중인 보유종목: ${head}${rest > 0 ? ` 외 ${rest}건` : ""} (오늘 밤 배치부터 시세 수집)`);
   }

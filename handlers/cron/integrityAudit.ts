@@ -18,6 +18,7 @@ import {
 import { checkDataQuality } from "../../src/services/dataQualityService";
 import { fetchNegativeDisclosures, formatDisclosureFilterNote } from "../../src/services/dartDisclosureFilter";
 import { sendMessage } from "../../src/telegram/api";
+import { fetchStockNameMap } from "../../src/services/stockNames";
 import { economicCalendarCoverage, economicCalendarSyncStatus } from "../../src/utils/fetchEconomicCalendar";
 import { krxCalendarStatus, toKstDateKey } from "../../src/lib/krxCalendar";
 import { findMislabeledSells, type SellActionRow } from "../../src/lib/sellLabelAudit";
@@ -319,6 +320,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const krxCal = krxCalendarStatus(toKstDateKey());
     const krxCalIssue = krxCal.level === "error" ? 1 : 0;
     const krxCalNote = `${krxCal.level === "error" ? "❌" : krxCal.level === "warn" ? "⚠️" : "✅"} ${krxCal.note}`;
+    const nameByCode = await fetchStockNameMap(supabase, [
+      ...results.flatMap((r) => r.issues.slice(0, 5).map((i) => String(i.code ?? ""))),
+      ...staleHoldingCodes.slice(0, 5),
+      ...pendingHoldingCodes.slice(0, 5),
+    ]);
     const message = [
       buildIntegrityReportMessage({
         ymd,
@@ -326,6 +332,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         staleHoldingCodes,
         pendingHoldingCodes,
         freshnessDigest: buildFreshnessDigest(freshness),
+        nameByCode,
       }),
       dataQuality.summary,
       `${disclosureIssue ? "❌" : "✅"} ${formatDisclosureFilterNote(disclosureFilter)}`,

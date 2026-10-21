@@ -6,6 +6,8 @@
  * 오래 낮은 항목은 만성 부족으로 따로 표시한다. 평소 수준은 DB에 이미 있는 최근 거래일 기록에서 센다(별도 테이블 없음).
  */
 
+import { labelFromNameMap } from "../lib/stockLabel";
+
 export type MetricSpec = {
   key: string;
   label: string;
@@ -101,7 +103,14 @@ export type QualityAlertInput = {
   limitBreaches: { ticker: string; ret: number }[];
   newlyMissing: string[];
   badNames: string[];
+  /** 종목 코드 → 이름. 있으면 "이름(코드)"로 적는다 */
+  nameByCode?: Map<string, string>;
 };
+
+// 본문이 텔레그램 HTML이라 이름의 &·<·>(예: S&P500)를 이스케이프한다
+function htmlLabel(code: string, names: Map<string, string> | undefined): string {
+  return labelFromNameMap(code, names).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 /** 알릴 것이 있으면 텔레그램 HTML 본문, 없으면 null. 만성 부족은 주간 요약에서만 다룬다 */
 export function buildQualityAlert(input: QualityAlertInput): string | null {
@@ -110,10 +119,10 @@ export function buildQualityAlert(input: QualityAlertInput): string | null {
     lines.push(`• ${d.label}: ${d.latest}건 (평소 ${Math.round(d.baseline)}건의 ${pct(d.latest / d.baseline)})`);
   }
   if (input.newlyMissing.length) {
-    lines.push(`• 어제는 있던 시세가 오늘 빠진 종목 ${input.newlyMissing.length}개: ${input.newlyMissing.slice(0, 8).join(", ")}`);
+    lines.push(`• 어제는 있던 시세가 오늘 빠진 종목 ${input.newlyMissing.length}개: ${input.newlyMissing.slice(0, 8).map((c) => htmlLabel(c, input.nameByCode)).join(", ")}`);
   }
   if (input.limitBreaches.length) {
-    const sample = input.limitBreaches.slice(0, 5).map((b) => `${b.ticker} ${b.ret > 0 ? "+" : ""}${(b.ret * 100).toFixed(0)}%`);
+    const sample = input.limitBreaches.slice(0, 5).map((b) => `${htmlLabel(b.ticker, input.nameByCode)} ${b.ret > 0 ? "+" : ""}${(b.ret * 100).toFixed(0)}%`);
     lines.push(`• 가격제한폭(±30%)을 넘는 등락 ${input.limitBreaches.length}개: ${sample.join(", ")} — 분할·병합 미반영 또는 잘못된 값`);
   }
   if (input.badNames.length) {

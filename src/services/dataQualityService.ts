@@ -9,6 +9,8 @@
  */
 import { isKrxTradingDate, toKstDateKey } from "../lib/krxCalendar";
 import { chunkValues } from "./supabasePaging";
+import { fetchStockNameMap } from "./stockNames";
+import { labelFromNameMap } from "../lib/stockLabel";
 
 type SupabaseClientAny = any;
 
@@ -113,10 +115,11 @@ export async function checkDataQuality(supabase: SupabaseClientAny): Promise<Dat
   }
   const jumps = findLimitBreakingJumps(closesByTicker, calendar);
   if (jumps.length) {
+    const jumpNames = await fetchStockNameMap(supabase, jumps.slice(0, 3).map((j) => j.ticker));
     issues.push(
       `수정주가 불일치 의심 ${jumps.length}건: ${jumps
         .slice(0, 3)
-        .map((j) => `${j.ticker}@${j.date.slice(5)} ${j.pct.toFixed(0)}%`)
+        .map((j) => `${labelFromNameMap(j.ticker, jumpNames)}@${j.date.slice(5)} ${j.pct.toFixed(0)}%`)
         .join(", ")} (다음 배치가 자동 재수집)`
     );
   }
