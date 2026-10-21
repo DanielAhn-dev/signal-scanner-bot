@@ -386,8 +386,8 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
                         </span>
                         <strong>{isRefund(e.payment) ? '−' : ''}{krw(e.amount)}</strong>
                         <span className="mf-row-actions">
-                          <button type="button" className="mf-icon" aria-label={`${name} 고치기`} onClick={() => startEdit(e)}><Pencil size={15} /></button>
-                          <button type="button" className="mf-icon" aria-label={`${name} 삭제`} onClick={() => void removeEntry(e)}><Trash2 size={15} /></button>
+                          <button type="button" className="mf-icon" aria-label={`${name} 고치기`} onClick={() => startEdit(e)}><Pencil size={14} aria-hidden /><span>고치기</span></button>
+                          <button type="button" className="mf-icon" aria-label={`${name} 지우기`} onClick={() => void removeEntry(e)}><Trash2 size={14} aria-hidden /><span>지우기</span></button>
                         </span>
                       </div>
                     </li>
