@@ -8,7 +8,7 @@
 //  - 그 외(Supabase 등 외부 도메인, 비-GET)에는 일절 개입하지 않는다.
 //
 // CACHE_NAME을 올리면 activate에서 이전 캐시를 통째로 지운다(자산 재다운로드 1회).
-const CACHE_NAME = 'nexora-v1';
+const CACHE_NAME = 'nexora-v2';
 const MAX_ASSET_ENTRIES = 160;
 
 const OFFLINE_HTML = `
@@ -96,10 +96,21 @@ async function cacheFirst(request) {
   if (cached) return cached;
   const response = await fetch(request);
   if (response && response.ok) {
-    await cache.put(request, response.clone());
-    await trimAssetCache(cache);
+    await safePut(cache, request, response.clone());
+    await trimAssetCache(cache).catch(() => {});
   }
   return response;
+}
+
+// 캐시 저장은 덤이다. 실패해도(Chromium 'Entry already exists' 등) 받은 응답은 그대로 돌려준다.
+// 예전엔 put 실패가 네트워크 실패와 같은 catch로 빠져, 200을 받고도 오프라인 페이지(503)를 띄웠다
+// — 서비스워커가 설치된 뒤 재방문·로그인 복귀(?code=)가 전부 막혔다(2026-10-21).
+async function safePut(cache, request, response) {
+  try {
+    await cache.put(request, response);
+  } catch (err) {
+    // 무시
+  }
 }
 
 async function staleWhileRevalidate(request) {
@@ -107,7 +118,7 @@ async function staleWhileRevalidate(request) {
   const cached = await cache.match(request);
   const network = fetch(request)
     .then((response) => {
-      if (response && response.ok) cache.put(request, response.clone());
+      if (response && response.ok) safePut(cache, request, response.clone());
       return response;
     })
     .catch(() => null);
@@ -116,11 +127,17 @@ async function staleWhileRevalidate(request) {
 
 async function networkFirstDocument(request) {
   const cache = await caches.open(CACHE_NAME);
+  let response;
   try {
-    const response = await fetch(request);
-    if (response && response.ok) await cache.put(request, response.clone());
-    return response;
+    response = await fetch(request);
   } catch (err) {
+    response = null;
+  }
+  if (response) {
+    if (response.ok) await safePut(cache, request, response.clone());
+    return response;
+  }
+  {
     const cached = await cache.match(request);
     if (cached) return cached;
     const entryCached = await cache.match(new Request(new URL('/', self.location.origin).href));
