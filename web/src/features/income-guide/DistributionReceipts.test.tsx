@@ -46,4 +46,27 @@ describe('DistributionReceipts', () => {
     await waitFor(() => expect(screen.getByText('주당 분배금(원)을 적어 주세요.')).toBeTruthy())
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ action: 'receipt-add', receipt: expect.objectContaining({ code: '0105E0', quantity: '700' }) }))
   })
+
+  it('여러 계좌에 있는 종목은 들어온 계좌를 골라야 하고, 고르면 그 계좌 수량·계좌 키를 보낸다', async () => {
+    const submit = vi.fn(async () => null)
+    const multi = [
+      { code: '0105E0', name: 'SOL 코리아고배당', quantity: 700, accounts: [
+        { key: 'NH|일반', label: 'NH / 일반', quantity: 500 },
+        { key: '토스|일반', label: '토스 / 일반', quantity: 200 },
+      ] },
+    ]
+    render(<DistributionReceipts data={data} holdings={multi} buyName={null} submit={submit} />)
+    fireEvent.change(screen.getByLabelText('종목'), { target: { value: '0105E0' } })
+    fireEvent.change(screen.getByLabelText('주당 분배금(원)'), { target: { value: '60' } })
+    fireEvent.click(screen.getByText('적기'))
+    await waitFor(() => expect(screen.getByText(/들어온 계좌를 골라 주세요/)).toBeTruthy())
+    expect(submit).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('들어온 계좌'), { target: { value: '토스|일반' } })
+    expect((screen.getByPlaceholderText('주') as HTMLInputElement).value).toBe('200')
+    fireEvent.click(screen.getByText('적기'))
+    await waitFor(() => expect(submit).toHaveBeenCalled())
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      receipt: expect.objectContaining({ code: '0105E0', quantity: '200', accountKey: '토스|일반', accountLabel: '토스 / 일반' }),
+    }))
+  })
 })

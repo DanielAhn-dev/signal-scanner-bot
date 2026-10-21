@@ -107,7 +107,7 @@ type View = {
   }
   warnings: Warning[]
   accounts: Array<{ key: string; label: string; taxAdvantaged: boolean; total: number; byGroup: Record<Group, number> }>
-  holdings: Array<{ code: string; name: string; accountLabel: string; value: number; quantity: number; label?: string; bucket: string; group: Group; pct: number }>
+  holdings: Array<{ code: string; name: string; accountKey?: string; accountLabel: string; value: number; quantity: number; label?: string; bucket: string; group: Group; pct: number }>
   /** 분배금 받은 기록·다음 달 예상 (handlers/ui/income-guide.ts) */
   distributionReceipts?: DistributionReceiptsData
   /** 계좌 고르기 목록 — 평가금 큰 순 (src/lib/guideAccountScope.ts). 배포 전 API에는 없다 */
@@ -213,14 +213,21 @@ function OrdersTable({ orders, th, td }: { orders: Order[]; th: React.CSSPropert
  * 실계좌 리밸런싱 가이드 — 포트폴리오에서 "계좌/보유 추가"로 넣은 실제 계좌 보유를 성장·인컴·위성·현금성으로 나눠
  * 모으기 → 전환 → 인컴 단계의 목표 비중과 비교한다. 계산은 src/lib/incomeGuide.ts. 주문은 하지 않는다.
  */
-/** 분배금 기록용 종목 목록 — 같은 종목은 계좌를 합치고, 분배금이 없는 TR형은 뺀다 */
-function receiptHoldings(holdings: View['holdings']) {
-  const m = new Map<string, { code: string; name: string; quantity: number; value: number }>()
+/** 분배금 기록용 종목 목록 — 같은 종목은 계좌를 합치고(계좌별 수량은 accounts에), 분배금이 없는 TR형은 뺀다 */
+function receiptHoldings(holdings: View['holdings'], accountList: AccountOption[]) {
+  const labelOf = new Map(accountList.map((a) => [a.key, a.label]))
+  const m = new Map<string, { code: string; name: string; quantity: number; value: number; accounts: Array<{ key: string; label: string; quantity: number }> }>()
   for (const h of holdings) {
     // 예수금(CASH)은 분배금이 없다 — 서버 incomeGuide의 CASH_BALANCE_CODE
     if (h.code === 'CASH' || /TR$/i.test(h.name.trim()) || !(h.quantity > 0)) continue
     const cur = m.get(h.code)
-    m.set(h.code, { code: h.code, name: h.name, quantity: (cur?.quantity ?? 0) + h.quantity, value: (cur?.value ?? 0) + h.value })
+    const accounts = [...(cur?.accounts ?? [])]
+    if (h.accountKey) {
+      const a = accounts.find((x) => x.key === h.accountKey)
+      if (a) a.quantity += h.quantity
+      else accounts.push({ key: h.accountKey, label: labelOf.get(h.accountKey) ?? h.accountLabel, quantity: h.quantity })
+    }
+    m.set(h.code, { code: h.code, name: h.name, quantity: (cur?.quantity ?? 0) + h.quantity, value: (cur?.value ?? 0) + h.value, accounts })
   }
   return [...m.values()].sort((a, b) => b.value - a.value)
 }
@@ -581,7 +588,7 @@ export default function IncomeGuidePage() {
               receiptsSlot={view.distributionReceipts ? (
                 <DistributionReceipts
                   data={view.distributionReceipts}
-                  holdings={receiptHoldings(view.holdings)}
+                  holdings={receiptHoldings(view.holdings, view.accountList ?? [])}
                   buyName={reinvestLabel(reinvestTargets(view.plan, view.distributionReceipts.thisMonth.items.map((r) => r.code), view.holdings))}
                   submit={submitReceipt}
                   monthlyGoal={view.settings.monthlyNeed}

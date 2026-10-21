@@ -28,7 +28,19 @@ export type DistributionReceipt = {
   createdAt: string;
   /** 이 기록 때문에 예수금에 더한 금액(원). 없으면 예수금과 무관한 기록(예전 기록·지난달·계좌를 못 찾음) */
   cashApplied?: number;
+  /** 들어온 계좌(보유 행의 "증권사|계좌"). 같은 종목을 여러 계좌에 가지면 계좌마다 따로 적는다. 예전 기록은 없음 */
+  accountKey?: string;
+  /** 기록 당시 계좌 이름(표시용) */
+  accountLabel?: string;
 };
+
+const isAccountKey = (v: unknown): v is string => typeof v === "string" && v.includes("|") && v.length <= 120;
+
+/** 같은 달·같은 종목·같은 계좌면 같은 기록(다시 적으면 고친 것) */
+export const sameReceiptSlot = (
+  a: Pick<DistributionReceipt, "month" | "code" | "accountKey">,
+  b: Pick<DistributionReceipt, "month" | "code" | "accountKey">,
+) => a.month === b.month && a.code === b.code && (a.accountKey ?? "") === (b.accountKey ?? "");
 
 const isMonth = (v: unknown): v is string => typeof v === "string" && /^20\d{2}-(0[1-9]|1[0-2])$/.test(v);
 const posNum = (v: unknown, max: number): number | null => {
@@ -63,6 +75,10 @@ export function sanitizeReceipt(input: any, now: string, makeId: () => string): 
     perShare,
     net,
     createdAt: now,
+    ...(isAccountKey(input?.accountKey) ? { accountKey: input.accountKey } : {}),
+    ...(isAccountKey(input?.accountKey) && typeof input?.accountLabel === "string" && input.accountLabel.trim()
+      ? { accountLabel: input.accountLabel.trim().slice(0, 60) }
+      : {}),
   };
 }
 
@@ -80,6 +96,8 @@ export function sanitizeReceipts(list: unknown): DistributionReceipt[] {
       net: r.net == null ? null : Number(r.net),
       createdAt: String(r.createdAt ?? ""),
       ...(Number.isFinite(Number(r.cashApplied)) && r.cashApplied != null ? { cashApplied: Number(r.cashApplied) } : {}),
+      ...(isAccountKey(r.accountKey) ? { accountKey: r.accountKey } : {}),
+      ...(isAccountKey(r.accountKey) && typeof r.accountLabel === "string" ? { accountLabel: r.accountLabel } : {}),
     }))
     .slice(-MAX_RECEIPTS);
 }
@@ -144,11 +162,18 @@ export function projectNextMonth(input: {
     if (!(quantity > 0)) continue;
     const list = (byCode.get(code) ?? []).filter((r) => nowIdx - monthIndex(r.month) < RECEIPT_STALE_MONTHS);
     if (list.length) {
-      const latest = [...list].sort((a, b) => a.month.localeCompare(b.month) || a.createdAt.localeCompare(b.createdAt)).at(-1)!;
+      // 가장 최근 달의 기록 — 같은 종목을 계좌마다 따로 적었으면 그 달 기록을 합쳐 한 건으로 본다(한 계좌 기록만 보면 수량이 적게 잡혀 '늘어남'이 부풀었다)
+      const latestMonth = list.reduce((m, r) => (r.month > m ? r.month : m), list[0].month);
+      const sameMonth = list.filter((r) => r.month === latestMonth);
+      const latestQty = sameMonth.reduce((q, r) => q + r.quantity, 0);
+      const latestGross = sameMonth.reduce((g, r) => g + receiptGross(r), 0);
+      const latestNet = sameMonth.reduce((n, r) => n + receiptNet(r), 0);
+      const latest = { perShare: latestQty > 0 ? latestGross / latestQty : sameMonth[0].perShare, quantity: latestQty };
       const months = [...new Set((byCode.get(code) ?? []).map((r) => monthIndex(r.month)))].sort((a, b) => a - b);
       const gaps = months.slice(1).map((m, i) => m - months[i]).filter((g) => g >= 1 && g <= 12);
       const interval = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : 1;
-      const netRatio = latest.net != null ? latest.net / Math.max(1, receiptGross(latest)) : 1 - RECEIPT_TAX_RATE;
+      // 세후를 안 적은 기록은 receiptNet이 15.4%를 떼고 넣는다 — 모두 안 적었으면 1 − 15.4%와 같다
+      const netRatio = latestGross > 0 ? latestNet / latestGross : 1 - RECEIPT_TAX_RATE;
       rows.push({
         code,
         name,

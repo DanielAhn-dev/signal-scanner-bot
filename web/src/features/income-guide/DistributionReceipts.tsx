@@ -6,7 +6,9 @@ import StockSearchInput from '../../components/StockSearchInput'
 import IncomeBars, { incomeBarSeries } from './IncomeBars'
 
 /** 서버 src/lib/distributionReceipts.ts (handlers/ui/income-guide.ts의 distributionReceipts) */
-export type Receipt = { id: string; month: string; code: string; name: string; quantity: number; perShare: number; net: number | null; createdAt: string }
+export type Receipt = { id: string; month: string; code: string; name: string; quantity: number; perShare: number; net: number | null; createdAt: string; accountKey?: string; accountLabel?: string }
+/** 같은 달 안에서 한 기록의 자리 — 같은 종목을 계좌마다 따로 적으면 계좌까지 본다 */
+const slotOf = (r: Pick<Receipt, 'code' | 'accountKey'>) => `${r.code}|${r.accountKey ?? ''}`
 type MonthSum = { month: string; items: Receipt[]; gross: number; net: number; estimatedCount: number }
 type ProjectionRow = {
   code: string
@@ -47,8 +49,8 @@ type ReinvestEstimate =
 
 type Props = {
   data: DistributionReceiptsData
-  /** 분배금이 나오는 보유 종목(같은 종목 여러 계좌면 수량 합) */
-  holdings: Array<{ code: string; name: string; quantity: number }>
+  /** 분배금이 나오는 보유 종목(같은 종목 여러 계좌면 수량 합, 계좌별 수량은 accounts) */
+  holdings: Array<{ code: string; name: string; quantity: number; accounts?: Array<{ key: string; label: string; quantity: number }> }>
   buyName: string | null
   /** 서버에 보내고 성공하면 null, 실패하면 이유 */
   /** 실패면 이유 문자열, 성공이면 null 또는 덧붙일 안내({ note }) */
@@ -95,8 +97,8 @@ function groupByMonth(list: Receipt[]) {
   return [...by.keys()].sort().reverse().map((month) => {
     const items = [...(by.get(month) ?? [])].sort((a, b) => netOf(b) - netOf(a))
     const prevItems = by.get(prevMonthKey(month))
-    const prevByCode = prevItems ? new Map(prevItems.map((r) => [r.code, netOf(r)])) : null
-    const same = prevByCode ? items.filter((r) => prevByCode.has(r.code)) : []
+    const prevByCode = prevItems ? new Map(prevItems.map((r) => [slotOf(r), netOf(r)])) : null
+    const same = prevByCode ? items.filter((r) => prevByCode.has(slotOf(r))) : []
     return {
       month,
       items,
@@ -104,7 +106,7 @@ function groupByMonth(list: Receipt[]) {
       estimated: items.some((r) => r.net == null),
       prevTotal: prevItems ? sum(prevItems) : null,
       prevByCode,
-      sameDelta: prevByCode && same.length > 0 ? same.reduce((s, r) => s + netOf(r) - (prevByCode.get(r.code) ?? 0), 0) : null,
+      sameDelta: prevByCode && same.length > 0 ? same.reduce((s, r) => s + netOf(r) - (prevByCode.get(slotOf(r)) ?? 0), 0) : null,
     }
   })
 }
@@ -164,7 +166,7 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
   const [pending, setPending] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const months = useMemo(() => recentMonths(3), [])
-  const [form, setForm] = useState({ month: months[0], code: '', quantity: '', perShare: '', net: '' })
+  const [form, setForm] = useState({ month: months[0], code: '', accountKey: '', quantity: '', perShare: '', net: '' })
   const holdingOf = useMemo(() => new Map(holdings.map((h) => [h.code, h])), [holdings])
   // 고를 수 있는 종목 = 지금 보유 + 팔았지만 예전에 받은 기록이 있는 종목 + 직접 찾은 종목
   const [manualMode, setManualMode] = useState(false)
@@ -188,13 +190,25 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
   const notYet = holdings.filter((h) => !thisMonth.items.some((r) => r.code === h.code) && projection.rows.some((p) => p.code === h.code)).length
   const added = projection.rows.filter((r) => r.source === 'receipt' && r.addedShares > 0 && r.perShare)
   // 고른 달에 이미 적은 종목은 맨 아래로 — 남은 종목을 빨리 고르고, 고칠 때만 아래에서 고른다
-  const doneCodes = useMemo(() => {
-    const monthItems =
+  const monthItems = useMemo(
+    () =>
       form.month === data.thisMonth.month ? data.thisMonth.items
       : form.month === data.lastMonth.month ? data.lastMonth.items
-      : data.recent.filter((r) => r.month === form.month)
-    return new Set(monthItems.map((r) => r.code))
-  }, [form.month, data])
+      : data.recent.filter((r) => r.month === form.month),
+    [form.month, data],
+  )
+  // 여러 계좌에 있는 종목은 계좌를 다 적어야 '이미 적음'
+  const doneCodes = useMemo(() => {
+    const out = new Set<string>()
+    for (const c of candidates) {
+      const recs = monthItems.filter((r) => r.code === c.code)
+      if (!recs.length) continue
+      const accounts = holdingOf.get(c.code)?.accounts ?? []
+      const covered = recs.some((r) => !r.accountKey) || accounts.every((a) => recs.some((r) => r.accountKey === a.key))
+      if (accounts.length <= 1 || covered) out.add(c.code)
+    }
+    return out
+  }, [candidates, monthItems, holdingOf])
   const todo = candidates.filter((h) => !doneCodes.has(h.code))
   const done = candidates.filter((h) => doneCodes.has(h.code))
 
@@ -203,13 +217,25 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
       setManualMode(true)
       setManualPick(null)
       setManualText('')
-      setForm((f) => ({ ...f, code: '', quantity: '' }))
+      setForm((f) => ({ ...f, code: '', accountKey: '', quantity: '' }))
       return
     }
     setManualMode(false)
-    // 지금 없는 종목(팔았음)은 받은 수량을 직접 적는다
+    // 지금 없는 종목(팔았음)은 받은 수량을 직접 적는다. 여러 계좌에 있으면 계좌부터 고르게(아직 안 적은 계좌가 하나면 그 계좌)
     const h = holdingOf.get(code)
-    setForm((f) => ({ ...f, code, quantity: h ? String(h.quantity) : '' }))
+    const accounts = h?.accounts ?? []
+    if (accounts.length > 1) {
+      const left = accounts.filter((a) => !monthItems.some((r) => r.code === code && r.accountKey === a.key))
+      const only = left.length === 1 ? left[0] : null
+      setForm((f) => ({ ...f, code, accountKey: only?.key ?? '', quantity: only ? String(only.quantity) : '' }))
+      return
+    }
+    setForm((f) => ({ ...f, code, accountKey: accounts[0]?.key ?? '', quantity: h ? String(h.quantity) : '' }))
+  }
+  const pickedAccounts = form.code ? holdingOf.get(form.code)?.accounts ?? [] : []
+  const pickAccount = (key: string) => {
+    const a = pickedAccounts.find((x) => x.key === key)
+    setForm((f) => ({ ...f, accountKey: key, quantity: a ? String(a.quantity) : f.quantity }))
   }
   const run = async (body: Record<string, unknown>, done: string) => {
     if (busy.current) return false
@@ -232,12 +258,20 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
   const add = async () => {
     const name = form.code ? nameOf(form.code) : null
     if (!name) return setMsg(manualMode ? '종목을 검색해서 골라 주세요.' : '종목을 골라 주세요.')
+    if (pickedAccounts.length > 1 && !form.accountKey) return setMsg('이 종목은 여러 계좌에 있습니다. 들어온 계좌를 골라 주세요.')
+    const account = pickedAccounts.find((a) => a.key === form.accountKey) ?? null
     const ok = await run(
-      { action: 'receipt-add', receipt: { month: form.month, code: form.code, name, quantity: form.quantity, perShare: form.perShare, net: form.net } },
-      `${name} 분배금을 적었습니다.`,
+      {
+        action: 'receipt-add',
+        receipt: {
+          month: form.month, code: form.code, name, quantity: form.quantity, perShare: form.perShare, net: form.net,
+          ...(account ? { accountKey: account.key, accountLabel: account.label } : {}),
+        },
+      },
+      `${name}${account && pickedAccounts.length > 1 ? `(${account.label})` : ''} 분배금을 적었습니다.`,
     )
     if (ok) {
-      setForm((f) => ({ ...f, code: '', quantity: '', perShare: '', net: '' }))
+      setForm((f) => ({ ...f, code: '', accountKey: '', quantity: '', perShare: '', net: '' }))
       setManualMode(false)
       setManualPick(null)
       setManualText('')
@@ -308,6 +342,22 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
             )}
           </select>
         </label>
+        {pickedAccounts.length > 1 && (
+          <label className="ui-field ig-receipt-code">
+            <span className="ui-label">들어온 계좌</span>
+            <select value={form.accountKey} onChange={(e) => pickAccount(e.target.value)}>
+              <option value="">계좌를 골라 주세요</option>
+              {pickedAccounts.map((a) => {
+                const already = monthItems.some((r) => r.code === form.code && r.accountKey === a.key)
+                return (
+                  <option key={a.key} value={a.key}>
+                    {a.label} · {a.quantity.toLocaleString('ko-KR')}주{already ? ' (이미 적음 — 다시 적으면 고침)' : ''}
+                  </option>
+                )
+              })}
+            </select>
+          </label>
+        )}
         {manualMode && (
           <div className="ui-field ig-receipt-manual">
             <span className="ui-label">종목 찾기</span>
@@ -353,7 +403,7 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
       <div style={{ ...faint, marginTop: 10 }}>
         받은 수량은 지금 보유 수량이 기본값입니다. 기준일 뒤에 산 수량은 빼고 적어 주세요.
         <More label="세후 입금액·다시 적기">세후 입금액을 적으면 그 종목의 실제 세금(커버드콜은 15.4%보다 적게 떼는 경우가 있습니다)으로 다음 달을 계산합니다.
-        같은 달·같은 종목을 다시 적으면 고친 것으로 저장합니다.</More>
+        같은 달·같은 종목(여러 계좌에 있으면 같은 계좌)을 다시 적으면 고친 것으로 저장합니다.</More>
       </div>
       {msg && <div style={{ ...muted, marginTop: 8 }}>{msg}</div>}
 
@@ -378,10 +428,13 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
               </summary>
               <ul className="ig-receipt-rows">
                 {g.items.map((r) => {
-                  const prev = g.prevByCode?.get(r.code)
+                  const prev = g.prevByCode?.get(slotOf(r))
                   return (
                     <li key={r.id} className={`ig-receipt-row${g.prevByCode == null ? ' ig-receipt-row--single' : ''}`}>
-                      <span className="ig-receipt-row__name">{r.name}</span>
+                      <span className="ig-receipt-row__name">
+                        {r.name}
+                        {r.accountLabel && <span style={faint}> · {r.accountLabel}</span>}
+                      </span>
                       <span className="ig-receipt-row__net">
                         {r.net != null ? won(r.net) : <span style={faint}>{won(netOf(r))} 추정</span>}
                       </span>

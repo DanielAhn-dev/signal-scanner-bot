@@ -40,13 +40,14 @@ import {
 import { buildGuidePlanSnapshot } from '../../src/services/guidePlanSnapshot'
 import { buildAdherence } from '../../src/lib/guideAdherence'
 import { readOwnUserState } from './user-state'
-import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sanitizeReceipt } from '../../src/lib/distributionReceipts'
+import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sameReceiptSlot, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
 //   GET  ?summary=1 — 보유 수·직접 남긴 점검 기록 수만 (홈 길잡이용, 시세 조회 없음)
 //   POST { ...설정 } — 가이드 설정 변경 / POST { action: 'record', note } — 오늘 비중을 점검 기록에 남김
-//   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
+//   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net?, accountKey?, accountLabel? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
+//     같은 종목이 여러 계좌에 있으면 accountKey가 필요하다(계좌마다 따로 적는다)
 //     이번 달 기록은 그 계좌 예수금에 더하고 고치면 차액·지우면 뺀다 → 응답 cashAdjust { before, after }
 //   POST { action: 'adherence-exclude', key, exclude } — 가이드 따름 판정에서 빼기/되돌리기
 // 계좌별 보기 (src/lib/guideAccountScope.ts) — ?account=키 를 붙이면 그 계좌 보유·예수금만으로 계산하고 기록도 그 계좌에 쌓는다.
@@ -141,8 +142,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const receipts = [...(file.receipts ?? [])]
       // 이번 달 기록은 그 종목을 가진 계좌 예수금에 바로 더한다(매수·매도 기록과 같은 방식). 지난달 기록은 이미 증권사 숫자에 들어 있다고 본다
       const thisMonth = kstDateKey().slice(0, 7)
-      const accountOf = async (code: string) => {
-        const keys = new Set((await loadAccountPositionRows(supabase, chatId)).filter((r) => String(r.code ?? '').trim() === code).map((r) => `${String(r.broker_name ?? '').trim()}|${String(r.account_name ?? '').trim()}`))
+      // 그 종목을 가진 계좌들 — 기록에 계좌가 있으면 그 계좌, 없으면 한 계좌에만 있을 때 그 계좌
+      let heldKeysByCode: Map<string, Set<string>> | null = null
+      const heldKeysOf = async (code: string) => {
+        if (!heldKeysByCode) {
+          heldKeysByCode = new Map()
+          for (const r of await loadAccountPositionRows(supabase, chatId)) {
+            const c = String(r.code ?? '').trim()
+            const set = heldKeysByCode.get(c) ?? new Set<string>()
+            set.add(`${String(r.broker_name ?? '').trim()}|${String(r.account_name ?? '').trim()}`)
+            heldKeysByCode.set(c, set)
+          }
+        }
+        return heldKeysByCode.get(code) ?? new Set<string>()
+      }
+      const accountOf = async (code: string, accountKey?: string) => {
+        const keys = await heldKeysOf(code)
+        if (accountKey) return keys.has(accountKey) ? accountKey : null
         return keys.size === 1 ? [...keys][0] : null // 두 계좌에 나눠 있으면 어느 쪽에 들어왔는지 모른다
       }
       let settings = file.settings
@@ -156,13 +172,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.action === 'receipt-add') {
         const r = sanitizeReceipt(body.receipt, new Date().toISOString(), () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
         if (typeof r === 'string') return res.status(400).json({ error: r })
-        // 같은 달·같은 종목을 다시 적으면 고친 것으로 본다(두 번 눌러 쌓이지 않게)
-        const i = receipts.findIndex((x) => x.month === r.month && x.code === r.code)
+        // 여러 계좌에 있는 종목은 계좌를 골라야 한다 — 안 고르면 두 계좌 기록이 한 줄로 덮어써졌다
+        if (!r.accountKey && (await heldKeysOf(r.code)).size > 1) {
+          return res.status(400).json({ error: '이 종목이 여러 계좌에 있습니다. 어느 계좌에 들어왔는지 골라 주세요.' })
+        }
+        // 같은 달·같은 종목·같은 계좌를 다시 적으면 고친 것으로 본다(두 번 눌러 쌓이지 않게)
+        const i = receipts.findIndex((x) => sameReceiptSlot(x, r))
         const prev = i >= 0 ? receipts[i] : null
         const next: typeof r = { ...r, ...(prev ? { id: prev.id } : {}) }
         // 예수금과 무관했던 예전 기록을 고칠 때는 더하지 않는다(이미 증권사 숫자에 들어 있을 수 있다)
         if (r.month === thisMonth && (!prev || prev.cashApplied != null)) {
-          const key = await accountOf(r.code)
+          const key = await accountOf(r.code, r.accountKey)
           const already = prev?.cashApplied ?? 0
           if (key && (receiptNet(r) === already || shift(key, receiptNet(r) - already))) next.cashApplied = receiptNet(r)
           else if (already) next.cashApplied = already
@@ -174,7 +194,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (i < 0) return res.status(404).json({ error: '지울 기록이 없습니다.' })
         const gone = receipts[i]
         if (gone.cashApplied) {
-          const key = await accountOf(gone.code)
+          const key = await accountOf(gone.code, gone.accountKey)
           if (key) shift(key, -gone.cashApplied)
         }
         receipts.splice(i, 1)
@@ -245,9 +265,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (next && !(await saveGuideFile(supabase, chatId, withScopeHistory(next)))) history = next
     }
     // 분배금 받은 기록 → 이번 달 합계와 다음 달 예상(기록 없는 종목은 분배율 추정, 일반 계좌는 15.4% 뗌)
-    // 계좌별 보기면 이 계좌에 있는 종목의 기록만 (같은 종목이 두 계좌에 있으면 양쪽에 보인다)
+    // 계좌별 보기면 이 계좌의 기록만 — 계좌를 적은 기록은 그 계좌, 예전 기록(계좌 없음)은 이 계좌에 있는 종목이면 보인다
     const heldCodes = new Set(holdings.map((h) => h.code))
-    const receipts = (file.receipts ?? []).filter((r) => !accountKey || heldCodes.has(r.code))
+    const receipts = (file.receipts ?? []).filter((r) => !accountKey || (r.accountKey ? r.accountKey === accountKey : heldCodes.has(r.code)))
     const month = today.slice(0, 7)
     const prevMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()
     const yearAgoMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 12 ? `${y}-01` : `${y - 1}-${String(m + 1).padStart(2, '0')}` })()

@@ -139,3 +139,28 @@ test("estimateReinvest: 적을 때 예수금에 바로 더한 기록(cashApplied
   assert.equal(sanitizeReceipts(applied)[0].cashApplied, 300_000);
   assert.equal(sanitizeReceipts([R({})])[0].cashApplied, undefined);
 });
+
+test("계좌별 기록: 같은 달·같은 종목이라도 계좌가 다르면 다른 기록, 예상은 그 달 계좌 기록을 합친다", async () => {
+  const { sameReceiptSlot } = await import("../src/lib/distributionReceipts");
+  const nh = sanitizeReceipt({ month: "2026-10", code: "498400", quantity: 400, perShare: 160, net: 60_800, accountKey: "NH|일반", accountLabel: "NH / 일반" }, "t", mk) as DistributionReceipt;
+  const toss = sanitizeReceipt({ month: "2026-10", code: "498400", quantity: 200, perShare: 160, net: 30_400, accountKey: "토스|일반" }, "t", mk) as DistributionReceipt;
+  assert.equal(nh.accountKey, "NH|일반");
+  assert.equal(nh.accountLabel, "NH / 일반");
+  assert.equal(sameReceiptSlot(nh, toss), false);
+  assert.equal(sameReceiptSlot(nh, { ...nh, id: "other" }), true);
+  // 잘못된 계좌 키는 버린다
+  const bad = sanitizeReceipt({ month: "2026-10", code: "498400", quantity: 1, perShare: 1, accountKey: "noBar" }, "t", mk) as DistributionReceipt;
+  assert.equal(bad.accountKey, undefined);
+  assert.equal(sanitizeReceipts([nh])[0].accountKey, "NH|일반");
+
+  const p = projectNextMonth({
+    receipts: [nh, toss],
+    holdings: [{ code: "498400", name: "K", quantity: 400 }, { code: "498400", name: "K", quantity: 200 }],
+    estimateMonthlyNet: () => 0,
+    today: "2026-10-20",
+  });
+  const row = p.rows.find((r) => r.code === "498400")!;
+  // 두 계좌 합계 600주 = 지금 600주 → 늘어난 수량 없음(한 계좌 기록만 보면 200주 늘어난 것으로 보였다)
+  assert.equal(row.addedShares, 0);
+  assert.equal(row.net, 91_200);
+});
