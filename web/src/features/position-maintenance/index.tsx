@@ -28,6 +28,7 @@ type ConsistencyIssue = {
   name: string | null
   kind: 'mismatch' | 'missing_lots' | 'orphan_lots'
   position_id: number | null
+  account_label?: string | null
   position_qty: number
   lot_qty: number
   detail: string
@@ -267,14 +268,14 @@ function ConsistencyPanel() {
     }
   }, [toast])
 
-  const repairConsistency = useCallback(async (code?: string) => {
+  const repairConsistency = useCallback(async (code?: string, positionId?: number | null) => {
     setRepairing(true)
     try {
       const json = await apiFetch('/api/ui/operations', {
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 60_000,
-        body: JSON.stringify({ mode: 'consistency_repair', code: code || null }),
+        body: JSON.stringify({ mode: 'consistency_repair', code: code || null, position_id: positionId ?? null }),
       })
       if (json?.error) throw new Error(String(json.error))
       const repaired = Number(json?.data?.repaired_count || 0)
@@ -327,8 +328,8 @@ function ConsistencyPanel() {
                       <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>보유 {issue.position_qty}주 · lot {issue.lot_qty}주</div>
                     </div>
                     <div>
-                      <Button variant="ghost" onClick={() => { void repairConsistency(issue.code) }} disabled={repairing}>
-                        이 종목 복구
+                      <Button variant="ghost" onClick={() => { void repairConsistency(issue.code, issue.position_id) }} disabled={repairing}>
+                        {issue.position_id ? '이 계좌 복구' : '이 종목 복구'}
                       </Button>
                     </div>
                   </div>
