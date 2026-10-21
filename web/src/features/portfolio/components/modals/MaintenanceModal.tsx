@@ -5,12 +5,15 @@ import Input from '../../../../components/ui/Input'
 import Modal from '../../../../components/Modal'
 import StockSearchInput from '../../../../components/StockSearchInput'
 import type { AccountFolder } from '../../types'
-import { accountLabel } from '../../lib/accountKey'
+import { displayAccountName, type AccountAliases } from '../../lib/accountAliases'
 import { getTodayLocalYmd } from '../../lib/dates'
 import type { MaintenanceState } from '../../hooks/useMaintenance'
 import HoldingPasteImport from './HoldingPasteImport'
 
-export default function MaintenanceModal({ maint, accountFolders }: { maint: MaintenanceState; accountFolders: AccountFolder[] }) {
+const NEW_ACCOUNT = '__new__'
+const folderValue = (f: AccountFolder) => `${f.brokerName || ''}||${f.accountName || ''}`
+
+export default function MaintenanceModal({ maint, accountFolders, aliases = {} }: { maint: MaintenanceState; accountFolders: AccountFolder[]; aliases?: AccountAliases }) {
   const {
     maintModalOpen,
     setMaintModalOpen,
@@ -50,6 +53,41 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
   }, [maintFieldError, saveAttempt])
   const fieldHint = (field: 'code' | 'qty' | 'price', text: string) => maintFieldError === field && (
     <div className="caption" role="alert" style={{ color: 'var(--color-error)', marginTop: 'var(--space-1)' }}>{text}</div>
+  )
+  // 계좌 고르기 — 1단계와 2단계(잘못 골랐을 때 바로 바꾸기)가 같이 쓴다. 표시는 포트폴리오 탭과 같은 별칭
+  const currentAccountValue = maintBrokerName || maintAccountName ? `${maintBrokerName}||${maintAccountName}` : ''
+  const accountSelect = (id: string) => (
+    <select
+      id={id || undefined}
+      className="input"
+      value={currentAccountValue}
+      onChange={(e) => {
+        const val = e.target.value
+        if (val === NEW_ACCOUNT) {
+          setMaintBrokerName('')
+          setMaintAccountName('')
+          setMaintAccountMode('manual')
+          setMaintStep(1)
+        } else {
+          const [broker, account] = val.split('||')
+          setMaintBrokerName(broker ?? '')
+          setMaintAccountName(account ?? '')
+        }
+      }}
+    >
+      {!currentAccountValue && <option value="">계좌를 선택하세요</option>}
+      {/* 새로 입력한 계좌(아직 폴더 없음)도 2단계 셀렉트에 보이게 */}
+      {currentAccountValue && !accountFolders.some((f) => folderValue(f) === currentAccountValue) && (
+        <option value={currentAccountValue}>{[maintBrokerName, maintAccountName].filter(Boolean).join(' / ')} (새 계좌)</option>
+      )}
+      {accountFolders.map((f) => (
+        // 빈 칸도 자리를 지켜야 계좌명만 있는 계좌가 증권사 칸으로 밀려 들어가지 않는다
+        <option key={f.key} value={folderValue(f)}>
+          {displayAccountName(aliases, f.key, f.brokerName, f.accountName)} ({f.count}종목)
+        </option>
+      ))}
+      <option value={NEW_ACCOUNT}>새 계좌 입력하기…</option>
+    </select>
   )
   return (
     <Modal
@@ -139,34 +177,7 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
             <>
               <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
                 <label className="ui-label">기존 계좌 선택</label>
-                <select
-                  className="input"
-                  value={maintBrokerName || maintAccountName ? `${maintBrokerName}||${maintAccountName}` : ''}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    if (val === '__new__') {
-                      setMaintBrokerName('')
-                      setMaintAccountName('')
-                      setMaintAccountMode('manual')
-                    } else {
-                      const [broker, account] = val.split('||')
-                      setMaintBrokerName(broker ?? '')
-                      setMaintAccountName(account ?? '')
-                    }
-                  }}
-                >
-                  <option value="">계좌를 선택하세요</option>
-                  {accountFolders.map((f) => {
-                    // 빈 칸도 자리를 지켜야 계좌명만 있는 계좌가 증권사 칸으로 밀려 들어가지 않는다
-                    const val = `${f.brokerName || ''}||${f.accountName || ''}`
-                    return (
-                      <option key={f.key} value={val}>
-                        {accountLabel(f.brokerName, f.accountName)} ({f.count}종목)
-                      </option>
-                    )
-                  })}
-                  <option value="__new__">➕ 새로 입력하기</option>
-                </select>
+                {accountSelect('')}
               </div>
             </>
           )}
@@ -235,9 +246,12 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
 
       {maintMode === 'holdingrestore' && maintStep === 2 && (
         <>
-          <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-            계좌: <strong>{[maintBrokerName, maintAccountName].filter(Boolean).join(' / ') || '미지정'}</strong>
-            <br />추가할 종목의 매수 정보를 입력합니다.
+          <div className="ui-field" style={{ marginBottom: 'var(--space-2)' }}>
+            <label className="ui-label" htmlFor="maint-step2-account">추가할 계좌</label>
+            {accountSelect('maint-step2-account')}
+          </div>
+          <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
+            계좌가 다르면 위에서 바로 바꾸세요. 추가할 종목의 매수 정보를 입력합니다.
           </div>
           <div role="group" aria-label="입력 방식" style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
             <Button variant={entryMode === 'single' ? 'primary' : 'secondary'} aria-pressed={entryMode === 'single'} onClick={() => setEntryMode('single')}>한 종목씩</Button>
@@ -303,7 +317,7 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
             </div>
           </div>
           <div className="caption muted" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
-            저장 후 가상매도 시 수익/손실이 자동 기록됩니다.
+            위에서 고른 계좌의 보유로 저장됩니다. 같은 계좌에 이미 있는 종목이면 그 줄을 고칩니다.
           </div>
           {maintError && (
             <div className="state-error" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>

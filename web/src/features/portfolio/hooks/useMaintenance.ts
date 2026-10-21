@@ -25,7 +25,12 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
   const [maintStep, setMaintStep] = useState<1 | 2>(1)
   const [maintAccountMode, setMaintAccountMode] = useState<'select' | 'manual'>('select')
 
-  const openMaintenanceModal = (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => {
+  /** opts.accountKey: 지금 보고 있는 계좌 탭 — 보유 추가에서 그 계좌를 미리 골라 바로 종목 입력(2단계)으로 간다 */
+  const openMaintenanceModal = (
+    mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete',
+    row?: HoldingRow,
+    opts?: { accountKey?: string | null },
+  ) => {
     setMaintMode(mode)
     setMaintRow(row ?? null)
     setMaintError(null)
@@ -48,6 +53,12 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
       setMaintStep(1)
       setMaintFieldError(null)
       setMaintAccountMode(accountFolders.length > 0 ? 'select' : 'manual')
+      const preset = opts?.accountKey ? accountFolders.find((f) => f.key === opts.accountKey) : undefined
+      if (preset) {
+        setMaintBrokerName(preset.brokerName)
+        setMaintAccountName(preset.accountName)
+        setMaintStep(2)
+      }
     }
     if (mode === 'holdingdelete') {
       const code = String(row?.code || '')

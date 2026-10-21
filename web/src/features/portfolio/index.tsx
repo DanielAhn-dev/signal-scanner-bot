@@ -86,7 +86,9 @@ export default function Portfolio() {
   const maint = useMaintenance({ load, accountFolders })
   const share = useShare()
   const { openTradeModal } = trade
-  const { openMaintenanceModal } = maint
+  // 계좌 탭을 보고 있으면 보유 추가가 그 계좌로 바로 열린다(전체·가상 탭이면 계좌부터 고른다)
+  const openMaintenanceModal: typeof maint.openMaintenanceModal = (mode, row, opts) =>
+    maint.openMaintenanceModal(mode, row, opts ?? { accountKey: selectedAccountKey })
 
   const portfolioHeaderSubtitle = refreshing
     ? '보유 포지션만 집중해서 관리합니다. · 업데이트 중...'
@@ -208,7 +210,7 @@ export default function Portfolio() {
 
       <ShareModal share={share} holdingAll={holdingAll} totalInvested={totalInvested} totalUnrealized={totalUnrealized} totalReturnPct={totalReturnPct} />
 
-      <MaintenanceModal maint={maint} accountFolders={accountFolders} />
+      <MaintenanceModal maint={maint} accountFolders={accountFolders} aliases={aliases} />
 
       <DeleteConfirmModal maint={maint} />
     </section>
