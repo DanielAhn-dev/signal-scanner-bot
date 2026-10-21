@@ -78,7 +78,7 @@ type PortfolioSummary = {
 }
 
 // 관리자의 오늘 점검 — 2026-09-29 방향 전환(지수 적립·행동 실수 차단·위험 관리) 뒤 매일 볼 것만 둔다.
-// 종목 선별 흐름(FLOW_STEPS 1~7)은 '종목 연구' 탭과 각 화면 위 n/7 안내에 남기고 여기서는 링크 하나로 줄였다.
+// 종목 선별 흐름(FLOW_STEPS)은 '종목 연구' 탭과 각 화면 위 n/N 안내에 남기고 여기서는 링크 하나로 줄였다.
 const ADMIN_TODO_STEPS: Array<{ key: string; label: string; desc: string; route?: string }> = [
   { key: 'control-audit', route: 'control?tab=audit', label: '관제 검산', desc: '어젯밤 배치·기록에 이상이 없는지 먼저 확인' },
   { key: 'portfolio', label: '비중 경고', desc: '아래 내 계좌 [실제] 줄의 대응 필요(한도 초과분 KODEX 200으로)를 처리했는지 확인' },

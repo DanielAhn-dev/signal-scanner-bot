@@ -108,7 +108,7 @@ export default function BotUsageBanner({ route }: { route: string }) {
             {open ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
           </span>
         )}
-        <strong style={{ color: 'var(--color-text-primary)' }}>봇 연결</strong> · {open ? note : summary}
+        <strong style={{ color: 'var(--color-text-primary)' }}>가상(실험) 계좌와의 관계</strong> · {open ? note : summary}
       </button>
       {next && (
         <Link to={`/${next.key}`} style={{ color: 'var(--color-brand)', whiteSpace: 'nowrap' }}>
