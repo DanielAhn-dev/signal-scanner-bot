@@ -437,7 +437,7 @@ export function situationGuide(candles: Candle[], today: Date = new Date()): Sit
   if (dd <= DROP_DD) {
     return {
       state: 'drop',
-      title: `고점 대비 ${(dd * 100).toFixed(1)}% 내려와 있습니다`,
+      title: `1년 고점 대비 ${(dd * 100).toFixed(1)}% 내려와 있습니다`,
       text: '멈추지 말고 정한 금액을 그대로 이어가세요. 여유자금이 있으면 추가로 넣는 것은 선택입니다. 평단은 낮아지지만, 과거 검증에서 몰아 넣기가 꾸준히 넣는 것보다 낫다는 근거는 일관되지 않았습니다.',
       note: '이 안내는 수익을 올리는 규칙이 아니라 중단·충동 매매를 막기 위한 것입니다.',
       ...common,

@@ -217,7 +217,7 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
 
       {extra > 0 && (
         <p className="sp__drop">
-          코스피가 고점보다 {Math.abs(data.market!.fromHighPct).toFixed(0)}% 낮아, 같은 돈으로 고점 때보다 약 {extra.toFixed(0)}% 더 많은 수량을 삽니다. 넣는 돈은 그대로 두는 것이 계획입니다.
+          코스피가 최근 60거래일 고점보다 {Math.abs(data.market!.fromHighPct).toFixed(0)}% 낮아, 같은 돈으로 고점 때보다 약 {extra.toFixed(0)}% 더 많은 수량을 삽니다. 넣는 돈은 그대로 두는 것이 계획입니다.
         </p>
       )}
 
