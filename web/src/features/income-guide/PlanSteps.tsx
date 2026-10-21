@@ -204,9 +204,15 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         <strong style={{ fontSize: 16 }}>{plan.headline}</strong>
         {growth.targetPct > 0 && (
           <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', ...muted }}>
-              <span>성장(지수) {growth.actualPct.toFixed(0)}%</span>
-              <span>목표 {growth.targetPct.toFixed(0)}%</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, ...muted }}>
+              <span>
+                성장(지수) 지금 <strong>{growth.actualPct.toFixed(0)}%</strong> → 목표 {growth.targetPct.toFixed(0)}%
+              </span>
+              <span style={{ whiteSpace: 'nowrap' }}>
+                {growth.targetPct - growth.actualPct < 0.5
+                  ? '목표 도달'
+                  : `${(growth.targetPct - growth.actualPct).toFixed(0)}%p 남음${growth.needByNewMoney > 0 ? ` · 새 돈 약 ${man(growth.needByNewMoney)}` : ''}`}
+              </span>
             </div>
             <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
               <div style={{ width: `${growthBar}%`, height: '100%', background: 'var(--color-brand)' }} />
@@ -225,14 +231,20 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
         )}
         {cash && (
           <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', ...muted }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, ...muted }}>
               <span>
-                현금(예수금 포함) {cash.actualPct.toFixed(1)}% · {man(cash.value)}
+                현금(예수금 포함) 지금 <strong>{cash.actualPct.toFixed(1)}%</strong>({man(cash.value)}) → 목표 {cash.targetPct.toFixed(0)}%
               </span>
-              <span>
-                목표 {cash.targetPct.toFixed(0)}% (±{cash.bandPp.toFixed(0)}%p)
+              <span style={{ whiteSpace: 'nowrap' }}>
+                {Math.abs(cash.targetPct - cash.actualPct) < 0.5
+                  ? '목표 도달'
+                  : cash.actualPct < cash.targetPct
+                    ? `${(cash.targetPct - cash.actualPct).toFixed(1)}%p 모자람`
+                    : `${(cash.actualPct - cash.targetPct).toFixed(1)}%p 많음`}
               </span>
             </div>
+            <div style={{ ...muted, fontSize: 12 }}>
+              {Math.max(0, cash.targetPct - cash.bandPp).toFixed(0)}~{(cash.targetPct + cash.bandPp).toFixed(0)}% 안이면 그대로 둡니다 · 막대 가운데 선이 목표</div>
             <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
               <div
                 style={{
