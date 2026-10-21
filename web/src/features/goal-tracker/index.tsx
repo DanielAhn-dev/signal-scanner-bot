@@ -268,7 +268,7 @@ export default function GoalTrackerPage() {
         </h2>
         <div className="goal-tiles">
           <div className="goal-tile">
-            <div className="goal-tile__label">현재 자산 {view.basis && <AccountTag kind={view.basis.assetSource === 'real' ? 'real' : 'virtual'} />}</div>
+            <div className="goal-tile__label">현재 자산 {view.basis && <AccountTag kind={view.basis.assetSource === 'real' ? 'real' : 'virtual'} />}{view.basis?.assetSource !== 'real' && ' 종가 기준'}</div>
             <div className="goal-tile__value">{man(view.equity)}</div>
           </div>
           <div className="goal-tile">

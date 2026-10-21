@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AmountHint from '../../components/ui/AmountHint'
 import { PLAN_CHANGED_EVENT } from '../month-task/RaiseNudge'
 import More from '../../components/ui/More'
+import AccountTag from '../../components/ui/AccountTag'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan, formatKrwReadable } from '../../lib/format'
 import { useCurrentClientId } from '../../stores/profileStore'
@@ -275,7 +276,7 @@ export default function AccumulatePage() {
 
       <SavingProgressCard variant="full" />
       <div id="my-plan">
-        <MyPlanCard key={planKey} goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct } : null} onPlanMonthly={onPlanMonthly} onPlanMix={onPlanMix} />
+        <MyPlanCard key={planKey} goal={goalView ? { progressPct: goalView.target.progressPct, gapPct: goalView.plan.gapPct, source: goalView.basis?.assetSource } : null} onPlanMonthly={onPlanMonthly} onPlanMix={onPlanMix} />
       </div>
 
       <section className="acc-card" aria-labelledby="acc-target">
@@ -466,7 +467,7 @@ export default function AccumulatePage() {
         <h2 id="acc-goal">4. 목표까지는</h2>
         {goalView && goalView.target.requiredSeed > 0 ? (
           <p className="acc-summary">
-            필요 시드 {formatKrwMan(goalView.target.requiredSeed)}의 <strong>{goalView.target.progressPct.toFixed(0)}%</strong> · 예상 도달 <strong>{goalView.target.etaMonth ?? '50년 이상'}</strong>
+            {goalView.basis && <><AccountTag kind={goalView.basis.assetSource} />{' '}</>}필요 시드 {formatKrwMan(goalView.target.requiredSeed)}의 <strong>{goalView.target.progressPct.toFixed(0)}%</strong> · 예상 도달 <strong>{goalView.target.etaMonth ?? '50년 이상'}</strong>
             {goalView.basis?.etaLowMonth ? <small> (운 나쁘면 {goalView.basis.etaLowMonth})</small> : null}
           </p>
         ) : null}
@@ -480,7 +481,7 @@ export default function AccumulatePage() {
           : !guide ? <p className="acc-note">시세를 확인하는 중…</p>
           : (
             <div className={`acc-guide is-${guide.state}`}>
-              <strong>{guide.title}</strong>
+              <strong>{guide.state === 'drop' || guide.state === 'rally' ? `${leadOverseasName ?? (isIndexTarget ? 'KODEX 200' : targetName)} ` : ''}{guide.title}</strong>
               <p>{guide.text}</p>
               {guide.note && <p className="acc-note">{guide.note}</p>}
               {guide.state === 'drop' && dropPlan && (

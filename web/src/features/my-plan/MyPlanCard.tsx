@@ -34,7 +34,8 @@ function summary(plan: Plan): string[] {
 }
 
 /** 목표 진행 — 대시보드가 이미 불러온 목표 트래커 값을 넘긴다 (같은 요청을 두 번 하지 않게) */
-export type PlanGoal = { progressPct: number; gapPct: number }
+/** source: 달성률의 기준 계좌(내 계좌 기록이 없으면 가상). 계획 대비는 항상 가상 계좌의 계획선 */
+export type PlanGoal = { progressPct: number; gapPct: number; source?: 'real' | 'virtual' }
 
 /** onPlanMonthly: 계획을 읽거나 저장할 때마다 매달 금액을 알린다 — 모아가기 계산기 처음 값이 계획과 같게. onPlanMix: 저장된 구성(안 정했으면 null) */
 export default function MyPlanCard({ goal, onPlanMonthly, onPlanMix }: { goal?: PlanGoal | null; onPlanMonthly?: (monthly: number) => void; onPlanMix?: (mix: MixEntry[] | null) => void }) {
@@ -191,10 +192,10 @@ export default function MyPlanCard({ goal, onPlanMonthly, onPlanMix }: { goal?: 
       )}
       {!editing && goal && (
         <button type="button" className="my-plan__goal" onClick={() => navigate('/goal-tracker')} aria-label="목표 트래커 열기">
-          <span>목표</span>
+          <span>목표{goal.source && <> <AccountTag kind={goal.source} /></>}</span>
           <span className="my-plan__bar" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.max(0, goal.progressPct))}%` }} /></span>
           <span>{goal.progressPct.toFixed(0)}%</span>
-          <span style={{ color: goal.gapPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>계획 대비 {goal.gapPct >= 0 ? '+' : ''}{goal.gapPct.toFixed(1)}%</span>
+          <span style={{ color: goal.gapPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>가상 계획 대비 {goal.gapPct >= 0 ? '+' : ''}{goal.gapPct.toFixed(1)}%</span>
           <span className="my-plan__more">목표 자세히 <ChevronRight size={12} aria-hidden /></span>
         </button>
       )}
