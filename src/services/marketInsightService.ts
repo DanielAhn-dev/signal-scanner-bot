@@ -976,6 +976,8 @@ async function getHoldingCodesForPlan(
     .from('virtual_positions')
     .select('code, buy_price, quantity')
     .eq('chat_id', chatId)
+    .is('broker_name', null)
+    .is('account_name', null)
 
   if (error) {
     throw new Error(`보유 코드 조회 실패: ${error.message}`)
@@ -1003,7 +1005,9 @@ async function getSectorOverlapWarningsForPlan(
   const { data, error } = await supabase
     .from("virtual_positions")
     .select("invested_amount, stock:stocks!inner(sector_id)")
-    .eq("chat_id", chatId);
+    .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if (error) {
     throw new Error(`보유 섹터 조회 실패: ${error.message}`);

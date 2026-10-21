@@ -135,6 +135,8 @@ async function detectWatchlistAnomalies(chatId: number): Promise<string[]> {
     .from("virtual_positions")
     .select("code, stock:stocks(code, name)")
     .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .limit(40)
     .returns<WatchlistCandidateRow[]>();
 

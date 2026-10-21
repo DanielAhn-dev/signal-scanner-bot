@@ -473,7 +473,9 @@ export async function handleBuyCommand(
     const { data: watchHoldings } = await supabase
       .from("virtual_positions")
       .select("invested_amount, stock:stocks!inner(sector_id)")
-      .eq("chat_id", ctx.chatId);
+      .eq("chat_id", ctx.chatId)
+      .is("broker_name", null)
+      .is("account_name", null);
 
     if (watchHoldings && watchHoldings.length > 0) {
       const holdings = watchHoldings.map((h: any) => {

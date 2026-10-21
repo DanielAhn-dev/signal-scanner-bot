@@ -200,6 +200,8 @@ async function buildWatchOnlyWebItems(supabase: SupabaseClient, chatId: number |
     .from('virtual_positions')
     .select('code,buy_price,buy_date,created_at,quantity,status,memo,stock:stocks(name,close)')
     .eq('chat_id', chatId)
+    .is('broker_name', null)
+    .is('account_name', null)
     .order('created_at', { ascending: false })
     .limit(120)
 

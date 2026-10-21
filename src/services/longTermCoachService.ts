@@ -85,11 +85,15 @@ export async function runLongTermCoachForChat(input: {
       .from("virtual_positions")
       .select("code, buy_price, quantity, memo, bucket")
       .eq("chat_id", chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
       .eq("status", "holding"),
     supabase
       .from("virtual_positions")
       .select("code, buy_price, quantity, memo")
       .eq("chat_id", chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
       .eq("status", "holding"),
   ]);
 

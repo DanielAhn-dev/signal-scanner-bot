@@ -166,7 +166,9 @@ async function resetAutoTradeOnlyData(
     supabase
       .from('virtual_positions')
       .select('id,memo')
-      .eq('chat_id', chatIdNum),
+      .eq('chat_id', chatIdNum)
+      .is('broker_name', null)
+      .is('account_name', null),
     supabase
       .from('virtual_trade_lots')
       .select('id,note,source_trade_id')
@@ -813,6 +815,8 @@ async function getAutoCycleInsights(
       .from('virtual_positions')
       .select('code')
       .eq('chat_id', chatId)
+      .is('broker_name', null)
+      .is('account_name', null)
       .eq('status', 'holding')
       .gt('quantity', 0)
       .in('code', missingCodes)

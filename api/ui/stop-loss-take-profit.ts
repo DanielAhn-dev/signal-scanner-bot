@@ -59,6 +59,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .update(updateData)
         .eq('chat_id', chatId)
         .eq('code', String(code).toUpperCase())
+        // 자동 손절·익절은 가상 계좌만 — 같은 종목의 실계좌 행 설정까지 바뀌던 것
+        .is('broker_name', null)
+        .is('account_name', null)
         .select()
         .single()
 
@@ -81,6 +84,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('virtual_positions')
         .select('id,code,quantity,buy_price,status,stop_loss_percent,take_profit_targets,auto_trading_enabled')
         .eq('chat_id', chatId)
+        .is('broker_name', null)
+        .is('account_name', null)
 
       if (code) {
         query = query.eq('code', code)
