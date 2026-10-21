@@ -122,6 +122,8 @@ async function getRecentTradeDates(supabase: SupabaseClient, limit: number): Pro
   return fetchRecentDistinctDates(supabase, 'pullback_signals', 'trade_date', limit)
 }
 
+const SCORES_LOOKBACK_DAYS = 21
+
 async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: string[]): Promise<PullbackHistoryRow[]> {
   if (tradeDates.length === 0) return []
 
@@ -155,6 +157,10 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
 
   const scoresByCode = new Map<string, { signal: string | null; stable_turn: string | null }>()
   let canReadStableTurn = true
+  // 최신 점수만 필요하다. 기간 하한이 없으면 점수가 아예 없는 종목(ETF 등)이 하나만 섞여도
+  // 그 묶음의 전체 이력을 1000행씩 끝까지 넘겨 읽었다(48페이지·4~7초, 주문표·집행우선 화면 10~20초).
+  // 점수는 매일 계산되므로 최근 21일 안에 없으면 판단에 쓸 점수가 없는 종목이다.
+  const scoresSince = new Date(Date.now() - SCORES_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10)
 
   // 각 코드별 최신 scores 데이터 조회
   for (const part of chunkValues(codeSet)) {
@@ -166,6 +172,7 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
             .from('scores')
             .select(selectColumns)
             .in('code', part)
+            .gte('asof', scoresSince)
             .order('asof', { ascending: false })
             .range(from, to)) as unknown as { data?: Record<string, unknown>[] | null; error?: { message?: string } | null },
         {
