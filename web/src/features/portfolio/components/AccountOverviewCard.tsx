@@ -43,7 +43,7 @@ export default function AccountOverviewCard({ rows }: { rows: HoldingRow[] }) {
         <span className={tone(o.returnPct)}>({signed(o.returnPct)})</span>
       </div>
 
-      <table className="portfolio-account-overview-table">
+      <table className="portfolio-account-overview-table xls-card-table">
         <thead>
           <tr><th scope="col">유형</th><th scope="col">비중</th><th scope="col">수익률</th></tr>
         </thead>

@@ -4279,13 +4279,14 @@
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  /* 일반 사용자 화면의 카드 속 작은 표(2~6열)는 block이면 내용 폭으로 쪼그라들어 카드 오른쪽이 빈다 — 꽉 채우고 폭 안에서 줄바꿈 */
-  .xls-content-inner table:is(.acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) {
+  /* 일반 사용자 화면의 카드 속 작은 표(2~6열)는 block이면 내용 폭으로 쪼그라들어 카드 오른쪽이 빈다 — 꽉 채우고 폭 안에서 줄바꿈.
+     새 카드 표는 기능별 이름을 여기 늘리지 말고 xls-card-table 클래스를 붙인다 */
+  .xls-content-inner table:is(.xls-card-table, .acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) {
     display: table;
     width: 100%;
     overflow-x: visible;
   }
-  .xls-content-inner table:is(.acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) :is(th, td) {
+  .xls-content-inner table:is(.xls-card-table, .acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) :is(th, td) {
     white-space: normal;
     word-break: keep-all;
     overflow-wrap: anywhere;
