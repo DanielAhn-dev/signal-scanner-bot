@@ -111,6 +111,10 @@
   --color-info:       var(--color-brand);
   --color-info-bg:    var(--color-brand-subtle);
 
+  /* 자산 바구니 구분색 (리밸런싱 구성 막대) — 성장은 brand(초록), 경고 주황·하락 파랑과 겹치지 않게 */
+  --color-basket-income:    #4A72B0;
+  --color-basket-satellite: #8E6BB8;
+
   /* Compatibility aliases */
   --color-positive:       var(--color-stock-up);
   --color-negative:       var(--color-stock-down);

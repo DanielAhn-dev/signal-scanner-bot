@@ -173,10 +173,10 @@ type MixRow = { key: string; label: string; now: number; goal: number | null; go
 
 /** 요약의 구성 막대 색 — 바구니 4개를 막대 하나에 나란히 칠한다 */
 const MIX_COLOR: Record<string, string> = {
-  income: 'var(--color-info)',
+  income: 'var(--color-basket-income)',
   growth: 'var(--color-brand)',
   cash: 'var(--color-text-tertiary)',
-  satellite: 'var(--color-warning)',
+  satellite: 'var(--color-basket-satellite)',
 }
 
 const gapText = (now: number, goal: number, digits = 0) => {
