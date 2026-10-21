@@ -84,6 +84,8 @@ export function judgeRealism(requiredPct: number | null): Realism {
   if (requiredPct > REALISTIC_ANNUAL_PCT) {
     return { level: 'stretch', text: `연 ${requiredPct.toFixed(1)}%가 필요합니다. 지수 장기 평균(연 ${REALISTIC_ANNUAL_PCT}% 안팎)보다 높아 빠듯한 목표입니다.` }
   }
+  // 넣는 돈만으로 닿으면(필요 수익률 0) '연 0.0%면 닿습니다 … 장기 평균 범위 안'은 어색하다
+  if (requiredPct <= 0) return { level: 'ok', text: '수익이 없어도 넣는 돈만으로 닿습니다. 수익은 목표를 앞당기는 몫입니다.' }
   return { level: 'ok', text: `연 ${requiredPct.toFixed(1)}% 정도면 닿습니다. 지수 장기 평균 범위 안이라 현실적인 목표입니다.` }
 }
 

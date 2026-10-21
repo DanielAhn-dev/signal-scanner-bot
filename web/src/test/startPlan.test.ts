@@ -48,6 +48,13 @@ describe('시작 마법사 계산', () => {
     expect(judgeRealism(null).level).toBe('unrealistic')
   })
 
+  it('넣는 돈만으로 닿으면 수익률 문구 대신 그 사실을 말한다', () => {
+    const r = judgeRealism(0)
+    expect(r.level).toBe('ok')
+    expect(r.text).toContain('넣는 돈만으로')
+    expect(r.text).not.toContain('0.0%')
+  })
+
   it('장기 평균 수익률 결과와 목표 도달 햇수', () => {
     const out = realisticOutcome({ initialSeed: 1_000_000, monthly: 300_000, years: 10 })
     expect(out.monthlyIncome).toBeCloseTo((out.wealth * 0.04) / 12, 5)
