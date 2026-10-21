@@ -10,7 +10,7 @@ import { useToast } from '../../components/ToastProvider'
 export type RebalancePlan = {
   headline: string
   income: { monthlyNet: number; source: 'actual' | 'estimate'; estimateNet: number; floor: number; surplus: number }
-  growth: { actualPct: number; targetPct: number; needByNewMoney: number; monthlyInflow: number; months: number | null }
+  growth: { actualPct: number; targetPct: number; finalTargetPct?: number | null; needByNewMoney: number; monthlyInflow: number; months: number | null }
   buyTarget: { code: string; name: string; accountLabel: string; price: number } | null
   buyHint: string
   /** 같은 지수 상품 비교로 정한 이유 (서버 indexProductChoice — 리포트와 같은 판정) */
@@ -190,6 +190,9 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
 
   const { income, growth, merges, trim, buyTarget, hold, cash, idleCash } = plan
   const growthBar = Math.min(100, Math.max(0, growth.actualPct))
+  // 분배금으로만 줄여 가는 중이면 targetPct는 지금 비중과 같다 — 옮겨 갈 원래 목표를 보인다
+  const growthGoal = hold && growth.finalTargetPct != null ? growth.finalTargetPct : growth.targetPct
+  const growthGap = growthGoal - growth.actualPct
   // 줄여 가는 중이면 월 인컴 목표는 생활비 하한이 아니다 — 모자람을 경고로 보이지 않는다
   const short = !hold && income.surplus < 0
   const filling = cash?.state === 'filling'
@@ -206,12 +209,14 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           <div style={{ marginTop: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, ...muted }}>
               <span>
-                성장(지수) 지금 <strong>{growth.actualPct.toFixed(0)}%</strong> → 목표 {growth.targetPct.toFixed(0)}%
+                성장(지수) 지금 <strong>{growth.actualPct.toFixed(0)}%</strong> → {hold && growth.finalTargetPct != null ? '최종 목표' : '목표'} {growthGoal.toFixed(0)}%
               </span>
               <span style={{ whiteSpace: 'nowrap' }}>
-                {growth.targetPct - growth.actualPct < 0.5
+                {growthGap < 0.5
                   ? '목표 도달'
-                  : `${(growth.targetPct - growth.actualPct).toFixed(0)}%p 남음${growth.needByNewMoney > 0 ? ` · 새 돈 약 ${man(growth.needByNewMoney)}` : ''}`}
+                  : hold && growth.finalTargetPct != null
+                    ? `${growthGap.toFixed(0)}%p 남음 · 분배금·새 돈으로 천천히`
+                    : `${growthGap.toFixed(0)}%p 남음${growth.needByNewMoney > 0 ? ` · 새 돈 약 ${man(growth.needByNewMoney)}` : ''}`}
               </span>
             </div>
             <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
@@ -221,7 +226,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                   position: 'absolute',
                   top: 0,
                   bottom: 0,
-                  left: `${Math.min(100, growth.targetPct)}%`,
+                  left: `${Math.min(100, growthGoal)}%`,
                   width: 2,
                   background: 'var(--color-text-primary)',
                 }}

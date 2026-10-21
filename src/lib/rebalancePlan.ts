@@ -139,6 +139,8 @@ export type RebalancePlan = {
   growth: {
     actualPct: number;
     targetPct: number;
+    /** 분배금으로만 줄여 가는 중(hold)일 때 옮겨 갈 원래 성장 목표 — targetPct는 이때 지금 비중과 같아 의미가 없다. hold가 아니면 null */
+    finalTargetPct: number | null;
     /** 새 돈만으로 목표 비중까지 필요한 금액 (이미 넘었으면 0). 예수금으로 살 몫(idleCash.spend)은 뺀 뒤다 */
     needByNewMoney: number;
     monthlyInflow: number;
@@ -232,6 +234,8 @@ export function buildRebalancePlan(input: {
   groups: GroupRow[];
   settings: IncomeGuideSettings;
   cashPlan?: IncomeGuideView["cashPlan"];
+  /** hold일 때 원래 목표 (IncomeGuideView.holdFinalTargets) */
+  holdFinalTargets?: IncomeGuideView["holdFinalTargets"];
   /** 종목별 최근 12개월 실제 분배율 — 없으면 상품 유형별 가정 */
   yieldPctByCode?: YieldPctByCode | null;
   /** 같은 지수 상품 비교용 — 보유 성장 ETF와 다른 운용사 상품의 총보수·규모 (src/services/indexAlternatives.ts). 없으면 비교 없이 보유 상품 */
@@ -621,7 +625,7 @@ export function buildRebalancePlan(input: {
   return {
     headline,
     income: { monthlyNet: Math.round(monthlyNet), source: actual ? "actual" : "estimate", estimateNet: Math.round(estimateNet), floor, surplus: Math.round(surplus) },
-    growth: { actualPct, targetPct, needByNewMoney, monthlyInflow: Math.round(monthlyInflow), months },
+    growth: { actualPct, targetPct, finalTargetPct: hold ? input.holdFinalTargets?.growthPct ?? null : null, needByNewMoney, monthlyInflow: Math.round(monthlyInflow), months },
     buyTarget,
     buyHint,
     buyWhy,

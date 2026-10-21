@@ -46,6 +46,7 @@ export async function buildGuidePlanSnapshot(input: {
     groups: view.groups,
     settings: planSettings,
     cashPlan: view.cashPlan,
+    holdFinalTargets: view.holdFinalTargets,
     yieldPctByCode,
     today,
     etf: indexAlt?.etf,

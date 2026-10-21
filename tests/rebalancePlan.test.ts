@@ -138,8 +138,19 @@ test("sanitize: 실제 인컴·적립액·총보수는 선택값이고 보수는
 function holdPlan(settings: Partial<IncomeGuideSettings>, pastCashPcts: number[] = []) {
   const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, incomeMode: "hold" as const, overseasPct: 0, customTargets: { income: 70, cash: 10 }, ...settings };
   const view = buildIncomeGuideView({ holdings: PORTFOLIO, settings: s, today: "2026-10-13", pastCashPcts });
-  return { view, plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan })! };
+  return { view, plan: buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan, holdFinalTargets: view.holdFinalTargets })! };
 }
+
+test("hold: 성장 목표는 지금 비중으로 묶이지만, 옮겨 갈 원래 목표(100 − 인컴 − 현금 − 위성)를 따로 낸다", () => {
+  const { view, plan } = holdPlan({});
+  const g = view.groups.find((x) => x.group === "growth")!;
+  const sat = view.groups.find((x) => x.group === "satellite")!.targetPct;
+  assert.ok(Math.abs(g.targetPct - g.actualPct) < 0.01, "hold면 그룹 목표는 지금 비중");
+  assert.deepEqual(view.holdFinalTargets, { growthPct: Math.max(0, 100 - 70 - 10 - sat), incomePct: 70, cashPct: 10 });
+  assert.equal(plan.growth.finalTargetPct, view.holdFinalTargets!.growthPct);
+  assert.equal(planFor({}).plan.growth.finalTargetPct, null);
+  assert.equal(planFor({}).view.holdFinalTargets, null);
+});
 
 test("hold: 인컴은 지금 비중이 목표, 현금을 처음 채우는 동안은 지수·커버드콜을 팔지 않는다", () => {
   const { view, plan } = holdPlan({});
