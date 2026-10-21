@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useUserState } from '../../lib/userState'
 import { useIndexEtfCandidates } from '../../lib/indexEtfLive'
 import {
-  HORIZON_LABEL, adviceFor, maturitiesDecidedIn, maturitiesDue, sanitizeMaturityState, suggestedInvest,
+  HORIZON_LABEL, adviceFor, maturitiesDecidedIn, maturitiesDue, sanitizeMaturityState, suggestedInvest, summarizeUpcoming,
   type Maturity, type MaturityState,
 } from '../../lib/maturity'
 
@@ -30,7 +30,19 @@ export default function MaturityInbox({ month, onApply, krw }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const busy = useRef(false)
 
-  if (due.length === 0 && decided.length === 0) return null
+  const upcoming = summarizeUpcoming(items.filter((i) => !due.includes(i)))
+
+  if (due.length === 0 && decided.length === 0) {
+    if (!upcoming.next) return null
+    return (
+      <section className="seed-inbox" aria-label="예정된 만기">
+        <div className="seed-inbox-done">
+          <span>예정된 예·적금 만기 {upcoming.count}건 · {krw(upcoming.amount)} (가장 가까운 것: {upcoming.next.name} {upcoming.next.date})</span>
+          <a className="seed-link-button" href="#maturity">전체 목록 보기</a>
+        </div>
+      </section>
+    )
+  }
 
   const investOf = (item: Maturity) => Math.min(item.amount, invest[item.id] ?? suggestedInvest(item))
   const patchItem = (id: string, patch: (item: Maturity) => Maturity) => set({ items: items.map((i) => (i.id === id ? patch(i) : i)) })

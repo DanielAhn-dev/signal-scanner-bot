@@ -32,10 +32,15 @@ export default function MaturityTab() {
   const amount = Math.round(Number(manwon.replace(/,/g, '')) * 10_000)
   const canAdd = name.trim().length > 0 && Number.isFinite(amount) && amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date) && items.length < MAX_ITEMS
   const save = (next: Maturity[]) => set({ items: next })
+  const [added, setAdded] = useState<string | null>(null)
+  // 이름·만기일·금액이 같은 미처리 항목이 이미 있으면 중복 입력으로 본다(미래 만기는 이번 달 화면에 안 보여 다시 넣기 쉽다)
+  const duplicate = canAdd && items.some((i) => !i.done && i.name === name.trim().slice(0, 30) && i.date === date && i.amount === amount)
   const add = () => {
     if (!canAdd) return
+    const label = `${name.trim().slice(0, 30)} ${date}`
     save([...items, { id: newMaturityId(), name: name.trim().slice(0, 30), amount, date, horizon }])
     setName(''); setManwon(''); setDate('')
+    setAdded(label)
   }
   const toggleDone = (id: string) => save(items.map((i) => (i.id === id ? { ...i, done: i.done ? undefined : true } : i)))
   const remove = (id: string) => { save(items.filter((i) => i.id !== id)); if (open === id) setOpen(null) }
@@ -82,7 +87,9 @@ export default function MaturityTab() {
           </select>
         </label>
         <p className="acc-note mf-small">잘 모르겠으면 "3~5년 뒤"로 두세요. 비상금은 여기 넣지 않습니다.</p>
-        <button type="button" className="acc-primary" disabled={!canAdd} onClick={add}>추가</button>
+        {duplicate && <p className="acc-note mf-small" role="alert">같은 이름·만기일·금액이 이미 아래 목록에 있습니다. 또 추가하면 중복으로 들어갑니다.</p>}
+        <button type="button" className="acc-primary" disabled={!canAdd} onClick={add}>{duplicate ? '그래도 추가' : '추가'}</button>
+        {added && <p className="acc-note mf-small" role="status">{added} 만기를 저장했습니다. 아래 "만기 순서"에서 확인하세요. 만기 달이 되기 전에는 이번 달 투자금 위쪽에 나오지 않습니다.</p>}
         {items.length >= MAX_ITEMS && <p className="acc-note mf-small">최대 {MAX_ITEMS}건까지 적을 수 있습니다. 처리한 항목을 지우고 추가하세요.</p>}
       </section>
 

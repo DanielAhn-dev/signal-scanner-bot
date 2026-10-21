@@ -48,6 +48,17 @@ describe('만기 예·적금 탭', () => {
     expect(screen.getByText(/가장 가까운 것은/)).toHaveTextContent('A예금 D-5')
   })
 
+  it('추가하면 저장 안내가 나오고, 같은 항목을 또 넣으려 하면 중복 경고가 나온다', () => {
+    renderTab()
+    addItem('A적금', '1000', plusDays(60))
+    expect(screen.getByRole('status')).toHaveTextContent('A적금')
+    fireEvent.change(screen.getByLabelText('이름 (예: OO적금)'), { target: { value: 'A적금' } })
+    fireEvent.change(screen.getByLabelText('만기 때 받을 금액 (만원)'), { target: { value: '1000' } })
+    fireEvent.change(screen.getByLabelText('만기일'), { target: { value: plusDays(60) } })
+    expect(screen.getByRole('alert')).toHaveTextContent('이미 아래 목록에 있습니다')
+    expect(screen.getByRole('button', { name: '그래도 추가' })).toBeEnabled()
+  })
+
   it('갈 곳 보기: 5년 넘게는 KIWOOM 200TR, 3년 안은 지수에 넣지 않음', () => {
     renderTab()
     addItem('장기', '1000', plusDays(10), 'over5')
