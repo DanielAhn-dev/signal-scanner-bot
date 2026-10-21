@@ -1159,7 +1159,10 @@ async function getOperationsDashboardKpi(
       .select('id', { count: 'exact', head: true })
       .eq('chat_id', chatId)
       .eq('status', 'holding')
-      .gt('quantity', 0),
+      .gt('quantity', 0)
+      // 자동매매 관제 — 가상 계좌 보유만(실계좌 입력 82종목이 '보유 83'으로 섞였다)
+      .is('broker_name', null)
+      .is('account_name', null),
   ])
 
   const [latestFailedRes, userPrefsRes] = await Promise.all([
@@ -1247,6 +1250,9 @@ async function getAutoSellCandidates(supabase: SupabaseClient, chatId: string | 
     .eq('chat_id', chatId)
     .eq('status', 'holding')
     .gt('quantity', 0)
+    // 자동매도는 가상 계좌만 — 실계좌 입력 행은 대상이 아니다
+    .is('broker_name', null)
+    .is('account_name', null)
 
   if (error) throw new Error(error.message)
   const rows = Array.isArray(data) ? data : []
