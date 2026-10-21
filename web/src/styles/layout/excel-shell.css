@@ -4294,11 +4294,6 @@
     word-break: keep-all;
     overflow-wrap: anywhere;
   }
-  /* 둘째 칸부터(숫자·짧은 값)는 anywhere면 최소 폭이 한 글자로 줄어 '+278%'가 '+278 / %'로 쪼개진다.
-     break-word는 넘칠 때만 끊고 최소 폭 계산엔 낱말을 통째로 쓴다. 긴 이름이 오는 첫 칸은 anywhere 유지 */
-  .xls-content-inner table:is(.xls-card-table, .acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) :is(th, td):not(:first-child) {
-    overflow-wrap: break-word;
-  }
   /* 라벨 칸과 입력 칸이 6열을 나눠 쓰면 좁은 화면에서 입력 칸이 너무 좁다 — 라벨을 위, 내용을 아래로 쌓는다 */
   .xls-content-inner table.xls-fit--stack,
   .xls-content-inner table.xls-fit--stack tbody,
