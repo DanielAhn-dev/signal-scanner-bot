@@ -222,10 +222,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (mode === 'liquidateall') {
+      // 가상(실험) 계좌 행만 — 예전엔 실계좌(NH·토스·ISA…)까지 한꺼번에 '매도' 처리하고 그 대금을 가상 현금에 더했다
       const { data: holdings, error: holdErr } = await supabase
         .from('virtual_positions')
         .select('id,code,quantity,buy_price,status,broker_name,account_name,stock:stocks(close,name,product_type,etf_tax_class)')
         .eq('chat_id', chatId)
+        .is('broker_name', null)
+        .is('account_name', null)
         .gt('quantity', 0)
 
       if (holdErr) return res.status(500).json({ error: holdErr.message })
@@ -293,10 +296,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (updateErr) return res.status(500).json({ error: updateErr.message })
 
+      // 판 행의 로트만 닫는다 — 종목 코드로 닫으면 다른 계좌의 같은 종목 로트까지 닫혔다
       await supabase
         .from('virtual_trade_lots')
         .update({ remaining_quantity: 0, closed_at: nowIso })
         .eq('chat_id', chatId)
+        .in('position_id', ids)
+        .gt('remaining_quantity', 0)
+      // 행 연결 없이 만들어진 옛 로트(position_id 없음)는 실계좌 RPC가 만들지 않으므로 가상 쪽 것이다
+      await supabase
+        .from('virtual_trade_lots')
+        .update({ remaining_quantity: 0, closed_at: nowIso })
+        .eq('chat_id', chatId)
+        .is('position_id', null)
         .in('code', rows.map((r: any) => String(r.code)))
         .gt('remaining_quantity', 0)
 

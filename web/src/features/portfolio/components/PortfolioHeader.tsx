@@ -199,9 +199,12 @@ export default function PortfolioHeader({
                 <Button variant="secondary" size="sm" onClick={() => onOpenMaintenance('holdingrestore')} disabled={loading}>
                   계좌/보유 추가
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => onOpenMaintenance('liquidateall')} disabled={loading || holdingAll.length === 0}>
-                  전체매도
-                </Button>
+                {/* 전체매도는 가상(실험) 계좌만 — 실계좌는 증권사에서 판 뒤 종목별로 기록한다 */}
+                {selectedAccountKey === 'virtual' && (
+                  <Button variant="secondary" size="sm" onClick={() => onOpenMaintenance('liquidateall')} disabled={loading || virtualCount === 0}>
+                    가상 전체매도
+                  </Button>
+                )}
               </div>
             </div>
           </td>

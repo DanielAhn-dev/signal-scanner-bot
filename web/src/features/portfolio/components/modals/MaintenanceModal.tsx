@@ -55,7 +55,7 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
     <Modal
       isOpen={maintModalOpen}
       title={
-        maintMode === 'liquidateall' ? '전체매도' :
+        maintMode === 'liquidateall' ? '가상 전체매도' :
         maintMode === 'holdingrestore' ? (maintStep === 1 ? '1단계 · 계좌 설정' : '2단계 · 종목 추가') :
         '보유 종목 수정'
       }
@@ -65,7 +65,7 @@ export default function MaintenanceModal({ maint, accountFolders }: { maint: Mai
     >
       {maintMode === 'liquidateall' && (
         <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-          현재 보유 종목을 기준가로 일괄 매도 처리합니다. 실행 후 보유수량이 0으로 전환됩니다.
+          가상(실험) 계좌의 보유 종목만 기준가로 일괄 매도 처리합니다. 실제 계좌 종목은 건드리지 않습니다. 실행 후 보유수량이 0으로 전환됩니다.
         </div>
       )}
 

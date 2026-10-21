@@ -102,7 +102,7 @@ export function useMaintenance({ load, accountFolders }: { load: (opts?: { soft?
       if (json?.error) throw new Error(String(json.error))
 
       if (maintMode === 'liquidateall') {
-        toast.show(`보유 종목 ${Number(json?.soldCount || 0)}건 전체매도 처리 완료`)
+        toast.show(`가상 계좌 보유 ${Number(json?.soldCount || 0)}건 전체매도 처리 완료`)
       } else if (maintMode === 'holdingrestore') {
         const label = json?.data?.stock_name || json?.data?.code || maintCode
         const action = json?.created ? '신규 추가' : '기존 포지션 수정'
