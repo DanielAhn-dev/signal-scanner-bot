@@ -308,7 +308,8 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
       {thisMonth.items.length > 0 && (unlogged.due.length > 0 || unlogged.unknown.length > 0 || unlogged.notDue.length > 0) && (
         <div style={faint}>
           {unlogged.due.length > 0 && <div>└ 지난 기록으로 이번 달 지급 차례: {unlogged.due.join(', ')}</div>}
-          {unlogged.unknown.length > 0 && <div>└ 받은 기록이 없어 지급 달을 모름(분배율로 추정만): {unlogged.unknown.join(', ')}</div>}
+          {/* 실계좌 종목이 많으면 이름 40여 개가 한 문단으로 쏟아졌다 — 앞 5개만, 나머지는 개수 */}
+          {unlogged.unknown.length > 0 && <div>└ 받은 기록이 없어 지급 달을 모름(분배율로 추정만): {unlogged.unknown.slice(0, 5).join(', ')}{unlogged.unknown.length > 5 ? ` 외 ${unlogged.unknown.length - 5}종목` : ''}</div>}
           {unlogged.notDue.length > 0 && <div>└ 이번 달은 지급 달이 아님(분기 등): {unlogged.notDue.join(', ')}</div>}
         </div>
       )}
