@@ -9,6 +9,7 @@ import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useCurrentChatId, useIsTelegramLinked } from '../../stores/profileStore'
 import { useNavigate } from 'react-router-dom'
+import { confirmDialog } from '../../components/ConfirmDialog'
 
 /** 종목 매매 봇을 권하지 않는 시드 기준 — 2026-09-29 시드 크기 검증: 100만 -9.3%p, 300만 -1.9%p, 1천만 이상 차이 0.2%p 이내 */
 const SMALL_SEED_LIMIT = 10_000_000
@@ -278,12 +279,13 @@ export default function Settings(){
   }
 
   const resetAutoTradeOnly = async () => {
-    const confirmed = window.confirm(
-      ['자동매매로 생성된 이력/로그만 초기화합니다.', '직접 추가한 수동 보유/거래는 유지됩니다.', '계속할까요?'].join(String.fromCharCode(10))
-    )
+    const confirmed = await confirmDialog({
+      message: ['자동매매로 생성된 이력/로그만 초기화합니다.', '직접 추가한 수동 보유/거래는 유지됩니다.', '계속할까요?'].join(String.fromCharCode(10)),
+      confirmLabel: '계속',
+    })
     if (!confirmed) return
 
-    const secondConfirm = window.confirm('정말 실행할까요? 이 작업은 되돌릴 수 없습니다.')
+    const secondConfirm = await confirmDialog({ message: '정말 실행할까요? 이 작업은 되돌릴 수 없습니다.', confirmLabel: '초기화', danger: true })
     if (!secondConfirm) return
 
     setResettingAutoOnly(true)
@@ -348,9 +350,10 @@ export default function Settings(){
   }
 
   const resetAndRunLiveOnce = async () => {
-    const confirmed = window.confirm(
-      ['자동매매(AUTO) 데이터 초기화 후 즉시 1회 실행합니다.', '직접 추가한 수동 데이터는 유지됩니다. 진행할까요?'].join(String.fromCharCode(10))
-    )
+    const confirmed = await confirmDialog({
+      message: ['자동매매(AUTO) 데이터 초기화 후 즉시 1회 실행합니다.', '직접 추가한 수동 데이터는 유지됩니다. 진행할까요?'].join(String.fromCharCode(10)),
+      confirmLabel: '진행',
+    })
     if (!confirmed) return
 
     await resetAutoTradeOnly()
@@ -566,8 +569,8 @@ export default function Settings(){
                   {runningDryRun ? '점검중…' : '저장 후 점검 1회'}
                 </Button>
                 <Button
-                  onClick={() => {
-                    const ok = window.confirm('현재 설정으로 자동매매를 1회 실실행할까요?')
+                  onClick={async () => {
+                    const ok = await confirmDialog({ message: '현재 설정으로 자동매매를 1회 실행할까요?', confirmLabel: '실행' })
                     if (!ok) return
                     void runAutoCycleOnce(false, true)
                   }}

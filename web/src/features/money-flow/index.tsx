@@ -11,6 +11,7 @@ import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
 import MonthTotals, { shiftMonth, type MonthTotalRow } from './MonthTotals'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
+import { confirmDialog } from '../../components/ConfirmDialog'
 
 // mine = 내가 기록함, forWhom = 누구 몫(보는 사람 기준). 기록은 한 사람이 해도 지출은 대부분 공용이라 둘은 다르다
 type ForWhom = 'shared' | 'me' | 'partner'
@@ -217,7 +218,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
 
   const removeEntry = async (entry: Entry) => {
     const whose = entry.mine === false ? ' 배우자가 적은 기록입니다. 배우자 화면에도 "배우자가 지움"으로 보이고 둘 다 되돌릴 수 있습니다.' : ''
-    if (!window.confirm(`${entry.memo || '메모 없음'} ${krw(entry.amount)} 기록을 지울까요?${whose}`)) return
+    if (!(await confirmDialog({ message: `${entry.memo || '메모 없음'} ${krw(entry.amount)} 기록을 지울까요?${whose}`, confirmLabel: '지우기', danger: true }))) return
     try {
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'delete-entry', id: entry.id }), cacheMs: 0 })
       setEntries((list) => list.filter((e) => e.id !== entry.id))

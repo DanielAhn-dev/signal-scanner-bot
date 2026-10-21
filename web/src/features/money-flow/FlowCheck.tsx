@@ -11,6 +11,7 @@ import {
   FLOW_CATEGORIES, SAVING_CATEGORIES, SAVING_MAJOR, UNRECORDED_CATEGORY_ID, cashEffect, categoryById, compareSummaries, evaluateFlowCheck, fixedHistory, irregularForMonth, irregularHistory, reconcileMonth, summarizeItems, toSeedExpenses,
   type CutLevel, type MonthTotal as MonthTotalBase, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
 } from '../../../../src/lib/moneyFlow'
+import { confirmDialog } from '../../components/ConfirmDialog'
 
 export type SavedCheck = { id: string; date: string; label: string; input: FlowCheckInput }
 type Entry = { date: string; amount: number; categoryId: string; payment: Payment; cut: CutLevel | null; mustPart: number | null; memo?: string; paidWith?: 'card' | 'cash' }
@@ -307,7 +308,7 @@ export default function FlowCheck({ entries, totals = [], checks, onSaved, fromS
 
   // 이번 달 투자금 이번 달 기록에 반영: 지출 큰 항목(현금 기준)·수입·비상자금 적립. 목표·확보 기록·일시 수입은 그대로 둔다
   const applyToSeed = async () => {
-    if (!window.confirm('이번 달 투자금 이번 달 수입·지출·남겨둘 돈을 이 점검 값으로 바꿀까요? 이번 달 목표와 확보 기록은 그대로 둡니다.')) return
+    if (!(await confirmDialog({ message: '이번 달 투자금 이번 달 수입·지출·남겨둘 돈을 이 점검 값으로 바꿀까요? 이번 달 목표와 확보 기록은 그대로 둡니다.', confirmLabel: '바꾸기' }))) return
     try {
       const month = kstMonth()
       const rows: any[] = await apiFetch(`/api/ui/seed-builder?year=${month.slice(0, 4)}`, { cacheMs: 0, retries: 0 }).then((r) => (Array.isArray(r?.data) ? r.data : []))

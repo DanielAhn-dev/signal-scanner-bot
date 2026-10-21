@@ -6,6 +6,7 @@ import { allowance, approxAge, sanitizeChildState } from '../../lib/childGift'
 import { evaluateFlowCheck, type FlowCheckInput } from '../../../../src/lib/moneyFlow'
 import '../accumulate/accumulate.css'
 import './family.css'
+import { confirmDialog } from '../../components/ConfirmDialog'
 
 type Scope = 'spending' | 'investing' | 'children' | 'plan'
 type Shares = Record<Scope, boolean>
@@ -237,7 +238,7 @@ function Linked({ view, busy, run }: { view: Extract<View, { status: 'active' }>
       <section className="acc-card">
         <h2>연결 끊기</h2>
         <p className="acc-note">둘 중 누구나 끊을 수 있습니다. 끊으면 서로 화면에서 바로 사라지고, 각자 기록은 각자 계정에 그대로 남습니다.</p>
-        <button type="button" className="acc-danger" disabled={busy} onClick={() => { if (window.confirm(`${name}님과 연결을 끊을까요?`)) void run({ action: 'end' }, '연결을 끊었습니다.') }}>연결 끊기</button>
+        <button type="button" className="acc-danger" disabled={busy} onClick={async () => { if (await confirmDialog({ message: `${name}님과 연결을 끊을까요?`, confirmLabel: '연결 끊기', danger: true })) void run({ action: 'end' }, '연결을 끊었습니다.') }}>연결 끊기</button>
       </section>
     </>
   )

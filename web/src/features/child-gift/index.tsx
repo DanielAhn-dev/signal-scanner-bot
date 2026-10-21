@@ -12,6 +12,7 @@ import { formatKrwMan } from '../../lib/format'
 import { useUserState } from '../../lib/userState'
 import '../accumulate/accumulate.css'
 import './child-gift.css'
+import { confirmDialog } from '../../components/ConfirmDialog'
 
 const man = formatKrwMan
 const toWon = (manText: string) => { const n = Number(manText.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? Math.round(n * 10_000) : 0 }
@@ -63,7 +64,7 @@ export default function ChildGiftPage() {
           <ProjectionCard child={child} today={today} />
           <SimpleWayCard />
           <section className="acc-card">
-            <button type="button" className="acc-danger" onClick={() => { if (window.confirm(`${child.alias}의 기록을 모두 지울까요?`)) { save({ children: state.children.filter((c) => c.id !== child.id) }); setSelected('') } }}>
+            <button type="button" className="acc-danger" onClick={async () => { if (await confirmDialog({ message: `${child.alias}의 기록을 모두 지울까요?`, confirmLabel: '지우기', danger: true })) { save({ children: state.children.filter((c) => c.id !== child.id) }); setSelected('') } }}>
               이 자녀 기록 지우기
             </button>
           </section>

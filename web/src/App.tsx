@@ -6,6 +6,7 @@ import ProfileModal from './components/ProfileModal'
 import MarketSidePanel from './components/panels/MarketSidePanel'
 import NewsSidePanel from './components/panels/NewsSidePanel'
 import { ToastProvider, useToast } from './components/ToastProvider'
+import { ConfirmDialogHost } from './components/ConfirmDialog'
 import Portfolio from './features/portfolio'
 import ScanPage from './features/scan'
 import { preloadStocks } from './lib/stockCache'
@@ -93,6 +94,7 @@ export default function App() {
   return (
     <ToastProvider>
       <AppContent />
+      <ConfirmDialogHost />
     </ToastProvider>
   )
 }

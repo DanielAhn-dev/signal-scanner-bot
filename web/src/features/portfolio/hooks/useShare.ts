@@ -3,6 +3,7 @@ import { apiFetch, invalidateCache } from '../../../lib/api'
 import { useToast } from '../../../components/ToastProvider'
 import type { PortfolioShareHistoryItem } from '../types'
 import { pickLatestActiveShare } from '../lib/share'
+import { confirmDialog } from '../../../components/ConfirmDialog'
 
 /** scope: 공유할 계좌 — 실제 계좌와 가상(실험) 계좌는 한 장에 섞지 않는다 */
 export function useShare(scope: 'real' | 'virtual' = 'real') {
@@ -115,7 +116,7 @@ export function useShare(scope: 'real' | 'virtual' = 'real') {
 
   const deleteShare = useCallback(async (shareId: string) => {
     if (!shareId || deletingShareId) return
-    const ok = window.confirm('이 공유 기록을 목록에서 삭제할까요? 삭제 후 복구할 수 없습니다.')
+    const ok = await confirmDialog({ message: '이 공유 기록을 목록에서 삭제할까요? 삭제 후 복구할 수 없습니다.', confirmLabel: '삭제', danger: true })
     if (!ok) return
 
     setDeletingShareId(shareId)

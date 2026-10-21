@@ -1794,6 +1794,11 @@ textarea:not([class]):not([style*="border"]):focus {
 .modal-close:hover { background: var(--color-bg-sunken); color: var(--color-text-primary); }
 .modal .ui-text:focus { @apply outline-none; box-shadow: var(--shadow-focus); }
 
+/* confirmDialog(): window.confirm 대신 쓰는 확인창 */
+.confirm-dialog__message { margin: 0 0 var(--space-4); white-space: pre-line; word-break: keep-all; line-height: 1.6; }
+.confirm-dialog__actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.confirm-dialog__actions > * { min-height: 44px; min-width: 88px; }
+
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes spin    { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
