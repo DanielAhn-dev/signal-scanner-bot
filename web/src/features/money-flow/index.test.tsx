@@ -154,7 +154,7 @@ describe('지출 기록', () => {
     expect(screen.getByText('배우자 것', { selector: 'em' })).toBeTruthy()
     expect(screen.getByText('배우자가 고침')).toBeTruthy()
     // 배우자 기록도 지울 수 있다
-    fireEvent.click(screen.getByLabelText('배민 삭제'))
+    fireEvent.click(screen.getByLabelText('배민 지우기'))
     await waitFor(() => expect(postBodies()).toContainEqual({ action: 'delete-entry', id: 'b' }))
     // 지운 기록은 되돌릴 수 있다
     expect(screen.getByText('지운 기록 1건')).toBeTruthy()
