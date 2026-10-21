@@ -4456,3 +4456,38 @@
   .excel-statusbar__zoom { display: none; }
 }
 
+/* 터치 기기: 32px 미만으로 측정된 작은 터치 대상(2026-10-21 모바일 실측)을 손가락 크기로.
+   보이는 모양은 두고 누르는 영역만 ::after로 넓힌다. overflow:hidden인 요소는 ::after가 잘리므로 패딩으로 키운다. */
+@media (pointer: coarse) {
+  .excel-statusbar__item--clickable,
+  .sp__link,
+  .portfolio-direction-link,
+  .my-plan__edit,
+  .ig-receipt-row__del-btn,
+  .portfolio-group-toggle,
+  .acc-note a,
+  .choice-note a,
+  .choice-wait a,
+  details > summary { position: relative; }
+
+  /* 아바타는 ::before·::after를 툴팁(excel-tooltip-target)이 쓰므로 크기 자체를 키운다 */
+  .excel-titlebar__user-avatar { width: 32px; height: 32px; font-size: 11px; }
+  .excel-statusbar__item--clickable::after { content: ''; position: absolute; inset: -4px -2px; }
+  .sp__link::after,
+  .portfolio-direction-link::after,
+  .my-plan__edit::after,
+  .acc-note a::after,
+  .choice-note a::after,
+  .choice-wait a::after { content: ''; position: absolute; inset: -8px -4px; }
+  .ig-receipt-row__del-btn::after { content: ''; position: absolute; inset: -6px -4px; }
+  .portfolio-group-toggle::after { content: ''; position: absolute; inset: -4px 0; }
+  details > summary::after { content: ''; position: absolute; inset: -6px 0; }
+
+  .bot-usage-banner__toggle,
+  .bot-usage-banner__next { padding-block: 7px !important; }
+
+  /* 막대(range) 입력은 높이가 18px이라 손잡이를 잡기 어렵다 */
+  input[type='range'] { min-height: 32px; }
+  .reports-rebalance__select,
+  select.input { min-height: 40px; }
+}

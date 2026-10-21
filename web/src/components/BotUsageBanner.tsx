@@ -86,6 +86,7 @@ export default function BotUsageBanner({ route }: { route: string }) {
       )}
       <button
         type="button"
+        className="bot-usage-banner__toggle"
         onClick={hasMore ? toggle : undefined}
         aria-expanded={hasMore ? open : undefined}
         style={{
@@ -111,7 +112,7 @@ export default function BotUsageBanner({ route }: { route: string }) {
         <strong style={{ color: 'var(--color-text-primary)' }}>가상(실험) 계좌와의 관계</strong> · {open ? note : summary}
       </button>
       {next && (
-        <Link to={`/${next.key}`} style={{ color: 'var(--color-brand)', whiteSpace: 'nowrap' }}>
+        <Link to={`/${next.key}`} className="bot-usage-banner__next" style={{ color: 'var(--color-brand)', whiteSpace: 'nowrap' }}>
           다음: {next.step} {next.label} →
         </Link>
       )}
