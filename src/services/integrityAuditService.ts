@@ -180,11 +180,34 @@ export function reconcileChatLedger(input: {
 export type IntegrityReportInput = {
   ymd: string;
   results: ChatLedgerResult[];
-  /** 최근 시세가 없는 보유 종목 코드 목록 */
+  /** 수집 대상(core·extended)인데 최근 시세가 없는 보유 종목 — 수집 실패라 이상으로 센다 */
   staleHoldingCodes: string[];
+  /** 아직 수집 대상이 아닌 보유 종목(새로 담은 종목 등) — 오늘 밤 배치가 올려 수집을 시작하므로 이상으로 세지 않는다 */
+  pendingHoldingCodes?: string[];
   /** dataFreshnessMonitorService의 다이제스트 한 줄 (없으면 생략) */
   freshnessDigest?: string | null;
 };
+
+export type HoldingUniverseRow = { code: string; universe_level: string | null; is_active: boolean | null };
+
+/**
+ * 시세 없는 보유 종목을 "수집 대기"와 "수집 실패"로 나눈다(순수 함수).
+ * 2026-10-20 검산: 그날 새로 입력한 보유 8종목이 아직 tail이라 시세가 없어 ❌로 떴지만, 그날 밤 배치가 보유 종목 보호로
+ * extended에 올리고 빈칸까지 채웠다. 수집 대상인데도 시세가 없을 때만 진짜 이상이다.
+ * stocks에 아예 없는 코드는 배치가 올릴 수 없어(경고만 남김) 수집 실패 쪽에 둔다.
+ */
+export function splitStaleHoldings(staleCodes: string[], rows: HoldingUniverseRow[]): { missing: string[]; pending: string[] } {
+  const byCode = new Map(rows.map((r) => [r.code, r]));
+  const missing: string[] = [];
+  const pending: string[] = [];
+  for (const code of staleCodes) {
+    const row = byCode.get(code);
+    const collected = row && row.is_active && (row.universe_level === "core" || row.universe_level === "extended");
+    if (row && !collected) pending.push(code);
+    else missing.push(code);
+  }
+  return { missing: missing.sort(), pending: pending.sort() };
+}
 
 export function countIntegrityIssues(input: Pick<IntegrityReportInput, "results" | "staleHoldingCodes">): number {
   const ledgerIssues = input.results.reduce((acc, cur) => acc + cur.issues.length, 0);
@@ -223,7 +246,14 @@ export function buildIntegrityReportMessage(input: IntegrityReportInput): string
   if (input.staleHoldingCodes.length > 0) {
     const head = input.staleHoldingCodes.slice(0, 5).join(", ");
     const rest = input.staleHoldingCodes.length - Math.min(5, input.staleHoldingCodes.length);
-    lines.push(`⚠️ 시세 누락 보유종목: ${head}${rest > 0 ? ` 외 ${rest}건` : ""} (최근 영업일 시세 없음)`);
+    lines.push(`⚠️ 시세 누락 보유종목: ${head}${rest > 0 ? ` 외 ${rest}건` : ""} (수집 대상인데 최근 영업일 시세 없음)`);
+  }
+
+  const pending = input.pendingHoldingCodes ?? [];
+  if (pending.length > 0) {
+    const head = pending.slice(0, 5).join(", ");
+    const rest = pending.length - Math.min(5, pending.length);
+    lines.push(`ℹ️ 새로 담아 수집 대기 중인 보유종목: ${head}${rest > 0 ? ` 외 ${rest}건` : ""} (오늘 밤 배치부터 시세 수집)`);
   }
 
   if (input.freshnessDigest) {

@@ -5,6 +5,7 @@ import {
   reconstructCashBaseline,
   buildIntegrityReportMessage,
   countIntegrityIssues,
+  splitStaleHoldings,
 } from "../src/services/integrityAuditService";
 
 const CHAT_ID = 12345;
@@ -198,4 +199,19 @@ test("report: 이상이 있으면 ❌와 상세 라인, 시세 누락 경고 포
   assert.match(message, /❌ 이상 \d+건/);
   assert.match(message, /005930/);
   assert.match(message, /시세 누락 보유종목: 123456/);
+});
+
+test("시세 없는 보유: 아직 수집 대상이 아닌 새 종목은 대기, 수집 대상·미등록 코드는 이상", () => {
+  const split = splitStaleHoldings(["022100", "005930", "0038A0", "999999"], [
+    { code: "022100", universe_level: "tail", is_active: true },
+    { code: "005930", universe_level: "core", is_active: true },
+    { code: "0038A0", universe_level: "extended", is_active: false },
+  ]);
+  assert.deepEqual(split, { missing: ["005930", "999999"], pending: ["0038A0", "022100"] });
+});
+
+test("검산 메시지: 수집 대기 종목은 ℹ️로 따로, 이상 건수에 넣지 않는다", () => {
+  const msg = buildIntegrityReportMessage({ ymd: "2026-10-20", results: [], staleHoldingCodes: [], pendingHoldingCodes: ["022100"] });
+  assert.ok(msg.includes("ℹ️ 새로 담아 수집 대기 중인 보유종목: 022100"));
+  assert.equal(countIntegrityIssues({ results: [], staleHoldingCodes: [] }), 0);
 });

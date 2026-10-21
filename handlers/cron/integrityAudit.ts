@@ -5,6 +5,8 @@ import {
   reconstructCashBaseline,
   buildIntegrityReportMessage,
   countIntegrityIssues,
+  splitStaleHoldings,
+  type HoldingUniverseRow,
   type AuditTradeRow,
   type AuditPositionRow,
   type ChatLedgerResult,
@@ -232,18 +234,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 보유 종목 시세 가용성: 최근 7일 내 stock_daily 행이 없는 종목 적발
     let staleHoldingCodes: string[] = [];
+    let pendingHoldingCodes: string[] = [];
     if (heldCodes.size > 0) {
       const codes = [...heldCodes];
-      const { data: priceRows, error: priceError } = await supabase
-        // stock_daily의 종목 컬럼은 ticker (예전엔 code로 조회해 이 단계에서 실패했다)
-        .from("stock_daily")
-        .select("ticker")
-        .in("ticker", codes)
-        .gte("date", priceCutoffYmd())
-        .limit(20000);
-      if (priceError) throw new Error(`stock_daily fetch failed: ${priceError.message}`);
-      const available = new Set((priceRows ?? []).map((row: { ticker: string }) => String(row.ticker).trim()));
-      staleHoldingCodes = codes.filter((code) => !available.has(code)).sort();
+      const available = new Set<string>();
+      // PostgREST는 1000행에서 조용히 잘린다 — 보유 종목×7일이 1000을 넘으면 뒤 종목이 "시세 없음"으로 오판된다
+      for (let off = 0; ; off += 1000) {
+        const { data: priceRows, error: priceError } = await supabase
+          // stock_daily의 종목 컬럼은 ticker (예전엔 code로 조회해 이 단계에서 실패했다)
+          .from("stock_daily")
+          .select("ticker")
+          .in("ticker", codes)
+          .gte("date", priceCutoffYmd())
+          .order("ticker")
+          .order("date")
+          .range(off, off + 999);
+        if (priceError) throw new Error(`stock_daily fetch failed: ${priceError.message}`);
+        for (const row of (priceRows ?? []) as { ticker: string }[]) available.add(String(row.ticker).trim());
+        if (!priceRows || priceRows.length < 1000) break;
+      }
+      const stale = codes.filter((code) => !available.has(code));
+      if (stale.length > 0) {
+        const { data: uniRows, error: uniError } = await supabase
+          .from("stocks")
+          .select("code, universe_level, is_active")
+          .in("code", stale);
+        // 조회 실패는 "수집 대기"로 넘기지 않는다 — 전부 이상으로 남긴다
+        const split = splitStaleHoldings(stale, uniError ? [] : ((uniRows ?? []) as HoldingUniverseRow[]));
+        staleHoldingCodes = split.missing;
+        pendingHoldingCodes = split.pending;
+      }
     }
 
     // 매도 사유 검산: 최근 14일 익절로 기록됐는데 실제 손익이 마이너스인 매도 (금액이 맞아도 사유가 틀릴 수 있다)
@@ -304,6 +324,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ymd,
         results,
         staleHoldingCodes,
+        pendingHoldingCodes,
         freshnessDigest: buildFreshnessDigest(freshness),
       }),
       dataQuality.summary,
@@ -330,6 +351,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       detail: {
         results,
         staleHoldingCodes,
+        pendingHoldingCodes,
         freshness: { isHealthy: freshness.isHealthy, staleItems: freshness.staleItems },
         dataQuality: dataQuality.issues,
         disclosureFilter: { status: disclosureFilter.status, error: disclosureFilter.error ?? null },
@@ -352,6 +374,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       issueCount,
       isHealthy,
       staleHoldingCodes,
+      pendingHoldingCodes,
       freshnessHealthy: freshness.isHealthy,
     });
   } catch (error: any) {
