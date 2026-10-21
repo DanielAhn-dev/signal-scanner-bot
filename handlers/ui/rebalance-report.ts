@@ -79,7 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const view = buildIncomeGuideView({ holdings, settings: file.settings, today, pastCashPcts, yieldPctByCode, planMix: guidePlan?.mix ?? null })
     // 같은 지수 상품 비교 — 가이드 화면과 같은 자료·같은 함수(indexProductChoice)라 살 곳이 화면마다 갈리지 않는다
     const indexAlt = await loadIndexAlternatives(supabase, view.holdings.filter((h) => h.group === 'growth').map((h) => ({ code: h.code, name: h.name })))
-    const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan, holdFinalTargets: view.holdFinalTargets, yieldPctByCode, today, etf: indexAlt.etf, feeAlternatives: indexAlt.alternatives })
+    const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: file.settings, cashPlan: view.cashPlan, yieldPctByCode, today, etf: indexAlt.etf, feeAlternatives: indexAlt.alternatives })
 
     const etfCodes = holdings.filter((h) => h.accountKey === accountKey).filter((h) => isExchangeTradedProduct(h.code, h.name, h.productType)).map((h) => h.code)
     const [etfMap, drop] = await Promise.all([

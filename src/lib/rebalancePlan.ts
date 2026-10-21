@@ -139,8 +139,6 @@ export type RebalancePlan = {
   growth: {
     actualPct: number;
     targetPct: number;
-    /** 분배금으로만 줄여 가는 중(hold)일 때 옮겨 갈 원래 성장 목표 — targetPct는 이때 지금 비중과 같아 의미가 없다. hold가 아니면 null */
-    finalTargetPct: number | null;
     /** 새 돈만으로 목표 비중까지 필요한 금액 (이미 넘었으면 0). 예수금으로 살 몫(idleCash.spend)은 뺀 뒤다 */
     needByNewMoney: number;
     monthlyInflow: number;
@@ -180,7 +178,10 @@ export type RebalancePlan = {
     /** 합치지 못한 종목과 이유 */
     blocked: Array<{ code: string; name: string; role: string; reason: string }>;
   } | null;
-  /** 인컴을 분배금으로만 줄여 가는 중인지 (settings.incomeMode "hold") */
+  /**
+   * 인컴 금액 유지·지수로 키우기 (settings.incomeMode "hold") — 커버드콜·배당은 월 인컴 목표(monthlyNeed)어치를 사지도 팔지도 않고 두며,
+   * 분배금·새 돈은 현금 목표 → 지수로 보낸다. 인컴 비중은 목표가 아니라 지수가 커지며 저절로 줄어드는 결과다(최종 비중 목표 없음).
+   */
   hold: boolean;
   /**
    * 입력한 예수금을 어떻게 할지 (hold가 아니고 예수금이 있을 때만). 현금 목표를 채우는 몫(keep)은 두고,
@@ -234,8 +235,6 @@ export function buildRebalancePlan(input: {
   groups: GroupRow[];
   settings: IncomeGuideSettings;
   cashPlan?: IncomeGuideView["cashPlan"];
-  /** hold일 때 원래 목표 (IncomeGuideView.holdFinalTargets) */
-  holdFinalTargets?: IncomeGuideView["holdFinalTargets"];
   /** 종목별 최근 12개월 실제 분배율 — 없으면 상품 유형별 가정 */
   yieldPctByCode?: YieldPctByCode | null;
   /** 같은 지수 상품 비교용 — 보유 성장 ETF와 다른 운용사 상품의 총보수·규모 (src/services/indexAlternatives.ts). 없으면 비교 없이 보유 상품 */
@@ -604,7 +603,7 @@ export function buildRebalancePlan(input: {
   // 맨 위 한 줄
   const parts: string[] = [];
   if (hold) {
-    parts.push("커버드콜·배당은 더 사지 않고 분배금으로 줄여 가는 중");
+    parts.push(floor > 0 ? `커버드콜·배당은 월 ${man(floor)}어치 그대로 두고, 늘리는 건 지수로` : "커버드콜·배당은 더 사지 않고, 늘리는 건 지수로");
     if (cash?.state === "filling") parts.push(`현금 ${cash.actualPct.toFixed(0)}% → 목표 ${cash.targetPct.toFixed(0)}%: 분배금은 현금으로`);
     else if (cash?.state === "take-profit") parts.push(`현금이 ${cash.actualPct.toFixed(0)}%로 줄었습니다 — 지수 ${man(cash.amount)}어치를 팔아 채울 때`);
     else if (cash?.state === "buy-index") parts.push(`현금이 ${cash.actualPct.toFixed(0)}%로 많습니다 — ${man(cash.amount)}으로 지수를 살 때`);
@@ -625,7 +624,7 @@ export function buildRebalancePlan(input: {
   return {
     headline,
     income: { monthlyNet: Math.round(monthlyNet), source: actual ? "actual" : "estimate", estimateNet: Math.round(estimateNet), floor, surplus: Math.round(surplus) },
-    growth: { actualPct, targetPct, finalTargetPct: hold ? input.holdFinalTargets?.growthPct ?? null : null, needByNewMoney, monthlyInflow: Math.round(monthlyInflow), months },
+    growth: { actualPct, targetPct, needByNewMoney, monthlyInflow: Math.round(monthlyInflow), months },
     buyTarget,
     buyHint,
     buyWhy,

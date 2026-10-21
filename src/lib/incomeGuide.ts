@@ -590,11 +590,6 @@ export type IncomeGuideView = {
    * incomeMode "hold"에서 아직 못 닿았으면 groups의 현금 목표는 지금 비중으로 두어 지수를 팔아 채우지 않는다.
    */
   cashPlan: { value: number; balance: number; actualPct: number; targetPct: number; reached: boolean; hold: boolean };
-  /**
-   * incomeMode "hold"일 때만: groups 목표는 인컴·현금을 지금 비중으로 묶어 성장 목표가 지금 비중과 같아진다.
-   * 분배금으로 천천히 옮겨 갈 원래 목표(단계 기본값 또는 직접 정한 값)를 따로 둔다. hold가 아니면 null
-   */
-  holdFinalTargets: { growthPct: number; incomePct: number; cashPct: number } | null;
   /** 나이대 설정이 있을 때: 현금성 하한과 매매 방법 안내. 설정 없으면 null */
   age: { band: AgeBand; label: string; safePct: number; applied: boolean; lines: string[] } | null;
   /**
@@ -1112,7 +1107,7 @@ export function buildIncomeGuideView(input: {
     cashTargetPct <= 0 || cashActualPct >= cashTargetPct - 0.05 || (input.pastCashPcts ?? []).some((p) => p >= cashTargetPct - 0.05);
   const targets = {
     ...stageTargets,
-    // 줄여 가는 중: 인컴은 지금 비중 그대로(사지도 팔지도 않음), 현금은 처음 채울 때까지 지금 비중(지수를 팔아 채우지 않음)
+    // 인컴 금액 유지(hold): 인컴은 지금 비중 그대로(사지도 팔지도 않음), 현금은 처음 채울 때까지 지금 비중(지수를 팔아 채우지 않음)
     incomePct: hold ? pct(gv("income")) : custom?.income ?? stageTargets.incomePct,
     cashPct: hold && !cashReached ? cashActualPct : cashTargetPct,
   };
@@ -1126,14 +1121,6 @@ export function buildIncomeGuideView(input: {
     satellite: satelliteTargetPct,
     cash: targets.cashPct,
   };
-  const holdFinalIncomePct = custom?.income ?? stageTargets.incomePct;
-  const holdFinalTargets: IncomeGuideView["holdFinalTargets"] = hold
-    ? {
-        growthPct: Math.max(0, 100 - holdFinalIncomePct - cashTargetPct - satelliteTargetPct),
-        incomePct: holdFinalIncomePct,
-        cashPct: cashTargetPct,
-      }
-    : null;
   const groups: GroupRow[] = (["growth", "income", "satellite", "cash"] as BucketGroup[]).map((g) => {
     const actualPct = pct(gv(g));
     return {
@@ -1430,7 +1417,6 @@ export function buildIncomeGuideView(input: {
     contribution,
     targetSource,
     cashPlan: { value: gv("cash"), balance: cashBalance, actualPct: cashActualPct, targetPct: cashTargetPct, reached: cashReached, hold },
-    holdFinalTargets,
     age: settings.ageBand && AGE_BANDS[settings.ageBand] ? buildAgeGuide(settings.ageBand, targets.stage, cashTargetPct, custom?.cash != null) : null,
     distributions,
     npsReference: buildNpsReference(byBucket, total),

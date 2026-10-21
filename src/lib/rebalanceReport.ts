@@ -424,7 +424,7 @@ export function buildRebalanceReport(input: {
   if (ccShare > COVERED_CALL_MAX_SHARE_PCT) stopReasons.push(`이 계좌 인컴 중 커버드콜이 ${ccShare.toFixed(0)}%로 상한 33%를 넘었습니다`);
   if (!hold && portfolioIncomePct > portfolioIncomeTargetPct + REBALANCE_BAND_PP)
     stopReasons.push(`전체 인컴 비중 ${portfolioIncomePct.toFixed(0)}%가 목표 ${portfolioIncomeTargetPct.toFixed(0)}% +${REBALANCE_BAND_PP}%p를 넘었습니다`);
-  if (hold) stopReasons.push("인컴은 사지도 팔지도 않고 분배금으로 줄여 가는 중(hold)으로 정해 두었습니다");
+  if (hold) stopReasons.push("인컴은 금액을 유지하고(사지도 팔지도 않음) 늘리는 건 지수로 하기로 정해 두었습니다");
 
   // 종목별 행
   const rows: ReportRow[] = held
