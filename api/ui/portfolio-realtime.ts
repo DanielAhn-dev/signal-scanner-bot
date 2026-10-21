@@ -172,6 +172,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         horizon_reason: pos.horizon_reason ?? null,
         planned_review_at: pos.planned_review_at ?? null,
         status: pos.status,
+        // 홈 '가상 계좌' 줄이 실계좌 행을 빼려면 필요하다(둘 다 비면 가상)
+        broker_name: pos.broker_name ?? null,
+        account_name: pos.account_name ?? null,
       })
     }
 
