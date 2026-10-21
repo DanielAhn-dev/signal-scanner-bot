@@ -1013,7 +1013,10 @@
   white-space: nowrap;
 }
 .excel-formula-bar__name-box {
-  width: 96px;
+  /* 화면 이름 길이에 맞춰 늘어난다(고정 폭이면 긴 이름이 …로 잘렸다). 수식 입력 칸을 위해 절반까지만 */
+  width: auto;
+  min-width: 96px;
+  max-width: 50%;
   flex-shrink: 0;
   border-right: 1px solid var(--color-excel-grid-border);
   padding: 0 6px;
@@ -3847,7 +3850,7 @@
   .excel-ribbon-group__label { font-size: 9px; }
 
   /* 수식 표시줄 이름 박스 축소 */
-  .excel-formula-bar__name-box { width: 64px; }
+  .excel-formula-bar__name-box { min-width: 64px; }
 
   /* 시트 탭 텍스트 숨기고 아이콘만 */
   .excel-sheet-tab { padding: 0 8px; }
@@ -3982,7 +3985,7 @@
   }
 
   /* 수식 표시줄 간소화 */
-  .excel-formula-bar__name-box { width: 70px; font-size: 10px; }
+  .excel-formula-bar__name-box { min-width: 70px; font-size: 10px; }
   .excel-formula-bar__divider { padding: 0 2px; }
   .excel-formula-bar__fn-btn {
     display: inline-flex;
@@ -4290,6 +4293,11 @@
     white-space: normal;
     word-break: keep-all;
     overflow-wrap: anywhere;
+  }
+  /* 둘째 칸부터(숫자·짧은 값)는 anywhere면 최소 폭이 한 글자로 줄어 '+278%'가 '+278 / %'로 쪼개진다.
+     break-word는 넘칠 때만 끊고 최소 폭 계산엔 낱말을 통째로 쓴다. 긴 이름이 오는 첫 칸은 anywhere 유지 */
+  .xls-content-inner table:is(.xls-card-table, .acc-table, .goal-table, .follow-table, .sim-scenario-table, .sp__table, .choice-health) :is(th, td):not(:first-child) {
+    overflow-wrap: break-word;
   }
   /* 라벨 칸과 입력 칸이 6열을 나눠 쓰면 좁은 화면에서 입력 칸이 너무 좁다 — 라벨을 위, 내용을 아래로 쌓는다 */
   .xls-content-inner table.xls-fit--stack,
