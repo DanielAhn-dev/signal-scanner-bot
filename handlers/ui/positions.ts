@@ -13,6 +13,7 @@ import {
 import { fetchWeightCautions, type WeightCautionResult } from '../../src/services/weightCautionSignal'
 import { entryGuardLabel, fetchChaseEntries, type ChaseEntryResult } from '../../src/services/chaseEntrySignal'
 import { toKstDateKey } from '../../src/lib/krxCalendar'
+import { resolveHoldingPrice } from '../../src/lib/holdingPrice'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { ETF_BENCHMARK_CODE, fetchEtfKeyIndicators, type EtfKeyIndicator } from '../../src/services/etfKeyIndicator'
 import { selectPaged } from '../../src/services/supabasePaging'
@@ -453,13 +454,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const mapped = (data ?? []).map((row: any) => {
       // 현재가 우선, 없으면 DB 종가 (폴백)
       const code = String(row.code || '').trim()
-      const realtimePrice = Number(realtimePriceMap[code]?.price)
-      const hasRealtime = Number.isFinite(realtimePrice) && realtimePrice > 0
-      const closeFallback = Number(row.stock?.close)
-      const close = hasRealtime
-        ? realtimePrice
-        : (Number.isFinite(closeFallback) ? closeFallback : null)
-      if (!hasRealtime && Number.isFinite(closeFallback)) fallbackToCloseCount += 1
+      // stocks.close=0은 가격 없음(null) — 0을 쓰면 평가액 0·−100%가 됐다
+      const { price: close, source: priceSource } = resolveHoldingPrice(realtimePriceMap[code]?.price, row.stock?.close)
+      if (priceSource === 'close') fallbackToCloseCount += 1
       const addedDateKey = normalizeDateKey(row.buy_date || row.created_at)
       const baseBuyPrice = toPositiveNumber(
         row.buy_price ?? ((row.invested_amount && row.quantity) ? Number(row.invested_amount) / Number(row.quantity) : null),

@@ -9,6 +9,7 @@ import {
 import { replaceTradeLotsForHolding } from '../../src/services/virtualLotService'
 import { parseStrategyMemo } from '../../src/lib/strategyMemo'
 import { syncVirtualPortfolio } from '../../src/services/portfolioService'
+import { positivePrice } from '../../src/lib/holdingPrice'
 import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
 import { evaluateAutoTradeSignalGate } from '../../src/services/virtualAutoTradeSignalGate'
 
@@ -1254,18 +1255,19 @@ async function getAutoSellCandidates(supabase: SupabaseClient, chatId: string | 
   const rows = Array.isArray(data) ? data : []
 
   return rows.map((r: any) => {
-    const close = Number(r.stock?.close || 0)
+    // stocks.close=0은 가격 없음(null) — 0으로 두면 −100%로 맨 위에 올라왔다
+    const close = positivePrice(r.stock?.close)
     const buyPrice = Number(r.buy_price || 0)
-    const pctChange = buyPrice > 0 ? ((close - buyPrice) / buyPrice) * 100 : 0
+    const pctChange = close != null && buyPrice > 0 ? ((close - buyPrice) / buyPrice) * 100 : null
     return {
       code: r.code,
       name: r.stock?.name,
       quantity: r.quantity,
       buy_price: buyPrice,
       current_price: close,
-      pct_change: Math.round(pctChange * 100) / 100,
+      pct_change: pctChange == null ? null : Math.round(pctChange * 100) / 100,
     }
-  }).sort((a: any, b: any) => a.pct_change - b.pct_change)
+  }).sort((a: any, b: any) => (a.pct_change ?? Infinity) - (b.pct_change ?? Infinity))
 }
 
 async function getLotConsistencyReport(

@@ -13,6 +13,7 @@
 
 import { computeDistributionCredit, exDividendDate, fetchEtfDistributions, KODEX_FUND_IDS, type EtfDistribution } from "./etfDistribution";
 import { toKstDateKey } from "../lib/krxCalendar";
+import { positivePrice } from "../lib/holdingPrice";
 
 type SupabaseClientAny = any;
 
@@ -100,7 +101,7 @@ export async function fetchBenchmarkComparison(input: {
 
   const { data: positions } = await supabase
     .from("virtual_positions")
-    .select("code, quantity, status, stock:stocks(close)")
+    .select("code, quantity, buy_price, status, stock:stocks(close)")
     .eq("chat_id", chatId)
     // 실계좌 입력 행 제외 — 빠지면 실계좌 평가액이 가상 계좌 자산에 더해져 수익률이 크게 부푼다
     .is("broker_name", null)
@@ -109,7 +110,9 @@ export async function fetchBenchmarkComparison(input: {
   for (const row of (positions ?? []) as Array<Record<string, any>>) {
     if ((row.status ?? "holding") !== "holding") continue;
     const stock = Array.isArray(row.stock) ? row.stock[0] : row.stock;
-    holdingsValue += Math.max(0, Number(row.quantity ?? 0)) * Math.max(0, Number(stock?.close ?? 0));
+    // stocks.close=0(가격 없음)이면 매수가로 — 0으로 두면 보유분이 자산에서 통째로 빠졌다
+    const price = positivePrice(stock?.close) ?? positivePrice(row.buy_price) ?? 0;
+    holdingsValue += Math.max(0, Number(row.quantity ?? 0)) * price;
   }
   const accountReturnPct = ((input.cash + holdingsValue - input.seedCapital) / input.seedCapital) * 100;
 

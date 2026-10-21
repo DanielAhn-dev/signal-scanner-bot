@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
+import { positivePrice } from '../../src/lib/holdingPrice'
 
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
@@ -70,13 +71,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const items = (Array.isArray(data) ? data : []).map((row) => {
         const r = row as unknown as WatchlistPositionRow
+        const close = positivePrice(r.stock?.close)
         return {
           stock_code: String(r.code || ''),
           stock_name: String(r.stock?.name || r.code || ''),
           buy_price: r.buy_price == null ? null : Number(r.buy_price),
-          current_price: r.stock?.close == null ? null : Number(r.stock.close),
-          change_rate: r.buy_price && r.stock?.close
-            ? ((Number(r.stock.close) - Number(r.buy_price)) / Number(r.buy_price)) * 100
+          current_price: close,
+          change_rate: r.buy_price && close != null
+            ? ((close - Number(r.buy_price)) / Number(r.buy_price)) * 100
             : null,
           buy_date: r.buy_date || null,
           created_at: r.created_at || null,

@@ -76,6 +76,7 @@ import type { ScoreSnapshotResult } from "./scoreSourceService";
 import { getUserInvestmentPrefs, type InvestmentPrefs } from "./userService";
 import { fetchBuyExclusions } from "./buyExclusionFilter";
 import { fetchCashSweepHolding, isCashSweepCode } from "./cashSweepBalance";
+import { positivePrice } from "../lib/holdingPrice";
 
 export { describeWeeklyReportFailure } from "./weeklyReportErrors";
 
@@ -1123,11 +1124,10 @@ export async function createWeeklyReportPdf(
     const qtyRaw = row.quantity != null ? Math.floor(toNum(row.quantity)) : 0;
     const invested = toNum(row.invested_amount);
     const qty = qtyRaw > 0 ? qtyRaw : buyPrice && invested > 0 ? Math.floor(invested / buyPrice) : 0;
-    const rtPrice = toNum(realtimeMap[row.code]?.price);
-    const dbPrice = stock?.close != null ? toNum(stock.close) : 0;
-    const currentPrice = rtPrice > 0 ? rtPrice : dbPrice > 0 ? dbPrice : null;
+    const currentPrice = positivePrice(realtimeMap[row.code]?.price) ?? positivePrice(stock?.close);
     const cost = invested > 0 ? invested : buyPrice && qty > 0 ? buyPrice * qty : 0;
-    const value = currentPrice && qty > 0 ? currentPrice * qty : 0;
+    // 가격을 모르면(stocks.close=0 포함) 원금으로 둔다 — 0으로 두면 원금 전체가 손실로 잡혔다
+    const value = currentPrice == null ? cost : qty > 0 ? currentPrice * qty : 0;
     const unrealized = cost > 0 ? value - cost : 0;
     const pnlPct = buyPrice && currentPrice ? ((currentPrice - buyPrice) / buyPrice) * 100 : null;
     return {

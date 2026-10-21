@@ -44,14 +44,18 @@ export default function SellCheckCard({
                     <span className="caption muted"> ({c.code}) · {c.quantity}주</span>
                   </div>
                   <div className="text-right">
-                    <span
-                      className={c.pct_change < 0 ? 'negative' : 'positive'}
-                      style={{ fontWeight: 600 }}
-                    >
-                      {c.pct_change > 0 ? '+' : ''}{formatNumber(c.pct_change, 2)}%
-                    </span>
+                    {c.pct_change == null ? (
+                      <span className="muted" style={{ fontWeight: 600 }}>가격 없음</span>
+                    ) : (
+                      <span
+                        className={c.pct_change < 0 ? 'negative' : 'positive'}
+                        style={{ fontWeight: 600 }}
+                      >
+                        {c.pct_change > 0 ? '+' : ''}{formatNumber(c.pct_change, 2)}%
+                      </span>
+                    )}
                     <div className="caption muted">
-                      {formatKrw(c.current_price)} / 평균 {formatKrw(c.buy_price)}
+                      {c.current_price == null ? '현재가 없음' : formatKrw(c.current_price)} / 평균 {formatKrw(c.buy_price)}
                     </div>
                   </div>
                 </div>

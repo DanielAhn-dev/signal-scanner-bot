@@ -20,8 +20,9 @@ export type SellCandidate = {
   name: string
   quantity: number
   buy_price: number
-  current_price: number
-  pct_change: number
+  /** 가격 없음(stocks.close가 비었거나 0)이면 null */
+  current_price: number | null
+  pct_change: number | null
 }
 
 export type OpStatus = 'idle' | 'loading' | 'done' | 'error'

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { resolveUiUserContext } from './_userContext'
+import { resolveHoldingPrice } from '../../src/lib/holdingPrice'
 import {
   buildAudienceKey,
   createSupabaseServiceClientFromEnv,
@@ -185,13 +186,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const quantity = Number(row.quantity || 0)
       const buyPrice = Number(row.buy_price || 0)
       const code = String(row.code || '').trim()
-      const realtimePrice = Number(realtimeMap[code]?.price)
-      const hasRealtime = Number.isFinite(realtimePrice) && realtimePrice > 0
-      const closeFallback = Number(row.stock?.close)
-      const currentPrice = hasRealtime
-        ? realtimePrice
-        : (Number.isFinite(closeFallback) ? closeFallback : 0)
-      if (!hasRealtime && Number.isFinite(closeFallback)) fallbackToCloseCount += 1
+      // 가격을 모르면(stocks.close=0 포함) 매수가로 두어 손익 0 — 0원으로 두면 −100%로 공유됐다
+      const { price, source: priceSource } = resolveHoldingPrice(realtimeMap[code]?.price, row.stock?.close)
+      if (priceSource === 'close') fallbackToCloseCount += 1
+      const currentPrice = price ?? buyPrice
       const unrealizedPnl = (currentPrice - buyPrice) * quantity
       const unrealizedPct = buyPrice > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0
 

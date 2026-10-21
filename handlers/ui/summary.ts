@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
+import { resolveHoldingPrice } from '../../src/lib/holdingPrice'
 import { denyIfUnauthorizedRead } from './_accessControl'
 import {
   fetchRealtimePriceBatch,
@@ -174,20 +175,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const stock = Array.isArray(row?.stock) ? row.stock[0] : row?.stock
       const code = String(row?.code || stock?.code || '').trim()
-      const realtimePrice = Number(realtimePriceMap[code]?.price)
-      const hasRealtime = Number.isFinite(realtimePrice) && realtimePrice > 0
-      const closeFallback = Number(stock?.close)
-      const close = hasRealtime
-        ? realtimePrice
-        : closeFallback
-      if (!hasRealtime && Number.isFinite(closeFallback)) fallbackToCloseCount += 1
+      // stocks.close=0은 가격 없음 — 합계에서 뺀다(0으로 계산하면 −원금이 더해졌다)
+      const { price: close, source: priceSource } = resolveHoldingPrice(realtimePriceMap[code]?.price, stock?.close)
+      if (priceSource === 'close') fallbackToCloseCount += 1
       let avg = Number(row?.buy_price)
       if (!Number.isFinite(avg) || avg <= 0) {
         const invested = Number(row?.invested_amount)
         avg = qty > 0 && Number.isFinite(invested) ? invested / qty : NaN
       }
 
-      if (!Number.isFinite(close) || !Number.isFinite(avg)) return acc
+      if (close == null || !Number.isFinite(avg)) return acc
       return acc + (close - avg) * qty
     }, 0)
 
