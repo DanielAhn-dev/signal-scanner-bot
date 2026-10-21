@@ -39,7 +39,7 @@ export default function Portfolio() {
 
   // 데이터·설정
   const {
-    allRows, loading, refreshing, error, lastUpdatedAt, serverTotal, loadMoreLoading, accountFolders, load, loadMore,
+    allRows, loading, refreshing, error, lastUpdatedAt, serverTotal, loadMoreLoading, loadMoreError, accountFolders, load, loadMore,
   } = usePositions()
   const {
     page, setPage, pageSize, search, setSearch, searchInput, selectedSector, selectedAccountKey, setSelectedAccountKey,
@@ -166,15 +166,17 @@ export default function Portfolio() {
         </div>
       )}
 
-      {serverTotal != null && allRows.length < serverTotal && (
-        <div className="pagination-wrap" style={{ justifyContent: 'center' }}>
-          <Button
-            variant="secondary"
-            onClick={loadMore}
-            disabled={loadMoreLoading}
-          >
-            {loadMoreLoading ? '로딩 중…' : `더 보기 (${allRows.length} / ${serverTotal})`}
-          </Button>
+      {/* 나머지는 자동으로 이어 받는다(상단에 '전체 집계 중' 표시). 실패했을 때만 여기서 다시 시도 */}
+      {loadMoreError && serverTotal != null && allRows.length < serverTotal && (
+        <div className="state-error" role="alert" style={{ marginTop: 'var(--space-3)' }}>
+          <div className="state-error-title">
+            보유 {serverTotal}건 중 {allRows.length}건만 불러왔습니다. 위 합계·비중도 불러온 종목 기준입니다.
+          </div>
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            <Button variant="secondary" size="sm" onClick={loadMore} disabled={loadMoreLoading}>
+              {loadMoreLoading ? '불러오는 중…' : '나머지 다시 불러오기'}
+            </Button>
+          </div>
         </div>
       )}
 

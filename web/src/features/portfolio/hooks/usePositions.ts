@@ -12,10 +12,16 @@ export function usePositions() {
   const [error, setError] = useState<string | null>(null)
   const [serverTotal, setServerTotal] = useState<number | null>(null)
   const [loadMoreLoading, setLoadMoreLoading] = useState(false)
+  // 나머지 페이지 실패는 화면 전체 오류(error)와 따로 둔다 — 받은 목록은 그대로 보이고, 자동 이어받기는 멈춘다
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+  // 새로고침(load)이 끝난 뒤 늦게 도착한 이전 세대의 페이지가 섞이지 않게
+  const generationRef = useRef(0)
   const INITIAL_PAGE_SIZE = 20
 
   const load = useCallback(async ({ soft = false, force = false }: { soft?: boolean; force?: boolean } = {}) => {
+    const generation = ++generationRef.current
     setRefreshing(true)
+    setLoadMoreError(null)
     if (!soft) setLoading(true)
     if (!soft) setError(null)
     try {
@@ -24,6 +30,7 @@ export function usePositions() {
       if (force) params.set('cacheMs', '0')
       const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
       const rows = Array.isArray(json?.data) ? json.data : []
+      if (generation !== generationRef.current) return
       setAllRows(rows)
       setServerTotal(json?.count != null ? Number(json.count) : null)
       setLastUpdatedAt(Date.now())
@@ -36,16 +43,25 @@ export function usePositions() {
   }, [])
 
   const loadMore = useCallback(async () => {
+    const generation = generationRef.current
     setLoadMoreLoading(true)
+    setLoadMoreError(null)
     try {
       const nextPage = Math.floor(allRows.length / INITIAL_PAGE_SIZE) + 1
       const params = new URLSearchParams({ page: String(nextPage), pageSize: String(INITIAL_PAGE_SIZE), includeLots: '0', positionType: 'holding', withCount: '1' })
       const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
-      const newRows = json?.data ?? []
-      setAllRows((prev) => [...prev, ...newRows])
+      if (generation !== generationRef.current) return
+      const newRows: HoldingRow[] = Array.isArray(json?.data) ? json.data : []
+      // 받는 사이 행이 추가·삭제되면 쪽 경계가 밀려 같은 행이 두 번 올 수 있다 — id로 거른다
+      setAllRows((prev) => {
+        const seen = new Set(prev.map((r) => String(r.id)))
+        return [...prev, ...newRows.filter((r) => !seen.has(String(r.id)))]
+      })
       setServerTotal(json?.count != null ? Number(json.count) : null)
+      // 빈 쪽이 오면 더 받을 게 없다(서버 count와 어긋남) — 계속 요청하지 않게 멈춘다
+      if (newRows.length === 0) setLoadMoreError('남은 종목을 더 받지 못했습니다.')
     } catch (e: any) {
-      setError(e?.message || String(e))
+      if (generation === generationRef.current) setLoadMoreError(e?.message || String(e))
     } finally {
       setLoadMoreLoading(false)
     }
@@ -74,9 +90,9 @@ export function usePositions() {
   useEffect(() => {
     if (serverTotal == null) return
     if (allRows.length >= serverTotal) return
-    if (loadMoreLoading) return
+    if (loadMoreLoading || loadMoreError) return // 실패 뒤에는 '다시 시도'를 누를 때만 (자동 재요청 루프 방지)
     loadMore()
-  }, [serverTotal, allRows.length, loadMoreLoading, loadMore])
+  }, [serverTotal, allRows.length, loadMoreLoading, loadMoreError, loadMore])
 
   return {
     allRows,
@@ -86,6 +102,7 @@ export function usePositions() {
     lastUpdatedAt,
     serverTotal,
     loadMoreLoading,
+    loadMoreError,
     accountFolders,
     load,
     loadMore,
