@@ -174,8 +174,8 @@ type MixRow = { key: string; label: string; now: number; goal: number | null; go
 /** 요약의 구성 막대 색 — 바구니 4개를 막대 하나에 나란히 칠한다 */
 const MIX_COLOR: Record<string, string> = {
   income: 'var(--color-basket-income)',
-  growth: 'var(--color-brand)',
-  cash: 'var(--color-text-tertiary)',
+  growth: 'var(--color-basket-growth)',
+  cash: 'var(--color-basket-cash)',
   satellite: 'var(--color-basket-satellite)',
 }
 

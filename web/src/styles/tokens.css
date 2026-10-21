@@ -111,9 +111,11 @@
   --color-info:       var(--color-brand);
   --color-info-bg:    var(--color-brand-subtle);
 
-  /* 자산 바구니 구분색 (리밸런싱 구성 막대) — 성장은 brand(초록), 경고 주황·하락 파랑과 겹치지 않게 */
-  --color-basket-income:    #4A72B0;
-  --color-basket-satellite: #8E6BB8;
+  /* 자산 바구니 구분색 (리밸런싱 구성 막대) — 엑셀 차트 기본색 계열의 밝은 톤. 경고 문구(진한 주황)보다 옅게 */
+  --color-basket-growth:    #70AD47;
+  --color-basket-income:    #F4A259;
+  --color-basket-cash:      #FFD966;
+  --color-basket-satellite: #BFBFBF;
 
   /* Compatibility aliases */
   --color-positive:       var(--color-stock-up);
