@@ -41,6 +41,7 @@ import {
 import { buildGuidePlanSnapshot } from '../../src/services/guidePlanSnapshot'
 import { buildAdherence } from '../../src/lib/guideAdherence'
 import { readOwnUserState } from './user-state'
+import { accountCashRows, setAccountCash } from '../../src/lib/accountCash'
 import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sameReceiptSlot, sanitizeReceipt } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
@@ -50,6 +51,7 @@ import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sameReceiptSl
 //   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net?, accountKey?, accountLabel? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
 //     같은 종목이 여러 계좌에 있으면 accountKey가 필요하다(계좌마다 따로 적는다)
 //     이번 달 기록은 그 계좌 예수금에 더하고 고치면 차액·지우면 뺀다 → 응답 cashAdjust { before, after }
+//   GET ?cash=1 / POST { action: 'cash-set', accountKey, amount } — 계좌별 예수금 보기·실제 잔액으로 맞추기(포트폴리오 화면, 가볍게: 시세 안 받음)
 //   POST { action: 'cash-deposit', month, accountKey | null, amount } — 받은 분배금만큼 은행에서 그 계좌로 넣은 돈.
 //     이 달 기록을 amount로 맞추고 차이만 그 계좌 예수금에 더한다(계좌를 바꾸거나 null·0이면 되돌림) → 응답 cashAdjust
 //   POST { action: 'adherence-exclude', key, exclude } — 가이드 따름 판정에서 빼기/되돌리기
@@ -116,9 +118,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isExclude = req.method === 'POST' && body.action === 'adherence-exclude'
     const isCashDeposit = req.method === 'POST' && body.action === 'cash-deposit'
     // 모르는 action은 설정 저장으로 흘러가 아무것도 안 바꾸고 성공으로 답했다(2026-10-21 새 화면 + 배포 전 서버) — 거절한다
-    const KNOWN_ACTIONS = ['record', 'receipt-add', 'receipt-delete', 'adherence-exclude', 'account-kind', 'account-targets', 'cash-deposit']
+    const KNOWN_ACTIONS = ['record', 'receipt-add', 'receipt-delete', 'adherence-exclude', 'account-kind', 'account-targets', 'cash-deposit', 'cash-set']
     if (req.method === 'POST' && body.action != null && !KNOWN_ACTIONS.includes(String(body.action))) {
       return res.status(400).json({ error: `알 수 없는 요청입니다(${String(body.action).slice(0, 40)}). 화면을 새로 고쳐 주세요.` })
+    }
+    // 계좌별 예수금 — 포트폴리오 계좌 화면이 보고 고친다. 시세·가이드 계산 없이 바로 답한다
+    if ((req.method === 'GET' && req.query?.cash === '1') || (req.method === 'POST' && body.action === 'cash-set')) {
+      if (req.method === 'POST') {
+        const key = String(body.accountKey ?? '').trim().slice(0, 120)
+        if (!rawKeys.has(key) && !(key in (file.settings.cashByAccount ?? {}))) return res.status(400).json({ error: '보유가 있는 계좌를 골라 주세요.' })
+        const r = setAccountCash(file.settings, file.cashChecks ?? {}, key, Number(body.amount), kstDateKey())
+        if (!r) return res.status(400).json({ error: '예수금은 0원 이상 숫자로 적어 주세요.' })
+        file = { ...file, settings: r.settings, cashChecks: r.checks }
+        const saveErr = await saveGuideFile(supabase, chatId, file)
+        if (saveErr) return res.status(500).json({ error: `예수금 저장 실패: ${saveErr}` })
+      }
+      return res.status(200).json({ ok: true, data: { accounts: accountCashRows(file.settings, file.cashChecks ?? {}, [...rawKeys]) } })
     }
     const isAccountAction = req.method === 'POST' && (body.action === 'account-kind' || body.action === 'account-targets')
     // 분배금 기록이 바꾼 계좌 예수금(화면 안내용)

@@ -1,6 +1,6 @@
 /**
  * 리밸런싱 가이드 저장·조회 — 웹 경로(handlers/ui/income-guide.ts)와 월 자동 기록 배치(scripts/income_guide_monthly.ts)가 같이 쓴다.
- * 파일: market-snapshots/income-guide/{chatId}.json = { settings, history, receipts, adherenceExcluded, accounts, cashDeposits }
+ * 파일: market-snapshots/income-guide/{chatId}.json = { settings, history, receipts, adherenceExcluded, accounts, cashDeposits, cashChecks }
  * 계좌 보유 = virtual_positions 중 증권사·계좌명이 있는 행("계좌/보유 추가"로 입력). 봇 가상 계좌는 넣지 않는다.
  */
 import { fetchRealtimePriceBatch, type RealtimeStockData } from "../utils/fetchRealtimePrice";
@@ -8,6 +8,7 @@ import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
 import { selectPaged } from "./supabasePaging";
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import { sanitizeReceipts, type DistributionReceipt } from "../lib/distributionReceipts";
+import { sanitizeCashChecks, type CashChecks } from "../lib/accountCash";
 import { sanitizeAccountGuideMap, type AccountGuideMap } from "../lib/guideAccountScope";
 import { overseasPctOfMix, readInvestPlan, type MixEntry } from "./userPlan";
 import {
@@ -35,6 +36,8 @@ export type GuideFile = {
   accounts?: AccountGuideMap;
   /** 분배금만큼 은행에서 증권 계좌로 넣은 돈(달마다 한 계좌) — 예수금에 더한 몫을 되돌릴 수 있게 남긴다 */
   cashDeposits?: CashDeposit[];
+  /** 계좌별로 실제 잔액을 마지막으로 적은 값·날짜(src/lib/accountCash.ts) — 그 뒤 자동 반영된 몫을 보여 준다 */
+  cashChecks?: CashChecks;
 };
 
 const pathOf = (chatId: string | number) => `${DIR}/${chatId}.json`;
@@ -44,7 +47,7 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
   const { data, error } = await supabase.storage.from(BUCKET).download(pathOf(chatId), { cacheNonce: String(Date.now()) });
   if (error || !data) return null;
   try {
-    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown; adherenceExcluded?: unknown; accounts?: unknown; cashDeposits?: unknown };
+    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown; adherenceExcluded?: unknown; accounts?: unknown; cashDeposits?: unknown; cashChecks?: unknown };
     if (!parsed.settings) return null;
     const settings = sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS);
     return {
@@ -54,6 +57,7 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
       receipts: sanitizeReceipts(parsed.receipts),
       adherenceExcluded: Array.isArray(parsed.adherenceExcluded) ? parsed.adherenceExcluded.map(String).slice(-500) : [],
       cashDeposits: sanitizeCashDeposits(parsed.cashDeposits),
+      cashChecks: sanitizeCashChecks(parsed.cashChecks),
     };
   } catch {
     return null;
