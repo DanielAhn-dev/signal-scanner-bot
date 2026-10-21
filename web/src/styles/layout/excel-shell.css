@@ -870,6 +870,18 @@
   word-break: keep-all;
 }
 
+/* 리본은 이 분류의 나머지 화면만 보여 준다 — 매일 쓰는 화면이 어디 있는지 알려 주는 안내 */
+.excel-ribbon-hint {
+  align-self: center;
+  flex: 0 0 auto;
+  max-width: 11em;
+  padding: 0 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  word-break: keep-all;
+}
+
 .ribbon-btn--dummy {
   color: var(--color-text-secondary);
 }

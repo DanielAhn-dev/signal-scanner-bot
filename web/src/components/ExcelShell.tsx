@@ -354,6 +354,11 @@ export default function ExcelShell({
   const pageLabel   = activeMenu?.label ?? activeRoute ?? ''
   // 이름 상자: 영문 경로를 6자로 자르면 'DASHBO'처럼 보여 화면 이름(한글)으로, 길면 CSS 말줄임
   const nameBox     = pageLabel || 'A1'
+  // 수식줄 오른쪽: 지금 화면이 어느 분류에 속하는지("적립 › 모아가기"). 분류를 못 찾으면(시트 탭 전용 화면 등) 화면 이름만
+  const pagePath    = (() => {
+    const owner = ADMIN_SECTIONS.find(sec => sec.groups.some(g => g.items.some(i => i.key === activeRoute)))
+    return owner && pageLabel ? `${owner.label} › ${pageLabel}` : pageLabel
+  })()
   const groups      = getRibbonGroups(ribbonTab === 'file' || ribbonTabs.some(t => t.key === ribbonTab) ? ribbonTab : 'home', sections)
   const workbookTitle = useMemo(() => {
     const now = new Date()
@@ -882,6 +887,9 @@ export default function ExcelShell({
                 <div className="excel-ribbon-group__label">{g.label}</div>
               </div>
             ))}
+            {ribbonTab !== 'file' && ribbonTab !== 'control' && (
+              <div className="excel-ribbon-hint">매일 쓰는 화면은 아래 시트 탭에서 엽니다</div>
+            )}
           </div>
 
         </div>
@@ -899,7 +907,7 @@ export default function ExcelShell({
         <input
           className="excel-formula-bar__input"
           readOnly
-          value="=MARKETBRIEF(AUTO)"
+          value={pagePath}
           placeholder="페이지를 선택하세요"
         />
       </div>

@@ -66,14 +66,14 @@ export type MenuSection = {
 export const MENU_SECTIONS: MenuSection[] = [
   {
     key: 'home',
-    label: '홈',
+    label: '오늘',
     groups: [
       { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'briefing', label: '오늘 시장', keywords: ['테마', '브리핑', '뜨는 테마', '보유 테마'] }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }] },
     ],
   },
   {
     key: 'money',
-    label: '모으기',
+    label: '적립',
     groups: [
       { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'budget', label: '예산 설정' }, { key: 'money-flow', label: '지출 기록' }, { key: 'seed-builder', label: '이번 달 투자금', keywords: ['시드', '남겨둘 돈', '확보'] }, { key: 'follow', label: '따라 사기' }] },
     ],
