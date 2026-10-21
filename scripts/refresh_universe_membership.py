@@ -465,15 +465,53 @@ def fetch_held_position_codes(supabase: Client) -> set[str]:
     return codes
 
 
+def known_close(close_price) -> Optional[int]:
+    """종가가 양수일 때만 값, 아니면 None(모름).
+
+    pykrx가 막혀 DB 폴백을 쓰면 frame의 종가는 stocks.close를 그대로 읽은 것이라, 비어 있던 값이
+    `int(close or 0)`으로 0이 되어 다시 저장됐다. 그 0이 평가액 0(−100%)으로 쓰였다
+    (2026-10-21 활성 1,386행 close=0, 보유 ETF 6종 포함).
+    """
+    try:
+        v = int(float(close_price))
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
+def build_stock_upsert_row(base: dict, close_price) -> dict:
+    """stocks upsert 행. 종가를 모르면 close 키를 빼서 기존 값을 덮지 않는다."""
+    row = dict(base)
+    close = known_close(close_price)
+    if close is None:
+        row.pop("close", None)
+    else:
+        row["close"] = close
+    return row
+
+
+def group_rows_by_keys(rows: List[dict]) -> List[List[dict]]:
+    """키 구성이 같은 행끼리 묶는다. 한 upsert 묶음에 키가 다른 행이 섞이면 빠진 열이 NULL로 덮인다."""
+    groups: Dict[Tuple[str, ...], List[dict]] = {}
+    for row in rows:
+        groups.setdefault(tuple(sorted(row.keys())), []).append(row)
+    return list(groups.values())
+
+
 def apply_upserts(supabase: Client, rows: List[dict]) -> int:
     if not rows:
         return 0
     upserted = 0
+    cleaned = [{key: value for key, value in row.items() if key != "shares_outstanding"} for row in rows]
+    for group in group_rows_by_keys(cleaned):
+        upserted += _apply_upsert_group(supabase, group)
+    return upserted
+
+
+def _apply_upsert_group(supabase: Client, rows: List[dict]) -> int:
+    upserted = 0
     for i in range(0, len(rows), 300):
-        batch = [
-            {key: value for key, value in row.items() if key != "shares_outstanding"}
-            for row in rows[i : i + 300]
-        ]
+        batch = rows[i : i + 300]
         try:
             supabase.table("stocks").upsert(batch).execute()
             upserted += len(batch)
@@ -569,7 +607,7 @@ def apply_membership_snapshot(supabase: Client, trade_date: str, rows: List[dict
                 "market": row.get("market"),
                 "mcap_rank": row.get("mcap_rank"),
                 "market_cap": row.get("market_cap"),
-                "close": row.get("close"),
+                "close": known_close(row.get("close")),
                 "liquidity": row.get("liquidity"),
                 "universe_level": row.get("universe_level", "tail"),
                 "is_active": bool(row.get("is_active", True)),
@@ -747,19 +785,21 @@ def main() -> int:
                 reactivated_or_new += 1
 
             upserts.append(
-                {
-                    "code": code,
-                    "name": name,
-                    "market": market,
-                    "market_cap": mcap,
-                    "mcap_rank": rank,
-                    "close": close_price,
-                    "liquidity": liquidity,
-                    "shares_outstanding": int(row.get("상장주식수") or 0) or None,
-                    "universe_level": universe_level,
-                    "is_active": True,
-                    "updated_at": datetime.now().astimezone().isoformat(),
-                }
+                build_stock_upsert_row(
+                    {
+                        "code": code,
+                        "name": name,
+                        "market": market,
+                        "market_cap": mcap,
+                        "mcap_rank": rank,
+                        "liquidity": liquidity,
+                        "shares_outstanding": int(row.get("상장주식수") or 0) or None,
+                        "universe_level": universe_level,
+                        "is_active": True,
+                        "updated_at": datetime.now().astimezone().isoformat(),
+                    },
+                    close_price,
+                )
             )
 
         missing_active_codes: List[str] = []

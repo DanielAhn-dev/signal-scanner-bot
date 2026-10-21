@@ -169,7 +169,8 @@ def _sync_stocks_indicators(supabase: Client, trading_date: str):
             updates = []
             for row in (ind_res.data or []):
                 code = row["code"]
-                if code not in valid_stocks:
+                # 종가가 0 이하면 건너뛴다 — stocks.close를 0으로 덮으면 평가액 0(−100%)으로 쓰였다
+                if code not in valid_stocks or safe_int(row.get("close")) <= 0:
                     continue
                 updates.append({
                     "code": code,

@@ -216,7 +216,7 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
         else:
             print(f"   Freshness check passed: lag {freshness_gap} days")
 
-    _update_stocks_close(supabase, trading_date)
+    update_stocks_close(supabase, trading_date)
     return success > 0
 
 
@@ -239,8 +239,20 @@ def _flush_stock_daily(supabase: Client, rows: list):
         print(f"     [WARN] stock_daily sub-batch upsert failures: {sub_batch_fail}")
 
 
-def _update_stocks_close(supabase: Client, trading_date: str):
-    """Sync latest close price to stocks table."""
+def build_close_updates(daily_rows: list, valid_stocks: dict, now_iso: str) -> list:
+    """stock_daily 행 → stocks 종가 갱신 행. 종가가 0 이하인 행은 빼서 기존 종가를 0으로 덮지 않는다."""
+    out = []
+    for r in daily_rows:
+        code = r.get("ticker")
+        close = safe_int(r.get("close"))
+        if code not in valid_stocks or close <= 0:
+            continue
+        out.append({"code": code, "name": valid_stocks[code], "close": close, "updated_at": now_iso})
+    return out
+
+
+def update_stocks_close(supabase: Client, trading_date: str):
+    """기준일 stock_daily 종가를 stocks에 반영한다. OHLCV 단계를 건너뛴 날(자동 백필이 채움)에도 부른다."""
     trading_iso = to_iso(trading_date)
     print("  -> syncing latest close into stocks...")
     try:
@@ -263,12 +275,7 @@ def _update_stocks_close(supabase: Client, trading_date: str):
                 .in_("code", tickers[i:i + 500]).execute()
             valid_stocks.update({r["code"]: r["name"] for r in (chunk_res.data or [])})
 
-        updates = [{
-            "code": r["ticker"],
-            "name": valid_stocks[r["ticker"]],
-            "close": safe_int(r["close"]),
-            "updated_at": datetime.now().astimezone().isoformat(),
-        } for r in daily_rows if r["ticker"] in valid_stocks]
+        updates = build_close_updates(daily_rows, valid_stocks, datetime.now().astimezone().isoformat())
 
         for i in range(0, len(updates), 200):
             supabase.table("stocks").upsert(updates[i:i+200]).execute()

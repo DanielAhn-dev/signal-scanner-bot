@@ -40,7 +40,7 @@ from batch_modules.utils import load_env_file, get_last_trading_date
 from batch_modules.holiday_guard import should_skip_holiday_rerun
 from batch_modules import truncation_guard
 from batch_modules.backfill import auto_backfill_missing_dates, heal_indicator_gaps
-from batch_modules.ohlcv import fetch_ohlcv_per_ticker
+from batch_modules.ohlcv import fetch_ohlcv_per_ticker, update_stocks_close
 from batch_modules.indicators import calculate_indicators
 from batch_modules.investor import fetch_investor_data
 from batch_modules.credit_short import fetch_credit_short_data
@@ -310,6 +310,8 @@ def main():
             print("\n[1/7] OHLCV collection skipped (auto-backfill covered trading date)")
         else:
             print("\n[1/7] OHLCV collection skipped (--skip-ohlcv flag)")
+        # 백필 스크립트는 stocks.close를 갱신하지 않는다 — 건너뛴 날은 그날 종가가 stocks에 안 들어갔다(2026-10-20)
+        update_stocks_close(supabase, trading_date)
         market_ok = True
     else:
         print("\n[1/7] OHLCV collection starting...")
