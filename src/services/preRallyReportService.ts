@@ -50,7 +50,14 @@ function matchesHorizon(fileName: string, horizon: number): boolean {
 
 export function getLatestPreRallyReport(horizon: number): LoadedPreRallyReport | null {
   const tmpDir = join(process.cwd(), "tmp");
-  const files = readdirSync(tmpDir)
+  // 배포 함수에는 tmp/가 없다(로컬 analyze:pre-rally 결과물) — 폴더가 없으면 '리포트 없음'이지 500이 아니다
+  let names: string[];
+  try {
+    names = readdirSync(tmpDir);
+  } catch {
+    return null;
+  }
+  const files = names
     .filter((name) => /^pre_rally_.*\.json$/i.test(name))
     .filter((name) => matchesHorizon(name, horizon));
 
