@@ -4412,3 +4412,35 @@
   .excel-statusbar__zoom-pct,
   .excel-statusbar__item--clickable { min-width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; }
 }
+
+/* 모바일: 아이콘만 있는 탭·리본 버튼을 없앤다(작업 규칙 — 아이콘 아래 짧은 라벨).
+   위 블록들이 라벨을 display:none으로 숨겼던 것을 여기서 되살린다(파일 맨 끝이라 우선한다). */
+@media (max-width: 639px) {
+  .excel-sheet-tab {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 2px 0;
+    min-width: 52px;
+  }
+  .excel-sheet-tab__label {
+    display: block;
+    font-size: 10px;
+    line-height: 1.1;
+    word-break: keep-all;
+  }
+  .excel-sheet-tab svg { width: 15px; height: 15px; }
+  /* '전체 메뉴'의 열림 화살표는 세로로 쌓이면 넘친다 */
+  .excel-sheet-tab > svg:last-child:not(:first-child) { display: none; }
+
+  .excel-ribbon-body .ribbon-btn {
+    flex-direction: column;
+    gap: 1px;
+  }
+  .ribbon-btn__label {
+    display: block;
+    font-size: 10px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+}
