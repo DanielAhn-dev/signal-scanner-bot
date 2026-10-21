@@ -4414,9 +4414,9 @@
 
   /* 핀치 확대를 허용(maximum-scale 없음)하므로 16px 미만 입력칸은 iOS가 포커스 때 화면을 확대한다.
      어느 화면의 작은 글자 규칙보다 우선해야 해서 !important */
-  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([readonly]),
   select,
-  textarea { font-size: 16px !important; }
+  textarea:not([readonly]) { font-size: 16px !important; }
 }
 
 /* 모바일: 아이콘만 있는 탭·리본 버튼을 없앤다(작업 규칙 — 아이콘 아래 짧은 라벨).
