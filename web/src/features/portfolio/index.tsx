@@ -31,11 +31,28 @@ import { useAccountAliases } from './hooks/useAccountAliases'
 import { useMaintenance } from './hooks/useMaintenance'
 import { useShare } from './hooks/useShare'
 import { realHoldingTotals } from './lib/stockSizing'
+import { isHoldingGroupMode, type HoldingGroupMode } from './lib/holdingGroups'
+
+const GROUP_MODE_STORAGE = 'portfolio.groupMode'
+function readGroupMode(): HoldingGroupMode {
+  try {
+    const v = localStorage.getItem(GROUP_MODE_STORAGE)
+    return isHoldingGroupMode(v) ? v : 'account'
+  } catch {
+    return 'account'
+  }
+}
 
 export default function Portfolio() {
   const navigate = useNavigate()
   const isAdmin = useProfileStore((st) => st.isAdmin)
   const [performanceAccordionOpen, setPerformanceAccordionOpen] = useState(false)
+  // 실제 계좌 전체 탭의 묶어 보기(계좌별·종목별·한 줄씩) — 기기마다 기억
+  const [groupMode, setGroupModeState] = useState<HoldingGroupMode>(readGroupMode)
+  const setGroupMode = (m: HoldingGroupMode) => {
+    setGroupModeState(m)
+    try { localStorage.setItem(GROUP_MODE_STORAGE, m) } catch { /* 저장 못 해도 동작에는 영향 없음 */ }
+  }
 
   // 데이터·설정
   const {
@@ -62,7 +79,7 @@ export default function Portfolio() {
 
   // 파생값
   const {
-    holdingAll, accountSummary, virtualHoldingRows, sectors, evaluateHoldingState, getPerformanceGrade, rows, total, totalPages,
+    holdingAll, accountSummary, virtualHoldingRows, sectors, evaluateHoldingState, getPerformanceGrade, rows, sortedRows, total, totalPages,
     summaryRows, selectedAccountLabel, totalUnrealized, totalInvested, totalTradeCost, adjustedUnrealized, totalReturnPct,
     totalEvaluationValue, estimatedCash, totalAssetValue, tradeCostOpts, allocationRows, allocationChartStyle,
   } = usePortfolioView({
@@ -77,6 +94,10 @@ export default function Portfolio() {
       setSelectedAccountKey('virtual')
     }
   }, [loading, realCount, virtualHoldingRows.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 계좌가 둘 이상인 '내 계좌 전체' 탭에서만 묶어 본다(한 계좌 탭·가상 탭은 지금처럼 한 줄씩)
+  const groupable = selectedAccountKey === 'real' && accountFolders.length >= 2
+  const grouped = groupable && groupMode !== 'flat'
 
   // 담을 크기(C66)의 분모 — 선택한 탭과 상관없이 실계좌 전체(개별주 한도와 같은 기준)
   const realTotals = useMemo(() => realHoldingTotals(holdingAll), [holdingAll])
@@ -153,16 +174,19 @@ export default function Portfolio() {
       />
 
       <HoldingList
-        loading={loading} error={error} rows={rows}
+        loading={loading} error={error} rows={rows} allRows={sortedRows}
         evaluateHoldingState={evaluateHoldingState} getPerformanceGrade={getPerformanceGrade}
         accountSummary={accountSummary} addEntryMinScore={safeAddEntryMinScore}
         includeCost={includeCost} tradeCostOpts={tradeCostOpts}
         openTradeModal={openTradeModal} openMaintenanceModal={openMaintenanceModal}
         realTotals={realTotals}
         sortKey={sortKey} onSortChange={setSortKey} total={total}
+        groupable={groupable} groupMode={groupMode} onGroupModeChange={(m) => { setGroupMode(m); setPage(1) }}
+        accountFolders={accountFolders} aliases={aliases}
       />
 
-      {totalPages > 1 && (
+      {/* 묶어 보기는 쪽을 나누지 않는다(묶음을 접어 길이를 줄인다) */}
+      {!grouped && totalPages > 1 && (
         <div className="pagination-wrap">
           <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
         </div>

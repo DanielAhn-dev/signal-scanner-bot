@@ -2194,8 +2194,68 @@ textarea:not([class]):not([style*="border"]):focus {
 .portfolio-sort-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   word-break: keep-all;
+}
+
+/* 보기(계좌별·종목별·한 줄씩) + 정렬 — 좁은 화면에서는 두 줄 */
+.portfolio-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* 계좌별·종목별 묶음: 머리줄(이름·소계)을 누르면 접고 펼친다 */
+.portfolio-group {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-card);
+}
+.portfolio-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-muted);
+  word-break: keep-all;
+}
+.portfolio-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 4px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.portfolio-group-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.portfolio-group-name { font-weight: var(--font-weight-semibold); }
+.portfolio-group-sums {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-3);
+  font-variant-numeric: tabular-nums;
+}
+.portfolio-group-value { font-weight: var(--font-weight-semibold); white-space: nowrap; }
+.portfolio-group-pnl { white-space: nowrap; }
+.portfolio-group-split { padding: 0 var(--space-3) var(--space-2); background: var(--color-surface-muted); }
+.portfolio-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+@media (max-width: 639px) {
+  .portfolio-group-sums { width: 100%; padding-left: 22px; }
+  .portfolio-group-body { padding: var(--space-1); }
 }
 
 .portfolio-loading-card {

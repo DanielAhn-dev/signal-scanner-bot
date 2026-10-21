@@ -26,6 +26,10 @@ type HoldingCardProps = {
   openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => void
   /** 실계좌 보유 평가액 합 — 담을 크기(C66) 계산용 */
   realTotals: RealHoldingTotals
+  /** 계좌 표시 이름(별칭). 없으면 '증권사 / 계좌명' */
+  accountDisplay?: string | null
+  /** 계좌별 묶음 안에서는 묶음 머리에 계좌가 있으니 카드에서 뺀다 */
+  hideAccount?: boolean
 }
 
 export default function HoldingCard({
@@ -39,6 +43,8 @@ export default function HoldingCard({
   openTradeModal,
   openMaintenanceModal,
   realTotals,
+  accountDisplay,
+  hideAccount = false,
 }: HoldingCardProps) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -145,10 +151,10 @@ export default function HoldingCard({
       {/* ── 보유 정보: 수량 · 평균매수가 · 매수일 · 계좌 ── */}
       <div className="caption muted portfolio-position-meta">
         {r.quantity}주 · 평균가 {formatKrw(r.avg_price)}{open && r.buy_date ? ` · ${r.buy_date}` : ''}
-        {rowAccountKey !== '|||' && (
+        {rowAccountKey !== '|||' && !hideAccount && (
           <span className="portfolio-meta-account">
             <Building2 size={11} />
-            {accountLabel(r?.broker_name, r?.account_name)}
+            {accountDisplay || accountLabel(r?.broker_name, r?.account_name)}
           </span>
         )}
       </div>

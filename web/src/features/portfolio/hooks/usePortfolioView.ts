@@ -116,6 +116,7 @@ export function usePortfolioView(input: PortfolioViewInput) {
     evaluateHoldingState,
     getPerformanceGrade,
     rows,
+    sortedRows,
     total,
     totalPages,
     summaryRows,
