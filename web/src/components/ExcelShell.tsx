@@ -184,6 +184,8 @@ function clampZoom(value: number, min = ZOOM_MIN) {
 
 function readInitialZoom() {
   const ultraCompact = isUltraCompactViewport()
+  // 모바일은 상태줄 확대 버튼을 숨기고 브라우저 핀치 확대에 맡긴다 — 예전에 저장한 확대값이 남아 되돌릴 길이 없지 않게 항상 100
+  if (ultraCompact) return 100
   const minZoom = ultraCompact ? 100 : ZOOM_MIN
 
   const parseStoredZoom = (raw: string | null) => {
@@ -574,6 +576,7 @@ export default function ExcelShell({
   }, [recentMenuRoutes])
 
   useEffect(() => {
+    if (isUltraCompact || isUltraCompactViewport()) return
     window.localStorage.setItem(getZoomStorageKey(isUltraCompact), String(zoom))
     window.localStorage.setItem(ZOOM_STORAGE_KEY, String(zoom))
   }, [isUltraCompact, zoom])

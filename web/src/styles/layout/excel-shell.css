@@ -4450,3 +4450,9 @@
     white-space: nowrap;
   }
 }
+
+/* 모바일: 상태줄 확대·축소(−, 막대, +, 100%)는 숨기고 브라우저 핀치 확대에 맡긴다(ExcelShell은 모바일 확대를 100으로 고정) */
+@media (max-width: 639px) {
+  .excel-statusbar__zoom { display: none; }
+}
+
