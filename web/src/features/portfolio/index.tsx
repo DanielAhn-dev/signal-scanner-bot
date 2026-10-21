@@ -11,6 +11,7 @@ import HoldingList from './components/HoldingList'
 import MacroCard from './components/MacroCard'
 import PolicyCard from './components/PolicyCard'
 import AccountDirectionCard from './components/AccountDirectionCard'
+import AccountOverviewCard from './components/AccountOverviewCard'
 import { useProfileStore } from '../../stores/profileStore'
 import PerformanceCard from './components/PerformanceCard'
 import TradeModal from './components/modals/TradeModal'
@@ -156,6 +157,9 @@ export default function Portfolio() {
           <ErrorState message={error} onRetry={() => load({ force: true })} />
         </div>
       )}
+
+      {/* 실제 계좌 전체: 유형별로 한 번에 보고 내 계획과 다른 곳만 짚는다 */}
+      {selectedAccountKey === 'real' && realCount > 0 && <AccountOverviewCard rows={holdingAll} />}
 
       {/* 실제 계좌: 방향은 내 계획을 물려받고 계좌마다 고르는 건 사용 시점뿐 */}
       {selectedAccountKey !== 'virtual' && realCount > 0 && (

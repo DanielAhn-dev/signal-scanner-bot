@@ -5,7 +5,7 @@ import { holdingAccountKey, holdingValue, isVirtualPositionRow } from './account
 import type { HoldingRow } from '../types'
 
 /** 실계좌(계좌 이름이 있는 보유)인가 — 봇 가상 계좌는 담을 크기 안내 대상이 아니다 */
-function isRealRow(r: HoldingRow): boolean {
+export function isRealRow(r: HoldingRow): boolean {
   return !isVirtualPositionRow(r) && holdingAccountKey(r) !== '|||'
 }
 
