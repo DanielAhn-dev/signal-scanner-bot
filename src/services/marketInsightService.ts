@@ -951,7 +951,10 @@ async function getHoldingCountForPlan(
   const { data, error } = await supabase
     .from("virtual_positions")
     .select("buy_price, quantity")
-    .eq("chat_id", chatId);
+    .eq("chat_id", chatId)
+    // 후보 압축은 봇 계좌 슬롯 기준이라 실계좌 입력 행은 세지 않는다
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if (error) {
     throw new Error(`보유 수량 조회 실패: ${error.message}`);
