@@ -1,5 +1,6 @@
 import type { HoldingRow } from '../types'
-export type AllocationRow = { code: string; name: string; value: number; ratio: number }
+/** rest: '그 외 N종목' 줄에 묶인 종목들(더보기로 펼친다) */
+export type AllocationRow = { code: string; name: string; value: number; ratio: number; rest?: AllocationRow[] }
 
 export const ALLOCATION_COLORS = [
   '#2f7ae5',
@@ -59,7 +60,9 @@ export function buildAllocationRows(rows: HoldingRow[], estimatedCash: number): 
   const sum = items.reduce((acc, row) => acc + row.value, 0)
   if (sum <= 0) return []
 
-  return items.map((row) => ({ ...row, ratio: (row.value / sum) * 100 }))
+  const withRatio = (row: { code: string; name: string; value: number }) => ({ ...row, ratio: (row.value / sum) * 100 })
+  const restRows = sorted.length > ALLOCATION_TOP + 1 ? sorted.slice(ALLOCATION_TOP).map(withRatio) : []
+  return items.map((row) => (row.code === ALLOCATION_OTHER_CODE ? { ...withRatio(row), rest: restRows } : withRatio(row)))
 }
 
 export function buildDonutGradient(rows: AllocationRow[]): string {

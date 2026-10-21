@@ -2060,7 +2060,9 @@ textarea:not([class]):not([style*="border"]):focus {
 }
 
 .portfolio-allocation-chart-wrap {
-  position: relative;
+  /* 목록을 펼쳐 내려도 도넛이 따라온다(sticky도 위치 지정이라 가운데 글자의 기준이 된다) */
+  position: sticky;
+  top: var(--space-3);
   width: min(280px, 100%);
   aspect-ratio: 1 / 1;
   margin: 0 auto;
@@ -2914,6 +2916,12 @@ textarea:not([class]):not([style*="border"]):focus {
 
   .portfolio-allocation-wrap {
     grid-template-columns: 1fr;
+  }
+
+  /* 한 줄로 쌓이면 스티키 도넛이 목록을 가린다 */
+  .portfolio-allocation-chart-wrap {
+    position: relative;
+    top: auto;
   }
 
   .portfolio-capture-metrics {

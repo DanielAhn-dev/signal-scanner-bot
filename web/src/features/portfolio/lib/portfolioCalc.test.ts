@@ -130,6 +130,7 @@ describe('buildAllocationRows / buildDonutGradient', () => {
     const out = buildAllocationRows(many(20), 0)
     expect(out).toHaveLength(13)
     expect(out[12]).toMatchObject({ code: 'OTHER', name: '그 외 8종목' })
+    expect(out[12].rest?.map((r) => r.code)).toEqual(['C12', 'C13', 'C14', 'C15', 'C16', 'C17', 'C18', 'C19'])
     expect(out.reduce((a, r) => a + r.ratio, 0)).toBeCloseTo(100, 8)
     expect(buildAllocationRows(many(13), 0).map((r) => r.code)).not.toContain('OTHER')
   })

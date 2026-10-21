@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { formatKrwCompact, formatNumber } from '../../../lib/format'
 import type { AccountFolder } from '../types'
 import { accountLabel } from '../lib/accountKey'
@@ -39,6 +40,10 @@ export default function AssetOverviewCard({
 }: AssetOverviewCardProps) {
   // 시드·현금은 실험(가상) 계좌에만 있다 — 실제 계좌 탭에는 보유 평가금과 비중만
   const isVirtual = selectedAccountKey === 'virtual'
+  const [showRest, setShowRest] = useState(false)
+  const other = allocationRows.find((r) => r.code === ALLOCATION_OTHER_CODE)
+  // 목록만 펼친다 — 도넛은 '그 외'로 묶인 그대로(색이 수십 개로 쪼개지면 읽을 수 없다)
+  const listRows = showRest && other?.rest ? [...allocationRows.filter((r) => r !== other), ...other.rest] : allocationRows
   return (
     <div className="card mb-4 portfolio-asset-overview-card">
       <div className="portfolio-asset-overview-head">
@@ -92,7 +97,8 @@ export default function AssetOverviewCard({
               <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
               <div className="portfolio-allocation-chart-center">
                 <div className="portfolio-allocation-center-label">{isVirtual ? '총 자산' : '보유 평가금'}</div>
-                <div className="portfolio-allocation-center-value">{formatKrwCompact(totalAssetValue)}</div>
+                {/* 실제 계좌는 시드가 없어 totalAssetValue(평가금 + 추정 현금 = 평가금 − 매수금)가 음수로 나왔다 */}
+                <div className="portfolio-allocation-center-value">{formatKrwCompact(isVirtual ? totalAssetValue : totalEvaluationValue)}</div>
               </div>
             </div>
 
@@ -100,17 +106,18 @@ export default function AssetOverviewCard({
               {allocationRows.length === 0 ? (
                 <div className="caption muted">비중을 계산할 데이터가 없습니다.</div>
               ) : (
-                allocationRows.map((row, idx) => (
+                listRows.map((row, idx) => (
                   <button
                     type="button"
                     key={`${row.code}-${idx}`}
                     className="portfolio-allocation-item"
-                    disabled={row.code === 'CASH' || row.code === ALLOCATION_OTHER_CODE}
-                    onClick={() => scrollToHolding(row.code)}
+                    disabled={row.code === 'CASH'}
+                    aria-expanded={row.code === ALLOCATION_OTHER_CODE ? false : undefined}
+                    onClick={() => (row.code === ALLOCATION_OTHER_CODE ? setShowRest(true) : scrollToHolding(row.code))}
                   >
                     <div className="portfolio-allocation-item-name">
                       <span className="portfolio-allocation-dot" style={{ background: ALLOCATION_COLORS[idx % ALLOCATION_COLORS.length] }} />
-                      <span>{row.name}</span>
+                      <span>{row.name}{row.code === ALLOCATION_OTHER_CODE ? ' · 더보기' : ''}</span>
                     </div>
                     <div className="portfolio-allocation-item-values">
                       <span>{formatNumber(row.ratio, 1)}%</span>
@@ -118,6 +125,11 @@ export default function AssetOverviewCard({
                     </div>
                   </button>
                 ))
+              )}
+              {showRest && other && (
+                <button type="button" className="portfolio-allocation-item" aria-expanded onClick={() => setShowRest(false)}>
+                  <div className="portfolio-allocation-item-name"><span>접기 (상위 {allocationRows.length - 1}개만 보기)</span></div>
+                </button>
               )}
             </div>
           </div>
