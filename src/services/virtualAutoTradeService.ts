@@ -215,8 +215,10 @@ type ApiBudget = {
   usageByScope: Record<ApiBudgetScope, number>;
 };
 
+// 매수·매도가 없는 회차의 "따라 할 주문 없음" 알림은 기본으로 보내지 않는다(할 일 없는 알림은 소음).
+// 필요하면 AUTO_TRADE_CYCLE_STATUS_NOTIFY=true로 다시 켠다.
 const AUTO_TRADE_CYCLE_STATUS_NOTIFY =
-  String(process.env.AUTO_TRADE_CYCLE_STATUS_NOTIFY ?? "true").toLowerCase() !== "false";
+  String(process.env.AUTO_TRADE_CYCLE_STATUS_NOTIFY ?? "false").toLowerCase() === "true";
 
 type SignalTrustThresholds = {
   variant: "A" | "B" | "CUSTOM";
