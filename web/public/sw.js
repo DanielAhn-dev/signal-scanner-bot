@@ -8,7 +8,7 @@
 //  - 그 외(Supabase 등 외부 도메인, 비-GET)에는 일절 개입하지 않는다.
 //
 // CACHE_NAME을 올리면 activate에서 이전 캐시를 통째로 지운다(자산 재다운로드 1회).
-const CACHE_NAME = 'nexora-v2';
+const CACHE_NAME = 'nexora-v3';
 const MAX_ASSET_ENTRIES = 160;
 
 const OFFLINE_HTML = `
@@ -69,7 +69,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    ).then(() => self.clients.claim())
+    ).catch(() => {}).then(() => self.clients.claim())
   );
 });
 
@@ -90,22 +90,29 @@ async function trimAssetCache(cache) {
   }
 }
 
-async function cacheFirst(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
-  if (cached) return cached;
-  const response = await fetch(request);
-  if (response && response.ok) {
-    await safePut(cache, request, response.clone());
-    await trimAssetCache(cache).catch(() => {});
+// 캐시는 덤이다. CacheStorage가 고장 나도(open 'Unexpected internal error', put 'Entry already exists',
+// 비공개 창·저장 공간 부족 등) 페이지는 네트워크로 열려야 한다. 예전엔 put 실패가 네트워크 실패처럼 처리돼
+// 200을 받고도 오프라인 페이지(503)를, open 실패는 응답 자체를 실패(ERR_FAILED)시켜 서비스워커가 설치된 뒤
+// 재방문·로그인 복귀(?code=)가 전부 막혔다(2026-10-21).
+async function openCache() {
+  try {
+    return await caches.open(CACHE_NAME);
+  } catch (err) {
+    return null;
   }
-  return response;
 }
 
-// 캐시 저장은 덤이다. 실패해도(Chromium 'Entry already exists' 등) 받은 응답은 그대로 돌려준다.
-// 예전엔 put 실패가 네트워크 실패와 같은 catch로 빠져, 200을 받고도 오프라인 페이지(503)를 띄웠다
-// — 서비스워커가 설치된 뒤 재방문·로그인 복귀(?code=)가 전부 막혔다(2026-10-21).
+async function safeMatch(cache, request) {
+  if (!cache) return undefined;
+  try {
+    return await cache.match(request);
+  } catch (err) {
+    return undefined;
+  }
+}
+
 async function safePut(cache, request, response) {
+  if (!cache) return;
   try {
     await cache.put(request, response);
   } catch (err) {
@@ -113,9 +120,21 @@ async function safePut(cache, request, response) {
   }
 }
 
+async function cacheFirst(request) {
+  const cache = await openCache();
+  const cached = await safeMatch(cache, request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (cache && response && response.ok) {
+    await safePut(cache, request, response.clone());
+    await trimAssetCache(cache).catch(() => {});
+  }
+  return response;
+}
+
 async function staleWhileRevalidate(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
+  const cache = await openCache();
+  const cached = await safeMatch(cache, request);
   const network = fetch(request)
     .then((response) => {
       if (response && response.ok) safePut(cache, request, response.clone());
@@ -126,24 +145,22 @@ async function staleWhileRevalidate(request) {
 }
 
 async function networkFirstDocument(request) {
-  const cache = await caches.open(CACHE_NAME);
-  let response;
+  let response = null;
   try {
     response = await fetch(request);
   } catch (err) {
     response = null;
   }
+  const cache = await openCache();
   if (response) {
     if (response.ok) await safePut(cache, request, response.clone());
     return response;
   }
-  {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    const entryCached = await cache.match(new Request(new URL('/', self.location.origin).href));
-    if (entryCached) return entryCached;
-    return offlineResponse();
-  }
+  const cached = await safeMatch(cache, request);
+  if (cached) return cached;
+  const entryCached = await safeMatch(cache, new Request(new URL('/', self.location.origin).href));
+  if (entryCached) return entryCached;
+  return offlineResponse();
 }
 
 self.addEventListener('fetch', (event) => {
