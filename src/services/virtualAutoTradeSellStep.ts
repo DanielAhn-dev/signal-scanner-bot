@@ -475,14 +475,18 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
       linkedTradeId: tradeId ?? undefined,
     }).catch((err: unknown) => console.error("[autoTrade] decision log SELL failed", err));
 
+    // 매수 메모처럼 "이름(코드)" — 코드만 보내면 무슨 종목인지 알 수 없다
+    const stockLabel = product.name && product.name !== payload.holding.code
+      ? `${product.name}(${payload.holding.code})`
+      : payload.holding.code;
     return {
       sold: true,
       partial: !isFullExit,
       proceeds: net,
       realizedPnlDelta: pnl,
       note: isFullExit
-        ? `[실행 매도] ${payload.holding.code} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`
-        : `[실행 ${partialSellNoteTag(payload.reason)}] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`,
+        ? `[실행 매도] ${stockLabel} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`
+        : `[실행 ${partialSellNoteTag(payload.reason)}] ${stockLabel} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`,
     };
   }
 

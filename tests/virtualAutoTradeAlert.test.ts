@@ -28,8 +28,20 @@ test("extractExecutionTargets: 매수와 매도 메모에서 중복 없이 종�
   ]);
 
   assert.deepEqual(targets, [
-    { code: "005930", label: "005930 분석" },
+    { code: "005930", label: "Alpha 분석" },
     { code: "000660", label: "000660 분석" },
+  ]);
+});
+
+test("extractExecutionTargets: 매도 메모도 이름(코드)면 이름으로 버튼을 단다", () => {
+  const targets = extractExecutionTargets([
+    "[실행 매도] S-Oil(010950) 2주 · 전략 스윙 · 매도가 144,655원",
+    "[실행 부분손절] 삼성SDI(006400) 2주 · 잔여 1주 · 전략 스윙 · 매도가 527,972원",
+  ]);
+
+  assert.deepEqual(targets, [
+    { code: "010950", label: "S-Oil 분석" },
+    { code: "006400", label: "삼성SDI 분석" },
   ]);
 });
 

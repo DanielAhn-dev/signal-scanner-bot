@@ -5,7 +5,9 @@ import {
 } from "../bot/messages/layout";
 import type { InlineButton } from "../telegram/keyboards";
 
-const EXECUTION_NOTE_PATTERN = /\[(?:실행 매수|실행 추가매수)\]\s+[^()]+\(([0-9A-Z]+)\)|\[(?:실행 매도|실행 부분(?:익절|손절|매도))\]\s+([0-9A-Z]+)/;
+// 매수·매도 모두 "이름(코드)"이고, 예전 매도 메모는 코드만 있었다
+const EXECUTION_NOTE_PATTERN =
+  /^\[(?:실행 매수|실행 추가매수|실행 매도|실행 부분(?:익절|손절|매도))\]\s+(?:([^()]+?)\(([0-9A-Z]+)\)|([0-9A-Z]+)\s)/;
 
 export function pickExecutionLines(notes: string[]): string[] {
   return notes
@@ -19,12 +21,13 @@ export function extractExecutionTargets(notes: string[]): RecommendationActionTa
 
   for (const note of pickExecutionLines(notes)) {
     const matched = note.match(EXECUTION_NOTE_PATTERN);
-    const code = String(matched?.[1] ?? matched?.[2] ?? "").trim();
+    const code = String(matched?.[2] ?? matched?.[3] ?? "").trim();
     if (!code || seen.has(code)) continue;
     seen.add(code);
+    const name = String(matched?.[1] ?? "").trim();
     targets.push({
       code,
-      label: `${code} 분석`,
+      label: `${name || code} 분석`,
     });
   }
 
