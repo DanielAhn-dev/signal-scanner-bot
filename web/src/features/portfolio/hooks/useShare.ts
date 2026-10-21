@@ -4,7 +4,8 @@ import { useToast } from '../../../components/ToastProvider'
 import type { PortfolioShareHistoryItem } from '../types'
 import { pickLatestActiveShare } from '../lib/share'
 
-export function useShare() {
+/** scope: 공유할 계좌 — 실제 계좌와 가상(실험) 계좌는 한 장에 섞지 않는다 */
+export function useShare(scope: 'real' | 'virtual' = 'real') {
   const toast = useToast()
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [sharedSummaryUrl, setSharedSummaryUrl] = useState('')
@@ -39,7 +40,7 @@ export function useShare() {
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 12_000,
-        body: JSON.stringify({ ttlHours: shareTtlHours }),
+        body: JSON.stringify({ ttlHours: shareTtlHours, scope }),
       })
       const url = String(json?.url || '')
       if (!url) throw new Error('공유 URL 생성에 실패했습니다')
@@ -57,7 +58,7 @@ export function useShare() {
     } finally {
       setShareCreating(false)
     }
-  }, [shareCreating, shareTtlHours, toast])
+  }, [shareCreating, shareTtlHours, scope, toast])
 
   const loadShareHistory = useCallback(async (opts?: { silent?: boolean }) => {
     setShareHistoryLoading(true)

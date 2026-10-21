@@ -118,7 +118,7 @@ export default function Portfolio() {
   // 모달
   const trade = useTradeModal({ load })
   const maint = useMaintenance({ load, accountFolders })
-  const share = useShare()
+  const share = useShare(selectedAccountKey === 'virtual' ? 'virtual' : 'real')
   const { openTradeModal } = trade
   // 계좌 탭을 보고 있으면 보유 추가가 그 계좌로 바로 열린다(전체·가상 탭이면 계좌부터 고른다)
   const openMaintenanceModal: typeof maint.openMaintenanceModal = (mode, row, opts) =>

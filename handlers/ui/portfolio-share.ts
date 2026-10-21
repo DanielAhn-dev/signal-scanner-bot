@@ -166,11 +166,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, shareId })
     }
 
-    const { data, error } = await supabase
+    // 실제 계좌와 가상(실험) 계좌는 섞지 않는다 — 보고 있던 탭의 계좌만 공유한다(기본: 실제)
+    const scope = String(req.body?.scope || req.query.scope || 'real') === 'virtual' ? 'virtual' : 'real'
+    let positionsQuery = supabase
       .from('virtual_positions')
       .select('code,buy_price,buy_date,quantity,target_horizon,planned_review_at,stock:stocks(name,close)')
       .eq('chat_id', chatId)
       .gt('quantity', 0)
+    positionsQuery = scope === 'virtual'
+      ? positionsQuery.is('broker_name', null).is('account_name', null)
+      : positionsQuery.or('broker_name.not.is.null,account_name.not.is.null')
+    const { data, error } = await positionsQuery
       .order('updated_at', { ascending: false })
       .limit(200)
 
