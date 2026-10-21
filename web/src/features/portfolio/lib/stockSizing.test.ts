@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SIZING_REFERENCE_VOL_RATIO } from '../../../../../src/lib/positionSizing'
-import { holdingSizing, realHoldingTotal } from './stockSizing'
+import { holdingSizing, realHoldingTotal, realHoldingTotals } from './stockSizing'
 import type { HoldingRow } from '../types'
 
 const real = (patch: Partial<HoldingRow>): HoldingRow => ({
@@ -22,13 +22,28 @@ describe('realHoldingTotal', () => {
 
 describe('holdingSizing', () => {
   it('보통 흔들림이면 총액×10%÷5, 추가 금액은 총액과 보유에 함께 더한다', () => {
-    const s = holdingSizing(real({}), 49_000_000, 1_000_000)!
+    const s = holdingSizing(real({}), { total: 49_000_000, byCode: {} }, 1_000_000)!
     expect(s.maxAmount).toBe(1_000_000)
     expect(s.overAmount).toBe(1_000_000)
   })
   it('ETF·가상 계좌·자료 없음은 null', () => {
-    expect(holdingSizing(real({ code: '069500', stock_name: 'KODEX 200' }), 1e7)).toBeNull()
-    expect(holdingSizing(real({ broker_name: null, account_name: null }), 1e7)).toBeNull()
-    expect(holdingSizing(real({ sizing_vol_ratio: null }), 1e7)).toBeNull()
+    const t = { total: 1e7, byCode: {} }
+    expect(holdingSizing(real({ code: '069500', stock_name: 'KODEX 200' }), t)).toBeNull()
+    expect(holdingSizing(real({ broker_name: null, account_name: null }), t)).toBeNull()
+    expect(holdingSizing(real({ sizing_vol_ratio: null }), t)).toBeNull()
+  })
+  it('같은 종목을 여러 계좌에 나눠 담으면 합계로 판정한다', () => {
+    // 총 5,000만 → 보통 흔들림 최대 100만. 계좌마다 80만씩이면 각각은 한도 안이지만 합계 160만은 60만 초과
+    const rows = [
+      real({ quantity: 8 }),
+      real({ broker_name: '토스', quantity: 8 }),
+      real({ code: '069500', stock_name: 'KODEX 200', quantity: 1210, stock: { close: 40_000 } }),
+    ]
+    const totals = realHoldingTotals(rows)
+    expect(totals.total).toBe(50_000_000)
+    expect(totals.byCode['006400']).toEqual({ value: 1_600_000, accounts: 2 })
+    const s = holdingSizing(rows[0], totals)!
+    expect(s.accounts).toBe(2)
+    expect(s.overAmount).toBe(600_000)
   })
 })

@@ -7,6 +7,7 @@ import type { HoldingStateKind } from '../lib/holdingState'
 import HoldingCard from './HoldingCard'
 import { HOLDING_SORT_OPTIONS, type HoldingSortKey } from '../lib/holdingSort'
 import type { HoldingRow } from '../types'
+import type { RealHoldingTotals } from '../lib/stockSizing'
 
 type HoldingListProps = {
   loading: boolean
@@ -20,7 +21,7 @@ type HoldingListProps = {
   tradeCostOpts: TradeCostOptions
   openTradeModal: (row: HoldingRow, side: 'buy' | 'sell') => void
   openMaintenanceModal: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: HoldingRow) => void
-  realTotalValue: number
+  realTotals: RealHoldingTotals
   sortKey: HoldingSortKey
   onSortChange: (key: HoldingSortKey) => void
   /** 필터 후 전체 종목 수 — 2개 이상일 때만 정렬 버튼을 보인다 */
@@ -39,7 +40,7 @@ export default function HoldingList({
   tradeCostOpts,
   openTradeModal,
   openMaintenanceModal,
-  realTotalValue,
+  realTotals,
   sortKey,
   onSortChange,
   total,
@@ -89,7 +90,7 @@ export default function HoldingList({
           tradeCostOpts={tradeCostOpts}
           openTradeModal={openTradeModal}
           openMaintenanceModal={openMaintenanceModal}
-          realTotalValue={realTotalValue}
+          realTotals={realTotals}
         />
       ))}
     </div>

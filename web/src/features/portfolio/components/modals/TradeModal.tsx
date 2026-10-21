@@ -6,12 +6,12 @@ import Modal from '../../../../components/Modal'
 import { getTodayLocalYmd, shiftYmd, toKstYmd } from '../../lib/dates'
 import type { TradeModalState } from '../../hooks/useTradeModal'
 import { SIZING_EVIDENCE, SIZING_MAX_MULTIPLE } from '../../../../../../src/lib/positionSizing'
-import { holdingSizing, SIZING_LEVEL_LABEL } from '../../lib/stockSizing'
+import { holdingSizing, SIZING_LEVEL_LABEL, type RealHoldingTotals } from '../../lib/stockSizing'
 import { dropPlanLines, sanitizeDropPlan, shouldRemindOnSell, type DropPlan } from '../../../../lib/dropPlan'
 import { useUserState } from '../../../../lib/userState'
 
-/** realTotalValue: 실계좌 보유 평가액 합(개별주 한도와 같은 분모) — 담을 크기 계산용 */
-export default function TradeModal({ trade, realTotalValue }: { trade: TradeModalState; realTotalValue: number }) {
+/** realTotals: 실계좌 보유 평가액 합(개별주 한도와 같은 분모)·종목별 합계 — 담을 크기 계산용 */
+export default function TradeModal({ trade, realTotals }: { trade: TradeModalState; realTotals: RealHoldingTotals }) {
   const {
     modalOpen,
     modalSide,
@@ -123,7 +123,7 @@ export default function TradeModal({ trade, realTotalValue }: { trade: TradeModa
           {modalSide === 'buy' && (() => {
             const addPrice = tradePrice !== '' ? Number(tradePrice) : Number(modalRow.stock?.close ?? modalRow.avg_price ?? 0)
             const addValue = Math.max(0, Number(tradeQty) || 0) * addPrice
-            const s = holdingSizing(modalRow, realTotalValue, addValue)
+            const s = holdingSizing(modalRow, realTotals, addValue)
             if (!s) return null
             const ev = SIZING_EVIDENCE
             return (
@@ -133,7 +133,7 @@ export default function TradeModal({ trade, realTotalValue }: { trade: TradeModa
                   최근 60일 흔들림: 지수의 {formatNumber(s.volRatio, 1)}배 ({SIZING_LEVEL_LABEL[s.level]})
                 </div>
                 <div className="portfolio-modal-lots-row">
-                  이 종목에 담을 최대: 약 {formatKrw(s.maxAmount)} · 입력대로면 {formatKrw(s.maxAmount + s.overAmount)}
+                  이 종목에 담을 최대: 약 {formatKrw(s.maxAmount)} · 입력대로면 {formatKrw(s.maxAmount + s.overAmount)}{s.accounts > 1 ? ` (${s.accounts}개 계좌 합계)` : ''}
                 </div>
                 {s.overAmount > 0 && (
                   <div className="portfolio-peak-giveback portfolio-peak-giveback--alert">

@@ -49,7 +49,8 @@ export function satelliteStatus(holdings: SatelliteHolding[]): SatelliteStatus |
   let totalValue = 0
   let stockValue = 0
   let stockCost = 0
-  let stockCount = 0
+  // 같은 종목을 여러 계좌에 담아도 한 종목으로 센다
+  const stockCodes = new Set<string>()
   for (const h of holdings) {
     const price = h.currentPrice > 0 ? h.currentPrice : h.avgPrice
     const value = h.quantity * price
@@ -58,8 +59,9 @@ export function satelliteStatus(holdings: SatelliteHolding[]): SatelliteStatus |
     if (isExchangeTradedProduct(h.code, h.name, h.productType)) continue
     stockValue += value
     stockCost += h.quantity * h.avgPrice
-    stockCount++
+    stockCodes.add(String(h.code).trim())
   }
+  const stockCount = stockCodes.size
   if (!(totalValue > 0) || stockCount === 0) return null
   const weightPct = (stockValue / totalValue) * 100
   const pnlPct = stockCost > 0 ? (stockValue / stockCost - 1) * 100 : 0
