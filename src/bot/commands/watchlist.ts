@@ -1571,6 +1571,7 @@ export async function handleWatchlistRemove(
       });
       const fifoPreview = await previewFifoSale({
         chatId: ctx.chatId,
+        positionId: watchlistId,
         code,
         quantity: sellQty,
       });
@@ -1597,6 +1598,7 @@ export async function handleWatchlistRemove(
 
         const repairedPreview = await previewFifoSale({
           chatId: ctx.chatId,
+          positionId: watchlistId,
           code,
           quantity: sellQty,
         });
@@ -1734,6 +1736,7 @@ export async function handleWatchlistRemove(
         fifoPreviewForApply ??
         (await previewFifoSale({
           chatId: ctx.chatId,
+          positionId: watchlistId,
           code,
           quantity: sellQty,
         }));
@@ -1749,7 +1752,7 @@ export async function handleWatchlistRemove(
       try {
         await replaceTradeLotsForHolding({
           chatId: ctx.chatId,
-          watchlistId: isFullExit ? null : watchlistId,
+          watchlistId,
           code,
           quantity: remainQty,
           investedAmount: isFullExit ? 0 : remainInvested,

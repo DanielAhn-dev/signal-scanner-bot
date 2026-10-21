@@ -198,6 +198,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     try {
       fifo = await deps.lots.previewFifoSale({
         chatId: payload.chatId,
+        positionId: payload.holding.id,
         code: payload.holding.code,
         quantity: sellQty,
       });
@@ -217,6 +218,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
 
         fifo = await deps.lots.previewFifoSale({
           chatId: payload.chatId,
+          positionId: payload.holding.id,
           code: payload.holding.code,
           quantity: sellQty,
         });
@@ -411,7 +413,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
       await deps.lots
         .replaceTradeLotsForHolding({
           chatId: payload.chatId,
-          watchlistId: isFullExit ? null : payload.holding.id,
+          watchlistId: payload.holding.id,
           code: payload.holding.code,
           quantity: remainQty,
           investedAmount: isFullExit ? 0 : remainInvested,
