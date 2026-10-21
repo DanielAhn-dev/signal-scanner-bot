@@ -179,6 +179,8 @@ async function fetchWatchlistRows(chatId: number): Promise<{ items: any[]; error
     `
     )
     .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .order("created_at", { ascending: true });
 
   return {
@@ -637,7 +639,9 @@ export async function handleWatchOnlyAdd(
   const { count } = await supabaseRead
     .from("virtual_positions")
     .select("id", { count: "exact", head: true })
-    .eq("chat_id", ctx.chatId);
+    .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if ((count ?? 0) >= MAX_ITEMS) {
     return tgSend("sendMessage", {
@@ -659,6 +663,8 @@ export async function handleWatchOnlyAdd(
     .from("virtual_positions")
     .select("id, buy_price, quantity")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code)
     .maybeSingle();
 
@@ -731,6 +737,8 @@ export async function handleWatchOnlyRemove(
     .from("virtual_positions")
     .select("id, buy_price, quantity")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code)
     .maybeSingle();
 
@@ -762,6 +770,8 @@ export async function handleWatchOnlyRemove(
     .from("virtual_positions")
     .delete()
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code);
 
   if (error) {
@@ -812,7 +822,9 @@ export async function handleWatchOnlyReset(
     const { error: deleteError, count } = await supabase
       .from("virtual_positions")
       .delete({ count: "exact" })
-      .eq("chat_id", ctx.chatId);
+      .eq("chat_id", ctx.chatId)
+      .is("broker_name", null)
+      .is("account_name", null);
 
     if (deleteError) {
       console.error("full reset delete error:", deleteError);
@@ -892,6 +904,8 @@ export async function handleWatchOnlyReset(
     .from("virtual_positions")
     .delete({ count: "exact" })
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .in("id", deleteIds);
 
   if (deleteError) {
@@ -1282,7 +1296,9 @@ export async function handleWatchlistAdd(
   const { count } = await supabaseRead
     .from("virtual_positions")
     .select("id", { count: "exact", head: true })
-    .eq("chat_id", ctx.chatId);
+    .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if ((count ?? 0) >= MAX_ITEMS) {
     return tgSend("sendMessage", {
@@ -1307,6 +1323,8 @@ export async function handleWatchlistAdd(
     .from("virtual_positions")
     .select("id")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code)
     .maybeSingle();
 
@@ -1479,11 +1497,19 @@ export async function handleWatchlistRemove(
     .from("virtual_positions")
     .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, stock:stocks(close)")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code)
     .maybeSingle();
 
   if (rowError) {
     console.error("watchlist fetch before delete error:", rowError);
+    // 조회 실패를 "보유 없음"으로 보고 삭제로 넘어가면 안 된다.
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `${esc(name)} (${code}) 보유 정보를 불러오지 못해 매도를 멈췄습니다. 잠시 후 다시 시도해주세요.`,
+      parse_mode: "HTML",
+    });
   }
 
   const tgId = ctx.from?.id ?? ctx.chatId;
@@ -1602,6 +1628,8 @@ export async function handleWatchlistRemove(
         status: "holding",
       }, { count: "exact" })
       .eq("chat_id", ctx.chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
       .eq("code", code);
     dbError = updateError;
     affectedCount = updateCount ?? 0;
@@ -1610,6 +1638,8 @@ export async function handleWatchlistRemove(
       .from("virtual_positions")
       .delete({ count: "exact" })
       .eq("chat_id", ctx.chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
       .eq("code", code);
     dbError = deleteError;
     affectedCount = deleteCount ?? 0;
@@ -1795,6 +1825,8 @@ export async function handleWatchlistLiquidateAllCommand(
     .from("virtual_positions")
     .select("code, quantity, buy_price, stock:stocks(name)")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -1953,6 +1985,8 @@ export async function handleWatchlistAutoCommand(
     `
     )
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -2143,6 +2177,8 @@ export async function handleWatchlistResponseCommand(
     `
     )
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -2354,6 +2390,8 @@ export async function handleWatchlistEdit(
     .from("virtual_positions")
     .select("id, quantity, buy_price, invested_amount, buy_date, created_at")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code)
     .single();
 
@@ -2528,6 +2566,8 @@ export async function handleWatchlistRestoreCommand(
     .from("virtual_positions")
     .select("id, buy_date, created_at")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code)
     .maybeSingle();
 
@@ -2668,6 +2708,8 @@ export async function handleWatchlistQuickAdd(
     .from("virtual_positions")
     .select("id")
     .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("code", code)
     .maybeSingle();
 
@@ -2683,7 +2725,9 @@ export async function handleWatchlistQuickAdd(
   const { count } = await supabaseRead
     .from("virtual_positions")
     .select("id", { count: "exact", head: true })
-    .eq("chat_id", ctx.chatId);
+    .eq("chat_id", ctx.chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if ((count ?? 0) >= MAX_ITEMS) {
     return tgSend("sendMessage", {
@@ -2717,6 +2761,8 @@ export async function handleWatchlistQuickAdd(
       .from("virtual_positions")
       .select("id, created_at, buy_date")
       .eq("chat_id", ctx.chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
       .eq("code", code)
       .single()
     : null;
