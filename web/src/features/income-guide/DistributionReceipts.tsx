@@ -187,7 +187,26 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
   const nameOf = (code: string) => candidates.find((c) => c.code === code)?.name ?? (manualPick?.code === code ? manualPick.name : null)
   const { thisMonth, projection } = data
   const delta = projection.total - thisMonth.net
-  const notYet = holdings.filter((h) => !thisMonth.items.some((r) => r.code === h.code) && projection.rows.some((p) => p.code === h.code)).length
+  // 이번 달에 안 적은 종목을 셋으로 나눈다 — 분기 지급 종목은 지급 달이 아니면 '안 적음'이 아니다(예전엔 다 셌다).
+  // 기록이 없는 종목(분배율 추정)은 지급 달을 몰라 따로 보인다. 분배금이 0인 종목은 projection.rows에 애초에 없다.
+  const unlogged = useMemo(() => {
+    const idx = (m: string) => Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1
+    const lastMonthOf = new Map<string, string>()
+    for (const r of data.recent) if (r.month < thisMonth.month && (lastMonthOf.get(r.code) ?? '') < r.month) lastMonthOf.set(r.code, r.month)
+    const due: string[] = []
+    const notDue: string[] = []
+    const unknown: string[] = []
+    for (const p of projection.rows) {
+      if (!holdingOf.has(p.code) || thisMonth.items.some((r) => r.code === p.code)) continue
+      if (p.source === 'estimate') { unknown.push(p.name); continue }
+      const last = lastMonthOf.get(p.code)
+      const interval = p.intervalMonths ?? 1
+      if (last && interval > 1 && (idx(thisMonth.month) - idx(last)) % interval !== 0) notDue.push(p.name)
+      else due.push(p.name)
+    }
+    return { due, notDue, unknown }
+  }, [projection.rows, thisMonth, data.recent, holdingOf])
+  const notYet = unlogged.due.length + unlogged.unknown.length
   const added = projection.rows.filter((r) => r.source === 'receipt' && r.addedShares > 0 && r.perShare)
   // 고른 달에 이미 적은 종목은 맨 아래로 — 남은 종목을 빨리 고르고, 고칠 때만 아래에서 고른다
   const monthItems = useMemo(
@@ -283,9 +302,16 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
       <strong style={{ fontSize: 15, display: 'block', marginBottom: 4 }}>받은 분배금</strong>
       <div>
         {thisMonth.month.slice(5).replace(/^0/, '')}월 받은 금액(세후) <strong>{won(thisMonth.net)}</strong>
-        {thisMonth.items.length > 0 && <span style={muted}> · {thisMonth.items.length}종목{notYet > 0 ? ` · 아직 안 적은 종목 ${notYet}개` : ''}</span>}
+        {thisMonth.items.length > 0 && <span style={muted}> · {thisMonth.items.length}종목{unlogged.due.length > 0 ? ` · 아직 안 적은 종목 ${unlogged.due.length}개` : ''}</span>}
         {thisMonth.estimatedCount > 0 && <span style={faint}> (세후를 안 적은 {thisMonth.estimatedCount}건은 15.4%를 떼고 계산)</span>}
       </div>
+      {thisMonth.items.length > 0 && (unlogged.due.length > 0 || unlogged.unknown.length > 0 || unlogged.notDue.length > 0) && (
+        <div style={faint}>
+          {unlogged.due.length > 0 && <div>└ 지난 기록으로 이번 달 지급 차례: {unlogged.due.join(', ')}</div>}
+          {unlogged.unknown.length > 0 && <div>└ 받은 기록이 없어 지급 달을 모름(분배율로 추정만): {unlogged.unknown.join(', ')}</div>}
+          {unlogged.notDue.length > 0 && <div>└ 이번 달은 지급 달이 아님(분기 등): {unlogged.notDue.join(', ')}</div>}
+        </div>
+      )}
       <ReinvestLine r={data.reinvest ?? null} />
       {/* 세전(수량×주당)과 나란히 — 세후 칸에 세전을 넣었는지 비율로 바로 보인다(고배당 약 85%, 국내 커버드콜은 더 높을 수 있음) */}
       {thisMonth.gross > 0 && thisMonth.items.length > 0 && thisMonth.estimatedCount === 0 && (

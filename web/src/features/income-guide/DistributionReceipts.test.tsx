@@ -33,8 +33,28 @@ describe('DistributionReceipts', () => {
     render(<DistributionReceipts data={data} holdings={holdings} buyName="KODEX 200TR" submit={async () => null} />)
     expect(screen.getAllByText('91,200원', { selector: 'strong' }).length).toBeGreaterThan(0)
     expect(screen.getByText(/120주 늘어남/)).toBeTruthy()
-    expect(screen.getByText(/아직 안 적은 종목 1개/)).toBeTruthy()
+    // 기록 없는 종목은 지급 달을 몰라 '안 적은 종목'으로 세지 않고 따로 보인다
+    expect(screen.queryByText(/아직 안 적은 종목/)).toBeNull()
+    expect(screen.getByText(/지급 달을 모름.*SOL 코리아고배당/)).toBeTruthy()
     expect(screen.getByText('KODEX 200TR')).toBeTruthy()
+  })
+
+  it('분기 지급 종목은 지급 달이 아니면 안 적은 종목으로 세지 않는다', () => {
+    const rows = [
+      { code: '161510', name: 'PLUS 고배당주', quantity: 100, net: 8_460, source: 'receipt' as const, perShare: 300, netRatio: 0.846, intervalMonths: 3, addedShares: 0 },
+      { code: '458730', name: 'TIGER 미국배당다우존스', quantity: 50, net: 2_000, source: 'receipt' as const, perShare: 47, netRatio: 0.846, intervalMonths: 1, addedShares: 0 },
+    ]
+    const recent = [
+      { id: 'q1', month: '2026-06', code: '161510', name: 'PLUS 고배당주', quantity: 100, perShare: 300, net: null, createdAt: '' },
+      { id: 'q2', month: '2026-09', code: '161510', name: 'PLUS 고배당주', quantity: 100, perShare: 300, net: null, createdAt: '' },
+      { id: 'm1', month: '2026-09', code: '458730', name: 'TIGER 미국배당다우존스', quantity: 50, perShare: 47, net: null, createdAt: '' },
+    ]
+    const d: DistributionReceiptsData = { ...data, projection: { ...data.projection, rows }, recent: [...data.recent, ...recent] }
+    const hs = [...holdings, { code: '161510', name: 'PLUS 고배당주', quantity: 100 }, { code: '458730', name: 'TIGER 미국배당다우존스', quantity: 50 }]
+    render(<DistributionReceipts data={d} holdings={hs} buyName={null} submit={async () => null} />)
+    expect(screen.getByText(/아직 안 적은 종목 1개/)).toBeTruthy()
+    expect(screen.getByText(/이번 달 지급 차례: TIGER 미국배당다우존스/)).toBeTruthy()
+    expect(screen.getByText(/지급 달이 아님.*PLUS 고배당주/)).toBeTruthy()
   })
 
   it('종목을 고르면 지금 수량이 기본값으로 들어가고, 서버 오류는 그 자리에 보인다', async () => {
