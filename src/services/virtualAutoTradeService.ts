@@ -147,6 +147,8 @@ import {
   type AutoTradeSkipReasonStat,
 } from "./virtualAutoTradeObservability";
 import { runLongTermCoachForChat } from "./longTermCoachService";
+import { fetchStockNameMap } from "./stockNames";
+import { formatStockLabel, labelFromNameMap } from "../lib/stockLabel";
 import { CASH_SWEEP_STRATEGY_ID, EXPERIMENT_CAP_PCT, readSatelliteCapPct } from "./virtualAutoTradeCashSweep";
 import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSweepStep";
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
@@ -3357,7 +3359,7 @@ async function executeNewEntryBuy(input: {
   if (existingPositionForCodeError) throw existingPositionForCodeError;
   if (existingPositionForCode && (existingPositionForCode.broker_name != null || existingPositionForCode.account_name != null)) {
     summary.skipped += 1;
-    summary.notes.push(`${candidate.code} 신규 매수 스킵: 실계좌 보유 종목과 코드 충돌(가상 전용 보호)`);
+    summary.notes.push(`${formatStockLabel(candidate.code, candidate.name)} 신규 매수 스킵: 실계좌 보유 종목과 코드 충돌(가상 전용 보호)`);
     await writeActionLog({
       supabase: input.supabase,
       runId: input.runId,
@@ -4332,7 +4334,7 @@ async function runMondayBuyForUser(payload: {
     } catch (error: unknown) {
       const message = extractErrorMessage(error);
       summary.errors += 1;
-      summary.notes.push(`${candidate.code} 매수 실패: ${message}`);
+      summary.notes.push(`${formatStockLabel(candidate.code, candidate.name)} 매수 실패: ${message}`);
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -4644,7 +4646,7 @@ export async function runGateCoreForUser(payload: {
     const price = prices.get(code) ?? 0;
     if (qty <= 0 || !(price > 0)) {
       summary.skipped += 1;
-      summary.notes.push(`${names.get(code) ?? code}(${code}) 매도 보류: 가격 없음`);
+      summary.notes.push(`${formatStockLabel(code, names.get(code))} 매도 보류: 가격 없음`);
       continue;
     }
     const result = await executeAutoTradeSell({
@@ -4652,6 +4654,7 @@ export async function runGateCoreForUser(payload: {
       runId: payload.runId,
       chatId,
       holding,
+      stockName: names.get(code) ?? null,
       close: price,
       buyPrice: toNumber(holding.buy_price, price),
       feeRate,
@@ -5228,6 +5231,7 @@ async function runDailyReviewForUser(payload: {
             runId: payload.runId,
             chatId,
             holding,
+            stockName: nameByCode.get(holding.code) ?? null,
             close: fallbackStop.price,
             buyPrice,
             feeRate,
@@ -5249,7 +5253,7 @@ async function runDailyReviewForUser(payload: {
             summary.sells += 1;
             summary.notes.push(
               `${fallbackSell.note} · 손익률 ${(fallbackStop.pnlPct ?? 0).toFixed(2)}%`,
-              `[가드 우회 경직손절] ${holding.code} 종가 ${freshness?.reason ?? "unknown"} 상태지만 ${fallbackStop.source === "realtime" ? "실시간가" : "마지막 종가"} 기준 경직 손절선 이탈 → 전량 청산`
+              `[가드 우회 경직손절] ${labelFromNameMap(holding.code, nameByCode)} 종가 ${freshness?.reason ?? "unknown"} 상태지만 ${fallbackStop.source === "realtime" ? "실시간가" : "마지막 종가"} 기준 경직 손절선 이탈 → 전량 청산`
             );
             (summary.mirrorOrders ??= []).push(
               buildSellMirrorOrder({
@@ -5267,7 +5271,7 @@ async function runDailyReviewForUser(payload: {
         } catch (error: unknown) {
           const message = extractErrorMessage(error);
           summary.errors += 1;
-          summary.notes.push(`${holding.code} 가드 우회 손절 실패: ${message}`);
+          summary.notes.push(`${labelFromNameMap(holding.code, nameByCode)} 가드 우회 손절 실패: ${message}`);
         }
       }
 
@@ -5286,7 +5290,7 @@ async function runDailyReviewForUser(payload: {
       }
       summary.skipped += 1;
       summary.notes.push(
-        `[종가 신선도 가드] ${holding.code} 종가 오래됨/동결(${freshness?.reason ?? "unknown"}) → 매도 판단 스킵`
+        `[종가 신선도 가드] ${labelFromNameMap(holding.code, nameByCode)} 종가 오래됨/동결(${freshness?.reason ?? "unknown"}) → 매도 판단 스킵`
       );
       await writeActionLog({
         supabase: payload.supabase,
@@ -5327,6 +5331,7 @@ async function runDailyReviewForUser(payload: {
         runId: payload.runId,
         chatId,
         holding,
+        stockName: nameByCode.get(holding.code) ?? null,
         close,
         buyPrice,
         feeRate,
@@ -5421,7 +5426,7 @@ async function runDailyReviewForUser(payload: {
       }
       if (plannedReviewExtensionAt) {
         summary.notes.push(
-          `[예정검토일 연장] ${holding.code} · 목표 미달이지만 신호(${signal ?? "-"}) 유지로 검토일 재설정 (~${plannedReviewExtensionAt.slice(0, 10)})`
+          `[예정검토일 연장] ${labelFromNameMap(holding.code, nameByCode)} · 목표 미달이지만 신호(${signal ?? "-"}) 유지로 검토일 재설정 (~${plannedReviewExtensionAt.slice(0, 10)})`
         );
       }
       await writeActionLog({
@@ -5452,7 +5457,7 @@ async function runDailyReviewForUser(payload: {
       });
       if (trendExitSignal.reason === "hold-override-strong-trend") {
         summary.notes.push(
-          `[보유유지 오버라이드] ${holding.code} · 강세 지속으로 즉시 매도 보류 (${(trendExitSignal.overrideDetails ?? []).join(", ") || "조건 충족"})`
+          `[보유유지 오버라이드] ${labelFromNameMap(holding.code, nameByCode)} · 강세 지속으로 즉시 매도 보류 (${(trendExitSignal.overrideDetails ?? []).join(", ") || "조건 충족"})`
         );
       }
       continue;
@@ -5464,6 +5469,7 @@ async function runDailyReviewForUser(payload: {
         runId: payload.runId,
         chatId,
         holding,
+        stockName: nameByCode.get(holding.code) ?? null,
         close,
         buyPrice,
         feeRate,
@@ -5508,7 +5514,7 @@ async function runDailyReviewForUser(payload: {
       if (exitReasonLabel) {
         summary.notes.push(exitReasonLabel);
       } else if (trendExitSignal.reason !== "none") {
-        summary.notes.push(`[추세이탈 청산] ${holding.code} · ${trendExitSignal.reason}`);
+        summary.notes.push(`[추세이탈 청산] ${labelFromNameMap(holding.code, nameByCode)} · ${trendExitSignal.reason}`);
       }
       {
         const soldQty = Math.max(0, Math.min(qty, Math.floor(finalExitPlan.quantityToSell)));
@@ -5537,7 +5543,7 @@ async function runDailyReviewForUser(payload: {
     } catch (error: unknown) {
       const message = extractErrorMessage(error);
       summary.errors += 1;
-      summary.notes.push(`${holding.code} 매도 실패: ${message}`);
+      summary.notes.push(`${labelFromNameMap(holding.code, nameByCode)} 매도 실패: ${message}`);
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -5978,7 +5984,7 @@ async function runDailyReviewForUser(payload: {
         } catch (error: unknown) {
           const message = extractErrorMessage(error);
           summary.errors += 1;
-          summary.notes.push(`${candidate.code} 추가매수 실패: ${message}`);
+          summary.notes.push(`${formatStockLabel(candidate.code, candidate.name)} 추가매수 실패: ${message}`);
           await writeActionLog({
             supabase: payload.supabase,
             runId: payload.runId,
@@ -6354,7 +6360,7 @@ async function runDailyReviewForUser(payload: {
         } catch (error: unknown) {
           const message = extractErrorMessage(error);
           summary.errors += 1;
-          summary.notes.push(`${candidate.code} 신규 매수 실패: ${message}`);
+          summary.notes.push(`${formatStockLabel(candidate.code, candidate.name)} 신규 매수 실패: ${message}`);
           await writeActionLog({
             supabase: payload.supabase,
             runId: payload.runId,
@@ -6559,9 +6565,10 @@ async function applyDistributionsIfDue(supabase: SupabaseClientAny, chatId: numb
       } as InvestmentPrefs);
       // 저장 못 했으면 입금 안내를 내지 않는다 (다음 실행 때 다시 반영된다)
       if (!saved.ok) continue;
+      const distLabel = labelFromNameMap(code, await fetchStockNameMap(supabase, [code]));
       for (const r of records) {
         notes.push(
-          `[분배금] ${code} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)`
+          `[분배금] ${distLabel} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)`
         );
       }
     }
@@ -6648,9 +6655,10 @@ async function applyStockDividendsIfDue(supabase: SupabaseClientAny, chatId: num
         : {}),
     } as InvestmentPrefs);
     if (!saved.ok) return notes;
+    const dividendNames = records.length ? await fetchStockNameMap(supabase, records.map((r) => r.code)) : new Map<string, string>();
     for (const r of records) {
       notes.push(
-        `[배당금] ${r.code} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)` +
+        `[배당금] ${labelFromNameMap(r.code, dividendNames)} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)` +
           ((r as { payDateEstimated?: boolean }).payDateEstimated ? " · 지급일은 공시에 없어 추정" : "")
       );
     }

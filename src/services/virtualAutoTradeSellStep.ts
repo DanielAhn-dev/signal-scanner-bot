@@ -6,6 +6,7 @@
  * 테스트는 가짜를 넘겨 부분 실패 시 원장 일관성을 검증한다.
  */
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
+import { formatStockLabel } from "../lib/stockLabel";
 import { AUTO_TRADE_STRATEGY_ID, buildStrategyMemo } from "../lib/strategyMemo";
 import { resolveOtherEtfGainTax, resolveSellTaxRate } from "../lib/securitiesTax";
 import { resolveVirtualExecutionPrice } from "./virtualAutoTradeExecution";
@@ -157,6 +158,8 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     halfStopDone?: boolean;
     /** 청산 판단 근거 라벨(추세이탈·수익잠금·예정검토일 등). 나중에 "왜 팔았나"를 로그만으로 볼 수 있게 남긴다. */
     exitReasonLabel?: string | null;
+    /** 알림 메모용 종목명. 없으면 체결 시 stocks에서 읽은 이름을 쓰고, 그것도 없으면 코드만 쓴다. */
+    stockName?: string | null;
   }): Promise<{
     sold: boolean;
     partial: boolean;
@@ -179,7 +182,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
         partial: false,
         proceeds: 0,
         realizedPnlDelta: 0,
-        note: `${payload.holding.code} 매도 스킵: 수량 계산 오류`,
+        note: `${formatStockLabel(payload.holding.code, payload.stockName)} 매도 스킵: 수량 계산 오류`,
       };
     }
 
@@ -229,7 +232,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
           partial: false,
           proceeds: 0,
           realizedPnlDelta: 0,
-          note: `${payload.holding.code} 매도 중단: FIFO 정합성 자동 복구 실패 (${message})`,
+          note: `${formatStockLabel(payload.holding.code, payload.stockName)} 매도 중단: FIFO 정합성 자동 복구 실패 (${message})`,
         }
       }
     }
@@ -290,7 +293,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
         partial: false,
         proceeds: 0,
         realizedPnlDelta: 0,
-        note: `${payload.holding.code} 매도 스킵: 중복 실행`,
+        note: `${formatStockLabel(payload.holding.code, payload.stockName)} 매도 스킵: 중복 실행`,
       };
     }
 
@@ -476,9 +479,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     }).catch((err: unknown) => console.error("[autoTrade] decision log SELL failed", err));
 
     // 매수 메모처럼 "이름(코드)" — 코드만 보내면 무슨 종목인지 알 수 없다
-    const stockLabel = product.name && product.name !== payload.holding.code
-      ? `${product.name}(${payload.holding.code})`
-      : payload.holding.code;
+    const stockLabel = formatStockLabel(payload.holding.code, product.name ?? payload.stockName);
     return {
       sold: true,
       partial: !isFullExit,

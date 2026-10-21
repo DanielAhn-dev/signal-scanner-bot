@@ -1,6 +1,8 @@
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
 import { parsePositionStrategyState } from "./virtualAutoTradePositionStrategy";
+import { fetchStockNameMap } from "./stockNames";
+import { labelFromNameMap } from "../lib/stockLabel";
 
 type SupabaseClientAny = any;
 
@@ -104,9 +106,10 @@ export async function runLongTermCoachForChat(input: {
   }
 
   const codes = holdings.map((row) => String(row.code));
-  const [snapshot, realtimeMap] = await Promise.all([
+  const [snapshot, realtimeMap, nameByCode] = await Promise.all([
     fetchLatestScoresByCodes(supabase, codes).catch(() => null),
     fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, { price?: number }>)),
+    fetchStockNameMap(supabase, codes),
   ]);
 
   if (!snapshot) {
@@ -131,14 +134,14 @@ export async function runLongTermCoachForChat(input: {
 
     if (score.totalScore < 45 || (score.totalScore < 52 && pnlPct <= 0)) {
       reviewLines.push(
-        `${code} · 점수 ${score.totalScore.toFixed(1)} · 수익률 ${pnlPct.toFixed(1)}%`
+        `${labelFromNameMap(code, nameByCode)} · 점수 ${score.totalScore.toFixed(1)} · 수익률 ${pnlPct.toFixed(1)}%`
       );
       continue;
     }
 
     if (score.totalScore >= 60) {
       holdLines.push(
-        `${code} · 점수 ${score.totalScore.toFixed(1)} · 수익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%${qty > 0 ? ` · 보유 ${qty}주` : ""}`
+        `${labelFromNameMap(code, nameByCode)} · 점수 ${score.totalScore.toFixed(1)} · 수익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%${qty > 0 ? ` · 보유 ${qty}주` : ""}`
       );
     }
   }

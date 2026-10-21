@@ -51,6 +51,8 @@ import {
 } from "../../services/decisionLogService";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { ACTIONS, actionButtons } from "../messages/layout";
+import { fetchStockNameMap } from "../../services/stockNames";
+import { formatStockLabel, labelFromNameMap } from "../../lib/stockLabel";
 import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../../lib/securitiesTax";
 import {
   buildTradeHistoryInputGuide,
@@ -1845,6 +1847,9 @@ export async function handleWatchlistLiquidateAllCommand(
     chatId: ctx.chatId,
     currentRows: allRows,
   });
+  const gapNames = adjustedGaps.length
+    ? await fetchStockNameMap(supabaseRead, adjustedGaps.slice(0, 8).map((g) => g.code))
+    : new Map<string, string>();
   const holdings = allRows
     .map((row: any) => ({
       code: String(row.code ?? ""),
@@ -1954,12 +1959,12 @@ export async function handleWatchlistLiquidateAllCommand(
       ...resultLines,
       resultMore,
       failedHoldings.length
-        ? `미체결 종목: ${failedHoldings.map((h) => `${h.name}(${h.code})`).join(", ")}`
+        ? `미체결 종목: ${failedHoldings.map((h) => esc(formatStockLabel(h.code, h.name))).join(", ")}`
         : "",
       adjustedGaps.length
         ? `보유누락 의심: ${adjustedGaps
             .slice(0, 8)
-            .map((g) => `${g.code}${g.expectedPrice ? `(${fmtInt(g.expectedPrice)}원/${g.expectedQty}주)` : `(${g.expectedQty}주)`}`)
+            .map((g) => `${esc(labelFromNameMap(g.code, gapNames))} ${g.expectedPrice ? `(${fmtInt(g.expectedPrice)}원/${g.expectedQty}주)` : `(${g.expectedQty}주)`}`)
             .join(", ")}${adjustedGaps.length > 8 ? ` 외 ${adjustedGaps.length - 8}종목` : ""}`
         : "",
       "",
