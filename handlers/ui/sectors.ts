@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { fetchRecentSectorOrderSignalBoost } from '../../src/services/orderIntakeSignalStore'
 import { denyIfUnauthorizedRead } from './_accessControl'
+import { resolveUiUserContext } from './_userContext'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const SECTORS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SECTORS_CACHE_TTL_MS || 60_000))
@@ -39,7 +40,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const onlyUsed = String((req.query as any)?.onlyUsed || '') === '1'
   const positionType = String((req.query as any)?.positionType || 'all') // 'all' | 'holding' | 'interest'
     const top = Number((req.query as any)?.top || 0)   // 0 = all
-    const cacheKey = `sectors:${onlyUsed ? 'used' : 'all'}:pos=${positionType}:top=${top}`
+  // onlyUsed는 '내' 보유·관심 종목의 섹터다. 예전엔 chat_id 조건 없이 전 사용자 행을 읽고 캐시도 공유했다
+  let usedChatId: number | null = null
+  if (onlyUsed) {
+    const user = await resolveUiUserContext(req)
+    if (!user.chatId) return res.status(400).json({ error: 'chat_id required' })
+    usedChatId = Number(user.chatId)
+  }
+    const cacheKey = `sectors:${onlyUsed ? `used:${usedChatId}` : 'all'}:pos=${positionType}:top=${top}`
   if (!bypassCache && SECTORS_CACHE_TTL_MS > 0) {
     const cached = sectorsCache.get(cacheKey)
     if (cached && Date.now() <= cached.expiresAt) {
@@ -59,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // If requested, return only sectors that appear in virtual positions (holding/interest/all)
     if (onlyUsed) {
       // fetch sector ids from virtual_positions via related stock->sector_id
-      let vp = supabase.from('virtual_positions').select('stock(sector_id)', { count: 'exact' })
+      let vp = supabase.from('virtual_positions').select('stock(sector_id)', { count: 'exact' }).eq('chat_id', usedChatId)
       if (positionType === 'holding') vp = vp.gt('quantity', 0)
       else if (positionType === 'interest') vp = vp.or('quantity.is.null,quantity.eq.0')
 
