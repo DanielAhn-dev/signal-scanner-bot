@@ -247,6 +247,51 @@ export function applyReceiptToCash(
   return shiftAccountCash(settings, accountKey, delta);
 }
 
+/** 분배금만큼 은행에서 증권 계좌로 새로 넣은 돈 — 달마다 한 계좌·한 금액 (모아가기 '받은 분배금'의 입금 계좌) */
+export type CashDeposit = { month: string; accountKey: string; amount: number };
+
+/**
+ * 이 달 입금 기록을 amount로 맞추고 그 차이만 계좌 예수금에 더하거나 뺀다(같은 값으로 다시 눌러도 쌓이지 않는다).
+ * 계좌를 바꾸면 예전 계좌에서 뺀 뒤 새 계좌에 더하고, 계좌가 없거나 0이면 기록을 지우고 되돌린다.
+ * applyReceiptToCash와 달리 예수금 칸이 비어 있어도 더한다 — 사용자가 이 계좌에 넣었다고 직접 고른 돈이다.
+ */
+export function applyCashDeposit(
+  settings: IncomeGuideSettings,
+  deposits: CashDeposit[],
+  next: { month: string; accountKey: string | null; amount: number },
+): { settings: IncomeGuideSettings; deposits: CashDeposit[]; cashAdjust: { before: number; after: number } | null } {
+  const amount = next.accountKey && Number.isFinite(next.amount) ? Math.max(0, Math.min(1e9, Math.round(next.amount))) : 0;
+  const prev = deposits.find((d) => d.month === next.month) ?? null;
+  let s = settings;
+  let cashAdjust: { before: number; after: number } | null = null;
+  const sameAccount = prev != null && prev.accountKey === next.accountKey && amount > 0;
+  if (prev && !sameAccount) {
+    const r = shiftAccountCash(s, prev.accountKey, -prev.amount);
+    s = r.settings;
+    cashAdjust = { before: r.before, after: r.after };
+  }
+  const base = sameAccount ? prev!.amount : 0;
+  if (next.accountKey && amount > 0 && amount !== base) {
+    const r = shiftAccountCash(s, next.accountKey, amount - base);
+    s = r.settings;
+    cashAdjust = { before: r.before, after: r.after };
+  }
+  const rest = deposits.filter((d) => d.month !== next.month);
+  return {
+    settings: s,
+    deposits: next.accountKey && amount > 0 ? [...rest, { month: next.month, accountKey: next.accountKey, amount }].slice(-24) : rest,
+    cashAdjust,
+  };
+}
+
+export function sanitizeCashDeposits(raw: unknown): CashDeposit[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((d): d is CashDeposit => !!d && typeof d === "object" && /^\d{4}-\d{2}$/.test(String((d as CashDeposit).month)) && typeof (d as CashDeposit).accountKey === "string" && Number((d as CashDeposit).amount) > 0)
+    .map((d) => ({ month: d.month, accountKey: d.accountKey.slice(0, 80), amount: Math.min(1e9, Math.round(Number(d.amount))) }))
+    .slice(-24);
+}
+
 function shiftAccountCash(settings: IncomeGuideSettings, accountKey: string, delta: number) {
   const before = settings.cashByAccount?.[accountKey] ?? 0;
   const after = Math.max(0, Math.round(before + delta));

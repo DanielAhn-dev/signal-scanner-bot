@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   applyReceiptToCash,
+  applyCashDeposit,
   applyTradeToCash,
   buildIncomeGuideView,
   buildNpsReference,
@@ -426,4 +427,31 @@ test("applyReceiptToCash: 분배금은 그 계좌 예수금에 더하고(고치�
   assert.equal(applyReceiptToCash(base, key, -400_000)?.settings.cashByAccount?.[key], undefined);
   assert.equal(applyReceiptToCash(base, key, 0), null);
   assert.equal(applyReceiptToCash(base, "키움|ISA", 10_000), null);
+});
+
+test("applyCashDeposit: 같은 금액을 다시 넣어도 쌓이지 않고, 금액·계좌를 바꾸면 차이만, 0이면 되돌린다", () => {
+  const base = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashByAccount: { "카카오|일반": 216_503 } };
+  const a = applyCashDeposit(base, [], { month: "2026-10", accountKey: "카카오|일반", amount: 460_402 });
+  assert.equal(a.settings.cashByAccount?.["카카오|일반"], 676_905);
+  assert.deepEqual(a.cashAdjust, { before: 216_503, after: 676_905 });
+  assert.deepEqual(a.deposits, [{ month: "2026-10", accountKey: "카카오|일반", amount: 460_402 }]);
+  // 같은 값 다시 → 그대로
+  const again = applyCashDeposit(a.settings, a.deposits, { month: "2026-10", accountKey: "카카오|일반", amount: 460_402 });
+  assert.equal(again.settings.cashByAccount?.["카카오|일반"], 676_905);
+  assert.equal(again.cashAdjust, null);
+  // 금액 줄이기 → 차이만 뺀다
+  const less = applyCashDeposit(a.settings, a.deposits, { month: "2026-10", accountKey: "카카오|일반", amount: 400_000 });
+  assert.equal(less.settings.cashByAccount?.["카카오|일반"], 616_503);
+  // 계좌 바꾸기 → 예전 계좌에서 빼고 새 계좌(칸이 비어 있어도)에 더한다
+  const moved = applyCashDeposit(a.settings, a.deposits, { month: "2026-10", accountKey: "NH|일반", amount: 460_402 });
+  assert.equal(moved.settings.cashByAccount?.["카카오|일반"], 216_503);
+  assert.equal(moved.settings.cashByAccount?.["NH|일반"], 460_402);
+  // 0 → 되돌리고 기록을 지운다
+  const undo = applyCashDeposit(a.settings, a.deposits, { month: "2026-10", accountKey: "카카오|일반", amount: 0 });
+  assert.equal(undo.settings.cashByAccount?.["카카오|일반"], 216_503);
+  assert.deepEqual(undo.deposits, []);
+  // 다른 달 기록은 건드리지 않는다
+  const other = applyCashDeposit(base, [{ month: "2026-09", accountKey: "카카오|일반", amount: 1 }], { month: "2026-10", accountKey: null, amount: 5 });
+  assert.deepEqual(other.deposits, [{ month: "2026-09", accountKey: "카카오|일반", amount: 1 }]);
+  assert.equal(other.settings.cashByAccount?.["카카오|일반"], 216_503);
 });

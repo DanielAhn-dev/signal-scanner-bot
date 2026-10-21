@@ -25,6 +25,7 @@ import {
   sanitizeIncomeGuideSettings,
   toHistoryEntry,
   withMonthlyEntry,
+  applyCashDeposit,
 } from '../../src/lib/incomeGuide'
 import {
   ACCOUNT_KINDS,
@@ -49,6 +50,8 @@ import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sameReceiptSl
 //   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net?, accountKey?, accountLabel? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
 //     같은 종목이 여러 계좌에 있으면 accountKey가 필요하다(계좌마다 따로 적는다)
 //     이번 달 기록은 그 계좌 예수금에 더하고 고치면 차액·지우면 뺀다 → 응답 cashAdjust { before, after }
+//   POST { action: 'cash-deposit', month, accountKey | null, amount } — 받은 분배금만큼 은행에서 그 계좌로 넣은 돈.
+//     이 달 기록을 amount로 맞추고 차이만 그 계좌 예수금에 더한다(계좌를 바꾸거나 null·0이면 되돌림) → 응답 cashAdjust
 //   POST { action: 'adherence-exclude', key, exclude } — 가이드 따름 판정에서 빼기/되돌리기
 // 계좌별 보기 (src/lib/guideAccountScope.ts) — ?account=키 를 붙이면 그 계좌 보유·예수금만으로 계산하고 기록도 그 계좌에 쌓는다.
 //   ?account=auto(또는 모르는 키)는 가장 큰 계좌, ?account=__all 은 전체 합산. 붙이지 않으면 예전처럼 합산(홈 등 다른 화면용)
@@ -111,6 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isRecord = req.method === 'POST' && body.action === 'record'
     const isReceipt = req.method === 'POST' && (body.action === 'receipt-add' || body.action === 'receipt-delete')
     const isExclude = req.method === 'POST' && body.action === 'adherence-exclude'
+    const isCashDeposit = req.method === 'POST' && body.action === 'cash-deposit'
     const isAccountAction = req.method === 'POST' && (body.action === 'account-kind' || body.action === 'account-targets')
     // 분배금 기록이 바꾼 계좌 예수금(화면 안내용)
     let cashAdjust: { before: number; after: number } | null = null
@@ -138,6 +142,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       file = { ...file, adherenceExcluded: [...set].slice(-500) }
       const saveErr = await saveGuideFile(supabase, chatId, file)
       if (saveErr) return res.status(500).json({ error: `판정 저장 실패: ${saveErr}` })
+    } else if (isCashDeposit) {
+      const month = String(body.month ?? '')
+      if (month !== kstDateKey().slice(0, 7)) return res.status(400).json({ error: '이번 달 입금만 고칠 수 있습니다.' })
+      const key = body.accountKey == null || body.accountKey === '' ? null : String(body.accountKey)
+      if (key && !rawKeys.has(key)) return res.status(400).json({ error: '입금한 계좌를 찾지 못했습니다.' })
+      const amount = Number(body.amount)
+      if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: '금액이 올바르지 않습니다.' })
+      const r = applyCashDeposit(file.settings, file.cashDeposits ?? [], { month, accountKey: key, amount })
+      cashAdjust = r.cashAdjust
+      file = { ...file, settings: r.settings, cashDeposits: r.deposits }
+      const saveErr = await saveGuideFile(supabase, chatId, file)
+      if (saveErr) return res.status(500).json({ error: `입금 저장 실패: ${saveErr}` })
     } else if (isReceipt) {
       const receipts = [...(file.receipts ?? [])]
       // 이번 달 기록은 그 종목을 가진 계좌 예수금에 바로 더한다(매수·매도 기록과 같은 방식). 지난달 기록은 이미 증권사 숫자에 들어 있다고 본다
@@ -202,7 +218,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       file = { ...file, settings, receipts: receipts.slice(-MAX_RECEIPTS) }
       const saveErr = await saveGuideFile(supabase, chatId, file)
       if (saveErr) return res.status(500).json({ error: `분배금 기록 저장 실패: ${saveErr}` })
-    } else if (req.method === 'POST' && !isRecord && !isExclude) {
+    } else if (req.method === 'POST' && !isRecord && !isExclude && !isCashDeposit) {
       // 계좌별 보기에서 매달 넣는 돈은 그 계좌 몫으로 저장한다
       if (writeKey && 'monthlyContribution' in body) {
         const n = Number(body.monthlyContribution)
@@ -279,6 +295,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const deposits = (state?.accumulate?.value as { deposits?: Array<[string, number]> } | null | undefined)?.deposits
       deposit = state == null ? null : Number((Array.isArray(deposits) ? deposits : []).find((d) => Array.isArray(d) && d[0] === month)?.[1]) || 0
     }
+    // 분배금만큼 은행에서 넣은 돈도 이 달 들어온 돈이다 — 빼면 예수금이 늘어난 몫을 '안 산 돈'으로 잘못 본다
+    const cashDeposit = (file.cashDeposits ?? []).find((d) => d.month === month) ?? null
+    const depositWithCash = deposit == null ? null : deposit + (cashDeposit && (!accountKey || cashDeposit.accountKey === accountKey) ? cashDeposit.amount : 0)
     return res.status(200).json({
       ok: true,
       cashAdjust,
@@ -307,7 +326,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // 최근 12개월 — 화면이 달별로 묶어 지난달 대비 증감을 보여 준다
           recent: receipts.filter((r) => r.month >= yearAgoMonth).sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.localeCompare(a.createdAt)),
           // 받은 분배금 중 매수에 쓰인 몫 — 예수금 변화로 거꾸로 추정(따로 적지 않아도 되게)
-          reinvest: estimateReinvest({ receipts, history, cashNow: view.cashPlan.balance, cashUpdatedAt: file.settings.cashUpdatedAt, deposit, today }),
+          reinvest: estimateReinvest({ receipts, history, cashNow: view.cashPlan.balance, cashUpdatedAt: file.settings.cashUpdatedAt, deposit: depositWithCash, today }),
+          // 받은 분배금만큼 은행에서 넣은 계좌·금액(모아가기 '받은 분배금') — 없으면 null
+          cashDeposit,
         },
         // 가이드 따름 기록 — 안내와 다음 기록의 보유 변화 비교 (내 선택 돌아보기)
         adherence: buildAdherence({ history, today, priceOf: (code) => prices.get(code), receipts, excluded: file.adherenceExcluded }),
