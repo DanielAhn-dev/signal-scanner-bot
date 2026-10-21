@@ -117,7 +117,7 @@ describe('홈 이번 달 할 일', () => {
   it('넣는 날 전에는 한 줄 예정만', async () => {
     plan = { monthly: 1_220_000, depositDay: 25 }
     renderCard()
-    expect(await screen.findByText(/다음 할 일 11\/25 · KIWOOM 200TR 약 12주/)).toBeInTheDocument()
+    expect(await screen.findByText(/이번 달 살 날 11\/25 · KIWOOM 200TR 약 12주/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '샀어요' })).not.toBeInTheDocument()
   })
 

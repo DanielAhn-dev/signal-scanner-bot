@@ -261,7 +261,7 @@ export default function MonthTaskCard() {
     return (
       <section className="mt mt--line" aria-label="이번 달 할 일">
         <AccountTag kind="real" />
-        {view.phase === 'upcoming' && <span>다음 할 일 {Number(view.dueDate.slice(5, 7))}/{Number(view.dueDate.slice(8))} · {upcomingText}</span>}
+        {view.phase === 'upcoming' && <span>이번 달 살 날 {Number(view.dueDate.slice(5, 7))}/{Number(view.dueDate.slice(8))} · {upcomingText}</span>}
         {view.phase === 'bought' && r && <span>{month} 완료 · {boughtText}</span>}
         {view.phase === 'skipped' && <span>{month}은 건너뛰었어요 <button type="button" className="mt__link" onClick={undo}>다시 하기</button></span>}
         {view.phase === 'later' && <span>내 계좌는 다음 달부터 시작해요 <button type="button" className="mt__link" onClick={undo}>이번 달에 하기</button></span>}
