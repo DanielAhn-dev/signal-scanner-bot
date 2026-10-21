@@ -65,6 +65,7 @@ const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
 const smallWon = (v: number) => (Math.abs(v) < 10_000 ? `${(Math.round(v / 100) * 100).toLocaleString('ko-KR')}원` : man(v))
 const card: React.CSSProperties = {
   margin: '8px 12px',
+  width: 'auto', // 시트 모바일 규칙(.xls-content-inner > * 폭 100%)과 좌우 마진이 겹쳐 24px 넘치던 것
   padding: 14,
   border: '1px solid var(--color-border-default)',
   borderRadius: 8,
