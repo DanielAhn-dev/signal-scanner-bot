@@ -4,6 +4,7 @@ import { useEffect } from 'react'
  * 모바일 키보드가 올라오면 보이는 영역(visualViewport)만큼만 앱 높이를 줄이고 맨 위에 붙인다.
  * 이게 없으면 iOS가 입력창을 보여 주려고 화면 전체를 위로 밀어 타이틀바·리본이 사라지고 상태바와 겹친다.
  * 키보드가 없으면 변수를 지워 평소(100dvh) 레이아웃을 그대로 쓴다. 값은 CSS 변수 --app-vh, --vv-top.
+ * 핀치 확대 중에도 보이는 영역이 줄어드므로(scale > 1) 그때는 키보드로 보지 않고 손대지 않는다.
  */
 export function useVisualViewportVars() {
   useEffect(() => {
@@ -11,6 +12,7 @@ export function useVisualViewportVars() {
     if (!vv) return
     const root = document.documentElement
     const update = () => {
+      if (vv.scale > 1.01) return
       const keyboardOpen = window.innerHeight - vv.height > 120
       if (keyboardOpen) {
         root.style.setProperty('--app-vh', `${vv.height}px`)
