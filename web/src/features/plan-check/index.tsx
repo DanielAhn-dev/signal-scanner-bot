@@ -574,7 +574,7 @@ function AdminLab() {
       {d && <p className="acc-note">시작월 {d.windows}개(겹치는 창). 범위를 1926~1945, 1946~1965처럼 바꿔 시대 편차를 비교하세요.</p>}
       <details>
         <summary>화면에 쓰이는 연구 표의 출처 전체</summary>
-        <table className="acc-table plan-table">
+        <table className="acc-table plan-table plan-table--source">
           <thead><tr><th>표</th><th>표본</th><th>생성</th><th>스크립트</th></tr></thead>
           <tbody>{Object.entries(FACT_META).map(([k, m]) => <tr key={k}><td>{m.title}</td><td>{m.sample}</td><td>{m.generated}</td><td>{m.script}</td></tr>)}</tbody>
         </table>

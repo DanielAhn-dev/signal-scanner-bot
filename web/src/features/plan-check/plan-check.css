@@ -3,6 +3,9 @@
 .plan-slider b { color: var(--color-brand); }
 .plan-table td:not(:first-child), .plan-table th:not(:first-child) { text-align: right; }
 .plan-table tr.is-pick td { font-weight: 700; color: var(--color-brand); }
+/* 모바일 카드 표 규칙(excel-shell.css)의 overflow-wrap:anywhere는 최소 폭을 한 글자로 줄여 숫자 칸이 '36 / %'로 쪼개진다.
+   숫자 칸은 넘칠 때만 끊게(break-word). 스크립트 경로처럼 긴 낱말이 오는 출처 표는 그대로 둔다 */
+.xls-content-inner table.plan-table:not(.plan-table--source) td:not(:first-child) { overflow-wrap: break-word; }
 .plan-foot { margin-top: 20px; font-size: 12px; }
 .plan a { color: var(--color-brand); }
 .plan .acc-seg { flex-direction: row; flex-wrap: wrap; }
