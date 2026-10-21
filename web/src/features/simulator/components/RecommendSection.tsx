@@ -1,6 +1,6 @@
 import React from 'react'
 import { formatKrw, formatNumber } from '../../../lib/format'
-import { LucideIcon } from '../../../components/LucideIcon'
+import { RefreshCw } from 'lucide-react'
 import Detail from '../../../components/ui/Detail'
 import ComparePanel from './ComparePanel'
 import { calcRequiredAnnualReturn, calcAllocationWeight, calcExpectedValue, calcRR, type RecommendationStyle } from '../telegramFormat'
@@ -117,7 +117,7 @@ export default function RecommendSection({
           disabled={loadingCandidates}
           title="후보 새로고침"
         >
-          <LucideIcon name="RefreshCw" size={14} />
+          <RefreshCw size={14} />
         </button>
       </div>
 
