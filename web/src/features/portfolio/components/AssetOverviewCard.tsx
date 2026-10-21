@@ -65,18 +65,17 @@ export default function AssetOverviewCard({
 
       <div className="portfolio-asset-overview-body">
 
+          {/* 실제 계좌는 보유 평가금 하나뿐이라 도넛 가운데 숫자와 겹쳤다(위에 동떨어진 상자) — 가상 계좌만 지표 줄 */}
+          {isVirtual && (
           <div className="portfolio-asset-metrics">
-            {isVirtual && (
             <div className="portfolio-asset-metric">
               <div className="portfolio-capture-label">시드 자본금</div>
               <div className="portfolio-capture-value">{formatKrwCompact(initialCapital)}</div>
             </div>
-            )}
             <div className="portfolio-asset-metric">
               <div className="portfolio-capture-label">보유 평가금</div>
               <div className="portfolio-capture-value">{formatKrwCompact(totalEvaluationValue)}</div>
             </div>
-            {isVirtual && (<>
             <div className="portfolio-asset-metric">
               <div className="portfolio-capture-label">
                 {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
@@ -89,8 +88,8 @@ export default function AssetOverviewCard({
               <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
               <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrwCompact(totalAssetValue)}</div>
             </div>
-            </>)}
           </div>
+          )}
 
           <div className="portfolio-allocation-wrap">
             <div className="portfolio-allocation-chart-wrap">
