@@ -1,7 +1,7 @@
 import { formatKrwCompact, formatNumber } from '../../../lib/format'
 import type { AccountFolder } from '../types'
 import { accountLabel } from '../lib/accountKey'
-import { ALLOCATION_COLORS, type AllocationRow } from '../lib/allocation'
+import { ALLOCATION_COLORS, ALLOCATION_OTHER_CODE, type AllocationRow } from '../lib/allocation'
 
 type AssetOverviewCardProps = {
   selectedAccountKey: string
@@ -105,7 +105,7 @@ export default function AssetOverviewCard({
                     type="button"
                     key={`${row.code}-${idx}`}
                     className="portfolio-allocation-item"
-                    disabled={row.code === 'CASH'}
+                    disabled={row.code === 'CASH' || row.code === ALLOCATION_OTHER_CODE}
                     onClick={() => scrollToHolding(row.code)}
                   >
                     <div className="portfolio-allocation-item-name">

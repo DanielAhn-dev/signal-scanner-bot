@@ -117,6 +117,22 @@ describe('buildAllocationRows / buildDonutGradient', () => {
     expect(out.reduce((a, r) => a + r.ratio, 0)).toBeCloseTo(100, 8)
     expect(out[0].ratio).toBeCloseTo(60, 8)
   })
+  it('같은 종목은 계좌가 달라도 한 줄로 합친다', () => {
+    const out = buildAllocationRows([
+      row({ code: 'A', stock_name: 'A', quantity: 1, avg_price: 100, ...KIWOOM }),
+      row({ code: 'A', stock_name: 'A', quantity: 2, avg_price: 100, ...TOSS }),
+      row({ code: 'B', stock_name: 'B', quantity: 2, avg_price: 100 }),
+    ], 0)
+    expect(out.map((r) => [r.code, r.value])).toEqual([['A', 300], ['B', 200]])
+  })
+  it('상위 12종목 밖은 그 외 한 줄로, 한 종목만 남으면 묶지 않는다', () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => row({ code: `C${i}`, stock_name: `C${i}`, quantity: 1, avg_price: 1000 - i }))
+    const out = buildAllocationRows(many(20), 0)
+    expect(out).toHaveLength(13)
+    expect(out[12]).toMatchObject({ code: 'OTHER', name: '그 외 8종목' })
+    expect(out.reduce((a, r) => a + r.ratio, 0)).toBeCloseTo(100, 8)
+    expect(buildAllocationRows(many(13), 0).map((r) => r.code)).not.toContain('OTHER')
+  })
   it('현금이 0 이하이면 현금 항목을 넣지 않는다', () => {
     const out = buildAllocationRows([row({ code: 'A', stock_name: 'A' })], -500)
     expect(out.map((r) => r.code)).toEqual(['A'])

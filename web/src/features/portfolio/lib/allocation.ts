@@ -14,9 +14,16 @@ export const ALLOCATION_COLORS = [
   '#64748b',
 ]
 
-/** 종목별 평가금액(+현금) 비중. 평가금액 0 이하 종목은 제외하고 큰 순으로 정렬 */
+/** 목록·도넛에 따로 보이는 종목 수. 나머지는 '그 외 N종목' 한 줄 (실계좌 80여 종목이 전부 펼쳐져 화면이 1만 px를 넘었다) */
+export const ALLOCATION_TOP = 12
+export const ALLOCATION_OTHER_CODE = 'OTHER'
+
+/**
+ * 종목별 평가금액(+현금) 비중. 평가금액 0 이하 종목은 제외하고 큰 순으로 정렬.
+ * 같은 종목이 여러 계좌에 있으면 한 줄로 합친다(계좌 이름 없이 같은 이름이 여러 번 보였다).
+ */
 export function buildAllocationRows(rows: HoldingRow[], estimatedCash: number): AllocationRow[] {
-  const items = rows
+  const perRow = rows
     .map((r: HoldingRow) => {
       const quantity = Number(r.quantity || 0)
       const avgPrice = Number(r.avg_price || 0)
@@ -30,7 +37,20 @@ export function buildAllocationRows(rows: HoldingRow[], estimatedCash: number): 
       }
     })
     .filter((row) => row.value > 0)
-    .sort((a, b) => b.value - a.value)
+  const byCode = new Map<string, { code: string; name: string; value: number }>()
+  for (const r of perRow) {
+    const prev = byCode.get(r.code)
+    if (prev) prev.value += r.value
+    else byCode.set(r.code, { ...r })
+  }
+  const sorted = [...byCode.values()].sort((a, b) => b.value - a.value)
+  // 한 종목만 남는 '그 외'는 만들지 않는다
+  const items = sorted.length > ALLOCATION_TOP + 1
+    ? [
+        ...sorted.slice(0, ALLOCATION_TOP),
+        { code: ALLOCATION_OTHER_CODE, name: `그 외 ${sorted.length - ALLOCATION_TOP}종목`, value: sorted.slice(ALLOCATION_TOP).reduce((s, r) => s + r.value, 0) },
+      ]
+    : sorted
 
   if (estimatedCash > 0) {
     items.push({ code: 'CASH', name: '현금', value: estimatedCash })
