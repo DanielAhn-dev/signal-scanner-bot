@@ -134,6 +134,35 @@ function MergeTiming({ taxedGain, gain }: { taxedGain: boolean; gain: number | n
   return null
 }
 
+/**
+ * 지금 비중 막대 — 목표까지는 브랜드색(초록), 목표를 넘어선 몫은 빨강으로 나눠 칠한다.
+ * 목표선은 파랑(info)으로 막대 위아래로 튀어나오고 카드 배경색 테두리를 둘러 초록 위에서도 보인다. now·goal은 막대 위치(0~100)
+ */
+function GoalBar({ now, goal, label }: { now: number; goal: number; label: string }) {
+  const n = Math.min(100, Math.max(0, now))
+  const g = Math.min(100, Math.max(0, goal))
+  return (
+    <div style={{ position: 'relative', marginTop: 4 }} role="img" aria-label={label}>
+      <div style={{ display: 'flex', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
+        <div style={{ width: `${Math.min(n, g)}%`, background: 'var(--color-brand)' }} />
+        {n > g && <div style={{ width: `${n - g}%`, background: 'var(--color-error)' }} />}
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          top: -4,
+          height: 16,
+          left: `calc(${g}% - 1.5px)`,
+          width: 3,
+          borderRadius: 1,
+          background: 'var(--color-info)',
+          boxShadow: '0 0 0 1.5px var(--color-bg-surface)',
+        }}
+      />
+    </div>
+  )
+}
+
 const signedMan =(v: number) => (Math.abs(v) < 5_000 ? '거의 그대로' : `${v > 0 ? '+' : '−'}${man(Math.abs(v))}`)
 
 const card: React.CSSProperties = {
@@ -189,7 +218,6 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
   const toWon = (v: string) => (v.trim() === '' ? '' : Number(v) * 10_000)
 
   const { income, growth, merges, trim, buyTarget, hold, cash, idleCash } = plan
-  const growthBar = Math.min(100, Math.max(0, growth.actualPct))
   // 분배금으로만 줄여 가는 중이면 targetPct는 지금 비중과 같다 — 옮겨 갈 원래 목표를 보인다
   const growthGoal = hold && growth.finalTargetPct != null ? growth.finalTargetPct : growth.targetPct
   const growthGap = growthGoal - growth.actualPct
@@ -212,26 +240,16 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                 성장(지수) 지금 <strong>{growth.actualPct.toFixed(0)}%</strong> → {hold && growth.finalTargetPct != null ? '최종 목표' : '목표'} {growthGoal.toFixed(0)}%
               </span>
               <span style={{ whiteSpace: 'nowrap' }}>
-                {growthGap < 0.5
+                {Math.abs(growthGap) < 0.5
                   ? '목표 도달'
+                  : growthGap < 0
+                    ? `${(-growthGap).toFixed(0)}%p 넘음`
                   : hold && growth.finalTargetPct != null
                     ? `${growthGap.toFixed(0)}%p 남음 · 분배금·새 돈으로 천천히`
                     : `${growthGap.toFixed(0)}%p 남음${growth.needByNewMoney > 0 ? ` · 새 돈 약 ${man(growth.needByNewMoney)}` : ''}`}
               </span>
             </div>
-            <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
-              <div style={{ width: `${growthBar}%`, height: '100%', background: 'var(--color-brand)' }} />
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  bottom: 0,
-                  left: `${Math.min(100, growthGoal)}%`,
-                  width: 2,
-                  background: 'var(--color-text-primary)',
-                }}
-              />
-            </div>
+            <GoalBar now={growth.actualPct} goal={growthGoal} label={`성장 지금 ${growth.actualPct.toFixed(0)}%, 목표 ${growthGoal.toFixed(0)}%`} />
           </div>
         )}
         {cash && (
@@ -249,17 +267,8 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
               </span>
             </div>
             <div style={{ ...muted, fontSize: 12 }}>
-              {Math.max(0, cash.targetPct - cash.bandPp).toFixed(0)}~{(cash.targetPct + cash.bandPp).toFixed(0)}% 안이면 그대로 둡니다 · 막대 가운데 선이 목표</div>
-            <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--color-bg-tertiary)', overflow: 'hidden' }}>
-              <div
-                style={{
-                  width: `${Math.min(100, (cash.actualPct / Math.max(1, cash.targetPct * 2)) * 100)}%`,
-                  height: '100%',
-                  background: 'var(--color-brand)',
-                }}
-              />
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 2, background: 'var(--color-text-primary)' }} />
-            </div>
+              {Math.max(0, cash.targetPct - cash.bandPp).toFixed(0)}~{(cash.targetPct + cash.bandPp).toFixed(0)}% 안이면 그대로 둡니다 · 파란 선이 목표, 넘은 몫은 빨강</div>
+            <GoalBar now={(cash.actualPct / Math.max(1, cash.targetPct * 2)) * 100} goal={50} label={`현금 지금 ${cash.actualPct.toFixed(1)}%, 목표 ${cash.targetPct.toFixed(0)}%`} />
           </div>
         )}
         <div style={{ marginTop: 8 }}>
