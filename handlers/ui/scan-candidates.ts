@@ -6,6 +6,7 @@ import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
 import { denyIfUnauthorizedRead } from './_accessControl'
 import { fetchRecentDistinctDates, selectPaged } from '../../src/services/supabasePaging'
 import { isKrxRegularSession } from '../../src/lib/krxCalendar'
+import { isExcludedStockName } from '../../src/lib/investableUniverse'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const SCAN_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SCAN_CANDIDATES_CACHE_TTL_MS || 15_000))
@@ -451,7 +452,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    const { data, error } = await supabase
+    const { data: rawSignals, error } = await supabase
       .from('pullback_signals')
       .select(`
         trade_date,
@@ -475,6 +476,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(effectiveLimit)
 
     if (error) return res.status(500).json({ error: error.message })
+    // 유휴현금 스윕용 금리형 ETF(KOFR·CD금리)는 가격 수집 때문에 유니버스에 남아 눌림목 신호도 계산된다 —
+    // 개별 종목 후보 화면에는 ETF를 넣지 않는다(KOFR금리액티브가 눌림목 TOP 1로 보였다)
+    const data = (rawSignals ?? []).filter((row: any) => {
+      const stock = Array.isArray(row?.stock) ? row.stock[0] : row?.stock
+      return !isExcludedStockName(stock?.name)
+    })
 
     const indicatorLiquidityByCode = new Map<string, number>()
     if (includeIndicatorLiquidity) {
