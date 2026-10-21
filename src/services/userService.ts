@@ -508,7 +508,9 @@ export async function getUserProfile(tgId: number) {
       supabaseRead
         .from("virtual_positions")
         .select("id", { count: "exact", head: true })
-        .eq("chat_id", tgId),
+        .eq("chat_id", tgId)
+        .is("broker_name", null)
+        .is("account_name", null),
       supabaseRead
         .from("follows")
         .select("id", { count: "exact", head: true })
@@ -530,14 +532,28 @@ export async function getUserProfile(tgId: number) {
 
 // ─── 포트폴리오 랭킹 ───
 
-export async function getPortfolioRanking(limit = 15) {
-  const { data: items } = await supabaseRead
-    .from("virtual_positions")
-    .select("chat_id, buy_price, stock:stocks!inner(close)")
-    .not("buy_price", "is", null)
-    .gt("buy_price", 0);
+const RANKING_PAGE_SIZE = 1000;
 
-  if (!items?.length) return [];
+export async function getPortfolioRanking(limit = 15) {
+  // 봇 가상 행만 대상(실계좌 입력 행은 남에게 보이면 안 된다). PostgREST는 1000행에서 잘리므로 range로 끝까지 읽는다.
+  const items: any[] = [];
+  for (let from = 0; ; from += RANKING_PAGE_SIZE) {
+    const { data, error } = await supabaseRead
+      .from("virtual_positions")
+      .select("id, chat_id, buy_price, stock:stocks!inner(close)")
+      .is("broker_name", null)
+      .is("account_name", null)
+      .not("buy_price", "is", null)
+      .gt("buy_price", 0)
+      .order("id", { ascending: true })
+      .range(from, from + RANKING_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data ?? [];
+    items.push(...page);
+    if (page.length < RANKING_PAGE_SIZE) break;
+  }
+
+  if (!items.length) return [];
 
   // chat_id 별 집계
   const map = new Map<
@@ -666,6 +682,8 @@ export async function getFollowingFeed(myTgId: number) {
     .from("virtual_positions")
     .select("chat_id, code, buy_price, buy_date, stock:stocks!inner(name, close)")
     .in("chat_id", tgIds)
+    .is("broker_name", null)
+    .is("account_name", null)
     .order("created_at", { ascending: false })
     .limit(30);
 

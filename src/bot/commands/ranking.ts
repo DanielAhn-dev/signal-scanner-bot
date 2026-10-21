@@ -9,7 +9,16 @@ export async function handleRankingCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const rankings = await getPortfolioRanking(15);
+  let rankings: Awaited<ReturnType<typeof getPortfolioRanking>>;
+  try {
+    rankings = await getPortfolioRanking(15);
+  } catch (e) {
+    console.error("ranking fetch error:", e);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "랭킹을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.",
+    });
+  }
 
   if (!rankings.length) {
     return tgSend("sendMessage", {
