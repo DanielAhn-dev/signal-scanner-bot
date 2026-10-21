@@ -253,6 +253,7 @@ export type ScanPanelState = {
   confirmPromotionMeta: { base: number; promoted: number; ratioPct: number; latest5AvgRatioPct: number | null; trendDeltaPct: number | null; trendSampleDays: number; recentRatios: number[] }
   buycheckRiskGuard: { label: string; overLimit: boolean; recommendedMax: number; remainingSlots: number | null }
   sortedCandidates: ScanCandidate[]
+  filteredCount: number
   totalPages: number
   displayRows: ScanDisplayRow[]
   handleConditionFilter: (filter: ConditionFilter) => void

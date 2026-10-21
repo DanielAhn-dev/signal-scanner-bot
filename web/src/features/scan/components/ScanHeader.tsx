@@ -7,7 +7,7 @@ import { BASIC_CONDITION_FILTER_KEYS, PRIMARY_MODE_OPTIONS } from '../constants'
 import { ConfirmTrendSparkline } from './Sparklines'
 import type { ScanPanelState } from '../types'
 
-export default function ScanHeader({ scan }: { scan: Pick<ScanPanelState, 'onNavigate' | 'candidates' | 'latestDate' | 'marketPhase' | 'realtimeAppliedCount' | 'buycheckMaxHoldings' | 'setBuycheckMaxHoldings' | 'buycheckHighlightTopN' | 'setBuycheckHighlightTopN' | 'error' | 'selectedSector' | 'setSelectedSector' | 'conditionFilter' | 'showAdvancedFilters' | 'setShowAdvancedFilters' | 'filterChipScrollRef' | 'advancedConditionOptions' | 'handleFilterChipWheel' | 'handleFilterChipKeyDown' | 'sectors' | 'filterCounts' | 'confirmPromotionMeta' | 'buycheckRiskGuard' | 'sortedCandidates' | 'handleConditionFilter'> }) {
+export default function ScanHeader({ scan }: { scan: Pick<ScanPanelState, 'onNavigate' | 'candidates' | 'latestDate' | 'marketPhase' | 'realtimeAppliedCount' | 'buycheckMaxHoldings' | 'setBuycheckMaxHoldings' | 'buycheckHighlightTopN' | 'setBuycheckHighlightTopN' | 'error' | 'selectedSector' | 'setSelectedSector' | 'conditionFilter' | 'showAdvancedFilters' | 'setShowAdvancedFilters' | 'filterChipScrollRef' | 'advancedConditionOptions' | 'handleFilterChipWheel' | 'handleFilterChipKeyDown' | 'sectors' | 'filterCounts' | 'confirmPromotionMeta' | 'buycheckRiskGuard' | 'sortedCandidates' | 'filteredCount' | 'handleConditionFilter'> }) {
   const {
     onNavigate,
     candidates,
@@ -33,6 +33,7 @@ export default function ScanHeader({ scan }: { scan: Pick<ScanPanelState, 'onNav
     confirmPromotionMeta,
     buycheckRiskGuard,
     sortedCandidates,
+    filteredCount,
     handleConditionFilter,
   } = scan
   return (
@@ -58,7 +59,9 @@ export default function ScanHeader({ scan }: { scan: Pick<ScanPanelState, 'onNav
           <tr className="xls-row">
             <td className="xls-cell xls-cell--wrap" colSpan={4}
               style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
-              <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
+              {/* 조건 버튼 '후보 (N)'과 같은 기준(전체)으로 — 예전엔 TOP 카드를 뺀 표 개수만 보여 5개씩 어긋났다 */}
+              <span className="scan-stat-count">{filteredCount}</span>개 후보
+              {filteredCount > sortedCandidates.length ? ` (위 TOP 카드 ${filteredCount - sortedCandidates.length} + 아래 표 ${sortedCandidates.length})` : ''} ·
               최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
               {conditionFilter === 'confirm' && (
                 <span

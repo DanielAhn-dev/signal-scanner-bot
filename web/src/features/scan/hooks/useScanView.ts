@@ -173,6 +173,8 @@ export function useScanView({
     filterCounts,
     confirmPromotionMeta,
     sortedCandidates,
+    /** 섹터·조건 필터 뒤 전체 개수(위 TOP 카드 포함). sortedCandidates는 TOP 카드를 뺀 아래 표 */
+    filteredCount: filteredCandidates.length,
     totalPages,
     displayRows,
   }

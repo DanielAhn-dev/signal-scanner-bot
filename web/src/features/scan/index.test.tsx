@@ -67,8 +67,9 @@ describe('스캔 화면', () => {
   it('TOP 카드로 올라간 종목을 뺀 나머지를 우선순위 큰 순으로 표에 보여준다', async () => {
     const { container } = renderPage()
     await waitFor(() => expect(tableNames(container)).toEqual(['베타', '알파', '감마']))
-    // 머리글의 "N개 후보"는 TOP 카드를 뺀 표 기준이다(전체 5개가 아니라 3개) — 현재 동작을 그대로 고정
-    expect(container.querySelector('.scan-stat-count')?.textContent).toBe('3')
+    // 머리글의 "N개 후보"는 조건 버튼과 같은 전체 기준이고, TOP 카드와 아래 표로 나눠 적는다
+    expect(container.querySelector('.scan-stat-count')?.textContent).toBe('5')
+    expect(screen.getByText(/위 TOP 카드 2 \+ 아래 표 3/)).toBeTruthy()
     expect(screen.getByText('눌림목 집행 TOP 카드')).toBeTruthy()
   })
 

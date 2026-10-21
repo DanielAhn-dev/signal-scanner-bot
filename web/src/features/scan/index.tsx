@@ -47,7 +47,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const { apiHighlights, highlightLoading, activeHighlights, highlightOverlapSet } = useScanHighlights({ candidates })
 
   // 파생값
-  const { sectors, filterCounts, confirmPromotionMeta, sortedCandidates, totalPages, displayRows } = useScanView({
+  const { sectors, filterCounts, confirmPromotionMeta, sortedCandidates, filteredCount, totalPages, displayRows } = useScanView({
     candidates, selectedSector, conditionFilter, signalAgeByCode, activeHighlights, sortKey, sortDirection,
     page, pageSize, buycheckRiskGuard, buycheckHighlightTopN, confirmPromotionTrend,
   })
@@ -124,6 +124,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     confirmPromotionMeta,
     buycheckRiskGuard,
     sortedCandidates,
+    filteredCount,
     totalPages,
     displayRows,
     handleConditionFilter,
