@@ -224,7 +224,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   // 실계좌로 직접 입력한 보유 종목 — 있으면 종목별 대응, 없으면 지수 따라 하기 예상치를 보여준다
   useEffect(() => {
     if (!chatId) return
-    const params = new URLSearchParams({ page: '1', pageSize: '50', includeLots: '0', positionType: 'holding' })
+    // 50건이면 실계좌 보유가 많은 계정에서 '보유 50종목'으로 잘렸다 — API 상한(200)까지 받는다
+    const params = new URLSearchParams({ page: '1', pageSize: '200', includeLots: '0', positionType: 'holding' })
     apiFetch(`/api/ui/positions?${params}`, { cacheMs: 30_000, timeoutMs: 15_000, retries: 0 })
       .then((res) => {
         const rows: any[] = Array.isArray(res?.data) ? res.data : []
@@ -286,18 +287,21 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const actionNeeded = (advice ?? []).filter((a) => a.action !== 'keep').sort((x, y) => y.weightPct - x.weightPct)
   const visibleTodos = isAdmin || allTodosOpen ? todoSteps : todoSteps.filter((s) => s.key === nextTodoKey)
 
-  const posCount = portfolio?.positions?.length ?? 0
+  // portfolio-realtime은 실계좌 행까지 준다 — '가상 계좌' 줄은 증권사·계좌명이 둘 다 빈 행만 센다
+  // (전에는 실계좌 82종목 손익이 가상 계좌 손익·종목 수로 보였다)
+  const virtualPositions = (portfolio?.positions ?? []).filter((p: any) => !String(p?.broker_name ?? '').trim() && !String(p?.account_name ?? '').trim())
+  const posCount = virtualPositions.length
   // 포트폴리오 화면의 매매비용 설정(차감 여부·요율)을 그대로 따른다
   const pnl = (() => {
     if (!portfolio) return undefined
     const { includeCost, buyFeeRatePct, sellFeeRatePct } = loadTradeCostSettings()
-    const cost = (portfolio.positions ?? []).reduce((acc: number, p: any) => {
+    const cost = virtualPositions.reduce((acc: number, p: any) => {
       const invested = Number(p.invested_amount || 0)
       const value = Number(p.current_value || 0)
       const sellPct = resolveSellCostPct({ code: p.code, name: p.name, productType: p.product_type, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
       return acc + invested * (buyFeeRatePct / 100) + (value > 0 ? value * (sellPct / 100) : 0)
     }, 0)
-    const gross = (portfolio.positions ?? []).reduce((acc: number, p: any) => acc + Number(p.pnl_amount || 0), 0)
+    const gross = virtualPositions.reduce((acc: number, p: any) => acc + Number(p.pnl_amount || 0), 0)
     return includeCost ? gross - cost : gross
   })()
   const pnlColor = pnl == null ? undefined : pnl >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
