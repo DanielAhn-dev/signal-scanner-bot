@@ -78,4 +78,14 @@ describe('stressTest', () => {
   it('비중이 없으면 null', () => {
     expect(stressTest({}, crash, 0.2)).toBeNull()
   })
+
+  it('현금은 충격 0, 리츠는 넘긴 묶음대로 — 묶음을 모르는 자산이 섞이면 null', () => {
+    const classOf = { kospi200: 'equity', reits: 'equity', cash: 'cash' } as const
+    const r = stressTest({ kospi200: 50, reits: 25, cash: 25 }, crash, 0.2, classOf)!
+    expect(r.loss).toBeCloseTo(0.75 * crash.equity)
+    expect(r.equityShare).toBeCloseTo(0.75)
+    // 방어 자산이 현금뿐이면 손실 = 주식 비중 × 충격 → 버틸 선 20%에 맞는 주식 비중
+    expect(r.maxEquityShare).toBeCloseTo(0.2 / -crash.equity)
+    expect(stressTest({ kospi200: 50, reits: 50 }, crash, 0.2)).toBeNull()
+  })
 })

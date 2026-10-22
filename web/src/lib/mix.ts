@@ -126,15 +126,22 @@ export type StressResult = {
   equityShare: number
 }
 
-export function stressTest(weights: Weights, shocks: Shocks, tolerance: number): StressResult | null {
+/** 하락 가정에서 자산이 받는 충격 묶음 — 'cash'는 충격 0(현금은 그대로) */
+export type StressClass = AssetClass | 'cash'
+
+/**
+ * classOf: 자산 id → 충격 묶음. 기본은 섞어보기 6자산(ASSET_CLASS). 시뮬레이터는 13자산을 넘긴다
+ * (리츠는 주식, 현금은 'cash'). 묶음을 모르는 자산은 null.
+ */
+export function stressTest(weights: Weights, shocks: Shocks, tolerance: number, classOf: Record<string, StressClass> = ASSET_CLASS): StressResult | null {
   const w = normalize(weights)
   const ids = Object.keys(w)
-  if (!ids.length) return null
+  if (!ids.length || ids.some((id) => !classOf[id])) return null
   let loss = 0
   let eqW = 0, eqLoss = 0, otherW = 0, otherLoss = 0
   for (const id of ids) {
-    const cls = ASSET_CLASS[id]
-    const s = shocks[cls]
+    const cls = classOf[id]
+    const s = cls === 'cash' ? 0 : shocks[cls]
     loss += w[id] * s
     if (cls === 'equity') { eqW += w[id]; eqLoss += w[id] * s } else { otherW += w[id]; otherLoss += w[id] * s }
   }
