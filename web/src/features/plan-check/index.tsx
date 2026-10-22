@@ -211,7 +211,7 @@ function CheckingCard() {
         </tbody>
       </table>
       <p className="acc-note">월 1회만 봐도 3년 안에 −10%를 한 번은 볼 확률이 코스피 53%, S&P500 37%입니다. <strong>마주쳤을 때 할 일을 미리 정해 두세요.</strong></p>
-      <More label="어디에 적어 두나"><p className="acc-note">"안 보면 안 아프다"가 아니라 미리 정해 두는 쪽이 정직한 방법입니다. 하락 때 할 일은 섞어보기 화면의 "하락 때 할 일 미리 정해 두기"에서 적어 둘 수 있습니다.</p></More>
+      <More label="어디에 적어 두나"><p className="acc-note">"안 보면 안 아프다"가 아니라 미리 정해 두는 쪽이 정직한 방법입니다. 하락 때 할 일은 시뮬레이터 화면의 "하락 때 할 일 미리 정해 두기"에서 적어 둘 수 있습니다.</p></More>
       <Basis id="checking" />
     </section>
   )

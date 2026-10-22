@@ -82,7 +82,7 @@ export default function GoalReachOptions(props: {
 
       <p className="acc-note">
         {rates.years}년 넘는 길은 과거 {rates.years}년 적립 결과의 연평균(보통 {(rates.typical * 100).toFixed(1)}%, 운 나쁨 {(rates.low * 100).toFixed(1)}%)으로 늘려 본 추정입니다.
-        수익률은 고를 수 없지만 넣는 돈은 고를 수 있습니다. 상품을 바꿔 필요 금액을 줄이는 방법은 과거에 좋았던 것을 고르게 되기 쉬워 여기서 권하지 않습니다(비중 실험은 <button type="button" className="acc-link" onClick={props.onOpenMix}>섞어보기</button>).
+        수익률은 고를 수 없지만 넣는 돈은 고를 수 있습니다. 상품을 바꿔 필요 금액을 줄이는 방법은 과거에 좋았던 것을 고르게 되기 쉬워 여기서 권하지 않습니다(비중 실험은 <button type="button" className="acc-link" onClick={props.onOpenMix}>시뮬레이터</button>).
       </p>
     </div>
   )

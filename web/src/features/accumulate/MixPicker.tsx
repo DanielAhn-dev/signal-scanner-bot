@@ -107,9 +107,9 @@ export default function MixPicker({ saved, draft, onDraft, etfView, kospiSlot, o
             <span className="acc-preset-mix">{mixLabel(draft)}</span>
           </div>
         )}
-        <button type="button" className="acc-preset acc-preset--link" onClick={() => navigate('/mix')}>
+        <button type="button" className="acc-preset acc-preset--link" onClick={() => navigate('/plan-sim')}>
           <strong>직접 정하기</strong>
-          <span className="acc-preset-mix">섞어보기에서 비중을 바꿔 보고 정합니다</span>
+          <span className="acc-preset-mix">시뮬레이터에서 비중을 바꿔 보고 정합니다</span>
         </button>
       </div>
       <p className="acc-note">
@@ -121,7 +121,7 @@ export default function MixPicker({ saved, draft, onDraft, etfView, kospiSlot, o
           <li>이 기간에는 2008년 금융위기가 없습니다.{kospiLong ? ` 국내만은 ${kospiLong.fromYear}년부터 보면 최대 낙폭이 ${kospiLong.mddPct.toFixed(0)}%였습니다.` : ''}</li>
           <li>이 기간은 미국 주식, 특히 기술주(나스닥100)가 유난히 강했던 구간입니다. 해외 비중이 클수록 좋게 나오지만, 앞으로도 그렇다는 근거는 아닙니다.</li>
           <li>해외지수는 원화로 바꾼 가격이라 환율 효과가 섞여 있습니다. 원화가 강해지면 같은 지수 상승에도 덜 오릅니다.</li>
-          <li>나스닥100만 담는 구성은 넣지 않았습니다 — 이력이 가장 좋았던 14년뿐이고 한 업종에 몰립니다. 원하면 섞어보기에서 직접 정할 수 있습니다.</li>
+          <li>나스닥100만 담는 구성은 넣지 않았습니다 — 이력이 가장 좋았던 14년뿐이고 한 업종에 몰립니다. 원하면 시뮬레이터에서 직접 정할 수 있습니다.</li>
         </ul>
       </More>
 

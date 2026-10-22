@@ -352,7 +352,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
 
           {/* ── 큰 하락일 안내: 코스피 하루 −1.5% 이하일 때만, 평소엔 한 줄(예측 아님) ── */}
-          {renderDropDayRows({ view: dropDay, sp500ChangePct: indices?.sp500?.changeRate, rowNum, open: dropDayOpen, onToggle: () => setDropDayOpen((v) => !v), onOpenPlan: () => nav('plan'), dropPlan, onOpenDropPlan: () => nav('mix#drop-plan') })}
+          {renderDropDayRows({ view: dropDay, sp500ChangePct: indices?.sp500?.changeRate, rowNum, open: dropDayOpen, onToggle: () => setDropDayOpen((v) => !v), onOpenPlan: () => nav('plan'), dropPlan, onOpenDropPlan: () => nav('plan-sim#drop-plan') })}
 
           {/* ── 다음 할 일: 관리자는 오늘 점검 전체, 일반 사용자는 다음 1개만(펼치면 전체) ── */}
           <tr className="xls-row">

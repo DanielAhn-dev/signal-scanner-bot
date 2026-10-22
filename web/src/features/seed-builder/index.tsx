@@ -671,7 +671,7 @@ export default function SeedBuilderPage() {
         {confirmTransfer && <div className="seed-transfer-sheet" role="alertdialog" aria-label="시뮬레이터로 전달할 값 확인">
           <p><strong>전달되는 값:</strong> 증권계좌에서 확인했다고 입력한 가용 현금 {krw(cash)} (이번 화면 이동에만 사용)</p>
           <p><strong>전달하지 않는 것:</strong> 수입·지출 기록, 확보 내역, 입금 기록, 목표. 가상 시드·저장된 계획·자동매매도 바뀌지 않습니다.</p>
-          <div><button type="button" className="seed-primary" onClick={() => navigate('/simulator', { state: { seedBuilderCapital: cash } })}>확인하고 이동</button><button type="button" className="seed-link-button" onClick={() => setConfirmTransfer(false)}>취소</button></div>
+          <div><button type="button" className="seed-primary" onClick={() => navigate('/plan-sim', { state: { seedBuilderCapital: cash } })}>확인하고 이동</button><button type="button" className="seed-link-button" onClick={() => setConfirmTransfer(false)}>취소</button></div>
         </div>}
         <Detail><p className="seed-next-note">이 금액은 이번 화면 이동에만 전달됩니다. 가상 시드·기존 저장 계획·자동매매는 바뀌지 않습니다.</p></Detail>
       </section>

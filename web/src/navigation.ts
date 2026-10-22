@@ -39,7 +39,7 @@ export const FLOW_STEPS: FlowStep[] = [
   { key: 'market', step: 1, label: '시장', desc: '오늘 봇이 새로 사는 날인지(코스피 50일선) 먼저 확인' },
   { key: 'highlights', step: 2, label: '집행우선', desc: '오늘 후보와 과거 20일 분포 확인' },
   { key: 'analyze', step: 3, label: '분석', desc: '후보 하나씩 차트·재무·규칙 판정 근거 확인' },
-  { key: 'simulator', step: 4, label: '시뮬레이터', desc: '실측 승률로 금액 나누기' },
+  { key: 'simulator', step: 4, label: '종목 금액 나누기(실험)', desc: '실측 승률로 금액 나누기' },
   { key: 'execution-guide', step: 5, label: '실행가이드', desc: '직접 넣을 주문 정리' },
   { key: 'strategy', step: 6, label: '전략', desc: '봇 가상 계좌 성과를 KODEX 200·CD금리와 비교' },
 ]
@@ -82,8 +82,8 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'plan',
     label: '계획',
     groups: [
-      { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'plan-sim', label: '시뮬레이터', keywords: ['백테스트', '과거', '적립', '일시금', '수익률'] }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드', keywords: ['분배금', '받은 분배금', '배당', '인컴', '예수금'] }] },
-      { category: '계산·주문 정리', items: [{ key: 'simulator', label: '종목 금액 나누기(실험)', userOnly: true }, { key: 'execution-guide', label: '실행가이드', userOnly: true }] },
+      { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'plan-sim', label: '시뮬레이터', keywords: ['섞어보기', '비중', '백테스트', '과거', '적립', '일시금', '수익률', '하락'] }, { key: 'income-guide', label: '리밸런싱 가이드', keywords: ['분배금', '받은 분배금', '배당', '인컴', '예수금'] }] },
+      { category: '계산·주문 정리', items: [{ key: 'execution-guide', label: '실행가이드', userOnly: true }] },
     ],
   },
   {
@@ -106,7 +106,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     label: '종목 연구',
     groups: [
       { category: '봇 판단 흐름', items: FLOW_STEPS.map((s) => ({ key: s.key, label: flowLabel(s) })) },
-      { category: '후보 더 보기', items: [{ key: 'scan', label: '스캔' }, { key: 'discovery', label: '발굴' }, { key: 'backtest', label: '백테스트' }, { key: 'watchlist', label: '감시목록' }] },
+      { category: '후보 더 보기', items: [{ key: 'scan', label: '스캔' }, { key: 'discovery', label: '발굴' }, { key: 'backtest', label: '급등 역추적(연구)' }, { key: 'watchlist', label: '감시목록' }] },
     ],
   },
   {
@@ -168,7 +168,6 @@ export const USER_NAV_KEYS: readonly string[] = [
   'briefing',
   'start',
   'accumulate',
-  'mix',
   'plan-sim',
   'plan',
   'child',
@@ -177,7 +176,6 @@ export const USER_NAV_KEYS: readonly string[] = [
   'money-flow',
   'budget',
   'family',
-  'simulator',
   'execution-guide',
   'goal-tracker',
   'choices',
@@ -189,6 +187,9 @@ export const USER_NAV_KEYS: readonly string[] = [
   'settings',
   'profile',
 ]
+
+/** 다른 화면으로 넘겨주기만 하는 옛 주소 — 화면이 없어 권한 검사 대신 App 라우트가 바로 넘긴다 (섞어보기 → 시뮬레이터, 2026-10-22) */
+export const REDIRECTED_ROUTES: readonly string[] = ['mix']
 
 export function canSeeNav(key: string, isAdmin: boolean): boolean {
   return isAdmin || USER_NAV_KEYS.includes(key)
@@ -228,7 +229,7 @@ export const BOT_USAGE_NOTES: Record<string, string> = {
     '봇 후보와 같은 점수 순서입니다. 봇은 이 중 최근 4분기 적자·영업이익 감소(전년 같은 분기 대비) 종목을 사지 않습니다 — 상장폐지 종목까지 넣은 8년 검증에서 이 조건만 평균보다 확실히 나았습니다. 점수 자체가 수익 차이를 예측한다는 근거는 없습니다.',
   analyze:
     '봇은 이 화면의 규칙 판정·목표가를 쓰지 않습니다. 재무 칸의 "봇 실적 관문"만 봇 매수 제외 기준과 같습니다. 나머지는 점수·차트·재무를 직접 확인하는 공부용입니다.',
-  simulator: '봇 매매와 별개인 계획 도구입니다. 승률 기본값은 과거 실측값입니다.',
+  simulator: '관리자용 개별주 실험 도구입니다(가상 계좌 실험·하락 대응 학습용). 봇 매매와 별개이며 승률 기본값은 과거 실측값입니다. 지수 적립 시뮬레이션은 계획 › 시뮬레이터에 있습니다.',
   'execution-guide': '봇 자동주문과 별개로, 직접 증권사 앱에 넣을 주문을 정리합니다.',
   strategy:
     '봇 가상 계좌와 후보 전략을 KODEX 200·CD금리와 비교합니다. 8주 측정 뒤 모두 앞선 후보만 승인 버튼이 생기고, 승인해야 봇이 바뀝니다(자동 전환 없음). 설정 중 "봇 미적용" 항목은 실제 매매에 쓰이지 않습니다.',
@@ -252,8 +253,6 @@ export const BOT_USAGE_NOTES: Record<string, string> = {
     '가상(실험) 계좌 매매와 별개입니다. 증권사 앱의 모아가기로 직접 사는 지수 ETF를 과거 실제 가격으로 시뮬레이션하고, 정한 금액을 꾸준히 이어가도록 돕습니다. 주문은 내지 않습니다.',
   'plan-sim':
     '가상(실험) 계좌 매매와 별개입니다. 고른 기간·구성·넣는 방식으로 과거 실제 가격을 따라간 계산이며, 봇은 이 결과를 쓰지 않습니다. 주문은 내지 않습니다.',
-  mix:
-    '가상(실험) 계좌 매매와 별개입니다. 코스피200·미국지수·채권·금을 원하는 비중으로 섞어 과거 실제 가격으로 수익과 낙폭을 비교합니다. 주문은 내지 않습니다.',
   plan:
     '가상(실험) 계좌 매매와 별개입니다. 버틸 수 있는 하락폭에 맞는 주식 비중, 일시금 대 분할, 목표에 필요한 월 적립액, 은퇴 때 세금·건보료를 뺀 인출 가능액을 과거 자료 범위로 보여줍니다. 주문은 내지 않습니다.',
   child:

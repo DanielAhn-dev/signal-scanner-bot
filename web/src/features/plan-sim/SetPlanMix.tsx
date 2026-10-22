@@ -7,7 +7,7 @@ import { PLAN_CHANGED_EVENT } from '../month-task/RaiseNudge'
 const PLAN_INDEXES = Object.keys(MIX_INDEX_LABEL) as MixIndex[]
 
 /**
- * 섞어보기 비중 → 내 계획 구성(plan.mix) — 화면 지도 6단계.
+ * 시뮬레이터(옛 섞어보기) 구성 → 내 계획 구성(plan.mix) — 화면 지도 6단계.
  * 구성은 코스피200·S&P500·나스닥100만 담는다(채권·금은 실험용으로 남긴다, docs/plan-screen-map-2026-10-19.md 3절).
  * 지수마다 이미 고른 상품·계좌는 그대로 둔다 — 저장 직전에 지금 구성을 다시 읽어 합친다.
  */
@@ -33,7 +33,7 @@ export default function SetPlanMix({ weights }: { weights: Weights }) {
 
   if (Object.keys(normalize(weights)).length === 0) return null
   if (!preview) {
-    return <p className="acc-note">채권·금이 섞인 비중은 내 계획 구성으로 정할 수 없어요. 내 계획 구성에는 코스피200·S&P500·나스닥100만 담습니다. 이 화면은 실험용으로 보세요.</p>
+    return <p className="acc-note">코스피200·S&P500·나스닥100 말고 다른 자산(채권·금·현금 등)이 섞인 구성은 내 계획 구성으로 정할 수 없어요. 내 계획 구성에는 이 세 지수만 담습니다. 이 구성은 비교용으로 보세요.</p>
   }
 
   const save = async () => {
@@ -61,8 +61,8 @@ export default function SetPlanMix({ weights }: { weights: Weights }) {
 
   return (
     <div className="acc-plan-save">
-      <button type="button" className="acc-primary" disabled={busy} onClick={() => void save()}>{busy ? '정하는 중…' : `이 비중을 내 계획 구성으로 정하기 (${mixLabel(preview)})`}</button>
-      <p className="acc-note">과거에 좋았던 비중을 고르기 쉽습니다. 위 결과보다 아래 &lsquo;하락이 왔다고 가정해보기&rsquo;에서 버틸 수 있는지를 먼저 보세요. 가상 계좌는 아직 코스피200만 삽니다.</p>
+      <button type="button" className="acc-primary" disabled={busy} onClick={() => void save()}>{busy ? '정하는 중…' : `이 구성을 내 계획으로 정하기 (${mixLabel(preview)})`}</button>
+      <p className="acc-note">과거에 좋았던 비중을 고르기 쉽습니다. 위 결과보다 &lsquo;하락이 왔다고 가정하면&rsquo;에서 버틸 수 있는지를 먼저 보세요. 가상 계좌는 아직 코스피200만 삽니다.</p>
       {msg && <p className="acc-note" role="status">{msg}</p>}
     </div>
   )

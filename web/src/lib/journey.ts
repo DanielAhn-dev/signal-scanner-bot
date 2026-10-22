@@ -63,7 +63,7 @@ export function resolveEntryPath(f: JourneyFacts): EntryPath | null {
 
 export function computeJourney(f: JourneyFacts): Journey {
   const path = resolveEntryPath(f)
-  const drop: JourneyStep = { key: 'drop', label: '떨어질 때 할 일', route: 'mix', done: f.hasDropPlan,
+  const drop: JourneyStep = { key: 'drop', label: '떨어질 때 할 일', route: 'plan-sim#drop-plan', done: f.hasDropPlan,
     desc: '얼마나 떨어지면 불안할지와, 팔고 싶어질 때 먼저 할 일을 미리 적어 둡니다.', why: '큰 손실은 대부분 떨어졌을 때 겁나서 파는 데서 생깁니다.' }
   const steps: JourneyStep[] = path === 'invested'
     ? [

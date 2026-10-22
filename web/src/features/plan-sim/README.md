@@ -11,6 +11,9 @@
 | `Results.tsx` | 결과 표(행=항목, 열=구성), 시작 달 분포 |
 | `AmountChart.tsx` | 넣은 돈·평가금 그래프(금액 / 넣은 돈 대비 %) |
 | `presets.ts` | 구성 예시, 자산군 이름, A·B·C |
+| `StressSection.tsx` | 하락 가정(섞어보기에서 옮김) — 13자산 → 주식(리츠 포함)·채권·금·현금 묶음 |
+| `SetPlanMix.tsx` | 이 구성을 내 계획으로 정하기(코스피200·S&P500·나스닥100만) |
+| `DropPlanCard.tsx` · `BehaviorGap.tsx` | 하락 때 할 일 미리 정하기(`#drop-plan`) · 하락 중에 팔았다면(코스피200) |
 
 계산은 `lib/sim/engine.ts`(섞어보기·모아가기와 같은 규칙, 불변 테스트), 기간은 `lib/sim/period.ts`, 자료는 `data/simData.ts`(`scripts/research/build_sim_data.py` 생성, 손으로 고치지 않음).
 
@@ -20,4 +23,5 @@
 - 비교하는 구성은 모두 같은 기간(교집합)으로 맞춘다. 이력이 짧은 자산이 기간을 정하면 화면에 알린다.
 - 로그인했으면 A를 내 계획 구성(`investment-prefs`의 `plan.mix`)·매달 금액(`plan.monthly`)으로 채운다. 사용자가 먼저 바꿨으면 늦게 온 값으로 덮지 않는다.
 - 세금·환전 비용은 넣지 않았다(계좌별 세금 옵션은 나중, 계획 8절).
-- 섞어보기의 하락 가정·이 구성으로 정하기는 4단계에서 옮긴다.
+- 섞어보기(`features/mix`)는 2026-10-22에 이 화면으로 합쳤다. 옛 `/mix`(·`#drop-plan`)는 `/plan-sim`으로 넘긴다(`REDIRECTED_ROUTES`).
+- 시드 만들기에서 `state.seedBuilderCapital`로 오면 '처음에 한 번에'를 채운다(저장 안 함).

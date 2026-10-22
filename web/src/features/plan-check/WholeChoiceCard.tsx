@@ -25,7 +25,7 @@ const tenth = (share: number) => {
 const share = (v: number) => `${Math.round(v * 100)}%`
 
 function goDropPlan() {
-  window.history.pushState({}, '', '/mix#drop-plan')
+  window.history.pushState({}, '', '/plan-sim#drop-plan')
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
@@ -129,7 +129,7 @@ export default function WholeChoiceCard() {
               {isFactStale(`${MIX_ASOF}-01`) && <span className="acc-warn"> 자료를 만든 지 6개월이 넘었습니다. 다시 확인이 필요합니다.</span>}
             </p>
             <More label="계산 방식과 한계"><p className="acc-note">
-              섞어보기와 같은 월말 가격(분배금 반영 수정주가, 원화 환산, 연 1회 비중 되돌리기)이고, 나눠 넣는 동안 안 넣은 돈은 수익 0%로 계산했습니다.
+              시뮬레이터와 같은 월말 가격(분배금 반영 수정주가, 원화 환산, 연 1회 비중 되돌리기)이고, 나눠 넣는 동안 안 넣은 돈은 수익 0%로 계산했습니다.
               시작 달이 겹쳐 서로 독립이 아니라 실제로 다른 경우는 약 {s.independent}개뿐입니다. 한국 24년은 큰 상승장(2025~2026 포함)이 들어 있어 낙관 쪽으로 치우칠 수 있고, 국고채는 2011년부터라 그 조합은 표본이 더 짧습니다.
             </p></More>
           </>

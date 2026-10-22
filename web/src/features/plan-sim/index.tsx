@@ -1,18 +1,23 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import More from '../../components/ui/More'
 import { SIM_ASOF, SIM_ASSETS, SIM_BUILT } from '../../data/simData'
 import { apiFetch } from '../../lib/api'
-import { normalize } from '../../lib/mix'
+import { STRESS_PRESETS, normalize, type Shocks } from '../../lib/mix'
 import { commonMonths, rollingStarts, simulatePlan, type SimRebalance } from '../../lib/sim/engine'
 import { PERIOD_PRESETS, resolveCustom, resolvePreset, sharedMonths, spanText, ymText } from '../../lib/sim/period'
 import type { MixEntry } from '../../lib/planMix'
 import { useCurrentChatId } from '../../stores/profileStore'
 import AmountChart, { type ChartMode } from './AmountChart'
+import BehaviorGap from './BehaviorGap'
+import DropPlanCard from './DropPlanCard'
 import MixEditor, { type Slot } from './MixEditor'
 import { MAX_SLOTS, SIM_MIX_PRESETS, SLOT_NAMES, presetKeyOf } from './presets'
 import { ResultTable, RollingList, type SlotResult } from './Results'
+import SetPlanMix from './SetPlanMix'
+import StressSection from './StressSection'
 import '../accumulate/accumulate.css'
-import '../mix/mix.css'
+import './mix.css'
 import './plan-sim.css'
 
 const STALE_DAYS = 180
@@ -29,18 +34,26 @@ const newSlot = (key: string): Slot => ({ uid: nextUid++, label: preset(key).lab
 
 /**
  * 시뮬레이터 — 과거 실제 가격으로 "이 구성에 이렇게 넣었다면" (docs/plan-simulator-redesign-2026-10-22.md 3절 스케치).
- * 순위·최적 조합을 보여 주지 않는다. 주문은 내지 않는다.
+ * 순위·최적 조합을 보여 주지 않는다. 주문은 내지 않는다. 섞어보기(하락 가정·내 계획으로 정하기·하락 중에 팔았다면)를 합쳤다.
+ * 시드 만들기에서 오면 확인한 가용 현금(state.seedBuilderCapital)을 '처음에 한 번에'로 채운다(이번 이동에만, 저장하지 않음).
  */
 export default function PlanSimPage() {
   const chatId = useCurrentChatId()
+  const location = useLocation()
+  const seedCapital = Number((location.state as { seedBuilderCapital?: number } | null)?.seedBuilderCapital)
+  const fromSeed = Number.isSafeInteger(seedCapital) && seedCapital > 0
   const [slots, setSlots] = useState<Slot[]>(() => [newSlot('half'), newSlot('kospi')])
   const [periodKey, setPeriodKey] = useState('r10')
   const [custom, setCustom] = useState<{ start: string; end: string } | null>(null)
-  const [lumpMan, setLumpMan] = useState('0')
+  const [lumpMan, setLumpMan] = useState(() => (fromSeed ? String(Math.round(seedCapital / 10_000)) : '0'))
   const [monthlyMan, setMonthlyMan] = useState('50')
   const [raisePct, setRaisePct] = useState('0')
   const [rebalance, setRebalance] = useState<SimRebalance>('year')
   const [mode, setMode] = useState<ChartMode>('amount')
+  // 아래 '이 구성 자세히'(하락 가정·내 계획으로 정하기)가 보는 구성
+  const [focus, setFocus] = useState(0)
+  const [shocks, setShocks] = useState<Shocks>(STRESS_PRESETS[0].shocks)
+  const [tolerance, setTolerance] = useState(20)
   // 사용자가 먼저 바꿨으면 늦게 온 내 계획 값으로 덮어쓰지 않는다
   const touched = useRef({ a: false, monthly: false })
 
@@ -103,6 +116,8 @@ export default function PlanSimPage() {
     setPeriodKey(key)
   }
 
+  const focusIdx = Math.min(focus, slots.length - 1)
+  const focusSlot = slots[focusIdx]
   const presetNote = PERIOD_PRESETS.find((p) => p.key === periodKey)
   const picked = [...new Set(slots.flatMap((s) => Object.keys(normalize(s.weights))))]
   const pickedAssets = SIM_ASSETS.filter((a) => picked.includes(a.id))
@@ -213,6 +228,25 @@ export default function PlanSimPage() {
           </section>
         </>
       )}
+
+      <section className="acc-card" aria-labelledby="ps-stress">
+        <h2 id="ps-stress">하락이 왔다고 가정하면</h2>
+        {slots.length > 1 && (
+          <div className="ps-chips" role="group" aria-label="살펴볼 구성">
+            {slots.map((s, k) => (
+              <button key={s.uid} type="button" className={k === focusIdx ? 'is-active' : ''} aria-pressed={k === focusIdx} onClick={() => setFocus(k)}>
+                <i className={`ps-key ps-key--${SLOT_NAMES[k]}`} />{SLOT_NAMES[k]} {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <StressSection weights={focusSlot.weights} shocks={shocks} onShocks={setShocks} tolerance={tolerance} onTolerance={setTolerance} />
+        <SetPlanMix weights={focusSlot.weights} />
+      </section>
+
+      <DropPlanCard tolerance={tolerance} />
+
+      <BehaviorGap />
 
       <section className="acc-card" aria-labelledby="ps-notes">
         <h2 id="ps-notes">읽을 때 주의</h2>

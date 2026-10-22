@@ -96,7 +96,7 @@ export default function ReachSection({ view, onSavePlan, saveMsg }: { view: Goal
           onRaise={(next) => setAcc({ ...acc, raise: next ?? undefined })}
           onSavePlan={onSavePlan}
           saveMsg={saveMsg}
-          onOpenMix={() => navigate('/mix')}
+          onOpenMix={() => navigate('/plan-sim')}
         />
       ) : monthly <= 0 ? (
         <p className="goal-note">내 계획에 매달 넣을 돈을 정하면, 그 금액으로 언제 닿는지와 더 빨리 닿는 방법을 보여 드립니다.</p>

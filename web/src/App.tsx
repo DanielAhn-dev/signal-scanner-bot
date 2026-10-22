@@ -17,7 +17,7 @@ import { useProfileStore, useCurrentClientId } from './stores/profileStore'
 import { useNeedsStart } from './lib/useStartGate'
 import { onOpenProfileModal } from './lib/profileModal'
 import { apiFetch } from './lib/api'
-import { canSeeNav } from './navigation'
+import { REDIRECTED_ROUTES, canSeeNav } from './navigation'
 import InviteGate from './features/invites/InviteGate'
 import { captureInviteFromUrl, readStashedCouple } from './lib/inviteStash'
 
@@ -83,7 +83,6 @@ const IncomeGuidePage      = lazyWithRecovery(() => import('./features/income-gu
 const GoalTrackerPage      = lazyWithRecovery(() => import('./features/goal-tracker'))
 const ChoiceReviewPage     = lazyWithRecovery(() => import('./features/choice-review'))
 const AccumulatePage       = lazyWithRecovery(() => import('./features/accumulate'))
-const MixPage              = lazyWithRecovery(() => import('./features/mix'))
 const PlanSimPage          = lazyWithRecovery(() => import('./features/plan-sim'))
 const ChildGiftPage        = lazyWithRecovery(() => import('./features/child-gift'))
 const PlanCheckPage        = lazyWithRecovery(() => import('./features/plan-check'))
@@ -384,7 +383,7 @@ function AppContent() {
           </div>
         }>
           {/* 일반 사용자는 허용된 화면만 — 주소로 직접 들어와도 홈으로 돌려보낸다 */}
-          {isAdminReady && !isAdmin && !isPublicAnalyze && !isReview && !canSeeNav(activeRoute, false) && (
+          {isAdminReady && !isAdmin && !isPublicAnalyze && !isReview && !REDIRECTED_ROUTES.includes(activeRoute) && !canSeeNav(activeRoute, false) && (
             <Navigate to="/dashboard" replace />
           )}
           {needsStart && !['/start', '/profile', '/settings'].includes(location.pathname) && (
@@ -423,7 +422,8 @@ function AppContent() {
             <Route path="/goal-tracker"           element={<GoalTrackerPage />} />
             <Route path="/choices"                element={<ChoiceReviewPage />} />
             <Route path="/accumulate"             element={<AccumulatePage />} />
-            <Route path="/mix"                    element={<MixPage />} />
+            {/* 섞어보기는 시뮬레이터에 합쳤다(2026-10-22) — 옛 주소·#drop-plan 링크를 그대로 받는다 */}
+            <Route path="/mix"                    element={<Navigate to={{ pathname: '/plan-sim', hash: location.hash }} replace />} />
             <Route path="/plan-sim"               element={<PlanSimPage />} />
             <Route path="/child"                  element={<ChildGiftPage />} />
             <Route path="/plan"                   element={<PlanCheckPage />} />

@@ -64,7 +64,7 @@ function OverseasLimits({ h }: { h: HistorySeries }) {
         <li>약 {spanYears}년치뿐이라 긴 기간일수록 비교할 시작점이 적습니다. 시작점이 모자라면 계산하지 않습니다.</li>
         <li>{h.id === 'nasdaq100' ? '이 기간은 미국 기술주가 유난히 강했던 구간입니다.' : '이 기간은 미국 주식이 다른 나라보다 강했던 구간입니다.'} 결과가 좋게 나와도 앞으로도 그렇다는 근거는 아닙니다.</li>
         <li>원화 환산이라 환율 효과가 섞여 있습니다. 원화가 강해지면 같은 지수 상승에도 덜 오릅니다.</li>
-        {h.dragPct > 0 && <li>한국 상장 상품이 없던 때는 미국 ETF 가격을 쓰고, 세금·보수 몫으로 연 {h.dragPct}%를 뺐습니다(섞어보기와 같은 값).</li>}
+        {h.dragPct > 0 && <li>한국 상장 상품이 없던 때는 미국 ETF 가격을 쓰고, 세금·보수 몫으로 연 {h.dragPct}%를 뺐습니다(시뮬레이터와 같은 값).</li>}
       </ul>
     </div>
   )
@@ -74,7 +74,7 @@ function OverseasLimits({ h }: { h: HistorySeries }) {
 function MixLimits({ h }: { h: HistorySeries }) {
   return (
     <div className="acc-note">
-      <p>위 결과는 <strong>{h.name}</strong> 구성을 매달 비중대로 맞췄다고 보고 계산했습니다({ymLabel(h.monthly[0][0])} ~ {h.asOf}, 섞어보기와 같은 이력).</p>
+      <p>위 결과는 <strong>{h.name}</strong> 구성을 매달 비중대로 맞췄다고 보고 계산했습니다({ymLabel(h.monthly[0][0])} ~ {h.asOf}, 시뮬레이터와 같은 이력).</p>
       <ul className="acc-limits">
         <li>지수마다 이력 시작이 달라 가장 짧은 지수가 시작을 정합니다. 짧을수록 비교할 시작점이 적습니다.</li>
         <li>이 기간은 미국 주식이 다른 나라보다 강했던 구간입니다. 결과가 좋게 나와도 앞으로도 그렇다는 근거는 아닙니다.</li>

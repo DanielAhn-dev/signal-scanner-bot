@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import PlanSimPage from './index'
+import { MemoryRouter } from 'react-router-dom'
+import PlanSimPageInner from './index'
+
+const PlanSimPage = () => <MemoryRouter><PlanSimPageInner /></MemoryRouter>
 
 const apiFetchMock = vi.fn()
 let chatId = ''
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
-vi.mock('../../stores/profileStore', () => ({ useCurrentChatId: () => chatId }))
+vi.mock('../../stores/profileStore', async (orig) => ({ ...(await orig<typeof import('../../stores/profileStore')>()), useCurrentChatId: () => chatId }))
 beforeEach(() => {
   apiFetchMock.mockReset()
   chatId = ''
