@@ -33,7 +33,7 @@ KR = {
     "261220": "KODEX WTI원유선물(H)", "329200": "TIGER 리츠부동산인프라", "352560": "KODEX 미국부동산리츠(H)",
     "182480": "TIGER 미국MSCI리츠(합성 H)", "273130": "KODEX 종합채권(AA-이상)액티브",
 }
-US = ["SPY", "QQQ", "TLT", "IEF", "TIP", "GLD", "DBC", "VNQ", "SHY", "^GSPC", "^KS11", "KRW=X", "GC=F"]
+US = ["SPY", "QQQ", "TLT", "IEF", "TIP", "GLD", "DBC", "VNQ", "SHY", "EFA", "EEM", "^GSPC", "^KS11", "^KQ11", "KRW=X", "GC=F"]
 
 
 def http(url, enc="utf-8"):
