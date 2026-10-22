@@ -1,0 +1,60 @@
+/* 시뮬레이터 — accumulate.css·mix.css 위에 이 화면만의 것 */
+.ps { word-break: keep-all; }
+.ps header p { line-height: 1.55; }
+
+/* 구성 색 — A·B·C 순서로 그래프·표·범례에서 같은 색 */
+.ps { --ps-a: var(--color-brand); --ps-b: var(--color-orange-500); --ps-c: var(--color-green-600); }
+.ps-line { stroke-width: 2.5; }
+.ps-line--A { stroke: var(--ps-a); stroke-width: 3; }
+.ps-line--B { stroke: var(--ps-b); }
+.ps-line--C { stroke: var(--ps-c); }
+.ps-key { display: inline-block; width: 12px; height: 4px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+.ps-key--A { background: var(--ps-a); }
+.ps-key--B { background: var(--ps-b); }
+.ps-key--C { background: var(--ps-c); }
+.ps-zero { stroke: var(--color-text-tertiary); }
+.ps-tip { width: 200px; }
+
+.ps-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ps-chips button { min-height: 40px; padding: 8px 12px; border: 1px solid var(--color-border-default); border-radius: 20px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 14px; cursor: pointer; }
+.ps-chips button.is-active { border-color: var(--color-brand); background: var(--color-brand-subtle); color: var(--color-text-brand); font-weight: 700; }
+
+.ps-btn { min-height: 40px; padding: 8px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 14px; cursor: pointer; flex: 0 0 auto; }
+.ps-btn:hover { background: var(--color-bg-hover); }
+.ps-btn--add { align-self: end; }
+
+.ps-slot { border: 1px solid var(--color-border-default); border-left-width: 4px; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.ps-slot--A { border-left-color: var(--ps-a); }
+.ps-slot--B { border-left-color: var(--ps-b); }
+.ps-slot--C { border-left-color: var(--ps-c); }
+.ps-slot-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ps-slot-name { font-weight: 700; color: var(--color-text-secondary); min-width: 1.2em; }
+.ps-slot-text { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ps-slot-text small { color: var(--color-text-secondary); line-height: 1.45; }
+.ps-slot-body { display: flex; flex-direction: column; gap: 12px; }
+.ps-group { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.ps-group legend { font-size: 13px; font-weight: 700; color: var(--color-text-secondary); margin-bottom: 4px; }
+
+.ps table.ps-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ps-table th[scope='row'] { font-weight: 500; }
+.ps-hint { display: block; color: var(--color-text-tertiary); font-size: 11px; font-weight: 400; }
+
+.ps-rolling { display: flex; flex-direction: column; gap: 16px; }
+.ps-roll { display: flex; flex-direction: column; gap: 8px; }
+.ps-roll-head { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.ps-roll-bar { position: relative; height: 14px; border-radius: 7px; background: var(--color-bg-sunken); }
+.ps-roll-range { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; background: var(--color-brand-muted); }
+.ps-roll-mid { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--color-text-secondary); }
+.ps-roll-me { position: absolute; top: 1px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--color-text-primary); border: 2px solid var(--color-bg-surface); }
+.ps-roll-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--color-border-default); border: 1px solid var(--color-border-default); border-radius: 6px; overflow: hidden; }
+.ps-roll-facts > div { padding: 8px; background: var(--color-bg-surface); }
+.ps-roll-facts dt { color: var(--color-text-secondary); font-size: 12px; }
+.ps-roll-facts dd { margin-top: 2px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ps-k-range, .ps-k-mid, .ps-k-me { display: inline-block; margin-right: 4px; vertical-align: middle; }
+.ps-k-range { width: 16px; height: 8px; border-radius: 3px; background: var(--color-brand-muted); }
+.ps-k-mid { width: 2px; height: 12px; background: var(--color-text-secondary); }
+.ps-k-me { width: 10px; height: 10px; border-radius: 50%; background: var(--color-text-primary); }
+
+@media (max-width: 480px) {
+  .ps-roll-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

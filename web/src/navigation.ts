@@ -82,8 +82,8 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'plan',
     label: '계획',
     groups: [
-      { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드', keywords: ['분배금', '받은 분배금', '배당', '인컴', '예수금'] }] },
-      { category: '계산·주문 정리', items: [{ key: 'simulator', label: '시뮬레이터', userOnly: true }, { key: 'execution-guide', label: '실행가이드', userOnly: true }] },
+      { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'plan-sim', label: '시뮬레이터', keywords: ['백테스트', '과거', '적립', '일시금', '수익률'] }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드', keywords: ['분배금', '받은 분배금', '배당', '인컴', '예수금'] }] },
+      { category: '계산·주문 정리', items: [{ key: 'simulator', label: '종목 금액 나누기(실험)', userOnly: true }, { key: 'execution-guide', label: '실행가이드', userOnly: true }] },
     ],
   },
   {
@@ -169,6 +169,7 @@ export const USER_NAV_KEYS: readonly string[] = [
   'start',
   'accumulate',
   'mix',
+  'plan-sim',
   'plan',
   'child',
   'follow',
@@ -249,6 +250,8 @@ export const BOT_USAGE_NOTES: Record<string, string> = {
     '가상(실험) 계좌 매매와 별개입니다. 자동매매 방식을 바꾼 날부터 "안 바꿨다면"과 실제를 같은 출발점에서 비교합니다. 주문은 내지 않고, 30일이 지나야 숫자를 보여줍니다.',
   accumulate:
     '가상(실험) 계좌 매매와 별개입니다. 증권사 앱의 모아가기로 직접 사는 지수 ETF를 과거 실제 가격으로 시뮬레이션하고, 정한 금액을 꾸준히 이어가도록 돕습니다. 주문은 내지 않습니다.',
+  'plan-sim':
+    '가상(실험) 계좌 매매와 별개입니다. 고른 기간·구성·넣는 방식으로 과거 실제 가격을 따라간 계산이며, 봇은 이 결과를 쓰지 않습니다. 주문은 내지 않습니다.',
   mix:
     '가상(실험) 계좌 매매와 별개입니다. 코스피200·미국지수·채권·금을 원하는 비중으로 섞어 과거 실제 가격으로 수익과 낙폭을 비교합니다. 주문은 내지 않습니다.',
   plan:
