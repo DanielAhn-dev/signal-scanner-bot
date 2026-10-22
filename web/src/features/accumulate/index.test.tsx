@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AccumulatePage from './index'
 import { userScopedKey } from '../../lib/userState'
@@ -96,17 +96,23 @@ describe('모아가기', () => {
     expect(screen.getByText(/원금의 \+20% 이상/)).toBeInTheDocument()
   })
 
-  it('기간 골라 보기: 금융위기 직전 시작이 기본이고, 가장 깊었던 손실과 다른 시작점 대비 위치를 보여 준다', async () => {
-    renderPage()
+  it('기간 골라 보기는 시뮬레이터로 — 지금 구성·금액·기간을 채워 넘긴다', async () => {
+    const Probe = () => <pre data-testid="sim-state">{JSON.stringify(useLocation().state)}</pre>
+    render(
+      <MemoryRouter initialEntries={['/accumulate']}>
+        <Routes>
+          <Route path="/accumulate" element={<AccumulatePage />} />
+          <Route path="/plan-sim" element={<Probe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
     await screen.findByText('추천')
-    fireEvent.click(screen.getByRole('button', { name: '기간 골라 보기' }))
-    expect(screen.getByRole('button', { name: '2008 금융위기 직전' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('끝 평가금')).toBeInTheDocument()
-    expect(screen.getByText('가장 깊었던 손실')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /고른 기간의 평가금/ })).toBeInTheDocument()
-    expect(screen.getByText(/이보다 결과가 나빴던 경우가/)).toBeInTheDocument()
-    // 분포 화면의 TR 비교표는 기간 보기에서 숨긴다
-    expect(screen.queryByText('KODEX 200 vs KODEX 200TR')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '기간 골라 보기' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '시뮬레이터에서 직접 바꿔 보기' }))
+    const state = JSON.parse(screen.getByTestId('sim-state').textContent!)
+    expect(state.simPrefill.slots[0].weights).toEqual({ kospi200: 100 })
+    expect(state.simPrefill.years).toBe(10)
+    expect(state.simPrefill.monthly).toBeGreaterThan(0)
   })
 
   it('앞으로의 경우의 수: 3번의 세 번째 보기로, 예측이 아니라고 밝히고 과거 분포 비교표는 숨긴다', async () => {

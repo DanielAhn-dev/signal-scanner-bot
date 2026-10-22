@@ -4,6 +4,7 @@ import AmountHint from '../../components/ui/AmountHint'
 import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
+import { SIM_PATH, simLinkState } from '../../lib/sim/prefill'
 import GoalCard from './GoalCard'
 import WholeChoiceCard from './WholeChoiceCard'
 import { EARLY_WITHDRAWAL_TAX_RATE, PENSION_SAVING_LIMIT_WON, PENSION_TOTAL_LIMIT_WON, TAX_RULES_YEAR, compareAccounts, creditRate, planTaxShelter, type IncomeBand } from '../../lib/taxShelter'
@@ -122,6 +123,7 @@ function ToleranceCard() {
 }
 
 function MarketPickCard() {
+  const navigate = useNavigate()
   const d = MARKET_PICK
   const h10 = d.hold.find((x) => x.years === 10)!
   const x = (v: number) => `${v.toFixed(2)}배`
@@ -143,6 +145,12 @@ function MarketPickCard() {
       <More>
         <p className="acc-note">전체 수익률은 비슷해서 "길게 보면 다르지 않다"는 느낌이 맞습니다. 다만 코스피는 몇 해에 몰아서 오르고 그 구간을 지나지 못한 시작에는 불리했습니다(10년 보유로 보면 미국이 {Math.round(h10.usWinPct)}% 이겼습니다). 둘은 따로 움직여서(월 상관 {d.corr.toFixed(2)}) <strong>반반이 가장 나쁜 경우가 덜 나빴습니다.</strong> 고르기 어렵다면 반반이 후회를 줄입니다. 일반 증권 앱(세후)에서도 10년 보유 중앙값은 미국 {x(h10.uTaxMed)}, 코스피 {x(h10.kTaxMed)}로 순서는 같았지만(세후로 보면 미국이 {Math.round(h10.usWinTaxPct)}% 이김) 격차는 조금 줄었습니다. 세후는 코스피200 분배금 연 2.3% 가정, 국내 상장 미국 지수는 매도 차익의 15.4%만 반영한 단순 계산이라 손익통산·종합과세는 빠져 있습니다. 절세계좌에서는 미국 지수 쪽 세금이 줄어듭니다. 환율의 영향은 전체 기간 연 {d.fx.fxCagr.toFixed(1)}%p로 작았고, 환율을 빼고 달러 수익만 봐도 10년 보유에서 미국이 {d.fx.usdOnlyWinPct}% 이겼습니다. 오히려 환율은 완충 역할을 했습니다. 미국 주식이 가장 나빴던 12개월(달러 기준 월평균 {d.fx.worstUsdAvg}%)에는 원화가 월평균 {d.fx.worstFxAvg > 0 ? '+' : ''}{d.fx.worstFxAvg}% 약해져 원화 기준 손실이 월평균 {d.fx.worstKrwAvg}%로 줄었습니다. 환헤지 상품은 이 완충이 없어집니다.</p>
       </More>
+      {/* 표는 고정된 연구 숫자 — 기간·금액을 바꿔 보려면 같은 세 구성을 시뮬레이터에 채워 넘긴다 */}
+      <button type="button" className="acc-secondary" onClick={() => navigate(SIM_PATH, { state: simLinkState({ slots: [
+        { label: '코스피200만', weights: { kospi200: 100 } },
+        { label: 'S&P500만', weights: { sp500: 100 } },
+        { label: '국내·해외 반반', weights: { kospi200: 50, sp500: 50 } },
+      ] }) })}>세 가지를 시뮬레이터에서 기간·금액 바꿔 보기</button>
       <Basis id="market" />
     </section>
   )

@@ -5,6 +5,7 @@ import { formatKrwMan, formatKrwReadable } from '../../lib/format'
 import { projectValue } from '../../lib/goalReach'
 import { FUTURE_DEFAULT_PATHS, shareAtLeast, simulateFuture } from '../../lib/futurePaths'
 import type { MixIndex } from '../../lib/planMix'
+import { SIM_PATH, simLinkState, weightsFromPlan } from '../../lib/sim/prefill'
 import { useUserState } from '../../lib/userState'
 import { EMPTY_STATE, type AccumulateState } from '../../lib/accumulate'
 import GoalReachOptions from './GoalReachOptions'
@@ -49,6 +50,11 @@ export default function ReachSection({ view, onSavePlan, saveMsg }: { view: Goal
   const paid = view.equity + monthly * years * 12
   const todayPrice = (v: number) => v / Math.pow(1 + INFLATION_ASSUMPTION, years)
   const shortHistory = Number(rates.from.slice(0, 4)) >= 2010
+  // 같은 계획(내 구성·지금 금액·매달·해마다 늘리기·기간)을 과거 실제 가격으로 — 시뮬레이터에 채워 넘긴다
+  const openSim = () => navigate(SIM_PATH, { state: simLinkState({
+    slots: weights.length ? [{ label: '내 계획 구성', weights: weightsFromPlan(weights) }] : undefined,
+    monthly, lump: view.equity, raisePct: acc.raise?.pct, years,
+  }) })
 
   return (
     <section className="goal-card" aria-label="내 계획이면 언제 닿나">
@@ -77,6 +83,10 @@ export default function ReachSection({ view, onSavePlan, saveMsg }: { view: Goal
         <br />
         <small>오늘 물가로 보면 보통 {formatKrwMan(todayPrice(typical))} · 운 나쁘면 {formatKrwMan(todayPrice(low))} (물가 연 2% 가정)</small>
       </p>
+      <p className="goal-note">
+        평균으로 늘려 본 값입니다. 지난 {years}년을 실제 가격으로 따라가 보려면{' '}
+        <button type="button" className="goal-link" onClick={openSim}>시뮬레이터에서 보기</button>
+      </p>
       {reachPct && (
         <p className="goal-note">
           과거 1년 조각을 섞은 경우 {FUTURE_DEFAULT_PATHS.toLocaleString()}개 중 {years}년 뒤 필요 시드 {formatKrwMan(target)} 이상인 경우 <strong>{reachPct.hit.toFixed(0)}%</strong>
@@ -96,7 +106,7 @@ export default function ReachSection({ view, onSavePlan, saveMsg }: { view: Goal
           onRaise={(next) => setAcc({ ...acc, raise: next ?? undefined })}
           onSavePlan={onSavePlan}
           saveMsg={saveMsg}
-          onOpenMix={() => navigate('/plan-sim')}
+          onOpenMix={openSim}
         />
       ) : monthly <= 0 ? (
         <p className="goal-note">내 계획에 매달 넣을 돈을 정하면, 그 금액으로 언제 닿는지와 더 빨리 닿는 방법을 보여 드립니다.</p>

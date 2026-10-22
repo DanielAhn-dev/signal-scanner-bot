@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import More from '../../components/ui/More'
 import { apiFetch } from '../../lib/api'
 import { recommendOverseas } from '../../lib/accumulate'
+import { SIM_PATH, simLinkState, weightsFromPlan } from '../../lib/sim/prefill'
 import type { IndexEtfCandidatesView } from '../../lib/indexEtfCandidates'
 import {
   BEGINNER_PRESET_KEY,
@@ -107,7 +108,7 @@ export default function MixPicker({ saved, draft, onDraft, etfView, kospiSlot, o
             <span className="acc-preset-mix">{mixLabel(draft)}</span>
           </div>
         )}
-        <button type="button" className="acc-preset acc-preset--link" onClick={() => navigate('/plan-sim')}>
+        <button type="button" className="acc-preset acc-preset--link" onClick={() => navigate(SIM_PATH, { state: simLinkState({ slots: [{ label: mixLabel(draft), weights: weightsFromPlan(draft) }] }) })}>
           <strong>직접 정하기</strong>
           <span className="acc-preset-mix">시뮬레이터에서 비중을 바꿔 보고 정합니다</span>
         </button>
