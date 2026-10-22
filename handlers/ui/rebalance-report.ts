@@ -92,6 +92,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       plan,
       accountKey,
       etf,
+      realtimeCodes: realtimeHits,
+      unpricedNames: holdings.filter((h) => !(h.price > 0) && h.quantity > 0).map((h) => h.name),
       market: drop ? { asOf: drop.asOf, changePct: drop.changePct, fromHighPct: drop.fromHighPct } : null,
       // 이 계좌에 매달 넣는 돈 (계좌에 적은 값, 없으면 예전 공통 값은 가장 큰 계좌에만 — scopeSettingsToAccount)
       monthlyContribution: file.settings.monthlyContribution ?? 0,

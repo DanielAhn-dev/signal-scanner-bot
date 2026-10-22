@@ -18,6 +18,8 @@ import { planMixLineForAccount, type PlanMixLine } from "./planMixGuide";
 import { BUCKET_LABEL, CASH_BALANCE_CODE, REBALANCE_BAND_PP, isTaxAdvantagedAccount, resolveYieldPct, type AssetBucket, type BucketGroup, type IncomeGuideView } from "./incomeGuide";
 import { FEE_TIE_PP, strategyKey, type RebalancePlan } from "./rebalancePlan";
 import { KRX_SELL_TAX_RATE, resolveOtherEtfGainTax, resolveSellTaxRate } from "./securitiesTax";
+import { buildReportReliability, type ReportReliability } from "./reportReliability";
+import { buildReportStress, type ReportStress } from "./reportStress";
 import { chooseIndexBuy, newMoneyFromSettings, type EtfYield, type FeeAlternative } from "./indexProductChoice";
 
 /** 매도 수수료 가정 (온라인 기준) */
@@ -171,6 +173,10 @@ export type RebalanceReport = {
         }>;
       })
     | null;
+  /** 하락 가정에서 이 계좌 평가금이 얼마나 줄지 (예수금 제외, 예측 아님) */
+  stress: ReportStress | null;
+  /** 숫자의 재료가 믿을 만한지 */
+  reliability: ReportReliability;
   headline: string;
   steps: string[];
   notes: string[];
@@ -213,6 +219,10 @@ export function buildRebalanceReport(input: {
   feeAlternatives?: FeeAlternative[];
   /** 내 계획 구성(여러 지수) — 이 계좌가 맡은 몫을 할 일에 한 줄로 (src/lib/planMixGuide.ts). 없으면 예전처럼 한 곳 */
   planMixLines?: PlanMixLine[] | null;
+  /** 실시간가를 받은 종목 코드 (없으면 실시간 여부는 점검하지 않는다) */
+  realtimeCodes?: Set<string>;
+  /** 이 계좌에서 가격이 없어 가이드 계산에서 빠진 종목 이름 */
+  unpricedNames?: string[];
 }): RebalanceReport | null {
   const { view, plan, accountKey } = input;
   const etf = input.etf ?? new Map<string, EtfYield>();
@@ -659,6 +669,20 @@ export function buildRebalanceReport(input: {
   ];
   if (rows.some((r) => r.avgPrice == null)) notes.push("평균 매수가가 없는 종목은 수익 구간 판단 없이 그대로 둡니다.");
 
+  const stress = buildReportStress(held.map((h) => ({ bucket: h.bucket, name: h.name, value: h.value })));
+  const reliability = buildReportReliability({
+    rows: held.map((h) => {
+      const y = yieldOf(h.code, h.bucket, h.name);
+      return { code: h.code, name: h.name, quantity: h.quantity, price: h.price, avgPrice: h.avgPrice ?? null, value: h.value, isIncome: h.group === "income", yieldSource: y.source };
+    }),
+    accountTotal: total,
+    today: view.today,
+    realtimeCodes: input.realtimeCodes,
+    unpricedNames: input.unpricedNames,
+    hasIncomeFloor: floor > 0,
+  });
+  if (reliability.blockQuantities) notes.push("현재가가 없는 종목이 있어 매매 주수는 확정하지 않은 참고용입니다. 9번 데이터 신뢰도를 먼저 확인하세요.");
+
   return {
     today: view.today,
     account: {
@@ -703,6 +727,8 @@ export function buildRebalanceReport(input: {
     buy: { target: buyTarget, hint: buyHint, fromSells, fromCash, monthlyDistribution: accountMonthlyNet, monthlyContribution, shares: buyShares },
     growth: plan ? { actualPct: plan.growth.actualPct, targetPct: plan.growth.targetPct, needByNewMoney: plan.growth.needByNewMoney, months: plan.growth.months } : null,
     compress: plan?.compress ? { ...plan.compress, moves: compressMoves } : null,
+    stress,
+    reliability,
     headline,
     steps,
     notes,

@@ -197,8 +197,30 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
     <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>수량</th><th>평단<br>(현재가)</th><th>평가</th><th>손익</th><th>비중</th><th>분배율</th><th>총보수</th><th>월 분배금</th></tr></thead>${holdingRows}</table></div>
     <p class="rb-muted">분배율: 네이버 최근 12개월. * 표시는 자료가 없어 상품 유형별 가정을 쓴 값입니다. 총보수: 리밸런싱 가이드에 직접 넣은 값, 없으면 네이버 공시 총보수(연).</p>`))
 
-  // 7. 실행 순서
-  parts.push(section('7. 실행 순서', `<ol class="rb-steps">${r.steps.map((s) => `<li>${e(s)}</li>`).join('')}</ol>`))
+  // 7. 하락 가정
+  if (r.stress) {
+    const st = r.stress
+    const shareRows = st.shares.map((x) => `<tr><td class="rb-l">${e(x.label)}</td><td>${money(x.value)}</td><td>${x.pct.toFixed(1)}%</td></tr>`).join('')
+    const scenRows = st.scenarios
+      .map((x) => `<tr><td class="rb-l"><b>${e(x.label)}</b><br><span class="rb-muted">${e(x.note)}</span></td><td class="rb-down">${money(x.lossWon)}</td><td class="rb-down">${pct(x.lossPct)}</td><td>${x.recoveryNeededPct > 0 ? `+${x.recoveryNeededPct.toFixed(0)}%` : '-'}</td></tr>`)
+      .join('')
+    parts.push(section('7. 하락 가정', `
+      <p>이 계좌 평가금 ${money(st.total)}(예수금 제외)에 아래 충격이 왔을 때 줄어드는 금액입니다. <b>예측이 아니라 계산</b>이고, 같은 자산군은 모두 같은 비율로 변한다고 가정했습니다.</p>
+      <div class="rb-wrap"><table class="rb-table"><thead><tr><th>자산군</th><th>평가금</th><th>계좌 안 비중</th></tr></thead><tbody>${shareRows}</tbody></table></div>
+      <div class="rb-wrap"><table class="rb-table"><thead><tr><th>가정</th><th>평가금 변화</th><th>변화율</th><th>회복에 필요한 수익률</th></tr></thead><tbody>${scenRows}</tbody></table></div>
+      <p class="rb-muted">실제 하락폭은 시장 상황과 자산 간 움직임에 따라 달라지며, 이 표의 손실이 최대 손실이라는 뜻이 아닙니다. 평가액 하락을 특정 비율 안으로 막는 것은 어떤 비중으로도 보장할 수 없습니다. 커버드콜은 하락 때 일부 덜 빠질 수 있으나 같은 주식형으로 계산했고, 레버리지·인버스는 주식 하락의 2배로 넣었습니다.</p>`))
+  }
+
+  // 8. 실행 순서
+  parts.push(section('8. 실행 순서', `<ol class="rb-steps">${r.steps.map((s) => `<li>${e(s)}</li>`).join('')}</ol>`))
+  // 9. 데이터 신뢰도
+  const rel = r.reliability
+  const relTone = rel.level === 'good' ? 'rb-headline' : 'rb-alert'
+  parts.push(section('9. 데이터 신뢰도 · 확인할 것', `
+    <div class="${relTone}"><b>신뢰도: ${e(rel.levelLabel)}</b></div>
+    <div class="rb-wrap"><table class="rb-table"><tbody>${rel.facts.map((f) => `<tr><td class="rb-l">${e(f.label)}</td><td>${e(f.value)}</td></tr>`).join('')}</tbody></table></div>
+    ${rel.items.length ? `<ul class="rb-list">${rel.items.map((i) => `<li>${i.level === 'warn' ? '<span class="rb-chip rb-sell">확인</span> ' : ''}${e(i.text)}</li>`).join('')}</ul>` : '<p class="rb-muted">가격·수량·합계 점검에서 어긋난 곳이 없습니다.</p>'}
+    <p class="rb-muted">입력하지 않은 다른 계좌와 예금은 반영되지 않았고, 세금은 추정이라 실제 신고와 다를 수 있습니다. 분배금 추정은 확정값이 아닙니다.</p>`))
   parts.push(section('기준과 한계', `<ul class="rb-list rb-muted">${r.notes.map((s) => `<li>${e(s)}</li>`).join('')}</ul>`))
 
   return renderLayout({

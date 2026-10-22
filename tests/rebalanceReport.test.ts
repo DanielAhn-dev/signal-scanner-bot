@@ -337,3 +337,41 @@ test("내 계획 구성이 여러 지수면 리포트 할 일에 이 계좌가 �
   const none = buildRebalanceReport({ view, plan, accountKey: "a" })!;
   assert.ok(!none.steps.some((x) => x.includes("내 계획 구성")));
 });
+
+test("리포트에 하락 가정과 데이터 신뢰도 절이 들어간다 (금은 별도 자산군)", () => {
+  const r = reportFor([
+    H("069500", "KODEX 200", 50_000, 100, 45_000), // 500만 주식형
+    H("411060", "ACE KRX금현물", 20_000, 100, 18_000), // 200만 금
+    H("153130", "KODEX 단기채권", 100_000, 30, 99_000), // 300만 현금성
+  ]);
+  assert.ok(r.stress);
+  const crash = r.stress!.scenarios.find((s) => s.key === "crash")!;
+  // 주식 500만 × −40% = −200만, 금·현금성 제자리 → 1000만 중 −20%
+  assert.equal(crash.lossWon, -2_000_000);
+  assert.ok(Math.abs(crash.lossPct + 20) < 1e-9);
+  assert.ok(Math.abs(crash.recoveryNeededPct - 25) < 1e-9);
+  assert.equal(r.stress!.shares.reduce((s, x) => s + x.value, 0), r.stress!.total);
+  assert.ok(r.stress!.shares.some((x) => x.cls === "gold"));
+  assert.equal(r.rows.find((x) => x.code === "411060")!.bucketLabel, "금");
+  const html = renderRebalanceReportHtml(r, "2026-10-22");
+  assert.match(html, /7\. 하락 가정/);
+  assert.match(html, /9\. 데이터 신뢰도/);
+  assert.match(html, /예측이 아니라 계산/);
+});
+
+test("데이터 신뢰도: 가격 없는 종목은 수량 확정 불가, 매수가 대체는 경고", () => {
+  const holdings = [H("069500", "KODEX 200", 50_000, 100, 45_000), H("498400", "KODEX 200타겟위클리커버드콜", 0, 100, 17_000)];
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 65 } };
+  const view = buildIncomeGuideView({ holdings, settings: s, today: "2026-10-15" });
+  const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, cashPlan: view.cashPlan });
+  const r = buildRebalanceReport({ view, plan, accountKey: "a", realtimeCodes: new Set(), unpricedNames: holdings.filter((h) => !(h.price > 0)).map((h) => h.name) })!;
+  assert.equal(r.reliability.level, "low");
+  assert.equal(r.reliability.blockQuantities, true);
+  assert.ok(r.reliability.items.some((i) => i.level === "warn" && /현재가가 없는/.test(i.text)));
+  assert.ok(r.notes.some((n) => /주수는 확정하지 않은/.test(n)));
+
+  const ok = reportFor([H("069500", "KODEX 200", 50_000, 100, 50_000)]);
+  assert.equal(ok.reliability.level, "good"); // realtimeCodes를 안 주면 실시간 여부는 점검하지 않는다
+  const same = buildRebalanceReport({ view: buildIncomeGuideView({ holdings: [H("069500", "KODEX 200", 50_000, 100, 50_000)], settings: s, today: "2026-10-15" }), plan: null, accountKey: "a", realtimeCodes: new Set() })!;
+  assert.ok(same.reliability.items.some((i) => /매수가로 대신/.test(i.text)));
+});
