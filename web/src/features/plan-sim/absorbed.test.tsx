@@ -91,6 +91,22 @@ describe('시드 만들기에서 넘어오면', () => {
   })
 })
 
+describe('다른 화면에서 값을 채워 넘기면', () => {
+  it('구성·금액·해마다 늘리기·기간을 채우고, 빠른 선택에 없는 길이도 최근 n년으로 계산한다', () => {
+    page({ simPrefill: {
+      slots: [{ label: '내 계획 구성', weights: { kospi200: 50, nasdaq100: 50 } }, { label: '코스피200만', weights: { kospi200: 100 } }],
+      monthly: 700_000, lump: 12_000_000, raisePct: 0.03, years: 7,
+    } })
+    expect(screen.getByText('내 계획 구성', { selector: '.ps-slot--A strong' })).toBeTruthy()
+    expect((screen.getByLabelText('매달 (만원)') as HTMLInputElement).value).toBe('70')
+    expect((screen.getByLabelText('처음에 한 번에 (만원)') as HTMLInputElement).value).toBe('1200')
+    expect((screen.getByLabelText('해마다 매달 넣는 돈 늘리기 (%)') as HTMLInputElement).value).toBe('3')
+    expect(screen.getAllByText(/· 7년/).length).toBeGreaterThan(0)
+    // 빠른 선택 칩은 어느 것도 눌려 있지 않다
+    expect(screen.getByRole('button', { name: '최근 10년' }).getAttribute('aria-pressed')).toBe('false')
+  })
+})
+
 describe('실제 데이터 점검 (섞어보기에서 옮김)', () => {
   it('한국 상장 4종 조합은 파이썬 검증(연 12.3%, 낙폭 -19%)과 비슷하다', () => {
     const r = simulateMix(MIX_PRESETS.find((p) => p.key === 'mix4')!.weights, 'month')!

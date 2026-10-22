@@ -95,6 +95,7 @@ export default function AmountChart({ labels, paid, series, mode }: Props) {
         {yearMarks.map(({ i, text }) => (
           <text key={`${i}-${text}`} x={x(i)} y={H - 8} textAnchor="middle" className="acc-axis">{text}</text>
         ))}
+        {mode === 'pct' && minY < 0 && <rect x={PAD.l} y={y(0)} width={W - PAD.l - PAD.r} height={y(minY) - y(0)} className="acc-loss-zone" />}
         {mode === 'amount' && <path d={path(paidY)} className="acc-line acc-paid" />}
         {ys.map((arr, k) => <path key={series[k].name} d={path(arr)} className={`acc-line ps-line ps-line--${series[k].name}`} />)}
         {hover != null && <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={H - PAD.b} className="acc-grid" />}

@@ -5,7 +5,8 @@ import { SIM_ASOF, SIM_ASSETS, SIM_BUILT } from '../../data/simData'
 import { apiFetch } from '../../lib/api'
 import { STRESS_PRESETS, normalize, type Shocks } from '../../lib/mix'
 import { commonMonths, rollingStarts, simulatePlan, type SimRebalance } from '../../lib/sim/engine'
-import { PERIOD_PRESETS, resolveCustom, resolvePreset, sharedMonths, spanText, ymText } from '../../lib/sim/period'
+import { PERIOD_PRESETS, resolveCustom, resolvePreset, sharedMonths, spanText, ymText, type PeriodPreset } from '../../lib/sim/period'
+import { readSimPrefill, weightsFromPlan } from '../../lib/sim/prefill'
 import type { MixEntry } from '../../lib/planMix'
 import { useCurrentChatId } from '../../stores/profileStore'
 import AmountChart, { type ChartMode } from './AmountChart'
@@ -31,23 +32,36 @@ const fromMonthInput = (v: string) => v.replace('-', '')
 
 let nextUid = 1
 const newSlot = (key: string): Slot => ({ uid: nextUid++, label: preset(key).label, weights: { ...preset(key).weights } })
+const KNOWN_ASSETS = new Set(SIM_ASSETS.map((a) => a.id))
+const manText = (won: number) => String(Math.round(won / 10_000))
+/** 'r10' 같은 최근 n년 키 — 빠른 선택에 없는 길이(목표 트래커의 은퇴까지 n년 등)도 받는다 */
+function presetFor(key: string): PeriodPreset | null {
+  const found = PERIOD_PRESETS.find((x) => x.key === key)
+  if (found) return found
+  const m = /^r(\d+)$/.exec(key)
+  return m ? { key, label: `최근 ${m[1]}년`, kind: 'recent', years: Number(m[1]) } : null
+}
 
 /**
  * 시뮬레이터 — 과거 실제 가격으로 "이 구성에 이렇게 넣었다면" (docs/plan-simulator-redesign-2026-10-22.md 3절 스케치).
  * 순위·최적 조합을 보여 주지 않는다. 주문은 내지 않는다. 섞어보기(하락 가정·내 계획으로 정하기·하락 중에 팔았다면)를 합쳤다.
  * 시드 만들기에서 오면 확인한 가용 현금(state.seedBuilderCapital)을 '처음에 한 번에'로 채운다(이번 이동에만, 저장하지 않음).
+ * 다른 화면(모아가기·목표 트래커·계획 점검)은 state.simPrefill로 구성·금액·기간을 넘긴다(lib/sim/prefill.ts). 넘겨받은 값이 내 계획보다 먼저다.
  */
 export default function PlanSimPage() {
   const chatId = useCurrentChatId()
   const location = useLocation()
   const seedCapital = Number((location.state as { seedBuilderCapital?: number } | null)?.seedBuilderCapital)
   const fromSeed = Number.isSafeInteger(seedCapital) && seedCapital > 0
-  const [slots, setSlots] = useState<Slot[]>(() => [newSlot('half'), newSlot('kospi')])
-  const [periodKey, setPeriodKey] = useState('r10')
+  // 처음 그릴 때 한 번만 읽는다
+  const [prefill] = useState(() => readSimPrefill(location.state, KNOWN_ASSETS))
+  const [slots, setSlots] = useState<Slot[]>(() =>
+    prefill?.slots ? prefill.slots.map((s) => ({ uid: nextUid++, label: s.label, weights: { ...s.weights } })) : [newSlot('half'), newSlot('kospi')])
+  const [periodKey, setPeriodKey] = useState(() => (prefill?.years ? `r${prefill.years}` : 'r10'))
   const [custom, setCustom] = useState<{ start: string; end: string } | null>(null)
-  const [lumpMan, setLumpMan] = useState(() => (fromSeed ? String(Math.round(seedCapital / 10_000)) : '0'))
-  const [monthlyMan, setMonthlyMan] = useState('50')
-  const [raisePct, setRaisePct] = useState('0')
+  const [lumpMan, setLumpMan] = useState(() => (fromSeed ? manText(seedCapital) : prefill?.lump != null ? manText(prefill.lump) : '0'))
+  const [monthlyMan, setMonthlyMan] = useState(() => (prefill?.monthly != null ? manText(prefill.monthly) : '50'))
+  const [raisePct, setRaisePct] = useState(() => (prefill?.raisePct ? String(Math.round(prefill.raisePct * 100)) : '0'))
   const [rebalance, setRebalance] = useState<SimRebalance>('year')
   const [mode, setMode] = useState<ChartMode>('amount')
   // 아래 '이 구성 자세히'(하락 가정·내 계획으로 정하기)가 보는 구성
@@ -55,7 +69,7 @@ export default function PlanSimPage() {
   const [shocks, setShocks] = useState<Shocks>(STRESS_PRESETS[0].shocks)
   const [tolerance, setTolerance] = useState(20)
   // 사용자가 먼저 바꿨으면 늦게 온 내 계획 값으로 덮어쓰지 않는다
-  const touched = useRef({ a: false, monthly: false })
+  const touched = useRef({ a: !!prefill?.slots, monthly: prefill?.monthly != null })
 
   useEffect(() => {
     if (!chatId) return
@@ -66,7 +80,7 @@ export default function PlanSimPage() {
         const plan = res?.data?.plan
         const mix = Array.isArray(plan?.mix) ? (plan.mix as MixEntry[]) : null
         if (mix?.length && !touched.current.a) {
-          const weights = Object.fromEntries(mix.map((e) => [e.index, Math.round(e.weight * 1000) / 10]))
+          const weights = weightsFromPlan(mix)
           setSlots((prev) => [{ uid: prev[0].uid, label: '내 계획 구성', weights }, ...prev.slice(1)])
         }
         const m = Number(plan?.monthly)
@@ -80,8 +94,7 @@ export default function PlanSimPage() {
   const months = useMemo(() => sharedMonths(slotMonths.filter((m) => m.length)), [slotMonths])
   const period = useMemo(() => {
     if (periodKey === 'custom' && custom) return resolveCustom(custom.start, custom.end, months)
-    const p = PERIOD_PRESETS.find((x) => x.key === periodKey) ?? PERIOD_PRESETS[1]
-    return resolvePreset(p, months)
+    return resolvePreset(presetFor(periodKey) ?? PERIOD_PRESETS[1], months)
   }, [periodKey, custom, months])
 
   const lump = toWon(lumpMan)
@@ -118,7 +131,7 @@ export default function PlanSimPage() {
 
   const focusIdx = Math.min(focus, slots.length - 1)
   const focusSlot = slots[focusIdx]
-  const presetNote = PERIOD_PRESETS.find((p) => p.key === periodKey)
+  const presetNote = presetFor(periodKey)
   const picked = [...new Set(slots.flatMap((s) => Object.keys(normalize(s.weights))))]
   const pickedAssets = SIM_ASSETS.filter((a) => picked.includes(a.id))
   const latestStart = pickedAssets.length ? pickedAssets.reduce((a, b) => (b.first > a.first ? b : a)) : null
