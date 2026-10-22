@@ -23,6 +23,7 @@ export type AssetBucket =
   | "covered_call"
   | "reit_infra"
   | "bond_cash"
+  | "gold"
   | "leveraged"
   | "stock"
   | "other_etf";
@@ -36,6 +37,8 @@ export const BUCKET_GROUP: Record<AssetBucket, BucketGroup> = {
   covered_call: "income",
   reit_infra: "income",
   bond_cash: "cash",
+  // 금은 분배금이 없는 방어 자산이지만 바구니 모델에 "방어" 그룹이 없어 위성에 둔다(위성 상한에 포함 — 2단계에서 결정)
+  gold: "satellite",
   leveraged: "satellite",
   stock: "satellite",
   other_etf: "satellite",
@@ -48,6 +51,7 @@ export const BUCKET_LABEL: Record<AssetBucket, string> = {
   covered_call: "커버드콜",
   reit_infra: "리츠·인프라",
   bond_cash: "채권·현금성",
+  gold: "금",
   leveraged: "레버리지·인버스",
   stock: "개별주",
   other_etf: "테마·기타 ETF",
@@ -82,7 +86,7 @@ export function buildNpsReference(byBucket: Map<AssetBucket, number>, total: num
   return [
     row("주식(지수·배당·개별주·테마)", sum(["kr_index", "global_index", "dividend", "covered_call", "stock", "leveraged", "other_etf"]), NPS_REFERENCE.equityPct),
     row("채권·현금성", sum(["bond_cash"]), NPS_REFERENCE.bondPct),
-    row("대체(리츠·인프라)", sum(["reit_infra"]), NPS_REFERENCE.altPct),
+    row("대체(리츠·인프라·금)", sum(["reit_infra", "gold"]), NPS_REFERENCE.altPct),
   ];
 }
 /** 인컴 시작 몇 년 전부터 분배형으로 옮기기 시작하는지 */
@@ -131,6 +135,7 @@ export function classifyHolding(code: string, name: string | null | undefined, p
   if (/레버리지|인버스|곱버스|\b[23]X\b/i.test(n)) return "leveraged";
   if (/커버드콜|프리미엄/.test(n)) return "covered_call";
   if (/리츠|부동산/.test(n)) return "reit_infra";
+  if (/골드|금현물|금선물|KRX\s?금|gold/i.test(n)) return "gold";
   if (!etp && /인프라/.test(n)) return "reit_infra"; // 맥쿼리인프라·KB발해인프라 같은 상장 인프라 펀드
   if (!etp) return "stock";
   if (/혼합/.test(n)) return "other_etf";
@@ -321,6 +326,7 @@ export const BUCKET_YIELD_PCT: Record<AssetBucket, number> = {
   covered_call: 8.5,
   reit_infra: 6.5,
   bond_cash: 3,
+  gold: 0,
   leveraged: 0,
   stock: 2,
   other_etf: 1,

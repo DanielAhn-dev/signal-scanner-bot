@@ -35,6 +35,11 @@ test("classifyHolding: 이름 규칙으로 바구니를 나눈다", () => {
   assert.equal(classifyHolding("122630", "KODEX 레버리지"), "leveraged");
   assert.equal(classifyHolding("086790", "하나금융지주"), "stock");
   assert.equal(classifyHolding("091160", "KODEX 반도체"), "other_etf");
+  // 금 ETF는 테마가 아니라 금
+  assert.equal(classifyHolding("411060", "ACE KRX금현물"), "gold");
+  assert.equal(classifyHolding("132030", "KODEX 골드선물(H)"), "gold");
+  assert.equal(classifyHolding("319640", "TIGER 골드선물(H)"), "gold");
+  assert.equal(classifyHolding("138230", "KODEX 골드선물레버리지"), "leveraged");
 });
 
 test("isTaxAdvantagedAccount: 계좌 이름으로 ISA·연금을 알아본다", () => {

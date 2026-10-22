@@ -28,6 +28,7 @@ const ROLE_SECTIONS: { label: string; buckets: AssetBucket[] }[] = [
   { label: '인컴 (커버드콜)', buckets: ['covered_call'] },
   { label: '인컴 (리츠·인프라)', buckets: ['reit_infra'] },
   { label: '현금성', buckets: ['bond_cash'] },
+  { label: '금', buckets: ['gold'] },
   { label: '개별주', buckets: ['stock'] },
   { label: '테마 ETF', buckets: ['other_etf'] },
   { label: '레버리지·인버스', buckets: ['leveraged'] },

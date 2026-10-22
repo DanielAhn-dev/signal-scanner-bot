@@ -436,6 +436,16 @@ export function resolveHoldingAction(input: HoldingActionInput): HoldingAction {
         ...withSource(facts),
       }
     }
+    case 'gold': {
+      const facts = compact([liveLine(etf, false), drawdownLine(h)])
+      return {
+        bucket, role: '금', tone: 'keep', verdict: '계속 보유',
+        todo: '분배금이 없는 자산이에요. 주식과 다르게 움직일 때가 있어 분산용으로 둡니다.',
+        now: pnlLine(pnl, '금 값은 오르내림이 크고, 주식과 같이 빠진 때도 있었어요.'),
+        when: `분배금을 기대하는 자리가 아니라서 새 돈을 늘리지 않아요. ${rebalanceWhen(weight)}`,
+        ...withSource(facts),
+      }
+    }
     case 'leveraged': {
       const facts = compact([liveLine(etf, false), drawdownLine(h)])
       return {
