@@ -94,6 +94,39 @@ export function findBadNames(rows: { code: string; name: string | null }[]): str
   return rows.filter((r) => !r.name || !r.name.trim() || r.name.trim() === r.code).map((r) => r.code).sort();
 }
 
+export type RequiredStockRow = { code: string; name: string | null; is_active: boolean | null; close: number | null };
+export type RequiredIssue = { code: string; uses: string[]; issues: string[] };
+
+/**
+ * 보유·추천·운용에 꼭 필요한 종목의 상태. 활성 여부와 관계없이 본다.
+ *
+ * 이름 점검은 활성 행만 봐서, 필요한 종목이 비활성이 되거나 가격이 비어도 알리지 않았다
+ * (2026-10-21 보유 ETF 6종 stocks.close=0이 하루 넘게 −100%로 쓰였는데 알림 없음).
+ * barTickers가 null이면(그날 일봉 조회 실패) 일봉 항목은 건너뛴다.
+ */
+export function findRequiredIssues(
+  required: Map<string, string[]>,
+  rows: RequiredStockRow[],
+  barTickers: Set<string> | null,
+): RequiredIssue[] {
+  const byCode = new Map(rows.map((r) => [r.code, r]));
+  const out: RequiredIssue[] = [];
+  for (const [code, uses] of [...required.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const row = byCode.get(code);
+    const issues: string[] = [];
+    if (!row) {
+      issues.push("종목 목록에 없음");
+    } else {
+      if (row.is_active === false) issues.push("비활성");
+      if (!row.name || !row.name.trim() || row.name.trim() === code) issues.push("이름 없음");
+      if (!(Number(row.close) > 0)) issues.push("종가 없음");
+    }
+    if (barTickers && !barTickers.has(code)) issues.push("그날 시세 없음");
+    if (issues.length) out.push({ code, uses, issues });
+  }
+  return out;
+}
+
 function pct(v: number): string {
   return `${(v * 100).toFixed(0)}%`;
 }
@@ -103,6 +136,8 @@ export type QualityAlertInput = {
   limitBreaches: { ticker: string; ret: number }[];
   newlyMissing: string[];
   badNames: string[];
+  /** 보유·추천·운용에 필요한 종목의 문제(활성 여부 무관). 맨 위에 적는다 */
+  requiredIssues?: RequiredIssue[];
   /** 종목 코드 → 이름. 있으면 "이름(코드)"로 적는다 */
   nameByCode?: Map<string, string>;
 };
@@ -115,6 +150,11 @@ function htmlLabel(code: string, names: Map<string, string> | undefined): string
 /** 알릴 것이 있으면 텔레그램 HTML 본문, 없으면 null. 만성 부족은 주간 요약에서만 다룬다 */
 export function buildQualityAlert(input: QualityAlertInput): string | null {
   const lines: string[] = [];
+  const required = input.requiredIssues ?? [];
+  if (required.length) {
+    const sample = required.slice(0, 8).map((r) => `${htmlLabel(r.code, input.nameByCode)} [${r.uses.join("·")}] ${r.issues.join("·")}`);
+    lines.push(`• 보유·추천에 필요한 종목 문제 ${required.length}개:\n  ${sample.join("\n  ")}`);
+  }
   for (const d of input.trend.drops) {
     lines.push(`• ${d.label}: ${d.latest}건 (평소 ${Math.round(d.baseline)}건의 ${pct(d.latest / d.baseline)})`);
   }

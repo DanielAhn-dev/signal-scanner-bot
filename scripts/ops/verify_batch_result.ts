@@ -8,6 +8,8 @@ import "../../src/lib/installTruncationGuard";
  * 사용: pnpm exec tsx scripts/ops/verify_batch_result.ts   (이상이면 종료코드 1 + 텔레그램 관리자 알림)
  */
 import "dotenv/config";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { checkDataFreshness } from "../../src/services/dataFreshnessMonitorService";
 import { evaluateDailyDistribution, type DailyBar } from "../../src/services/dataDistributionCheck";
@@ -18,11 +20,13 @@ import {
   buildWeeklyQualitySummary,
   evaluateQualityTrend,
   findBadNames,
+  findRequiredIssues,
   findLimitBreaches,
   findNewlyMissing,
   isLastTradingDayOfWeek,
   type DailyMetrics,
   type MetricSpec,
+  type RequiredStockRow,
 } from "../../src/services/dataQualityTrend";
 
 /** 배치가 당일 거래일 값으로 채워야 하는 테이블. 수급·신용은 공급처 게시가 늦어 제외한다 */
@@ -82,6 +86,46 @@ async function fetchAllPaged<T>(
   return rows;
 }
 
+/** scripts/refresh_universe_membership.py의 보호 화이트리스트(현금 스윕·레짐 프록시·지수 모드)와 같다 */
+const PROTECTED_WHITELIST: Record<string, string> = {
+  "459580": "현금 스윕",
+  "357870": "현금 스윕",
+  "423160": "현금 스윕",
+  "069500": "시장 판정",
+  "229200": "시장 판정",
+  "122630": "지수 모드",
+};
+
+function readRecommendedEtfCodes(): string[] {
+  try {
+    const raw = JSON.parse(readFileSync(resolve(process.cwd(), "scripts/recommended_etfs.json"), "utf8"));
+    return (raw?.etfs ?? []).map((e: { code?: unknown }) => String(e?.code ?? "").trim()).filter(Boolean);
+  } catch (e) {
+    console.warn(`[품질 점검] 추천 ETF 목록을 못 읽음(건너뜀): ${e instanceof Error ? e.message : String(e)}`);
+    return [];
+  }
+}
+
+/** 꼭 필요한 종목 → 쓰임(보유·추천·화이트리스트). 보유는 실계좌 입력 행도 포함한다(화면 평가에 쓰임) */
+async function fetchRequiredCodes(supabase: SupabaseClient): Promise<Map<string, string[]>> {
+  const required = new Map<string, string[]>();
+  const add = (code: string, use: string) => {
+    const c = code.trim();
+    if (!c) return;
+    const uses = required.get(c) ?? [];
+    if (!uses.includes(use)) uses.push(use);
+    required.set(c, uses);
+  };
+  const held = await fetchAllPaged<{ code: string }>(
+    (a, b) => supabase.from("virtual_positions").select("code").eq("status", "holding").gt("quantity", 0).order("id").range(a, b),
+    "보유 종목"
+  );
+  for (const r of held) add(String(r.code ?? ""), "보유");
+  for (const code of readRecommendedEtfCodes()) add(code, "추천");
+  for (const [code, use] of Object.entries(PROTECTED_WHITELIST)) add(code, use);
+  return required;
+}
+
 async function sendTelegram(text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
@@ -133,17 +177,32 @@ async function runQualityChecks(supabase: SupabaseClient, batchDay: string, late
     trend.chronic.push({ key: "credit_balance_10d", label: "공매도 잔고 최근 10거래일 누적", latest: balanceCovered, share: balanceShare, floorShare: 0.9 });
   }
 
+  const required = await fetchRequiredCodes(supabase);
+  const requiredRows: RequiredStockRow[] = [];
+  const requiredCodes = [...required.keys()];
+  for (let i = 0; i < requiredCodes.length; i += 150) {
+    const { data, error } = await supabase.from("stocks").select("code, name, is_active, close").in("code", requiredCodes.slice(i, i + 150));
+    // 조회 실패를 "목록에 없음"으로 알리지 않게 멈춘다
+    if (error) throw new Error(`필요 종목 조회 실패: ${error.message}`);
+    requiredRows.push(...((data ?? []) as RequiredStockRow[]));
+  }
+  const requiredIssues = findRequiredIssues(required, requiredRows, latestBars.length ? new Set(latestBars.map((b) => b.ticker)) : null);
+  const nameByCode = new Map(activeNames.filter((r) => r.name).map((r) => [r.code, String(r.name)]));
+  for (const r of requiredRows) if (r.name && r.name !== r.code && !nameByCode.has(r.code)) nameByCode.set(r.code, r.name);
+
   const alert = buildQualityAlert({
     trend,
     limitBreaches: findLimitBreaches(latestBars, prevBars),
     newlyMissing: latestBars.length && prevBars.length ? findNewlyMissing(universe, latestBars.map((b) => b.ticker), prevBars.map((b) => b.ticker)) : [],
     badNames: findBadNames(activeNames),
-    nameByCode: new Map(activeNames.filter((r) => r.name).map((r) => [r.code, String(r.name)])),
+    requiredIssues,
+    nameByCode,
   });
   console.log(
     "품질 지표:",
     QUALITY_SPECS.map((q) => `${q.key}=${history[history.length - 1].values[q.key] ?? "?"}`).join(" "),
-    `credit_balance_10d=${balanceCovered}/${universe.length}`
+    `credit_balance_10d=${balanceCovered}/${universe.length}`,
+    `required=${required.size}(문제 ${requiredIssues.length})`
   );
   for (const c of trend.chronic) console.warn(`만성 부족: ${c.label} ${(c.share * 100).toFixed(0)}% (기준 ${(c.floorShare * 100).toFixed(0)}%)`);
   if (alert) {
