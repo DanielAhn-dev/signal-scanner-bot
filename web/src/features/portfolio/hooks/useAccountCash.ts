@@ -41,5 +41,19 @@ export function useAccountCash(reloadToken: unknown) {
     }
   }, [])
 
-  return { cashByKey: byKey, cashLoaded: loaded, saveCash: save }
+  const deposit = useCallback(async (key: string, amount: number): Promise<string | null> => {
+    try {
+      const res = await apiFetch('/api/ui/income-guide', {
+        method: 'POST', cacheMs: 0, retries: 0, timeoutMs: 15_000,
+        body: JSON.stringify({ action: 'cash-add', accountKey: key, amount }),
+      })
+      apply(res?.data?.accounts)
+      invalidateCache('/api/ui/income-guide')
+      return null
+    } catch (e) {
+      return e instanceof Error ? e.message : '입금을 저장하지 못했습니다.'
+    }
+  }, [])
+
+  return { cashByKey: byKey, cashLoaded: loaded, saveCash: save, depositCash: deposit }
 }

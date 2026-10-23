@@ -107,7 +107,7 @@ export default function Portfolio() {
   const realTotals = useMemo(() => realHoldingTotals(holdingAll), [holdingAll])
 
   // 계좌별 예수금 — 보유를 다시 불러오면(매매 기록이 예수금을 바꿈) 같이 새로 받는다
-  const { cashByKey, cashLoaded, saveCash } = useAccountCash(lastUpdatedAt)
+  const { cashByKey, cashLoaded, saveCash, depositCash } = useAccountCash(lastUpdatedAt)
   const selectedFolder = accountFolders.find((f) => f.key === selectedAccountKey) ?? null
   const selectedHoldingValue = useMemo(
     () => (selectedFolder ? holdingAll.filter((r) => holdingAccountKey(r) === selectedFolder.key).reduce((s, r) => s + holdingValue(r), 0) : 0),
@@ -175,7 +175,7 @@ export default function Portfolio() {
 
       {/* 한 계좌 탭: 보유 평가 + 예수금(실제 잔액으로 고치기) */}
       {selectedCashKey && (
-        <AccountCashCard cashKey={selectedCashKey} holdingValue={selectedHoldingValue} row={cashByKey[selectedCashKey]} loaded={cashLoaded} onSave={saveCash} />
+        <AccountCashCard cashKey={selectedCashKey} holdingValue={selectedHoldingValue} row={cashByKey[selectedCashKey]} loaded={cashLoaded} onSave={saveCash} onDeposit={depositCash} />
       )}
 
       {/* 실제 계좌: 방향은 내 계획을 물려받고 계좌마다 고르는 건 사용 시점뿐 */}

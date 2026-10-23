@@ -17,6 +17,7 @@
 - `GET /api/ui/positions` — 처음 20건을 받은 뒤 나머지를 백그라운드로 이어받는다. 상단 합계가 대시보드(`portfolio-realtime`)와 같은 전체 기준이어야 하기 때문이다.
 - `/api/ui/investment-prefs`(시드·현금), `/api/ui/market-overview`(거시), `/api/ui/account-policies`, `/api/ui/advisor-performance`
 - 쓰기: `/api/ui/virtual-trade`(매수·매도), `/api/ui/positions-maintenance`(수정·삭제·전체매도), `/api/ui/portfolio-share`
+- 계좌별 예수금은 포트폴리오 계좌 카드에서 잔액 보정(실제 잔액으로 맞춤)과 입금 기록(입력액을 추가)을 구분한다. 수동 내역은 `income-guide` 저장 파일에 계좌별로 남고, 매매·분배금 기록은 기존처럼 자동 반영된다.
 
 ## 주의
 
