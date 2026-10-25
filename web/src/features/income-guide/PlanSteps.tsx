@@ -10,7 +10,7 @@ import { useToast } from '../../components/ToastProvider'
 /** 서버 src/lib/rebalancePlan.ts의 RebalancePlan */
 export type RebalancePlan = {
   headline: string
-  income: { monthlyNet: number; source: 'actual' | 'estimate'; estimateNet: number; floor: number; surplus: number }
+  income: { monthlyNet: number; source: 'actual' | 'estimate'; estimateNet: number; shelteredNet?: number; floor: number; surplus: number; fill?: { shortfallMonthly: number; growthBase: number; ratePct: number; withinSafe: boolean; evidence: { ratePct: number; mixKeepPct: number; krOnlyKeepPct: number } } | null }
   growth: { actualPct: number; targetPct: number; needByNewMoney: number; monthlyInflow: number; months: number | null }
   buyTarget: { code: string; name: string; accountLabel: string; price: number } | null
   buyHint: string
@@ -388,7 +388,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
           </div>
         )}
         <div style={{ marginTop: 8 }}>
-          월 인컴(세후) <strong>{income.source === 'actual' ? '' : '약 '}{man(income.monthlyNet)}</strong>
+          월 인컴(세후, 일반 계좌) <strong>{income.source === 'actual' ? '' : '약 '}{man(income.monthlyNet)}</strong>
           {income.floor > 0 && (
             <>
               {' · '}
@@ -399,6 +399,28 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
             </>
           )}
         </div>
+        {(income.shelteredNet ?? 0) >= 1_000 && (
+          <div style={{ marginTop: 2, ...faint }}>
+            ISA·연금저축·IRP 안 분배금 월 약 {man(income.shelteredNet ?? 0)}은 바로 꺼내 쓸 수 없어 위 금액에서 뺐습니다.
+          </div>
+        )}
+        {income.fill && (
+          <More label={`모자란 ${man(income.fill.shortfallMonthly)}을 성장에서 꺼내 채운다면?`}>
+            <div style={{ marginTop: 4, ...muted }}>
+              일반 계좌 성장(지수) 평가 {man(income.fill.growthBase)}에서 매달 {man(income.fill.shortfallMonthly)}을 꺼내면 연{' '}
+              <strong style={{ color: income.fill.withinSafe ? 'var(--color-success)' : 'var(--color-warning)' }}>{income.fill.ratePct.toFixed(1)}%</strong>입니다.{' '}
+              {income.fill.withinSafe ? '4% 이하라 무난한 편입니다.' : '4%를 넘어 원금이 줄어들 수 있습니다.'}
+            </div>
+            <div style={{ marginTop: 4, ...faint }}>
+              과거 국내·미국 반반에서 연 {income.fill.evidence.ratePct}%를 꺼냈을 때 15년 뒤 물가를 뺀 원금이 남은 비율은 {income.fill.evidence.mixKeepPct}%(코스피만은 {income.fill.evidence.krOnlyKeepPct}%)였습니다.
+              2003~2011 시작 93개 표본이라 앞으로를 보장하지 않습니다.
+            </div>
+            <div style={{ marginTop: 4, ...faint }}>
+              꺼내는 순서는 ① 파킹통장 저수지 → ② 분배금 → ③ 지수 매도입니다. 시장이 고점보다 크게 내려 있으면 ③은 미루고 ①을 먼저 씁니다.
+              국내 주식형 지수 ETF는 매도 차익이 비과세이고, 해외·TR형은 차익에 15.4%가 붙을 수 있습니다. 매매 지시가 아니라 계산 안내입니다.
+            </div>
+          </More>
+        )}
         <More label="자세히 (바구니별 목표·예수금·계산 근거·방식 바꾸기)">
         <div style={{ marginTop: 4, ...faint }}>바구니별 지금 비중 (같은 0~100% 눈금) · 파란 선이 목표, 넘은 몫은 빨강</div>
         {mixRows.map((r) => (

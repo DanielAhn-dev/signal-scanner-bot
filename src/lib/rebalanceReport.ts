@@ -529,10 +529,10 @@ export function buildRebalanceReport(input: {
       const src = plan!.income.source === "actual" ? "실제 입금" : "추정";
       incomeLines.push(
         surplus >= 0
-          ? `전체 월 인컴 ${money(plan!.income.monthlyNet)}(${src})이 목표 ${money(floor)}를 넘었습니다. 계획대로라면 지금이 인컴 추가매수를 멈출 때입니다.`
+          ? `현금으로 쓸 수 있는 월 인컴(일반 계좌) ${money(plan!.income.monthlyNet)}(${src})이 목표 ${money(floor)}를 넘었습니다. 계획대로라면 지금이 인컴 추가매수를 멈출 때입니다.`
           : ccShare > COVERED_CALL_MAX_SHARE_PCT
-            ? `전체 월 인컴 ${money(plan!.income.monthlyNet)}(${src})은 목표 ${money(floor)}보다 ${money(-surplus)} 적습니다. 다만 커버드콜이 이미 인컴의 ${ccShare.toFixed(0)}%라, 인컴을 더 채운다면 커버드콜이 아니라 고배당 쪽이 반등을 덜 포기합니다.`
-            : `전체 월 인컴 ${money(plan!.income.monthlyNet)}(${src})은 목표 ${money(floor)}보다 ${money(-surplus)} 적습니다. 인컴을 더 채운다면 커버드콜이 인컴의 1/3(지금 ${ccShare.toFixed(0)}%)을 넘지 않게 채웁니다.`,
+            ? `현금으로 쓸 수 있는 월 인컴(일반 계좌) ${money(plan!.income.monthlyNet)}(${src})은 목표 ${money(floor)}보다 ${money(-surplus)} 적습니다. 다만 커버드콜이 이미 인컴의 ${ccShare.toFixed(0)}%라, 인컴을 더 채운다면 커버드콜이 아니라 고배당 쪽이 반등을 덜 포기합니다.`
+            : `현금으로 쓸 수 있는 월 인컴(일반 계좌) ${money(plan!.income.monthlyNet)}(${src})은 목표 ${money(floor)}보다 ${money(-surplus)} 적습니다. 인컴을 더 채운다면 커버드콜이 인컴의 1/3(지금 ${ccShare.toFixed(0)}%)을 넘지 않게 채웁니다.`,
       );
     }
   }

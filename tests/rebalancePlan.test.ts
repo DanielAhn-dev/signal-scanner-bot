@@ -364,3 +364,30 @@ test("같은 지수 겹침: 설정을 켰을 때만, 같은 계좌의 KODEX 200�
   assert.equal(sanitizeIncomeGuideSettings({ indexOverlapMerge: true }, DEFAULT_INCOME_GUIDE_SETTINGS).indexOverlapMerge, true);
   assert.equal(sanitizeIncomeGuideSettings({ indexOverlapMerge: "" as unknown as boolean }, { ...DEFAULT_INCOME_GUIDE_SETTINGS, indexOverlapMerge: true }).indexOverlapMerge, undefined);
 });
+
+test("월 인컴 하한은 현금으로 쓸 수 있는 일반 계좌 분배금만 센다 — ISA·연금 안 분배금은 빼고 참고로만 알려준다", () => {
+  const general = [{ ...H("0167B0", "SOL 200타겟위클리커버드콜", 10_000, 300), accountKey: "g", accountLabel: "키움 / 일반" }];
+  const sheltered = [{ ...H("0167B0", "SOL 200타겟위클리커버드콜", 10_000, 300), accountKey: "i", accountLabel: "미래 / ISA" }];
+  const base = planFor({ monthlyNeed: 500_000 }, general).plan.income;
+  const both = planFor({ monthlyNeed: 500_000 }, [...general, ...sheltered]).plan.income;
+  assert.ok(base.monthlyNet > 0);
+  assert.equal(both.monthlyNet, base.monthlyNet);
+  assert.equal(both.surplus, base.surplus);
+  assert.equal(base.shelteredNet, 0);
+  assert.ok(both.shelteredNet > 0);
+});
+
+test("모자란 월 인컴을 일반 계좌 성장에서 꺼내면 연 인출률을 안내한다(4% 이하 무난), 모자라지 않으면 없다", () => {
+  const kodex = (qty: number) => ({ ...H("069500", "KODEX 200", 100_000, qty), accountKey: "g", accountLabel: "키움 / 일반" });
+  const cc = { ...H("0167B0", "SOL 200타겟위클리커버드콜", 10_000, 300), accountKey: "g", accountLabel: "키움 / 일반" };
+  const big = planFor({ monthlyNeed: 500_000 }, [kodex(1000), cc]).plan.income;
+  assert.ok(big.fill);
+  assert.equal(big.fill!.growthBase, 100_000_000);
+  assert.equal(big.fill!.shortfallMonthly, -big.surplus);
+  assert.ok(Math.abs(big.fill!.ratePct - (big.fill!.shortfallMonthly * 12) / 1_000_000) < 0.01);
+  assert.equal(big.fill!.withinSafe, big.fill!.ratePct <= 4);
+  const small = planFor({ monthlyNeed: 500_000 }, [kodex(50), cc]).plan.income;
+  assert.equal(small.fill!.withinSafe, false);
+  const met = planFor({ monthlyNeed: 10_000 }, [kodex(1000), cc]).plan.income;
+  assert.equal(met.fill, null);
+});

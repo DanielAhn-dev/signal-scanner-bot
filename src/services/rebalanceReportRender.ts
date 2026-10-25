@@ -105,7 +105,7 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
   // 2. 인컴
   const inc = r.income
   const incBody: string[] = []
-  incBody.push(`<p>이 계좌 인컴 비중 <b>${inc.accountIncomePct.toFixed(1)}%</b> · 인컴 중 커버드콜 <b>${inc.coveredCallShareOfIncomePct.toFixed(0)}%</b>(상한 33%) · 전체 인컴 비중 ${inc.portfolioIncomePct.toFixed(1)}%(목표 ${inc.portfolioIncomeTargetPct.toFixed(1)}%)${inc.portfolioMonthlyNet != null ? ` · 전체 월 인컴 ${man(inc.portfolioMonthlyNet)}(${inc.portfolioSource === 'actual' ? '실제 입금' : '추정'}) / 목표 ${man(inc.floor)}` : ''}</p>`)
+  incBody.push(`<p>이 계좌 인컴 비중 <b>${inc.accountIncomePct.toFixed(1)}%</b> · 인컴 중 커버드콜 <b>${inc.coveredCallShareOfIncomePct.toFixed(0)}%</b>(상한 33%) · 전체 인컴 비중 ${inc.portfolioIncomePct.toFixed(1)}%(목표 ${inc.portfolioIncomeTargetPct.toFixed(1)}%)${inc.portfolioMonthlyNet != null ? ` · 현금으로 쓸 수 있는 월 인컴 ${man(inc.portfolioMonthlyNet)}(${inc.portfolioSource === 'actual' ? '실제 입금' : '추정'}) / 목표 ${man(inc.floor)}` : ''}</p>`)
   if (inc.stopReasons.length) incBody.push(`<p><b>인컴 추가매수를 멈출 때입니다.</b></p><ul class="rb-list">${inc.stopReasons.map((s) => `<li>${e(s)}</li>`).join('')}</ul>`)
   if (inc.lines.length) incBody.push(`<ul class="rb-list">${inc.lines.map((s) => `<li>${e(s)}</li>`).join('')}</ul>`)
   parts.push(section('2. 하락장에서 인컴을 더 사는 것에 대해', incBody.join('')))

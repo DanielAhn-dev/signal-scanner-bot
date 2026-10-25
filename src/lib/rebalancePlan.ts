@@ -12,6 +12,7 @@
  */
 import {
   REBALANCE_BAND_PP,
+  WITHDRAWAL_EVIDENCE,
   isTaxAdvantagedAccount,
   resolveYieldPct,
   type YieldPctByCode,
@@ -129,12 +130,26 @@ export type RebalancePlan = {
   /** 맨 위 한 줄 */
   headline: string;
   income: {
+    /** 지금 현금으로 쓸 수 있는 월 인컴(세후) — 일반·CMA 계좌 분배금만. ISA·IRP·연금저축 안의 분배금은 뺀다 */
     monthlyNet: number;
     source: "actual" | "estimate";
     estimateNet: number;
+    /** 절세계좌(ISA·IRP·연금저축) 안에서 나오는 월 분배금 추정(세후=세전) — 쓸 수 없어 위 값과 하한 비교에서 뺀 몫. 참고용 */
+    shelteredNet: number;
     floor: number;
     /** 하한을 넘는 금액 (음수면 모자람) */
     surplus: number;
+    /**
+     * 모자란 몫을 일반 계좌 성장 ETF에서 꺼내 채운다면 (안내용 계산일 뿐 매매 규칙이 아니다). 모자라지 않거나 꺼낼 성장이 없으면 null.
+     * ratePct = 필요한 연 인출액 ÷ 일반 계좌 성장 평가액, withinSafe = 4% 이하, evidence = 그 인출률의 과거 15년 유지 비율(WITHDRAWAL_EVIDENCE)
+     */
+    fill: {
+      shortfallMonthly: number;
+      growthBase: number;
+      ratePct: number;
+      withinSafe: boolean;
+      evidence: { ratePct: number; mixKeepPct: number; krOnlyKeepPct: number };
+    } | null;
   };
   growth: {
     actualPct: number;
@@ -247,9 +262,11 @@ export function buildRebalancePlan(input: {
   const hold = settings.incomeMode === "hold";
   if (total <= 0 || holdings.length === 0) return null;
   const fees = settings.feePctByCode ?? {};
-  const keep = (h: PlanHolding) => (isTaxAdvantagedAccount(h.accountLabel) ? 1 : 1 - DISTRIBUTION_TAX);
+  const sheltered = (h: PlanHolding) => isTaxAdvantagedAccount(h.accountLabel);
   const yieldOf = (h: PlanHolding) => resolveYieldPct(h.code, h.bucket, h.name, input.yieldPctByCode).pct;
-  const rawNet = (h: PlanHolding, value = h.value) => (value * yieldOf(h)) / 100 / 12 * keep(h);
+  // 월 인컴 하한은 "언제든 꺼내 쓸 수 있는 돈" 기준이다(2026-10-25 사용자) — 55세 전에 못 꺼내는 연금계좌·ISA 안의 분배금은 세지 않는다
+  const rawNet = (h: PlanHolding, value = h.value) => (sheltered(h) ? 0 : (value * yieldOf(h)) / 100 / 12 * (1 - DISTRIBUTION_TAX));
+  const shelteredNet = holdings.reduce((s, h) => s + (h.code !== "CASH" && sheltered(h) ? (h.value * yieldOf(h)) / 100 / 12 : 0), 0);
 
   // 인컴: 추정 → 실제 입금액이 있으면 그 비율로 보정
   const estimateNet = holdings.reduce((s, h) => s + (h.code === "CASH" ? 0 : rawNet(h)), 0);
@@ -621,9 +638,26 @@ export function buildRebalancePlan(input: {
   if (needByNewMoney > 0 && !hold) parts.push(`성장 ${actualPct.toFixed(0)}% → 목표 ${targetPct.toFixed(0)}%`);
   const headline = parts.length ? parts.join(" · ") : "지금은 바꿀 것이 없습니다. 새 돈은 계속 성장 ETF 한 곳으로 넣으세요.";
 
+  // 모자란 월 인컴을 일반 계좌 성장에서 꺼낸다면 연 몇 %인가 — 4% 이하를 무난하다고 본다(10/25 사용자 확정). 국내 주식형 ETF 매도 차익은 비과세라 세금은 더하지 않았다
+  const fillBase = holdings.filter((h) => h.group === "growth" && !sheltered(h)).reduce((s2, h) => s2 + h.value, 0);
+  const fill: RebalancePlan["income"]["fill"] =
+    floor > 0 && surplus < 0 && fillBase > 0
+      ? (() => {
+          const ratePct = (-surplus * 12 / fillBase) * 100;
+          const e = WITHDRAWAL_EVIDENCE.find((x) => ratePct <= x.ratePct) ?? WITHDRAWAL_EVIDENCE[WITHDRAWAL_EVIDENCE.length - 1];
+          return {
+            shortfallMonthly: Math.round(-surplus),
+            growthBase: Math.round(fillBase),
+            ratePct,
+            withinSafe: ratePct <= 4,
+            evidence: { ratePct: e.ratePct, mixKeepPct: e.mixKeepPct, krOnlyKeepPct: e.krOnlyKeepPct },
+          };
+        })()
+      : null;
+
   return {
     headline,
-    income: { monthlyNet: Math.round(monthlyNet), source: actual ? "actual" : "estimate", estimateNet: Math.round(estimateNet), floor, surplus: Math.round(surplus) },
+    income: { fill, monthlyNet: Math.round(monthlyNet), source: actual ? "actual" : "estimate", estimateNet: Math.round(estimateNet), shelteredNet: Math.round(shelteredNet), floor, surplus: Math.round(surplus) },
     growth: { actualPct, targetPct, needByNewMoney, monthlyInflow: Math.round(monthlyInflow), months },
     buyTarget,
     buyHint,

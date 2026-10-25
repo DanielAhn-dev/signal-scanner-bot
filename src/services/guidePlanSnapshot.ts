@@ -34,7 +34,10 @@ export async function buildGuidePlanSnapshot(input: {
       .reduce((s, h) => s + (h.value * resolveYieldPct(h.code, h.bucket, h.name, yieldPctByCode).pct) / 100 / 12 * (isTaxAdvantagedAccount(h.accountLabel) ? 1 : 0.846), 0);
   const projection = projectNextMonth({ receipts, holdings: view.holdings, estimateMonthlyNet, today });
   // 받은 기록이 하나라도 있으면 월 인컴은 기록 기반 예상을 쓴다
-  const planSettings = { ...file.settings, actualMonthlyNet: projection.receiptCodes > 0 ? projection.total : undefined };
+  // 하한 비교(buildRebalancePlan)는 현금으로 쓸 수 있는 계좌 분만 센다 — 절세계좌 보유는 빼고 같은 기록으로 다시 예상한다
+  const cashHoldings = view.holdings.filter((h) => !isTaxAdvantagedAccount(h.accountLabel));
+  const cashProjection = projectNextMonth({ receipts, holdings: cashHoldings, estimateMonthlyNet, today });
+  const planSettings = { ...file.settings, actualMonthlyNet: cashProjection.receiptCodes > 0 ? cashProjection.total : undefined };
   const growth = view.holdings.filter((h) => h.group === "growth").map((h) => ({ code: h.code, name: h.name }));
   const altPromise = loadIndexAlternatives(supabase, growth);
   const indexAlt = input.alternativesTimeoutMs
