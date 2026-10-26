@@ -4,6 +4,8 @@
 .mf-input:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
 .mf-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .mf-date { flex: 1 1 160px; }
+.mf-row > .acc-primary { align-self: flex-end; padding-block: 11px; }
+.mf-row + .mf-drafts, .mf-row + .acc-warn + .mf-drafts { margin-top: 14px; }
 .mf-drafts { display: flex; flex-direction: column; gap: 10px; }
 .mf-draft { padding: 12px; border-radius: 6px; background: var(--color-bg-sunken); display: flex; flex-direction: column; gap: 8px; }
 .mf-draft-head { display: flex; justify-content: space-between; gap: 12px; }
