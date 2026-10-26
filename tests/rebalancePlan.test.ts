@@ -391,3 +391,12 @@ test("모자란 월 인컴을 일반 계좌 성장에서 꺼내면 연 인출률
   const met = planFor({ monthlyNeed: 10_000 }, [kodex(1000), cc]).plan.income;
   assert.equal(met.fill, null);
 });
+
+test("예수금(CASH 행)이 있어도 보유 종목 수는 실제 종목만 센다 — 19종목이 20종으로 보이던 문제", () => {
+  const withCash = planFor({ cashByAccount: { "a|": 1_000_000 }, cashBalance: 1_000_000 });
+  // 예수금이 계산에 들어갔는지(가짜 행이 있는지) 먼저 확인하고
+  assert.ok(withCash.view.holdings.some((h) => h.code === "CASH"), "CASH 행이 보유에 있어야 이 시험이 의미 있다");
+  // 종목 수는 예수금 없는 경우와 같다
+  assert.equal(withCash.plan.kinds.before, 16);
+  assert.equal(withCash.plan.kinds.after, 11);
+});

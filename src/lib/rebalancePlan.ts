@@ -456,8 +456,9 @@ export function buildRebalancePlan(input: {
 
   merges.sort((a, b) => b.from.amount - a.from.amount);
   const mergeIncomeDelta = merges.reduce((s, m) => s + m.monthlyIncomeDelta, 0);
-  const codes = new Set(holdings.map((h) => h.code));
-  const remainingCodes = new Set(holdings.filter((h) => !mergedAway.has(h)).map((h) => h.code));
+  // 예수금은 보유에 CASH라는 가짜 행으로 들어 있다 — 종목 수에는 세지 않는다(19종목이 20종으로 보이던 문제, 2026-10-26)
+  const codes = new Set(holdings.filter((h) => h.code !== "CASH").map((h) => h.code));
+  const remainingCodes = new Set(holdings.filter((h) => h.code !== "CASH" && !mergedAway.has(h)).map((h) => h.code));
 
   // ① 새 돈을 넣을 곳 — 계좌마다 기준 상품(일반 계좌면 분배금 과세를 미루는 TR, 아니면 가장 큰 성장 ETF)을 같은 지수 상품과 비교해 정한다.
   //    전체 기준 살 곳은 일반 계좌의 가장 큰 TR이 있는 계좌, 없으면 가장 큰 성장 ETF가 있는 계좌의 결정.
