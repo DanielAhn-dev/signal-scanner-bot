@@ -17,6 +17,7 @@ import { useAccountCash } from './hooks/useAccountCash'
 import { useProfileStore } from '../../stores/profileStore'
 import PerformanceCard from './components/PerformanceCard'
 import TradeModal from './components/modals/TradeModal'
+import TradeCaptureModal from './components/modals/TradeCaptureModal'
 import ShareModal from './components/modals/ShareModal'
 import MaintenanceModal from './components/modals/MaintenanceModal'
 import DeleteConfirmModal from './components/modals/DeleteConfirmModal'
@@ -117,6 +118,7 @@ export default function Portfolio() {
 
   // 모달
   const trade = useTradeModal({ load })
+  const [captureOpen, setCaptureOpen] = useState(false)
   const maint = useMaintenance({ load, accountFolders })
   const share = useShare(selectedAccountKey === 'virtual' ? 'virtual' : 'real')
   const { openTradeModal } = trade
@@ -136,7 +138,7 @@ export default function Portfolio() {
         subtitle={portfolioHeaderSubtitle} onNavigateToCalendar={() => navigate('/market')}
         loading={loading} refreshing={refreshing} allRows={allRows} holdingAll={holdingAll} copyRows={summaryRows}
         onRefresh={() => load({ force: true })} onOpenShare={() => share.setShareModalOpen(true)}
-        onOpenMaintenance={openMaintenanceModal}
+        onOpenMaintenance={openMaintenanceModal} onOpenTradeCapture={() => setCaptureOpen(true)}
         selectedAccountKey={selectedAccountKey} onSelectAccount={(key) => { setSelectedAccountKey(key); setPage(1) }}
         accountFolders={accountFolders} virtualCount={virtualHoldingRows.length} realCount={realCount}
         aliases={aliases} onRenameAccount={renameAccount}
@@ -256,6 +258,14 @@ export default function Portfolio() {
       <ShareModal share={share} holdingAll={holdingAll} totalInvested={totalInvested} totalUnrealized={totalUnrealized} totalReturnPct={totalReturnPct} />
 
       <MaintenanceModal maint={maint} accountFolders={accountFolders} aliases={aliases} />
+
+      {captureOpen && (
+        <TradeCaptureModal
+          isOpen onClose={() => setCaptureOpen(false)}
+          accountFolders={accountFolders} aliases={aliases} holdingAll={holdingAll}
+          defaultAccountKey={selectedAccountKey} load={load}
+        />
+      )}
 
       <DeleteConfirmModal maint={maint} />
     </section>

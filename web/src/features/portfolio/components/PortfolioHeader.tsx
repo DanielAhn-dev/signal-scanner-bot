@@ -56,6 +56,8 @@ type PortfolioHeaderProps = {
   onRefresh: () => void
   onOpenShare: () => void
   onOpenMaintenance: (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete') => void
+  /** 주문내역 캡처로 매수·매도 기록 — 실계좌가 있을 때만 버튼을 보인다 */
+  onOpenTradeCapture?: () => void
   selectedAccountKey: string
   onSelectAccount: (key: string) => void
   accountFolders: AccountFolder[]
@@ -81,6 +83,7 @@ export default function PortfolioHeader({
   onRefresh,
   onOpenShare,
   onOpenMaintenance,
+  onOpenTradeCapture,
   selectedAccountKey,
   onSelectAccount,
   accountFolders,
@@ -199,6 +202,11 @@ export default function PortfolioHeader({
                 <Button variant="secondary" size="sm" onClick={() => onOpenMaintenance('holdingrestore')} disabled={loading}>
                   계좌/보유 추가
                 </Button>
+                {onOpenTradeCapture && selectedAccountKey !== 'virtual' && accountFolders.length > 0 && (
+                  <Button variant="secondary" size="sm" onClick={onOpenTradeCapture} disabled={loading}>
+                    캡처로 매매 기록
+                  </Button>
+                )}
                 {/* 전체매도는 가상(실험) 계좌만 — 실계좌는 증권사에서 판 뒤 종목별로 기록한다 */}
                 {selectedAccountKey === 'virtual' && (
                   <Button variant="secondary" size="sm" onClick={() => onOpenMaintenance('liquidateall')} disabled={loading || virtualCount === 0}>
