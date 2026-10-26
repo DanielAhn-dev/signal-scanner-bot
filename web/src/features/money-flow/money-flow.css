@@ -137,7 +137,7 @@
 .acc .mf-section-title { margin: 32px 0 10px; font-size: 18px; font-weight: 700; color: var(--color-text-primary); }
 .acc .mf-section-title:first-child { margin-top: 0; }
 .mf-budget { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.mf-budget .acc-facts { flex: 1 1 260px; margin: 0; }
+.mf-budget .acc-facts { flex: 1 1 100%; width: 100%; margin: 0; }
 /* 이 달 투자 가능액: 한눈에 보이는 결과 */
 .mf-invest { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; margin: 8px 0 12px; border: 1px solid var(--color-border-default); border-radius: 8px; background: var(--color-bg-sunken); }
 .mf-invest > span { font-size: 13px; color: var(--color-text-secondary); }
