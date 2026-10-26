@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { accountCashRows, addAccountCash, guideCashKey, sanitizeCashActivity, sanitizeCashChecks, setAccountCash } from "../src/lib/accountCash";
-import { applyReceiptToCash, DEFAULT_INCOME_GUIDE_SETTINGS } from "../src/lib/incomeGuide";
+import { applyReceiptToCash, applyTradeToCash, DEFAULT_INCOME_GUIDE_SETTINGS, readCashUpdatedAt } from "../src/lib/incomeGuide";
+import { loadGuideFile, saveGuideFile } from "../src/services/incomeGuideStore";
 
 const base = { ...DEFAULT_INCOME_GUIDE_SETTINGS, cashByAccount: { "토스|일반": 300_000 } };
 
@@ -56,4 +57,34 @@ test("입금액 검증과 이력 데이터 정리", () => {
 test("확인 기록 정리·키 변환", () => {
   assert.deepEqual(sanitizeCashChecks({ "a|b": { amount: 1.4, at: "2026-10-21" }, bad: { amount: 1, at: "2026-10-21" }, "c|d": { amount: 1, at: "어제" } }), { "a|b": { amount: 1, at: "2026-10-21" } });
   assert.equal(guideCashKey(null, " 인컴계좌(일반) "), "|인컴계좌(일반)");
+});
+
+test("cashUpdatedAt은 파일을 저장했다 불러와도 남고, 그 날짜 이전 체결은 예수금을 또 깎지 않는다", async () => {
+  // 메모리 저장소로 대체한 Storage — loadGuideFile/saveGuideFile이 쓰는 download/upload만 흉내 낸다
+  const store = new Map<string, string>();
+  const supabase = {
+    storage: {
+      from: () => ({
+        download: async (path: string) => (store.has(path) ? { data: { text: async () => store.get(path)! }, error: null } : { data: null, error: { message: "not found" } }),
+        upload: async (path: string, body: string) => { store.set(path, body); return { error: null }; },
+      }),
+    },
+  };
+  const key = "|인컴계좌(일반)";
+  const set = setAccountCash({ ...DEFAULT_INCOME_GUIDE_SETTINGS, cashByAccount: { [key]: 3_538_148 } }, {}, key, 2_222_790, "2026-10-26")!;
+  assert.equal(await saveGuideFile(supabase, 1, { settings: set.settings, history: [], cashChecks: set.checks, cashActivity: set.activity } as any), null);
+
+  const loaded = await loadGuideFile(supabase, 1);
+  assert.equal(loaded?.settings.cashUpdatedAt, "2026-10-26");
+  // 지난 날짜(10/20) 매수는 이미 잔액에 들어 있다고 보고 건드리지 않는다. 오늘 체결은 반영한다
+  assert.equal(applyTradeToCash(loaded!.settings, { accountKey: key, side: "BUY", netAmount: 15_762, tradeDate: "2026-10-20" }), null);
+  assert.equal(applyTradeToCash(loaded!.settings, { accountKey: key, side: "BUY", netAmount: 32_605, tradeDate: "2026-10-26" })?.after, 2_190_185);
+
+  // 다시 저장해도 지워지지 않는다(예전에는 불러올 때 버려져 다음 저장에서 파일에서도 사라졌다)
+  await saveGuideFile(supabase, 1, loaded!);
+  assert.equal((await loadGuideFile(supabase, 1))?.settings.cashUpdatedAt, "2026-10-26");
+
+  assert.equal(readCashUpdatedAt("2026-10-26"), "2026-10-26");
+  assert.equal(readCashUpdatedAt("어제"), undefined);
+  assert.equal(readCashUpdatedAt(undefined), undefined);
 });

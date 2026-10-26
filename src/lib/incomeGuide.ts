@@ -395,6 +395,15 @@ export function estimateDistribution(byBucket: Map<AssetBucket, number>): Income
   };
 }
 
+/**
+ * 저장 파일의 cashUpdatedAt(YYYY-MM-DD). sanitizeIncomeGuideSettings는 이 값을 `current`에서만 이어받아,
+ * 파일을 불러올 때(current=기본값) 늘 버려졌다 — "이 날짜 이전 체결은 이미 잔액에 반영됨" 규칙(applyTradeToCash)이 한 번도 안 걸리고,
+ * 다음 저장 때 파일에서도 지워졌다(2026-10-26: 지난 날짜 매수 2건이 이미 반영된 예수금을 32,194원 또 깎음).
+ */
+export function readCashUpdatedAt(raw: unknown): string | undefined {
+  return typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : undefined;
+}
+
 export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>, current: IncomeGuideSettings): IncomeGuideSettings {
   const num = (v: unknown, fallback: number, min: number, max: number) => {
     const n = Number(v);

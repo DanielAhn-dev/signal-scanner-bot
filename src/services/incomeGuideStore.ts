@@ -15,6 +15,7 @@ import { sanitizeAccountGuideMap, type AccountGuideMap } from "../lib/guideAccou
 import { overseasPctOfMix, readInvestPlan, type MixEntry } from "./userPlan";
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
+  readCashUpdatedAt,
   sanitizeCashDeposits,
   sanitizeIncomeGuideSettings,
   type CashDeposit,
@@ -53,7 +54,11 @@ export async function loadGuideFile(supabase: any, chatId: string | number): Pro
   try {
     const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[]; receipts?: unknown; adherenceExcluded?: unknown; accounts?: unknown; cashDeposits?: unknown; cashChecks?: unknown; cashActivity?: unknown };
     if (!parsed.settings) return null;
-    const settings = sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS);
+    const cashUpdatedAt = readCashUpdatedAt(parsed.settings.cashUpdatedAt);
+    const settings = {
+      ...sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS),
+      ...(cashUpdatedAt ? { cashUpdatedAt } : {}),
+    };
     return {
       settings,
       accounts: sanitizeAccountGuideMap(parsed.accounts, settings),
