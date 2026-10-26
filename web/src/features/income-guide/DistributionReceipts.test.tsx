@@ -33,6 +33,10 @@ describe('DistributionReceipts', () => {
     render(<DistributionReceipts data={data} holdings={holdings} buyName="KODEX 200TR" submit={async () => null} />)
     expect(screen.getAllByText('91,200원', { selector: 'strong' }).length).toBeGreaterThan(0)
     expect(screen.getByText(/120주 늘어남/)).toBeTruthy()
+    // 늘어난 몫 합계(160원 × 120주 × 0.95 = 18,240원)와 예전 기준 → 지금 비교가 위에 한 줄로 나온다
+    const block = screen.getByLabelText('추가 매수로 늘어난 분배금')
+    expect(block.textContent).toContain('추가 매수로 늘어난 월 분배금')
+    expect(block.textContent).toMatch(/예전 기준 .+ → 지금 .+/)
     // 기록 없는 종목은 지급 달을 몰라 '안 적은 종목'으로 세지 않고 따로 보인다
     expect(screen.queryByText(/아직 안 적은 종목/)).toBeNull()
     expect(screen.getByText(/지급 달을 모름.*SOL 코리아고배당/)).toBeTruthy()

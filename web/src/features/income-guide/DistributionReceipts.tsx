@@ -209,6 +209,9 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
   }, [projection.rows, thisMonth, data.recent, holdingOf])
   const notYet = unlogged.due.length + unlogged.unknown.length
   const added = projection.rows.filter((r) => r.source === 'receipt' && r.addedShares > 0 && r.perShare)
+  // 늘어난 수량 × 최근 주당 분배금 × 세후 비율 ÷ 지급 간격 = 월 평균으로 늘어난 몫(projection.rows의 net과 같은 식)
+  const addedNetOf = (r: ProjectionRow) => (r.perShare ?? 0) * r.addedShares * (r.netRatio ?? 0.846) / (r.intervalMonths ?? 1)
+  const addedNet = added.reduce((sum, r) => sum + addedNetOf(r), 0)
   // 고른 달에 이미 적은 종목은 맨 아래로 — 남은 종목을 빨리 고르고, 고칠 때만 아래에서 고른다
   const monthItems = useMemo(
     () =>
@@ -332,11 +335,20 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
           <span style={{ ...muted, marginLeft: 4 }}>· 이번 달에 안 적은 종목 추정 {man(projection.fromEstimate)} 포함이라 이번 달 합계와 바로 비교할 수 없습니다</span>
         )}
       </div>
-      {added.map((r) => (
-        <div key={r.code} style={faint}>
-          └ {r.name} {r.addedShares.toLocaleString('ko-KR')}주 늘어남 → 다음 달 약 +{smallWon((r.perShare ?? 0) * r.addedShares * (r.netRatio ?? 0.846) / (r.intervalMonths ?? 1))}
+      {added.length > 0 && (
+        <div style={{ marginTop: 4 }} aria-label="추가 매수로 늘어난 분배금">
+          추가 매수로 늘어난 월 분배금 <strong>+{smallWon(addedNet)}</strong>
+          <span style={{ ...muted, marginLeft: 4 }}>· 예전 기준 {man(Math.max(0, projection.total - addedNet))} → 지금 {man(projection.total)}</span>
+          <div style={faint}>예전 기준 = 종목마다 마지막으로 분배금을 적었을 때의 수량으로 계산한 월 평균(지급 간격으로 나눈 값)입니다.</div>
+          <More label={`종목별로 보기 (${added.length}종목)`}>
+            {added.map((r) => (
+              <div key={r.code} style={faint}>
+                └ {r.name} {r.addedShares.toLocaleString('ko-KR')}주 늘어남 → 월 약 +{smallWon(addedNetOf(r))}
+              </div>
+            ))}
+          </More>
         </div>
-      ))}
+      )}
       <div style={faint}>
         받은 기록과 최근 분배율로 낸 예상치입니다{projection.receiptCodes > 0 ? ` (기록 ${projection.receiptCodes}종목 ${man(projection.fromReceipts)} + 추정 ${man(projection.fromEstimate)})` : ''}.
         <More label="어떻게 추정하나">받은 기록이 있는 종목은 &lsquo;가장 최근 주당 분배금 × 지금 수량 × 그 종목의 실제 세후 비율&rsquo;로, 기록이 없는 종목은 최근 12개월 분배율로 추정합니다. 달마다 주당 분배금이 바뀌니 예상치입니다. 위 요약의 월 인컴도 이 값을 씁니다.</More>
