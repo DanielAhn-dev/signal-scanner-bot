@@ -1,5 +1,5 @@
 import More from '../../components/ui/More'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
@@ -9,6 +9,7 @@ import {
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
 import { looksLikeBlockStatement, parseBlockStatement, statementNotice } from '../../lib/statementPaste'
+import { cardDetailToReplace } from './cardDetail'
 import MonthTotals, { shiftMonth, type MonthTotalRow } from './MonthTotals'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
@@ -238,6 +239,39 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
     }
   }
 
+  // 명세서로 갈아끼우기 전에 그 달의 카드 세부(쪼개 적은 기록 등)를 한꺼번에 지운다 — 표시만 하는 삭제라 '지운 기록'에서 되돌릴 수 있다
+  const bulkRef = useRef(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const replaceable = cardDetailToReplace(monthEntries)
+  const removeMonthCardDetail = async () => {
+    if (bulkRef.current || replaceable.length === 0) return
+    const total = replaceable.reduce((s, e) => s + e.amount, 0)
+    const label = month.replace('-', '년 ') + '월'
+    if (!(await confirmDialog({
+      message: `${label} 카드 세부 기록 ${replaceable.length}건(${krw(total)})을 모두 지울까요? 현금으로 낸 건·환급·포인트·배우자가 적은 기록은 남깁니다. 지운 기록은 아래 "지운 기록"에서 되돌릴 수 있습니다.`,
+      confirmLabel: '모두 지우기', danger: true,
+    }))) return
+    bulkRef.current = true
+    setBulkBusy(true)
+    let done = 0
+    let failed = 0
+    try {
+      for (const entry of replaceable) {
+        try {
+          await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'delete-entry', id: entry.id }), cacheMs: 0 })
+          done++
+        } catch {
+          failed++
+        }
+      }
+    } finally {
+      bulkRef.current = false
+      setBulkBusy(false)
+      setNotice(failed === 0 ? `${label} 카드 세부 ${done}건을 지웠습니다. 이제 명세서를 붙여넣어 다시 올려 주세요.` : `${done}건 지움, ${failed}건은 지우지 못했습니다. 다시 눌러 주세요.`)
+      await load()
+    }
+  }
+
   const restoreEntry = async (entry: Entry) => {
     try {
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'restore-entry', id: entry.id }), cacheMs: 0 })
@@ -353,6 +387,14 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
 
           <section className="acc-card">
             <h2>{month.replace('-', '년 ')}월 세부 기록 {monthEntries.length}건</h2>
+            {replaceable.length > 0 && (
+              <div className="mf-row">
+                <button type="button" className="acc-secondary" onClick={() => void removeMonthCardDetail()} disabled={bulkBusy}>
+                  {bulkBusy ? '지우는 중…' : `이 달 카드 세부 모두 지우기 (${replaceable.length}건)`}
+                </button>
+                <span className="acc-note">명세서로 다시 올릴 때 먼저 지웁니다. 현금·환급·포인트 기록은 남습니다.</span>
+              </div>
+            )}
             {loading ? <p className="acc-note">불러오는 중…</p> : monthEntries.length === 0 ? <p className="acc-note">아직 기록이 없습니다.</p> : (
               <ul className="mf-list">
                 {monthEntries.map((e) => {

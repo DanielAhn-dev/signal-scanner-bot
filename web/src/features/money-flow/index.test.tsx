@@ -164,6 +164,29 @@ describe('지출 기록', () => {
     expect(apiFetchMock.mock.calls[0][0]).toContain('from=')
   })
 
+  it('명세서로 갈아끼우려고 "이 달 카드 세부 모두 지우기"를 누르면 카드로 낸 일반 지출만 지우고 현금·환급·배우자 기록은 남긴다', async () => {
+    const month = today.slice(0, 7)
+    apiFetchMock.mockImplementation((_p: string, o?: { method?: string }) => Promise.resolve(o?.method === 'POST' ? { ok: true } : {
+      rules: [], checks: [],
+      entries: [
+        { id: 'card1', mine: true, date: `${month}-02`, amount: 5000, memo: '다이소 과자', categoryId: 'grocery_snack', cut: null, mustPart: null, payment: 'cash', paidWith: 'card' },
+        { id: 'card2', mine: true, date: `${month}-02`, amount: 3000, memo: '다이소 생활', categoryId: 'etc', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'cash1', mine: true, date: `${month}-03`, amount: 4000, memo: '시장', categoryId: 'grocery_mart', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
+        { id: 'refund1', mine: true, date: `${month}-04`, amount: 23000, memo: '모두의카드 환급', categoryId: 'transit', cut: null, mustPart: null, payment: 'refund_regular' },
+        { id: 'partner1', mine: false, date: `${month}-05`, amount: 9000, memo: '배우자 카페', categoryId: 'cafe', cut: null, mustPart: null, payment: 'cash' },
+      ],
+      deleted: [],
+    }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+    const button = await screen.findByRole('button', { name: /이 달 카드 세부 모두 지우기 \(2건\)/ })
+    fireEvent.click(button)
+    await waitFor(() => expect(postBodies().filter((b) => b.action === 'delete-entry').map((b) => b.id)).toEqual(['card1', 'card2']))
+    expect(confirm.mock.calls.at(-1)?.[0]).toContain('2건(8,000원)')
+    await waitFor(() => expect(screen.getByText(/카드 세부 2건을 지웠습니다/)).toBeTruthy())
+    confirm.mockRestore()
+  })
+
   it('배우자가 지출을 공유하면 우리 집 합계로 보이고, 서로 고치거나 지울 수 있으며 누가 했는지 보인다', async () => {
     const month = today.slice(0, 7)
     apiFetchMock.mockImplementation((_p: string, o?: { method?: string }) => Promise.resolve(o?.method === 'POST' ? { ok: true } : {
