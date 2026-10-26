@@ -43,6 +43,22 @@ const splitSummaries = (list: Entry[]) => ({
   card: summarizeItems(list.filter((e) => paidOf(e) !== 'cash').map(toItem)),
   cash: summarizeItems(list.filter((e) => paidOf(e) === 'cash').map(toItem)),
 })
+/**
+ * 통장 기준(이번 달 나가는 돈)의 세부 기록: 카드는 지난달에 쓴 돈이 이 달에 빠져나가고, 현금은 낸 달에 나간다.
+ * 월 합계 칸은 결제월 기준이라, 세부 기록과 맞춰 볼 때는 이 기준으로 골라야 기간이 같다.
+ */
+const paidBasis = (list: Entry[], month: string) => list.filter((e) => e.date.startsWith(paidOf(e) === 'cash' ? month : shiftMonth(month, -1)))
+
+/** 그 달 통장 기준 투자 가능액(합계 칸과 예산이 있을 때만). 화면 맨 위 한 줄과 같은 값이다 */
+function investFor(month: string, allEntries: Entry[], totals: MonthTotalRow[], checks: SavedCheck[]) {
+  const plan = checkForMonth(checks, month)?.input ?? null
+  const monthTotals = totals.filter((t) => t.month === month)
+  if (!plan || monthTotals.length === 0) return { plan, invest: null as number | null }
+  const split = splitSummaries(paidBasis(allEntries, month))
+  const rec = monthSpending(monthTotals, split.card, split.cash, fixedOutsideCardOf(plan))
+  const irregular = irregularForMonth(plan, Number(month.slice(5)), allEntries.filter((e) => e.date.startsWith(month)))
+  return { plan, invest: investableOf(plan, rec.cash - fixedCashOf(plan) - irregular.total) }
+}
 const toItem = (entry: Entry): FlowItem => ({ categoryId: entry.categoryId, amount: entry.amount, payment: entry.payment, cut: entry.cut ?? undefined, mustPart: entry.mustPart ?? undefined })
 
 function WhomSelect({ value, onChange, label }: { value: ForWhom; onChange: (value: ForWhom) => void; label: string }) {
@@ -88,6 +104,8 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
   const [checks, setChecks] = useState<SavedCheck[]>([])
   const [checksLoaded, setChecksLoaded] = useState(false)
   const [month, setMonth] = useState(thisMonth)
+  // use = 이번 달 쓴 돈(이용월 기준, 입력·세부 기록) · pay = 이번 달 나가는 돈(통장 기준, 합계·투자 가능액). 평소 입력이 많아 쓴 돈이 먼저다
+  const [view, setView] = useState<'use' | 'pay'>('use')
   const [entries, setEntries] = useState<Entry[]>([])
   const [deleted, setDeleted] = useState<Entry[]>([])
   const [rules, setRules] = useState<LearnedRule[]>([])
@@ -131,10 +149,15 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
   // 월 합계는 카드 단위라 누구 몫으로 나눌 수 없다. '배우자 것 빼고'에서는 내가 적은 칸만 센다
   const scopedTotals = partnerShared && scope === 'me' ? totals.filter((t) => t.mine) : totals
   const monthEntries = scoped.filter((e) => e.date.startsWith(month))
-  const monthDetail = splitSummaries(monthEntries)
+  // 이번 달 쓴 돈(이용월 기준): 카드로 쓴 것은 다음 달에 나간다
+  const usage = splitSummaries(monthEntries)
+  // 이번 달 나가는 돈(통장 기준): 카드는 지난달 이용분, 현금은 이 달 것
+  const payEntries = paidBasis(scoped, month)
+  const monthDetail = splitSummaries(payEntries)
   // 기준 = 이 달 이전에 기록(세부 또는 합계)이 있는 가장 최근 달. 그사이 달을 건너뛰었어도 그 기록이 기준으로 남는다
-  const baseMonth = [...scoped.map((e) => e.date.slice(0, 7)), ...scopedTotals.map((t) => t.month)].filter((m) => m < month).sort().pop() ?? null
-  const baseEntries = baseMonth ? scoped.filter((e) => e.date.startsWith(baseMonth)) : []
+  const baseMonth = [...scoped.map((e) => (paidOf(e) === 'cash' ? e.date.slice(0, 7) : shiftMonth(e.date.slice(0, 7), 1))), ...scopedTotals.map((t) => t.month)].filter((m) => m < month).sort().pop() ?? null
+  const baseEntries = baseMonth ? paidBasis(scoped, baseMonth) : []
+  const headline = investFor(thisMonth, scoped, scopedTotals, checks)
   const suggestions = suggestCategories(entries.filter((e) => e.mine !== false).slice(0, 60).map((e) => e.categoryId))
 
   const readInput = () => {
@@ -360,9 +383,41 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
       {!budget && (
         <>
           <h2 className="mf-section-title">지출 기록</h2>
-          <MonthTotals month={month} thisMonth={thisMonth} today={today} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} cardDetail={monthDetail.card} cashDetail={monthDetail.cash} records={monthEntries} plan={checkForMonth(checks, month)?.input ?? null} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
+          {headline.plan && (
+            <section className="acc-card" aria-label="이번 달 투자 가능액 한눈에">
+              <div className="mf-invest">
+                <span>{Number(thisMonth.slice(5))}월 투자 가능액 (통장 기준)</span>
+                {headline.invest !== null
+                  ? <strong className={headline.invest < 0 ? 'is-negative' : ''}>{krw(headline.invest)}</strong>
+                  : <small>{Number(thisMonth.slice(5))}월 카드 결제금액을 "나가는 돈" 탭에 적으면 계산됩니다.</small>}
+              </div>
+            </section>
+          )}
+          <div className="acc-seg" role="group" aria-label="지출 보기">
+            <button type="button" aria-pressed={view === 'use'} className={view === 'use' ? 'is-active' : ''} onClick={() => { setView('use'); if (month > thisMonth) setMonth(thisMonth) }}>이번 달 쓴 돈</button>
+            <button type="button" aria-pressed={view === 'pay'} className={view === 'pay' ? 'is-active' : ''} onClick={() => setView('pay')}>이번 달 나가는 돈</button>
+          </div>
+          <p className="acc-note">{view === 'use' ? '쓴 날짜 기준으로 적고 확인합니다. 카드로 쓴 돈은 다음 달 통장에서 나갑니다.' : '통장에서 빠져나가는 돈 기준입니다. 이 달에 나가는 카드 결제금액은 지난달에 쓴 돈입니다.'}</p>
+        </>
+      )}
 
-          <details className="acc-card mf-detail">
+      {!budget && (
+        <div className="mf-pane" hidden={view !== 'use'}>
+          <section className="acc-card">
+            <div className="mf-month-nav">
+              <button type="button" aria-label="이전 달 쓴 돈" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={16} />{Number(shiftMonth(month, -1).slice(5))}월</button>
+              <h2>{month.replace('-', '년 ')}월에 쓴 돈</h2>
+              <button type="button" aria-label="다음 달 쓴 돈" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth}>{Number(shiftMonth(month, 1).slice(5))}월<ChevronRight size={16} /></button>
+            </div>
+            <dl className="acc-facts" aria-label="이번 달 쓴 돈">
+              <div><dt>카드로 쓴 돈 (세부 기록 합)</dt><dd>{krw(usage.card.cash)}</dd></div>
+              <div><dt>현금으로 낸 돈</dt><dd>{krw(usage.cash.cash)}</dd></div>
+            </dl>
+            <p className="acc-note">카드로 쓴 {krw(usage.card.cash)}은 {Number(shiftMonth(month, 1).slice(5))}월에 통장에서 나갈 돈의 예상입니다. 명세서 전체를 올리면 실제 결제금액과 같아집니다.</p>
+            <button type="button" className="acc-secondary" onClick={() => { setMonth(shiftMonth(month, 1)); setView('pay') }}>{Number(shiftMonth(month, 1).slice(5))}월에 나가는 돈 보기</button>
+          </section>
+
+          <details className="acc-card mf-detail" open>
             <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">현금·계좌이체로 낸 돈과 환급만 적으면 됩니다. 나머지는 쓰고 싶을 때만.</span></summary>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
@@ -475,16 +530,20 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
               </details>
             )}
           </section>
-        </>
+        </div>
+      )}
+
+      {!budget && (
+        <div className="mf-pane" hidden={view !== 'pay'}>
+          <MonthTotals month={month} thisMonth={thisMonth} today={today} setMonth={setMonth} totals={scopedTotals.filter((t) => t.month === month || t.mine)} cardDetail={monthDetail.card} cashDetail={monthDetail.cash} records={monthEntries} plan={checkForMonth(checks, month)?.input ?? null} partnerShared={partnerShared} ready={totalsReady} onSaved={load} />
+          <h2 className="mf-section-title">이번 달 보기</h2>
+          <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={payEntries} monthEntries={monthEntries} allEntries={scoped} totals={scopedTotals} checks={checks} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />
+        </div>
       )}
 
       {budget && (checksLoaded
         ? <FlowCheck entries={scoped} totals={scopedTotals} checks={checks} onSaved={load} fromStart={fromStart} />
         : <p className="acc-note mf-notice">불러오는 중…</p>)}
-
-
-      {!budget && <h2 className="mf-section-title">이번 달 보기</h2>}
-      {!budget && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} allEntries={scoped} totals={scopedTotals} checks={checks} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
 
       <p className="acc-note mf-foot">기록은 본인 계정에 저장되고, <Link to="/family">부부 연결</Link>에서 지출 공유를 켠 배우자만 함께 봅니다. 투자 가능액 계산은 <Link to="/seed-builder">이번 달 투자금</Link>에서 합니다.</p>
     </div>
@@ -510,7 +569,9 @@ function BudgetSummary({ check, loading }: { check: SavedCheck | null; loading: 
         <div><dt>고정비</dt><dd>{krw(fixedCashOf(check.input))}</dd></div>
         <div><dt>비정기 적립</dt><dd>{krw(fund)}</dd></div>
         {savingCashOf(check.input) > 0 && <div><dt>저축·투자</dt><dd>{krw(savingCashOf(check.input))}</dd></div>}
+        <div className="is-main"><dt>쓸 수 있는 돈 (변동 지출 전)</dt><dd>{krw(investableOf(check.input, 0))}</dd></div>
       </dl>
+      <p className="acc-note">수입에서 저축·고정비·비정기 적립·비상금 적립을 뺀 돈입니다. 여기서 식비·생활비 같은 변동 지출을 쓰고 남는 게 투자 가능액입니다.</p>
       <Link to="/budget" className="acc-secondary">예산 고치기</Link>
     </section>
   )
@@ -526,7 +587,9 @@ const monthLabel = (month: string) => `${month.slice(0, 4)}년 ${Number(month.sl
 function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], checks: SavedCheck[]) {
   return Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).flatMap((m) => {
     const t = totals.filter((x) => x.month === m)
-    const e = allEntries.filter((x) => x.date.startsWith(m))
+    // 합계는 결제월 기준이라 세부 기록도 통장 기준(카드는 지난달 이용분)으로 맞춘다. 비정기 실제는 낸 달 기록으로 찾는다
+    const e = paidBasis(allEntries, m)
+    const own = allEntries.filter((x) => x.date.startsWith(m))
     if (t.length === 0 && e.length === 0) return []
     const split = splitSummaries(e)
     const check = checkForMonth(checks, m)
@@ -537,7 +600,7 @@ function trendRows(month: string, allEntries: Entry[], totals: MonthTotalRow[], 
     const slots = Object.fromEntries(t.map((x) => [slotName(x), x.amount]))
     const fixed = check ? fixedCashOf(check.input) : null
     // 비정기: 실제 낸 기록(예산 항목과 이름이 같은 세부 기록)이 있으면 실제, 없으면 1년 예산 중 이 달 몫. 예산에 없는 비정기 기록도 뺀다
-    const irregular = check ? irregularForMonth(check.input, Number(m.slice(5)), e).total : null
+    const irregular = check ? irregularForMonth(check.input, Number(m.slice(5)), own).total : null
     const rest = t.length > 0 && fixed !== null ? cash - fixed - (irregular ?? 0) : null
     // 그 달 투자 가능액 = 수입 − 고정 − 변동 − 비정기 적립 − 비상금 적립(예산 기준)
     const invest = check && rest !== null ? investableOf(check.input, rest) : null
@@ -597,7 +660,8 @@ function MonthTrend({ rows, month }: { rows: ReturnType<typeof trendRows>; month
   )
 }
 
-function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, checks, baseMonth, baseEntries, loading }: { month: string; thisMonth: string; setMonth: (m: string) => void; entries: Entry[]; allEntries: Entry[]; totals: MonthTotalRow[]; checks: SavedCheck[]; baseMonth: string | null; baseEntries: Entry[]; loading: boolean }) {
+/** entries = 통장 기준 세부 기록(카드는 지난달 이용분 + 이 달 현금), monthEntries = 이 달에 적은 기록 전체(비정기 실제 금액을 찾는 데 쓴다) */
+function MonthView({ month, thisMonth, setMonth, entries, monthEntries, allEntries, totals, checks, baseMonth, baseEntries, loading }: { month: string; thisMonth: string; setMonth: (m: string) => void; entries: Entry[]; monthEntries: Entry[]; allEntries: Entry[]; totals: MonthTotalRow[]; checks: SavedCheck[]; baseMonth: string | null; baseEntries: Entry[]; loading: boolean }) {
   const summary = useMemo(() => summarizeItems(entries.map(toItem)), [entries])
   const monthTotals = totals.filter((t) => t.month === month)
   const hasTotals = monthTotals.length > 0
@@ -608,7 +672,7 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
   const trend = trendRows(month, allEntries, totals, checks)
   // 1년 예산에 없던 비정기 = 비상금에서 나간 돈(변동 지출에서 빼고 따로 보여 준다)
   const plan = checkForMonth(checks, month)?.input ?? null
-  const irregularMonth = irregularForMonth(plan, Number(month.slice(5)), entries)
+  const irregularMonth = irregularForMonth(plan, Number(month.slice(5)), monthEntries)
   const emergency = irregularMonth.emergency
   // 이 달 투자 가능액: 카드 합계와 예산이 있을 때만(합계가 없으면 지출이 덜 잡혀 부풀려진다)
   const variable = plan && hasTotals ? rec.cash - fixedCashOf(plan) - irregularMonth.total : null
@@ -628,6 +692,7 @@ function MonthView({ month, thisMonth, setMonth, entries, allEntries, totals, ch
     <>
       <section className="acc-card">
         <h3>{monthLabel(month)}</h3>
+        <p className="acc-note">통장에서 나가는 돈 기준입니다. 카드는 {Number(shiftMonth(month, -1).slice(5))}월에 쓴 기록, 현금은 {Number(month.slice(5))}월에 낸 기록입니다.</p>
         {!loading && (
           <div className="mf-invest" aria-label="이 달 투자 가능액">
             <span>{month > thisMonth ? '투자 가능액(예상 — 카드 결제 예정금액 기준)' : '투자 가능액'}</span>

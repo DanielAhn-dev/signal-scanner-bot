@@ -58,6 +58,13 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
   ], cardDetail, cashDetail, fixedOutsideCardOf(plan))
   const savedMonth = mine.some((t) => t.month === month)
   const update = (key: string, patch: Partial<Slot>) => setSlots((list) => list.map((s) => (s.key === key ? { ...s, ...patch } : s)))
+  const prevNo = Number(shiftMonth(month, -1).slice(5))
+  // 지난달에 쓴 카드 세부 합으로 첫 카드 칸을 채운다(없으면 칸을 하나 만든다). 저장은 직접 누른다
+  const fillFromUsage = (amount: number) => setSlots((list) => {
+    const index = list.findIndex((s) => s.kind === 'cash')
+    if (index < 0) return [...list, { key: newKey(), label: '카드', kind: 'cash', amount: String(amount) }]
+    return list.map((s, i) => (i === index ? { ...s, amount: String(amount) } : s))
+  })
 
   const save = async () => {
     if (savingRef.current) return
@@ -128,6 +135,12 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
             : <><p className="acc-note">{monthNo}월에 통장에서 나간 카드 결제금액(명세서 결제금액)을 적으세요.</p>
               <More label="왜 결제금액인가요 · 다음 달 미리 적기"><p className="acc-note">지난달에 쓴 돈이 이 달에 나가므로, 이 달 수입에서 빼야 실제로 남는 돈이 나옵니다. 다음 달 예정금액은 오른쪽 "{Number(shiftMonth(month, 1).slice(5))}월{shiftMonth(month, 1) > thisMonth ? ' 예정' : ''}" 버튼으로 넘어가 미리 적을 수 있습니다. 관리비·보험까지 모두 카드로 낸다면 카드 칸만 적으면 됩니다.</p></More></>}
           {lastEdited && <p className="acc-note">마지막 수정 {lastEdited.slice(5, 10).replace('-', '/')}</p>}
+          {entered.length === 0 && cardDetail.cash > 0 && (
+            <p className="acc-note">
+              {prevNo}월에 쓴 카드 세부 기록 합은 {krw(cardDetail.cash)}입니다. 카드 앱의 결제금액을 모를 때는 이 금액으로 시작하고, 명세서 금액으로 고치세요.{' '}
+              <button type="button" className="acc-add" onClick={() => fillFromUsage(cardDetail.cash)}>이 금액으로 채우기</button>
+            </p>
+          )}
           <div className="mf-slots" role="group" aria-label="합계 칸">
             {slots.map((s, i) => (
               <div key={s.key} className="mf-slot">
@@ -162,7 +175,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
           <dl className="acc-facts mf-reconcile" aria-label="합계와 세부 기록">
             <div><dt>카드 합계</dt><dd>{krw(total)}</dd></div>
             {/* 카드 세부를 안 적는 달은 비교할 게 없어 숨긴다 */}
-            {detailTotal > 0 && <div><dt>카드 세부 기록</dt><dd>{krw(detailTotal)}{total > 0 && ` (${Math.round((Math.min(detailTotal, total) / total) * 100)}%)`}</dd></div>}
+            {detailTotal > 0 && <div><dt>카드 세부 기록 ({prevNo}월 이용)</dt><dd>{krw(detailTotal)}{total > 0 && ` (${Math.round((Math.min(detailTotal, total) / total) * 100)}%)`}</dd></div>}
             {detailTotal > 0 && <div><dt>세부 안 적음</dt><dd>{krw(unrecorded)}</dd></div>}
             <div><dt>현금으로 낸 돈</dt><dd>{krw(preview.cashPaid)}{cashRecords.length > 0 && ` (${cashRecords.length}건)`}</dd></div>
             {preview.outsideCard > 0 && <div><dt>카드 밖 고정비</dt><dd>{krw(preview.outsideCard)}</dd></div>}
@@ -170,7 +183,7 @@ export default function MonthTotals({ month, thisMonth, today, setMonth, totals,
             {rest !== null && <div><dt>고정 · 비정기</dt><dd>{krw(fixed!)} · {krw(irregularPreview)}</dd></div>}
             {rest !== null && <div><dt>나머지(변동)</dt><dd>{krw(rest)}</dd></div>}
           </dl>
-          <p className="acc-note">현금으로 낸 돈은 아래 "자세히 적기"에 "현금"을 붙여 적으면 여기 더해집니다.</p>
+          <p className="acc-note">현금으로 낸 돈은 "이번 달 쓴 돈" 탭의 "자세히 적기"에 "현금"을 붙여 적으면 여기 더해집니다.</p>
           <More label="예시"><p className="acc-note">현금·계좌이체·서울페이로 낸 돈은 칸에 적지 않고, 쓸 때 적습니다(예: 축의금 100000원 현금). 나중에 기억으로 적으면 빠지기 쉽습니다.</p></More>
           {irregular.emergency > 0 && <p className="acc-warn">1년 예산에 없던 비정기 {krw(irregular.emergency)}은 비상금에서 나간 돈으로 봅니다. 변동 지출에는 넣지 않으니, 다음 달 비상금 적립에 더해 채워 넣으세요.</p>}
           {(preview.overCash || preview.overPoint) && <p className="acc-warn">카드 세부 기록이 카드 합계보다 많습니다. 다른 달 기록이 섞였거나 합계를 덜 적었을 수 있어요. 저장은 됩니다.</p>}

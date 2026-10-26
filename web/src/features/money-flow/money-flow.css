@@ -2,6 +2,8 @@
 .mf .mf-notice { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: var(--color-bg-sunken); }
 .mf-input { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; resize: vertical; }
 .mf-input:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
+.mf-pane { display: contents; }
+.mf-pane[hidden] { display: none; }
 .mf-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .mf-date { flex: 1 1 160px; }
 .mf-row > .acc-primary { align-self: flex-end; padding-block: 11px; }

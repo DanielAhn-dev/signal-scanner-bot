@@ -7,6 +7,8 @@ const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
 
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
+// 카드 세부 기록은 통장 기준(이번 달 나가는 돈)에서 지난달 이용분으로 센다
+const monthsAgo = (n: number) => { const [y, m] = today.split('-').map(Number); return new Date(Date.UTC(y, m - 1 - n, 1)).toISOString().slice(0, 7) }
 
 beforeEach(() => {
   apiFetchMock.mockReset()
@@ -14,7 +16,12 @@ beforeEach(() => {
     options?.method === 'POST' ? Promise.resolve({ ok: true, data: [] }) : Promise.resolve({ entries: [], rules: [], checks: [] }))
 })
 
-const renderPage = () => render(<MemoryRouter><MoneyFlowPage /></MemoryRouter>)
+// 기본은 '이번 달 쓴 돈' 탭(입력·세부 기록). 합계·투자 가능액·이번 달 보기는 'pay'(이번 달 나가는 돈) 탭에 있다
+const renderPage = (view: 'use' | 'pay' = 'use') => {
+  const result = render(<MemoryRouter><MoneyFlowPage /></MemoryRouter>)
+  if (view === 'pay') fireEvent.click(screen.getByRole('button', { name: '이번 달 나가는 돈' }))
+  return result
+}
 const postBodies = () => apiFetchMock.mock.calls.filter(([, o]) => o?.method === 'POST').map(([, o]) => JSON.parse(o.body))
 
 describe('지출 기록', () => {
@@ -157,14 +164,14 @@ describe('지출 기록', () => {
     const month = today.slice(0, 7)
     apiFetchMock.mockResolvedValue({
       entries: [
-        { id: 'a', date: `${month}-01`, amount: 15170, memo: '냉동피자', categoryId: 'grocery_ready', cut: null, mustPart: null, payment: 'cash' },
-        { id: 'b', date: `${month}-01`, amount: 3690, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
-        { id: 'c', date: `${month}-01`, amount: 21500, memo: '체중계', categoryId: 'gadget', cut: null, mustPart: null, payment: 'point_once' },
+        { id: 'a', date: `${monthsAgo(1)}-01`, amount: 15170, memo: '냉동피자', categoryId: 'grocery_ready', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', date: `${monthsAgo(1)}-01`, amount: 3690, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'c', date: `${monthsAgo(1)}-01`, amount: 21500, memo: '체중계', categoryId: 'gadget', cut: null, mustPart: null, payment: 'point_once' },
       ],
       rules: [], checks: [],
     })
-    renderPage()
-    await screen.findByText('냉동피자')
+    renderPage('pay')
+    await screen.findByLabelText('줄일 수 있나')
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('18,860원')
     expect(screen.getByText('생활 소비(포인트 포함)').nextElementSibling?.textContent).toBe('40,360원')
     expect(screen.getByText(/이번만 들어온 21,500원/)).toBeTruthy()
@@ -179,14 +186,16 @@ describe('지출 기록', () => {
     const threeAgo = new Date(Date.UTC(y, m - 4, 1)).toISOString().slice(0, 7)
     apiFetchMock.mockResolvedValue({
       entries: [
-        { id: 'a', date: `${month}-01`, amount: 50000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'a', date: `${monthsAgo(1)}-01`, amount: 50000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
         { id: 'b', date: `${threeAgo}-10`, amount: 20000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
       ],
       rules: [], checks: [],
     })
-    renderPage()
-    await screen.findAllByText('배민')
-    expect(screen.getByText(`${threeAgo.slice(0, 4)}년 ${Number(threeAgo.slice(5))}월 기록보다`)).toBeTruthy()
+    renderPage('pay')
+    await screen.findByText(/기록보다/)
+    // 카드는 이용 다음 달에 나가므로, 3개월 전 이용분은 2개월 전(통장 기준) 기록이다
+    const base = monthsAgo(2)
+    expect(screen.getByText(`${base.slice(0, 4)}년 ${Number(base.slice(5))}월 기록보다`)).toBeTruthy()
     expect(screen.getByText('+30,000원')).toBeTruthy()
     expect(apiFetchMock.mock.calls[0][0]).toContain('from=')
   })
@@ -254,12 +263,12 @@ describe('지출 기록', () => {
     apiFetchMock.mockResolvedValue({
       partnerShared: true, rules: [], checks: [], deleted: [],
       entries: [
-        { id: 'a', mine: true, date: `${month}-02`, amount: 10000, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
-        { id: 'b', mine: false, forWhom: 'partner', date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
-        { id: 'c', mine: false, forWhom: 'shared', date: `${month}-01`, amount: 20000, memo: '장보기', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'a', mine: true, date: `${month}-02`, amount: 10000, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
+        { id: 'b', mine: false, forWhom: 'partner', date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
+        { id: 'c', mine: false, forWhom: 'shared', date: `${month}-01`, amount: 20000, memo: '장보기', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
       ],
     })
-    renderPage()
+    renderPage('pay')
     expect(await screen.findByText(/기록 3건/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '배우자 것 빼고' }))
     expect(screen.getByText(/기록 2건/)).toBeTruthy()
@@ -303,9 +312,9 @@ describe('누구 몫', () => {
 
   it('이번 달 보기에서 누구 몫 현금과 돌려받은 돈을 나눠 보여 준다', async () => {
     const month = today.slice(0, 7)
-    const e = (id: string, amount: number, payment: string, forWhom: string) => ({ id, mine: true, forWhom, date: `${month}-01`, amount, memo: '교통카드', categoryId: 'transit', cut: null, mustPart: null, payment })
+    const e = (id: string, amount: number, payment: string, forWhom: string) => ({ id, mine: true, forWhom, date: `${month}-01`, amount, memo: '교통카드', categoryId: 'transit', cut: null, mustPart: null, payment, paidWith: 'cash' })
     apiFetchMock.mockImplementation(() => Promise.resolve({ rules: [], checks: [], entries: [e('s', 40000, 'cash', 'shared'), e('a', 55000, 'cash', 'me'), e('b', 62000, 'cash', 'partner'), e('c', 23000, 'refund_regular', 'partner')] }))
-    renderPage()
+    renderPage('pay')
     expect(await screen.findByText('공용 40,000원 · 나 55,000원 · 배우자 39,000원')).toBeTruthy()
     expect(screen.getByText('돌려받은 돈: 공용 0원 · 나 0원 · 배우자 23,000원')).toBeTruthy()
   })
@@ -318,12 +327,12 @@ describe('월 합계 칸', () => {
 
   it('새 달은 지난달 칸 이름을 이어받고, 적은 칸만 저장하며 세부와의 차액을 보여 준다', async () => {
     apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true }) : Promise.resolve({
-      entries: [{ id: 'a', date: `${month}-02`, amount: 50_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }],
+      entries: [{ id: 'a', date: `${prev}-02`, amount: 50_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }],
       rules: [], checks: [],
       totals: [{ month: prev, label: 'A카드', kind: 'cash', amount: 900_000, mine: true }, { month: prev, label: '포인트', kind: 'point', amount: 10_000, mine: true }],
     }))
-    renderPage()
-    await screen.findByText('배민')
+    renderPage('pay')
+    await screen.findByDisplayValue('A카드')
     expect((screen.getByLabelText('1번 칸 이름') as HTMLInputElement).value).toBe('A카드')
     expect((screen.getByLabelText('A카드 금액') as HTMLInputElement).value).toBe('')
     fireEvent.change(screen.getByLabelText('A카드 금액'), { target: { value: '1200000' } })
@@ -341,7 +350,7 @@ describe('월 합계 칸', () => {
       entries: [], rules: [], checks: [],
       totals: [{ month, label: 'A카드', kind: 'cash', amount: 900_000, mine: true, updatedAt: `${month}-03T01:00:00Z` }],
     }))
-    renderPage()
+    renderPage('pay')
     await screen.findByText(`${month.replace('-', '년 ')}월 합계`)
     expect(screen.getByLabelText('합계와 세부 기록').textContent).not.toContain('세부 안 적음')
     fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
@@ -355,7 +364,7 @@ describe('월 합계 칸', () => {
   })
 
   it('겹치는 칸 이름은 저장 전에 막는다', async () => {
-    renderPage()
+    renderPage('pay')
     await screen.findByText('아직 기록이 없습니다.')
     // 기본 칸은 '카드' 하나 — 칸을 더해 같은 이름을 붙인다
     fireEvent.click(screen.getByRole('button', { name: '칸 추가' }))
@@ -370,22 +379,23 @@ describe('월 합계 칸', () => {
 
   it('합계 테이블이 아직 없으면 합계 칸만 끄고 세부 기록은 그대로 쓴다', async () => {
     apiFetchMock.mockResolvedValue({ entries: [], rules: [], checks: [], totals: [], totalsReady: false })
-    renderPage()
+    renderPage('pay')
     expect(await screen.findByText(/합계 칸은 준비 중입니다/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '이번 달 쓴 돈' }))
     expect(screen.getByLabelText(/무엇을 얼마에/)).toBeTruthy()
   })
 
   it('이번 달 보기: 합계 기준 현금 지출, 세부 안 적음, 6개월 추이', async () => {
     apiFetchMock.mockResolvedValue({
       entries: [
-        { id: 'a', date: `${month}-02`, amount: 50_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
-        { id: 'b', date: `${prev}-02`, amount: 70_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'a', date: `${prev}-02`, amount: 50_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', date: `${monthsAgo(2)}-02`, amount: 70_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
       ],
       rules: [], checks: [],
       totals: [{ month, label: 'A카드', kind: 'cash', amount: 1_000_000, mine: true }],
     })
-    renderPage()
-    await screen.findAllByText('배민')
+    renderPage('pay')
+    await screen.findByLabelText('줄일 수 있나')
     expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('1,000,000원')
     expect(screen.getAllByText('세부 안 적음')[0].nextElementSibling?.textContent).toBe('950,000원')
     expect(screen.getByLabelText('줄일 수 있나').textContent).toContain('모름(세부 안 적음)950,000원')
@@ -407,7 +417,7 @@ describe('지출 추이', () => {
       checks: [{ id: 'c1', date: `${prev}-01`, label: '', input }],
       totals: [{ month: prev, label: 'A카드', kind: 'cash', amount: 1_700_000, mine: true }, { month, label: 'A카드', kind: 'cash', amount: 1_500_000, mine: true }],
     })
-    renderPage()
+    renderPage('pay')
     await screen.findByText(/합계\b|월 합계/)
     const rows = [...screen.getByLabelText('최근 6개월 지출 추이').querySelectorAll('tbody tr')].map((tr) => tr.textContent)
     expect(rows).toEqual([
@@ -431,7 +441,7 @@ describe('이번 달 나가는 비정기', () => {
 
   it('이 달 몫만 예상과 함께 보여 주고, 실제를 적으면 그 이름으로 세부 기록에 더하며 나머지(변동)를 계산한다', async () => {
     mock([])
-    renderPage()
+    renderPage('pay')
     const input = await screen.findByLabelText('재산세 실제')
     expect(screen.queryByLabelText('자동차보험 실제')).toBeNull()
     expect(screen.getByText('예상 600,000원')).toBeTruthy()
@@ -447,7 +457,7 @@ describe('이번 달 나가는 비정기', () => {
 
   it('이미 실제 기록이 있으면 금액만 고친다', async () => {
     mock([{ id: 'e1', date: `${month}-02`, amount: 610_000, memo: '재산세', categoryId: 'tax', cut: null, mustPart: null, payment: 'cash' }])
-    renderPage()
+    renderPage('pay')
     const input = await screen.findByLabelText('재산세 실제') as HTMLInputElement
     await waitFor(() => expect(input.value).toBe('610000'))
     fireEvent.change(input, { target: { value: '612000' } })
@@ -459,7 +469,7 @@ describe('이번 달 나가는 비정기', () => {
 
   it('아래 빠른 기록에 타이핑해도 저장 전 합계 입력이 지워지지 않는다', async () => {
     mock([])
-    renderPage()
+    renderPage('pay')
     const a = await screen.findByLabelText('A카드 금액') as HTMLInputElement
     await waitFor(() => expect(a.value).toBe('1500000'))
     fireEvent.change(a, { target: { value: '1600000' } })
@@ -488,12 +498,12 @@ describe('현금으로 낸 돈', () => {
       entries: [
         { id: 'a', date: `${month}-02`, amount: 100_000, memo: '축의금', categoryId: 'occasion', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
         { id: 'b', date: `${month}-03`, amount: 20_000, memo: '시장', categoryId: 'grocery_mart', cut: null, mustPart: null, payment: 'cash', paidWith: 'cash' },
-        { id: 'c', date: `${month}-04`, amount: 30_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'c', date: `${monthsAgo(1)}-04`, amount: 30_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
       ],
       rules: [], checks: [{ id: 'c1', date: `${month}-01`, label: '', input: plan }],
       totals: [{ month, label: 'A카드', kind: 'cash', amount: 1_000_000, mine: true }],
     }))
-    renderPage()
+    renderPage('pay')
     const facts = await screen.findByLabelText('합계와 세부 기록')
     await waitFor(() => expect(facts.textContent).toContain('현금으로 낸 돈120,000원 (2건)'))
     // 카드 1,000,000(배민은 그 안의 세부) + 현금 120,000
@@ -520,7 +530,7 @@ describe('지출 추이 카드별 칸', () => {
         { month, label: 'A카드', kind: 'cash', amount: 1_100_000, mine: true }, { month, label: 'B카드', kind: 'cash', amount: 200_000, mine: true },
       ],
     })
-    renderPage()
+    renderPage('pay')
     await screen.findByText('시장')
     const table = screen.getByLabelText('최근 6개월 지출 추이')
     expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['달', 'A카드', 'B카드', '현금', '지출 합계', '고정비', '비정기', '나머지(변동)', '투자 가능'])
@@ -528,5 +538,45 @@ describe('지출 추이 카드별 칸', () => {
       `${Number(prev.slice(5))}월1,000,000원——1,000,000원————`,
       `${Number(month.slice(5))}월1,100,000원200,000원50,000원1,350,000원————`,
     ])
+  })
+})
+
+describe('쓴 돈과 나가는 돈 나누기', () => {
+  const month = today.slice(0, 7)
+  const plan = { monthlyIncome: 5_000_000, reserveMonthly: 0, variable: [], irregular: [], fixed: [{ categoryId: 'maintenance', amount: 1_000_000, label: '' }] }
+  const mock = (entries: unknown[], totals: unknown[] = []) => apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true }) : Promise.resolve({
+    entries, rules: [], checks: [{ id: 'c1', date: `${month}-01`, label: '', input: plan }], totals,
+  }))
+
+  it('처음에는 쓴 돈 탭이 열리고, 카드로 쓴 돈은 다음 달에 나갈 돈으로 알려 준다', async () => {
+    mock([{ id: 'a', date: `${month}-02`, amount: 40_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }])
+    renderPage()
+    expect(screen.getByRole('button', { name: '이번 달 쓴 돈' }).getAttribute('aria-pressed')).toBe('true')
+    const facts = await screen.findByLabelText('이번 달 쓴 돈')
+    await waitFor(() => expect(facts.textContent).toContain('카드로 쓴 돈 (세부 기록 합)40,000원'))
+    expect(screen.getByText(/40,000원은 \d+월에 통장에서 나갈 돈의 예상/)).toBeTruthy()
+  })
+
+  it('맨 위에 이번 달 투자 가능액을 한 줄로 보여 주고, 합계가 없으면 어디서 적는지 알린다', async () => {
+    mock([])
+    renderPage()
+    const head = await screen.findByLabelText('이번 달 투자 가능액 한눈에')
+    expect(head.textContent).toContain('나가는 돈')
+    mock([], [{ month, label: 'A카드', kind: 'cash', amount: 1_500_000, mine: true }])
+    renderPage()
+    await waitFor(() => expect(screen.getAllByLabelText('이번 달 투자 가능액 한눈에').some((el) => el.textContent?.includes('3,500,000원'))).toBe(true))
+  })
+
+  it('예산 요약에 변동 지출 전 쓸 수 있는 돈을 보여 준다', async () => {
+    mock([])
+    renderPage()
+    expect((await screen.findByText('쓸 수 있는 돈 (변동 지출 전)')).nextElementSibling?.textContent).toBe('4,000,000원')
+  })
+
+  it('지난달에 쓴 카드 세부 합으로 이번 달 나가는 돈 칸을 채울 수 있다', async () => {
+    mock([{ id: 'a', date: `${monthsAgo(1)}-10`, amount: 300_000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }])
+    renderPage('pay')
+    fireEvent.click(await screen.findByRole('button', { name: '이 금액으로 채우기' }))
+    expect((screen.getByLabelText('카드 금액') as HTMLInputElement).value).toBe('300000')
   })
 })
