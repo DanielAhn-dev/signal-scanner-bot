@@ -8,6 +8,7 @@ import {
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
+import SpendCapture from './SpendCapture'
 import MonthTotals, { shiftMonth, type MonthTotalRow } from './MonthTotals'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
@@ -134,8 +135,8 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
   const baseEntries = baseMonth ? scoped.filter((e) => e.date.startsWith(baseMonth)) : []
   const suggestions = suggestCategories(entries.filter((e) => e.mine !== false).slice(0, 60).map((e) => e.categoryId))
 
-  const readInput = () => {
-    const { parsed, failed: bad } = parseQuickLines(text, today)
+  const readInput = (source: string = text) => {
+    const { parsed, failed: bad } = parseQuickLines(source, today)
     setFailed(bad)
     setNotice('')
     setDrafts(parsed.map((p, i) => {
@@ -320,9 +321,14 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
               />
             </label>
             <More label="쓰는 법과 예시 보기"><p className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡 같은 온라인 결제는 그대로 적으면 "온라인 쇼핑"으로 들어갑니다(큰 금액은 산 물건을 붙이면 더 정확하지만 안 해도 됩니다). 마트는 품목 없이 장보기로 한 번에 봅니다. 계좌로 돌려받은 돈은 "모두의카드 환급 23000원"처럼 적으면 환급으로 읽어 지출에서 뺍니다. 누가 적고 누구 카드로 냈든 기본은 집 공용입니다. 배우자만 쓴 건 앞이든 중간이든 "배우자"를 넣으면 됩니다(예: 배우자 교통카드 62000원, 모두의카드 배우자 환급 23000원).</p></More>
+            <SpendCapture
+              today={today}
+              existing={entries.map((e) => ({ date: e.date, amount: e.amount }))}
+              onRead={(captured, message) => { if (captured) { setText(captured); readInput(captured) } setNotice(message) }}
+            />
             <div className="mf-row">
               <label className="acc-field mf-date"><span>날짜 (줄 앞에 날짜가 없을 때)</span><input type="date" value={date} max={today} onChange={(event) => setDate(event.target.value)} /></label>
-              <button type="button" className="acc-primary" onClick={readInput} disabled={!text.trim()}>읽기</button>
+              <button type="button" className="acc-primary" onClick={() => readInput()} disabled={!text.trim()}>읽기</button>
             </div>
             {failed.length > 0 && <p className="acc-warn">금액을 못 찾은 줄: {failed.join(' / ')}. 금액을 숫자로 적어 주세요(예: 15170, 1.5만원).</p>}
 
