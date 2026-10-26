@@ -9,7 +9,10 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 import xlrd
 INC = ".research-cache/incoming"
-KODEX = {"KODEX_200타겟위클리커버드콜": "498400", "KODEX_금융고배당TOP10타겟위클리커버드콜": "498410", "KODEX_미국나스닥100데일리커버드콜OTM": "494300", "KODEX_미국배당다우존스타겟커버드콜": "483290"}
+KODEX = {"KODEX_200타겟위클리커버드콜": "498400", "KODEX_금융고배당TOP10타겟위클리커버드콜": "498410", "KODEX_미국나스닥100데일리커버드콜OTM": "494300", "KODEX_미국배당다우존스타겟커버드콜": "483290", "KODEX_200커버드콜액티브": "0219E0"}
+SOL = {"SOL 200타겟위클리커버드콜": "0167B0"}
+# RISE .xlsx는 파일명으로 상품을 구분한다(파일명 속 숫자 코드는 운용사 내부 코드). 못 찾으면 예전 기본값 475720
+RISE = {"RISE 코리아밸류업위클리고정커버드콜": "0094M0", "RISE 200위클리커버드콜": "475720"}
 
 def norm(d):
     d = str(d).strip().replace("/", "-")
@@ -31,6 +34,13 @@ for f in sorted(glob.glob(f"{INC}/*")):
             r = sh.row_values(i)
             if re.fullmatch(r"\d{8}", str(r[0]).strip()):
                 rows.append((norm(r[0]), float(r[3]), float(r[2])))
+    elif base.startswith("SOL ") and base.endswith(".xls"):  # 신한 SOL: 진짜 xls (No., 기준일, 지급일, 분배금)
+        code = next((c for k, c in SOL.items() if base.startswith(k)), None)
+        sh = xlrd.open_workbook(f).sheet_by_index(0)
+        for i in range(sh.nrows):
+            r = sh.row_values(i)
+            if re.fullmatch(r"\d{8}", str(r[1]).strip()):
+                rows.append((norm(r[1]), float(r[3]), None))
     elif base.endswith(".xlsx"):
         z = zipfile.ZipFile(f); x = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
         for rw in re.findall(r"<row [^>]*>(.*?)</row>", x, re.S):
@@ -38,7 +48,7 @@ for f in sorted(glob.glob(f"{INC}/*")):
             vals = [(a or b) for _, a, b in cells]
             if vals and re.fullmatch(r"\d{4}-\d{2}-\d{2}", vals[0]):
                 rows.append((vals[0], float(vals[2]), float(vals[4])))
-        code = "475720"  # RISE 200위클리커버드콜 (파일명 44G3은 운용사 내부 코드)
+        code = next((c for k, c in RISE.items() if base.startswith(k)), "475720")  # 파일명 44G3·44J2는 운용사 내부 코드
     elif open(f, "rb").read(200).lstrip().lower().startswith((b"<html", b"<!doc")):  # 미래에셋 TIGER: 확장자는 .xls지만 HTML 표(파일명이 바뀌어도 내용으로 구분)
         t = open(f, encoding="utf-8", errors="replace").read()
         for rw in re.findall(r"<tr>(.*?)</tr>", t, re.S):
