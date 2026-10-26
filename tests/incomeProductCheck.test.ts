@@ -66,3 +66,17 @@ test("3개월 총수익은 가격수익률에 최근 3개월 분배금을 더한
   assert.ok(Math.abs(r.total3mPct! - (-3.21 + (st.sum3m / start) * 100)) < 0.001);
   assert.ok(r.total3mPct! > -3.21);
 });
+
+test("리포트 문장: 후보·주의·보류를 나눠 적고, 점검 행이 없으면 아무것도 쓰지 않는다", async () => {
+  const { incomeCheckLines } = await import("../src/lib/incomeProductCheck");
+  assert.deepEqual(incomeCheckLines([]), []);
+  const rows = buildIncomeCheck([
+    base({ code: "U", name: "미국배당", stats: stats("U", "2024-06-28", STEADY), value: 2_000_000 }),
+    base({ code: "F", name: "하락", stats: stats("F", "2026-04-30", FALLING), value: 3_000_000 }),
+    base({ code: "N", name: "이력없음", stats: null, value: 1_000_000 }),
+  ]);
+  const lines = incomeCheckLines(rows);
+  assert.ok(lines[0].includes("미국배당"));
+  assert.ok(lines.some((l) => l.startsWith("주의 — 하락")));
+  assert.ok(lines.some((l) => l.includes("보류한 상품 1개")));
+});

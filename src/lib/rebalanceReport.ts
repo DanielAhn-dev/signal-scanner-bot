@@ -14,6 +14,7 @@
  *   - 커버드콜 일부를 지수로 (rebalancePlan trim — 월 인컴 하한을 지키는 최대치, hold 모드면 없음)
  * 근거 문장은 판정 등록부(docs/investment-idea-registry-2026-10-07.md)의 C48·C54와 블로그 3편 수치만 쓴다.
  */
+import { incomeCheckLines, type IncomeCheckRow } from "./incomeProductCheck";
 import { planMixLineForAccount, type PlanMixLine } from "./planMixGuide";
 import { BUCKET_LABEL, CASH_BALANCE_CODE, REBALANCE_BAND_PP, isTaxAdvantagedAccount, resolveYieldPct, type AssetBucket, type BucketGroup, type IncomeGuideView } from "./incomeGuide";
 import { FEE_TIE_PP, strategyKey, type RebalancePlan } from "./rebalancePlan";
@@ -223,6 +224,8 @@ export function buildRebalanceReport(input: {
   realtimeCodes?: Set<string>;
   /** 이 계좌에서 가격이 없어 가이드 계산에서 빠진 종목 이름 */
   unpricedNames?: string[];
+  /** 인컴 상품 점검 (분배금 이력 기준, src/lib/incomeProductCheck.ts) — 일반 계좌 인컴 상품만 들어 있다 */
+  incomeCheck?: IncomeCheckRow[];
 }): RebalanceReport | null {
   const { view, plan, accountKey } = input;
   const etf = input.etf ?? new Map<string, EtfYield>();
@@ -536,6 +539,8 @@ export function buildRebalanceReport(input: {
       );
     }
   }
+
+  incomeLines.push(...incomeCheckLines(input.incomeCheck ?? []));
 
   const monthlyContribution = Math.max(0, Math.round(input.monthlyContribution ?? 0));
   const fromSells = sells.filter((s) => s.to && buyTarget && s.to.code === buyTarget.code).reduce((s, x) => s + x.net, 0);

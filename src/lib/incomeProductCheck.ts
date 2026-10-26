@@ -121,3 +121,20 @@ export function buildIncomeCheck(inputs: IncomeCheckInput[]): IncomeCheckRow[] {
       (a.verdict === "add" ? a.familySharePct - b.familySharePct || (b.total3mPct ?? -999) - (a.total3mPct ?? -999) : b.value - a.value),
   );
 }
+
+/** 리포트용 문장 — 후보·주의·보류를 한두 줄로. 점검 행이 없으면 빈 배열 */
+export function incomeCheckLines(rows: IncomeCheckRow[]): string[] {
+  if (!rows.length) return [];
+  const names = (v: CheckVerdict) => rows.filter((r) => r.verdict === v).map((r) => r.name);
+  const lines: string[] = [];
+  const add = names("add");
+  lines.push(
+    add.length
+      ? `분배금 이력 점검(운용사 엑셀 기준): 분배가 안정적이고 한쪽에 쏠리지 않은 후보는 ${add.join(", ")}입니다.`
+      : "분배금 이력 점검(운용사 엑셀 기준): 지금은 새로 더 담을 만큼 분배가 안정적이고 쏠리지 않은 상품이 없습니다.",
+  );
+  for (const r of rows.filter((x) => x.verdict === "caution")) lines.push(`주의 — ${r.name}: ${r.reasons.join(" · ")}`);
+  const wait = names("wait");
+  if (wait.length) lines.push(`분배금 이력이 짧거나 없어 판단을 보류한 상품 ${wait.length}개: ${wait.join(", ")}.`);
+  return lines;
+}

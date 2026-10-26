@@ -1,3 +1,4 @@
+import { loadIncomeCheck } from '../../src/services/incomeCheckService'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { denyIfUnauthorizedRead } from './_accessControl'
@@ -93,6 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accountKey,
       etf,
       realtimeCodes: realtimeHits,
+      incomeCheck: await loadIncomeCheck({ supabase, holdings: view.holdings.filter((h) => h.accountKey === accountKey), yieldPctByCode, today }),
       unpricedNames: holdings.filter((h) => !(h.price > 0) && h.quantity > 0).map((h) => h.name),
       market: drop ? { asOf: drop.asOf, changePct: drop.changePct, fromHighPct: drop.fromHighPct } : null,
       // 이 계좌에 매달 넣는 돈 (계좌에 적은 값, 없으면 예전 공통 값은 가장 큰 계좌에만 — scopeSettingsToAccount)
