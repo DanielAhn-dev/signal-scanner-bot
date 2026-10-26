@@ -59,6 +59,7 @@ function investFor(month: string, allEntries: Entry[], totals: MonthTotalRow[], 
   const irregular = irregularForMonth(plan, Number(month.slice(5)), allEntries.filter((e) => e.date.startsWith(month)))
   return { plan, invest: investableOf(plan, rec.cash - fixedCashOf(plan) - irregular.total) }
 }
+const LIST_PAGE = 10
 const toItem = (entry: Entry): FlowItem => ({ categoryId: entry.categoryId, amount: entry.amount, payment: entry.payment, cut: entry.cut ?? undefined, mustPart: entry.mustPart ?? undefined })
 
 function WhomSelect({ value, onChange, label }: { value: ForWhom; onChange: (value: ForWhom) => void; label: string }) {
@@ -106,6 +107,9 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
   const [month, setMonth] = useState(thisMonth)
   // use = 이번 달 쓴 돈(이용월 기준, 입력·세부 기록) · pay = 이번 달 나가는 돈(통장 기준, 합계·투자 가능액). 평소 입력이 많아 쓴 돈이 먼저다
   const [view, setView] = useState<'use' | 'pay'>('use')
+  // 세부 기록 목록은 길어지니 앞쪽만 보이고 더보기로 늘린다(달을 바꾸면 처음으로)
+  const [listLimit, setListLimit] = useState(LIST_PAGE)
+  useEffect(() => setListLimit(LIST_PAGE), [month])
   const [entries, setEntries] = useState<Entry[]>([])
   const [deleted, setDeleted] = useState<Entry[]>([])
   const [rules, setRules] = useState<LearnedRule[]>([])
@@ -452,6 +456,12 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
 
           <section className="acc-card">
             <h2>{month.replace('-', '년 ')}월 세부 기록 {monthEntries.length}건</h2>
+            {monthEntries.length > 0 && (
+              <p className="mf-list-sum" aria-label="세부 기록 합계">
+                <strong>합계 {krw(usage.card.cash + usage.cash.cash)}</strong>
+                <span>카드 {krw(usage.card.cash)} · 현금 {krw(usage.cash.cash)}</span>
+              </p>
+            )}
             {replaceable.length > 0 && (
               <div className="mf-row">
                 <button type="button" className="acc-secondary" onClick={() => void removeMonthCardDetail()} disabled={bulkBusy}>
@@ -462,7 +472,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
             )}
             {loading ? <p className="acc-note">불러오는 중…</p> : monthEntries.length === 0 ? <p className="acc-note">아직 기록이 없습니다.</p> : (
               <ul className="mf-list">
-                {monthEntries.map((e) => {
+                {monthEntries.slice(0, listLimit).map((e) => {
                   const name = e.memo || '메모 없음'
                   const category = categoryById(e.categoryId)
                   if (editing?.id === e.id) {
@@ -511,6 +521,9 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
                   )
                 })}
               </ul>
+            )}
+            {monthEntries.length > listLimit && (
+              <button type="button" className="acc-secondary" onClick={() => setListLimit((n) => n + LIST_PAGE)}>더보기 ({monthEntries.length - listLimit}건 남음)</button>
             )}
             {monthDeleted.length > 0 && (
               <details className="mf-deleted">

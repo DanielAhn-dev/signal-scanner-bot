@@ -580,3 +580,18 @@ describe('쓴 돈과 나가는 돈 나누기', () => {
     expect((screen.getByLabelText('카드 금액') as HTMLInputElement).value).toBe('300000')
   })
 })
+
+describe('세부 기록 목록', () => {
+  it('합계를 위에 보여 주고 처음에는 10건만, 더보기로 늘린다', async () => {
+    const month = today.slice(0, 7)
+    const entries = Array.from({ length: 13 }, (_, i) => ({ id: `e${i}`, date: `${month}-01`, amount: 1_000, memo: `가게${i}`, categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' }))
+    apiFetchMock.mockResolvedValue({ entries, rules: [], checks: [] })
+    renderPage()
+    const sum = await screen.findByLabelText('세부 기록 합계')
+    expect(sum.textContent).toContain('합계 13,000원')
+    expect(screen.getAllByRole('button', { name: /고치기$/ })).toHaveLength(10)
+    fireEvent.click(screen.getByRole('button', { name: '더보기 (3건 남음)' }))
+    expect(screen.getAllByRole('button', { name: /고치기$/ })).toHaveLength(13)
+    expect(screen.queryByRole('button', { name: /더보기/ })).toBeNull()
+  })
+})

@@ -3,6 +3,8 @@
 .mf-input { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; resize: vertical; }
 .mf-input:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
 .mf-pane { display: contents; }
+.mf-list-sum { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--color-bg-sunken); }
+.mf-list-sum span { font-size: 13px; color: var(--color-text-secondary); }
 .mf > .acc-seg { margin-top: 14px; }
 .mf > .acc-seg + .acc-note { margin: 10px 0 14px; }
 .mf-pane[hidden] { display: none; }
