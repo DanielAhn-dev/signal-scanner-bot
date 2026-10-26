@@ -21,7 +21,8 @@ type ForWhom = 'shared' | 'me' | 'partner'
 type PaidWith = 'card' | 'cash'
 type Entry = { id: string; mine?: boolean; forWhom?: ForWhom; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment; paidWith?: PaidWith }
 // baseMemo = 붙여 넣은 그대로, item = 통로(네이버페이·쿠팡 등) 이름만 있을 때 덧붙인 산 물건, memo = 저장할 메모
-type Draft = { key: string; forWhom: ForWhom; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment; paidWith: PaidWith }
+// titleEdited = 저장 전에 제목(memo)을 사용자가 고쳤다 — 명세서의 원래 이름(baseMemo)은 "무슨 가게인지 모르는" 이름일 수 있어 기억해 두면 다음 명세서에서 바로 분류된다
+type Draft = { key: string; forWhom: ForWhom; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; titleEdited: boolean; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment; paidWith: PaidWith }
 type EditForm = { id: string; date: string; amount: number; memo: string; categoryId: string; forWhom: ForWhom; payment: Payment; paidWith: PaidWith }
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -156,7 +157,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
       const { memo, forPartner } = splitPartnerWord(cash.memo)
       const result = classifyMemo(memo, rules)
       // 줄 맨 앞에 날짜(261001 등)가 있으면 그 날짜, 없으면 아래 날짜 칸
-      return { key: `${Date.now()}-${i}`, forWhom: forPartner ? 'partner' : 'shared', date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: memo, item: '', askItem: needsItemName(memo), memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: detectPayment(memo), paidWith: cash.paidCash ? 'cash' : 'card' }
+      return { key: `${Date.now()}-${i}`, forWhom: forPartner ? 'partner' : 'shared', date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: memo, item: '', askItem: needsItemName(memo), memo, titleEdited: false, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: detectPayment(memo), paidWith: cash.paidCash ? 'cash' : 'card' }
     }))
   }
   const updateDraft = (key: string, patch: Partial<Draft>) => setDrafts((list) => list.map((d) => d.key === key ? { ...d, ...patch } : d))
@@ -165,6 +166,12 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
     const memo = `${d.baseMemo} ${item.trim()}`.trim()
     const result = classifyMemo(memo, rules)
     updateDraft(d.key, { item, memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none' })
+  }
+  // 제목을 고치면(예: "네이버파이낸셜(주) - 롯데쇼핑(주)e" → "롯데온 쇼핑") 저장할 메모가 바뀌고, 알아볼 수 있는 이름이면 다시 분류한다.
+  // 알아볼 수 없는 이름이면 이미 고른 분류는 그대로 둔다
+  const setDraftTitle = (d: Draft, memo: string) => {
+    const result = classifyMemo(memo, rules)
+    updateDraft(d.key, { memo, titleEdited: true, ...(result.source !== 'none' ? { categoryId: result.categoryId, autoCategoryId: result.categoryId, known: true } : {}) })
   }
   // 작은 금액은 분류를 몰라도 묻지 않는다(기타 생활로 두고, 접어 둔 목록에서 고칠 수 있다)
   const isQuiet = (d: Draft) => !d.known && d.amount > 0 && d.amount < SMALL_UNKNOWN_LIMIT
@@ -180,7 +187,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
       const body = {
         action: 'add-entries',
         // 자동 분류를 고쳤거나, 모르던 메모를 직접 고른 경우만 기억한다(소액이라 묻지 않고 넘긴 줄은 기억하지 않는다)
-        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, forWhom: d.forWhom, paidWith: d.paidWith, learn: d.memo !== '' && ((!d.known && !isQuiet(d)) || d.categoryId !== d.autoCategoryId) })),
+        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, forWhom: d.forWhom, paidWith: d.paidWith, learn: d.memo !== '' && ((!d.known && !isQuiet(d)) || d.categoryId !== d.autoCategoryId || (d.titleEdited && d.baseMemo !== '' && d.memo !== d.baseMemo)), ...(d.titleEdited && d.baseMemo && d.memo !== d.baseMemo ? { learnMemo: d.baseMemo } : {}) })),
       }
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify(body), cacheMs: 0 })
       setNotice(`${drafts.length}건 기록했습니다.`)
@@ -285,7 +292,10 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
 
   const renderDraft = (d: Draft) => (
     <div key={d.key} className="mf-draft">
-      <div className="mf-draft-head"><strong>{d.baseMemo || '메모 없음'}</strong></div>
+      <div className="mf-draft-head">
+        <input type="text" maxLength={100} aria-label={`${d.baseMemo || '메모 없음'} 제목`} value={d.memo} placeholder="무슨 지출인지 제목을 적어 주세요" onChange={(event) => setDraftTitle(d, event.target.value)} />
+        {d.titleEdited && d.baseMemo && d.memo !== d.baseMemo && <small className="acc-note">명세서 이름: {d.baseMemo}</small>}
+      </div>
       <div className="mf-draft-fields">
         <label><span>날짜</span><input type="date" aria-label={`${d.baseMemo || '메모 없음'} 날짜`} value={d.date} max={today} onChange={(event) => updateDraft(d.key, { date: event.target.value })} /></label>
         <label className={d.amountGuessed ? 'is-guessed' : ''}><span>{d.amountGuessed ? '금액 확인' : '금액'}</span><input type="number" inputMode="numeric" min="1" aria-label={`${d.baseMemo || '메모 없음'} 금액`} value={d.amount || ''} onChange={(event) => updateDraft(d.key, { amount: Math.round(Number(event.target.value) || 0), amountGuessed: false })} /></label>

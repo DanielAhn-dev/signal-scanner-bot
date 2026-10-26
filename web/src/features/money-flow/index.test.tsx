@@ -61,6 +61,33 @@ describe('지출 기록', () => {
     expect(screen.queryByText(/적혀 있는데/)).toBeNull()
   })
 
+  it('읽은 줄의 제목을 저장 전에 고칠 수 있고, 고친 제목으로 저장하되 명세서의 원래 이름으로 학습한다', async () => {
+    renderPage()
+    const original = '네이버파이낸셜(주) - 롯데쇼핑(주)e'
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: `261020 ${original} 16340원` } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    const title = screen.getByLabelText(`${original} 제목`) as HTMLInputElement
+    expect(title.value).toBe(original)
+    fireEvent.change(title, { target: { value: '롯데온 간편식 주문' } })
+    expect(screen.getByText(`명세서 이름: ${original}`)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '1건 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    const entry = postBodies()[0].entries[0]
+    expect(entry.memo).toBe('롯데온 간편식 주문')
+    expect(entry.learn).toBe(true)
+    expect(entry.learnMemo).toBe(original)
+  })
+
+  it('제목을 고치지 않으면 예전처럼 저장하고 학습 이름(learnMemo)을 따로 보내지 않는다', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '냉동피자 4판 15170' } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    expect(screen.queryByText(/명세서 이름:/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '1건 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    expect('learnMemo' in postBodies()[0].entries[0]).toBe(false)
+  })
+
   it('줄 앞 날짜(261001)는 그 줄의 날짜가 되고, 금액·날짜를 저장 전에 고칠 수 있다', async () => {
     renderPage()
     fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '261001 카스 디지털 체중계 X15 21500원\n우유 2 3690' } })

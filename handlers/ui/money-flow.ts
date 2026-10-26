@@ -199,7 +199,9 @@ async function handlePost(supabase: any, clientId: string, body: any, res: Verce
     // 사용자가 자동 분류를 고친 건(learn: true)만 학습한다.
     for (const [i, entry] of body.entries.entries()) {
       if (entry.learn === true) {
-        const learnError = await learn(supabase, clientId, rows[i].memo, rows[i].category_id)
+        // 제목을 고쳐 저장한 건은 명세서의 원래 이름(learnMemo)으로 학습한다 — 다음 명세서에서 그 이름이 바로 분류되게
+        const learnMemo = typeof entry.learnMemo === 'string' && entry.learnMemo.trim() ? entry.learnMemo.trim().slice(0, 100) : rows[i].memo
+        const learnError = await learn(supabase, clientId, learnMemo, rows[i].category_id)
         if (learnError) return res.status(500).json({ error: learnError.message })
       }
     }

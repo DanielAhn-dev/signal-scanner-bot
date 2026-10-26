@@ -145,3 +145,6 @@
 .mf-invest strong.is-negative { color: var(--color-error); }
 .mf-invest small { color: var(--color-text-tertiary); font-size: 12px; word-break: keep-all; }
 .mf-trend .mf-trend-invest { color: var(--color-text-primary); font-weight: 700; }
+.mf-draft-head { flex-direction: column; align-items: stretch; gap: 4px; }
+.mf-draft-head input { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; font-weight: 700; }
+.mf-draft-head small { overflow-wrap: anywhere; }
