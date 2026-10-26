@@ -672,7 +672,7 @@ export default function PlanSteps({ plan, settings, saveSettings, accounts, rece
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <strong style={{ fontSize: 12 }}>총보수(연 %, 선택)</strong>
-                  <div style={faint}>둘 다 넣으면 0.05%p 이상 싼 쪽을 남기고, 비슷하거나 비어 있으면 보유금액이 큰 쪽을 남깁니다.</div>
+                  <div style={faint}>둘 다 넣으면 0.05%p 이상 싼 쪽을 남기고, 비슷하거나 비어 있으면 순자산이 더 큰 쪽(상품 데이터가 있을 때), 그것도 모르면 보유금액이 큰 쪽을 남깁니다.</div>
                   <div className="ig-fee-grid">
                     {feeCodes.map((code) => {
                       const name = merges.find((m) => m.from.code === code)?.from.name ?? merges.find((m) => m.to.code === code)?.to.name ?? code

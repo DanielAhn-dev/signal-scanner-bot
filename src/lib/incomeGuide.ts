@@ -186,7 +186,7 @@ export type IncomeGuideSettings = {
   actualMonthlyNet?: number;
   /** 매달 새로 넣는 돈(원). 성장 목표까지 몇 달 걸리는지 계산용 */
   monthlyContribution?: number;
-  /** 종목별 총보수(연 %) — 겹치는 종목을 합칠 때 싼 쪽을 남긴다. 없으면 보유금액이 큰 쪽 */
+  /** 종목별 총보수(연 %) — 겹치는 종목을 합칠 때 싼 쪽을 남긴다. 없으면 상품 데이터의 값, 그래도 비슷하면 순자산이 큰 쪽 → 보유금액이 큰 쪽 */
   feePctByCode?: Record<string, number>;
   /** 증권 계좌 예수금(원) — 계좌를 정하지 않은 예전 입력값. 계좌별로 적으면 cashByAccount를 쓴다 */
   cashBalance?: number;

@@ -71,22 +71,41 @@ export function strategyKey(name: string): string {
   return `${base}|${style}`;
 }
 
-/** 남길 종목 — 총보수를 둘 다 알고 차이가 0.05%p 이상이면 싼 쪽, 아니면 보유금액이 큰 쪽 */
-export function pickKeeper<T extends { code: string; value: number }>(members: T[], fees: Record<string, number> = {}): { keeper: T; byFee: boolean } {
+/** 순자산이 이 배수 이상 차이 나면 큰 쪽이 더 안전한 상품으로 본다(그보다 작은 차이는 같은 규모) */
+export const CAP_TIE_RATIO = 1.2;
+
+export type KeeperReason = "fee" | "size" | "amount";
+
+/**
+ * 남길 종목 — 상품 조건 순서: ① 총보수를 둘 다 알고 0.05%p 이상 차이면 싼 쪽 ② 순자산(marketCap)을 둘 다 알고 1.2배 이상 차이면 큰 쪽
+ * ③ 그래도 같으면 보유금액이 큰 쪽. 내가 많이 가진 쪽을 먼저 남기면 먼저 산 상품이 계속 이기는 순환이 된다(2026-10-26 사용자 지적).
+ * 모아가기의 같은 지수 상품 선택(관문 → 최저 보수 → 순자산 큰 쪽)과 같은 순서다.
+ */
+export function pickKeeper<T extends { code: string; value: number }>(
+  members: T[],
+  fees: Record<string, number> = {},
+  caps: Record<string, number> = {},
+): { keeper: T; byFee: boolean; reason: KeeperReason } {
+  const decide = (a: T, b: T): { winner: T; reason: KeeperReason } => {
+    const fa = fees[a.code];
+    const fb = fees[b.code];
+    if (fa != null && fb != null && Math.abs(fa - fb) >= FEE_TIE_PP) return { winner: fb < fa ? b : a, reason: "fee" };
+    const ca = caps[a.code];
+    const cb = caps[b.code];
+    if (ca != null && cb != null && ca > 0 && cb > 0 && Math.max(ca, cb) / Math.min(ca, cb) >= CAP_TIE_RATIO) return { winner: cb > ca ? b : a, reason: "size" };
+    return { winner: b.value > a.value ? b : a, reason: "amount" };
+  };
   let keeper = members[0];
-  let byFee = false;
-  for (const m of members.slice(1)) {
-    const fm = fees[m.code];
-    const fk = fees[keeper.code];
-    if (fm != null && fk != null && Math.abs(fm - fk) >= FEE_TIE_PP) {
-      if (fm < fk) keeper = m;
-    } else if (m.value > keeper.value) {
-      keeper = m;
-    }
+  for (const m of members.slice(1)) keeper = decide(keeper, m).winner;
+  // 남긴 이유 — 남은 종목과 하나씩 겨뤘을 때 가장 강한 근거(보수 > 순자산 > 보유금액)
+  const rank: Record<KeeperReason, number> = { fee: 2, size: 1, amount: 0 };
+  let reason: KeeperReason = "amount";
+  for (const m of members) {
+    if (m === keeper) continue;
+    const r = decide(keeper, m);
+    if (r.winner === keeper && rank[r.reason] > rank[reason]) reason = r.reason;
   }
-  // 남긴 이유가 보수인지 — 남긴 종목보다 더 큰 종목이 있으면 보수 때문에 고른 것이다
-  byFee = members.some((m) => m !== keeper && m.value > keeper.value);
-  return { keeper, byFee };
+  return { keeper, byFee: reason !== "amount", reason };
 }
 
 const ROLE_BUCKET_LABEL: Record<string, string> = { dividend: "고배당·배당", covered_call: "커버드콜", reit_infra: "리츠·인프라" };
@@ -261,7 +280,15 @@ export function buildRebalancePlan(input: {
   const { holdings, total, groups, settings } = input;
   const hold = settings.incomeMode === "hold";
   if (total <= 0 || holdings.length === 0) return null;
-  const fees = settings.feePctByCode ?? {};
+  // 총보수: 내가 적은 값이 먼저, 없으면 상품 데이터(etf)의 값. 순자산(marketCap)은 상품 데이터에서만
+  const etfInfo = input.etf ?? new Map<string, EtfYield>();
+  const fees: Record<string, number> = {};
+  const caps: Record<string, number> = {};
+  for (const [code, e] of etfInfo) {
+    if (e.fee != null && e.fee >= 0) fees[code] = e.fee;
+    if (e.marketCap != null && e.marketCap > 0) caps[code] = e.marketCap;
+  }
+  Object.assign(fees, settings.feePctByCode ?? {});
   const sheltered = (h: PlanHolding) => isTaxAdvantagedAccount(h.accountLabel);
   const yieldOf = (h: PlanHolding) => resolveYieldPct(h.code, h.bucket, h.name, input.yieldPctByCode).pct;
   // 월 인컴 하한은 "언제든 꺼내 쓸 수 있는 돈" 기준이다(2026-10-25 사용자) — 55세 전에 못 꺼내는 연금계좌·ISA 안의 분배금은 세지 않는다
@@ -310,8 +337,8 @@ export function buildRebalancePlan(input: {
       taxedGain: !isTaxAdvantagedAccount(src.accountLabel) && resolveEtfTaxClass(src) === "other",
     });
   };
-  const keeperReason = (keeper: PlanHolding, byFee: boolean) =>
-    byFee ? `총보수 ${fees[keeper.code]}%로 더 싼 쪽을 남김` : "보유금액이 큰 쪽을 남김";
+  const keeperReason = (keeper: { code: string }, reason: KeeperReason) =>
+    reason === "fee" ? `총보수 ${fees[keeper.code]}%로 더 싼 쪽을 남김` : reason === "size" ? "순자산이 더 큰 쪽을 남김(거래가 활발하고 안전)" : "보유금액이 큰 쪽을 남김";
   for (const members of families.values()) {
     if (members.length < 2) continue;
     // 1) 같은 기초자산·같은 방식끼리
@@ -319,16 +346,16 @@ export function buildRebalancePlan(input: {
     for (const m of members) clusters.set(strategyKey(m.name), [...(clusters.get(strategyKey(m.name)) ?? []), m]);
     for (const c of clusters.values()) {
       if (c.length < 2) continue;
-      const { keeper, byFee } = pickKeeper(c, fees);
-      for (const m of c) if (m !== keeper) toMerge(m, keeper, `같은 지수·같은 방식 상품 · ${keeperReason(keeper, byFee)}`);
+      const { keeper, reason } = pickKeeper(c, fees, caps);
+      for (const m of c) if (m !== keeper) toMerge(m, keeper, `같은 지수·같은 방식 상품 · ${keeperReason(keeper, reason)}`);
     }
     // 2) 남은 것 중 소액은 같은 종류의 대표 종목으로
     const survivors = members.filter((m) => !mergedAway.has(m));
     if (survivors.length < 2) continue;
-    const { keeper, byFee } = pickKeeper(survivors, fees);
+    const { keeper, reason } = pickKeeper(survivors, fees, caps);
     for (const m of survivors) {
       const p = (m.value / total) * 100;
-      if (m !== keeper && p < SMALL_HOLDING_PCT) toMerge(m, keeper, `소액(전체의 ${p.toFixed(1)}%) · 같은 종류 · ${keeperReason(keeper, byFee)}`);
+      if (m !== keeper && p < SMALL_HOLDING_PCT) toMerge(m, keeper, `소액(전체의 ${p.toFixed(1)}%) · 같은 종류 · ${keeperReason(keeper, reason)}`);
     }
   }
 
@@ -344,8 +371,8 @@ export function buildRebalancePlan(input: {
       if (members.length < 2) continue;
       const trMembers = members.filter((m) => /TR\s*$/i.test(m.name.trim()));
       const preferTr = !isTaxAdvantagedAccount(members[0].accountLabel) && trMembers.length > 0;
-      const { keeper, byFee } = pickKeeper(preferTr ? trMembers : members, fees);
-      const why = preferTr ? `일반 계좌라 분배금 과세를 미루는 TR형을 남김${trMembers.length > 1 ? ` · ${keeperReason(keeper, byFee)}` : ""}` : keeperReason(keeper, byFee);
+      const { keeper, reason } = pickKeeper(preferTr ? trMembers : members, fees, caps);
+      const why = preferTr ? `일반 계좌라 분배금 과세를 미루는 TR형을 남김${trMembers.length > 1 ? ` · ${keeperReason(keeper, reason)}` : ""}` : keeperReason(keeper, reason);
       for (const m of members) if (m !== keeper) toMerge(m, keeper, `같은 지수 겹침 · ${why}`);
     }
   }
@@ -375,8 +402,9 @@ export function buildRebalancePlan(input: {
         keeperOf.set(role, { code: chosen, byUser: true, why: "직접 고른 대표" });
         continue;
       }
-      let best = pickKeeper(codesInRole, fees).keeper;
-      let why = codesInRole.length > 1 ? "보유금액이 큰 쪽" : "";
+      const picked = pickKeeper(codesInRole, fees, caps);
+      let best = picked.keeper;
+      let why = codesInRole.length > 1 ? (picked.reason === "fee" ? `총보수 ${fees[best.code]}%로 더 싼 쪽` : picked.reason === "size" ? "순자산이 더 큰 쪽" : "보유금액이 큰 쪽") : "";
       const yieldOfCode = (code: string) => yieldOf(live.find((h) => h.code === code)!);
       // 앞 단계에서 이미 다른 종목을 받아 주는 종목은 다시 팔 수 없으니 대표로 우선한다
       const receiving = codesInRole.filter((c) => dstCodes.has(c.code)).sort((a, b) => b.value - a.value)[0];

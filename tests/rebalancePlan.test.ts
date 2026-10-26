@@ -400,3 +400,38 @@ test("예수금(CASH 행)이 있어도 보유 종목 수는 실제 종목만 센
   assert.equal(withCash.plan.kinds.before, 16);
   assert.equal(withCash.plan.kinds.after, 11);
 });
+
+test("pickKeeper: 보수 → 순자산 → 보유금액 순서 — 내가 많이 가진 쪽이 먼저 이기지 않는다", () => {
+  const big = { code: "BIGAMT", value: 9_000_000 }; // 내가 많이 가진 쪽
+  const small = { code: "SMALLA", value: 1_000_000 };
+  // 보수·순자산을 모르면 예전처럼 보유금액이 큰 쪽
+  assert.equal(pickKeeper([big, small]).keeper, big);
+  assert.equal(pickKeeper([big, small]).reason, "amount");
+  // 순자산이 1.2배 이상 큰 쪽이 보유금액보다 앞선다
+  const bySize = pickKeeper([big, small], {}, { BIGAMT: 300, SMALLA: 900 });
+  assert.equal(bySize.keeper, small);
+  assert.equal(bySize.reason, "size");
+  assert.equal(bySize.byFee, true);
+  // 순자산 차이가 1.2배 미만이면 같은 규모로 보고 보유금액
+  assert.equal(pickKeeper([big, small], {}, { BIGAMT: 900, SMALLA: 1000 }).keeper, big);
+  // 보수 차이(0.05%p 이상)는 순자산보다 앞선다
+  const byFee = pickKeeper([big, small], { BIGAMT: 0.1, SMALLA: 0.3 }, { BIGAMT: 100, SMALLA: 900 });
+  assert.equal(byFee.keeper, big);
+  assert.equal(byFee.reason, "fee");
+  // 한쪽만 알면 비교하지 않는다
+  assert.equal(pickKeeper([big, small], {}, { SMALLA: 900 }).keeper, big);
+});
+
+test("합치기: 상품 데이터(etf)의 보수·순자산이 있으면 보유금액보다 앞서 대표를 정한다", () => {
+  // PORTFOLIO의 같은 방식 커버드콜 498400(550주)·0167B0(650주): 순자산이 더 큰 0167B0를 남기게 한다
+  const etf = new Map([
+    ["498400", { yieldTtm: null, fee: 0.39, marketCap: 400 }],
+    ["0167B0", { yieldTtm: null, fee: 0.39, marketCap: 1_200 }],
+  ]);
+  const s = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 65 } };
+  const view = buildIncomeGuideView({ holdings: PORTFOLIO, settings: s, today: "2026-10-13" });
+  const plan = buildRebalancePlan({ holdings: view.holdings, total: view.total, groups: view.groups, settings: s, etf })!;
+  const m = plan.merges.find((x) => x.from.code === "498400" || x.to.code === "498400")!;
+  assert.equal(m.to.code, "0167B0");
+  assert.match(m.reason, /순자산이 더 큰 쪽/);
+});
