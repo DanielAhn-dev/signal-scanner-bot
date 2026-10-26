@@ -39,6 +39,13 @@ describe('앞으로의 경우의 수 보기', () => {
     expect(screen.getByText(/생성일 \d{4}-\d{2}-\d{2}/)).toBeInTheDocument()
   })
 
+  it('해외지수의 연 0.9%p 가정 차감과 실제 비용 미계산을 구분해 밝힌다', () => {
+    render(<FutureView monthly={1_000_000} lump={0} years={10} mix={half} />)
+    fireEvent.click(screen.getByText('자세히 보기'))
+    expect(screen.getByText(/해외지수 수익률에는 한국 상장 상품과의 격차를 연 0\.9%p로 일괄 가정해 이미 차감했습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/실제 ETF별 보수나 계좌별 세금·환전·매매 비용을 계산한 값은 아닙니다/)).toBeInTheDocument()
+  })
+
   it('사건을 끼우면 그 사건 설명과 내 구성 지수별 깊이를 보여 주고, 원금 아래 비율이 바뀐다', () => {
     render(<FutureView monthly={1_000_000} lump={0} years={10} mix={half} />)
     const below = () => screen.getByText('넣은 돈보다 적은 경우').nextElementSibling?.textContent

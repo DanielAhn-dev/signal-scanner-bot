@@ -127,7 +127,7 @@ export default function FutureView({ monthly, lump, years, mix }: { monthly: num
 
       <More>
         <p className="acc-note">재료: {ymLabel(FUTURE_MATERIAL.from)}~{ymLabel(FUTURE_MATERIAL.to)} 월 수익률 {FUTURE_MATERIAL.months}개월(원화, 분배금 반영). 코스피200은 KODEX 200, 그 이전(~2002-10)은 코스피 가격지수에 연 {FUTURE_MATERIAL.kospiGapPct}% 더한 근사. S&P500·나스닥100은 SPY·QQQ × 원/달러(한국은행), 한국 상장 상품 격차로 연 {FUTURE_MATERIAL.dragPct.sp500}%p 차감.</p>
-        <p className="acc-note">방법: 12개월 덩어리를 무작위로 이어 붙이고(덩어리 사이는 독립 가정), 매달 초 넣고 매달 비중을 다시 맞춥니다. 세금·환전비·수수료는 넣지 않았습니다. 사건은 실제 경로를 그대로 끼우며, &lsquo;일본처럼&rsquo;은 닛케이 경로를 세 지수에 똑같이 적용한 가정입니다.</p>
+        <p className="acc-note">방법: 12개월 덩어리를 무작위로 이어 붙이고(덩어리 사이는 독립 가정), 매달 초 넣고 매달 비중을 다시 맞춥니다. 해외지수 수익률에는 한국 상장 상품과의 격차를 연 0.9%p로 일괄 가정해 이미 차감했습니다. 실제 ETF별 보수나 계좌별 세금·환전·매매 비용을 계산한 값은 아닙니다. 사건은 실제 경로를 그대로 끼우며, &lsquo;일본처럼&rsquo;은 닛케이 경로를 세 지수에 똑같이 적용한 가정입니다.</p>
         <p className="acc-note">생성일 {FUTURE_GENERATED} · <code>scripts/research/build_future_paths_data.py</code></p>
       </More>
       {stale && <p className="acc-warn">이 자료는 만든 지 180일이 지나 낡았을 수 있습니다. 스크립트를 다시 돌려 갱신하세요.</p>}
