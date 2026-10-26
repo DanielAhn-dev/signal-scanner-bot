@@ -56,6 +56,7 @@ import choiceReview from '../handlers/ui/choice-review'
 import followReport from '../handlers/ui/follow-report'
 import invites from '../handlers/ui/invites'
 import incomeGuide from '../handlers/ui/income-guide'
+import distributionUpload from '../handlers/ui/distribution-upload'
 import indexEtfMetrics from '../handlers/ui/index-etf-metrics'
 import marketThemes from '../handlers/ui/market-themes'
 import myThemes from '../handlers/ui/my-themes'
@@ -127,6 +128,7 @@ const ROUTES: Record<string, UiHandler> = {
   'choice-review': choiceReview,
   'follow-report': followReport,
   'income-guide': incomeGuide,
+  'distribution-upload': distributionUpload,
   'index-etf-metrics': indexEtfMetrics,
   'market-themes': marketThemes,
   'my-themes': myThemes,

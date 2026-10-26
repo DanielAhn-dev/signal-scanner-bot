@@ -121,7 +121,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     label: '파일',
     groups: [
       { category: '처음 설정', items: [{ key: 'start', label: '처음 설정 다시 하기' }] },
-      { category: '설정', items: [{ key: 'settings', label: '설정' }, { key: 'profile', label: '프로필' }, { key: 'admin-users', label: '사용자 관리', adminOnly: true }] },
+      { category: '설정', items: [{ key: 'settings', label: '설정' }, { key: 'profile', label: '프로필' }, { key: 'admin-users', label: '사용자 관리', adminOnly: true }, { key: 'distribution-upload', label: '분배금 올리기', adminOnly: true }] },
     ],
   },
 ]

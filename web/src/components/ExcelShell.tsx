@@ -69,6 +69,7 @@ const NAV_ICON_COMPONENTS: Record<string, React.ComponentType<{ size?: number | 
   'settings': Settings,
   'profile': User,
   'admin-users': User,
+  'distribution-upload': Database,
   'accumulate': PiggyBank,
   'seed-builder': Sprout,
   'money-flow': Receipt,

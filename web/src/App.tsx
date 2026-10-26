@@ -71,6 +71,7 @@ const NewsPage             = lazyWithRecovery(() => import('./features/news'))
 const ProfilePage          = lazyWithRecovery(() => import('./features/profile'))
 const SectorsPage          = lazyWithRecovery(() => import('./features/sectors'))
 const AdminUsersPage       = lazyWithRecovery(() => import('./features/admin-users'))
+const DistributionUploadPage = lazyWithRecovery(() => import('./features/distribution-upload'))
 const StrategyPage         = lazyWithRecovery(() => import('./features/strategy'))
 const HighlightsPage       = lazyWithRecovery(() => import('./features/highlights'))
 const SimulatorPage        = lazyWithRecovery(() => import('./features/simulator'))
@@ -409,6 +410,7 @@ function AppContent() {
             <Route path="/profile"                element={<ProfilePage />} />
             <Route path="/sectors"                element={<SectorsPage onNavigate={handleNavigate} />} />
             <Route path="/admin-users"            element={<AdminUsersPage />} />
+            <Route path="/distribution-upload"    element={<DistributionUploadPage />} />
             <Route path="/strategy"               element={<StrategyPage />} />
             <Route path="/highlights"             element={<HighlightsPage />} />
             <Route path="/simulator"              element={<SimulatorPage />} />
