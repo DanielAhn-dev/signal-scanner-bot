@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
 import AmountHint from '../../components/ui/AmountHint'
 import { apiFetch } from '../../lib/api'
+import { getStocks } from '../../lib/stockCache'
 import { formatKrwReadable } from '../../lib/format'
 import { EMPTY_STATE, recommendCandidate, recommendOverseas, type AccumulateState } from '../../lib/accumulate'
 import { useIndexEtfCandidates } from '../../lib/indexEtfLive'
@@ -93,6 +94,24 @@ export default function MonthTaskCard() {
     if (chatId) loadMonthBuys(60_000)
   }, [chatId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 이번 달 매수 종목의 이름 — 종목 목록(로컬 캐시)에서 찾는다. 못 읽으면 코드로 보여 준다
+  const [stockNames, setStockNames] = useState<Record<string, string>>({})
+  const buyCodesKey = [...new Set(monthBuys.map((b) => b.code))].sort().join(',')
+  useEffect(() => {
+    if (!buyCodesKey) return
+    let active = true
+    const want = new Set(buyCodesKey.split(','))
+    getStocks()
+      .then((all) => {
+        if (!active) return
+        const found: Record<string, string> = {}
+        for (const s of all) if (want.has(s.code)) found[s.code] = s.name
+        setStockNames(found)
+      })
+      .catch(() => { /* 이름을 못 찾으면 코드로 보여 준다 */ })
+    return () => { active = false }
+  }, [buyCodesKey])
+
   // 구성 지수마다 한 줄 — 상품은 모아가기와 같은 판정(코스피200: 구성에 고른 상품 > 예전 직접 지정 > 추천, 해외지수: 고른 상품 > 추천)
   const lines: Line[] | null = useMemo(() => {
     const mix = plan?.mix ?? DEFAULT_PLAN_MIX
@@ -152,7 +171,8 @@ export default function MonthTaskCard() {
   const view = monthTaskView({ today: kstToday(), depositDay: plan.depositDay, amount: lineAmounts[0], price: priceOf(lines[0].product.code), tasks: acc.tasks })
   const month = monthLabel(view.ym)
   const groups = groupMonthBuys(monthBuys, lines[0].product.code)
-  const nameOf = (code: string) => lines.find((l) => l.product.code === code)?.product.name ?? code
+  // 이번 달에 산 종목이 구성 밖이면(예: 타겟위클리) 코드만 보여 무슨 종목인지 알 수 없었다 — 종목 목록에서 이름을 찾는다
+  const nameOf = (code: string) => lines.find((l) => l.product.code === code)?.product.name ?? stockNames[code] ?? code
   const leftover = lineQty.reduce((s, q) => s + (q.leftover ?? 0), 0)
   const pricesKnown = lineQty.every((q) => q.qty != null)
 
