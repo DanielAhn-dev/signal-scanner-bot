@@ -323,7 +323,7 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
             <summary><h2>자세히 적기 (선택)</h2><span className="acc-note">현금·계좌이체로 낸 돈과 환급만 적으면 됩니다. 나머지는 쓰고 싶을 때만.</span></summary>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
-              <small className="acc-note">가게 이름과 금액만 적어도 됩니다. 자세한 규칙은 아래 "쓰는 법"에서 봅니다.</small>
+              <small className="acc-note">가게 이름과 금액만 적어도 됩니다. 카드 명세서(현대카드·삼성 모니모)는 글자를 그대로 복사해 붙여넣으면 날짜·가게·금액을 읽습니다. 자세한 규칙은 아래 "쓰는 법"에서 봅니다.</small>
               <textarea
                 className="mf-input" rows={2} value={text} placeholder={'261002 CU제기점 1800원\n네이버페이 물티슈 12900원'}
                 onChange={(event) => setText(event.target.value)}

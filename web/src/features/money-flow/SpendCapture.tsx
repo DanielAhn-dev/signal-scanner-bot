@@ -35,8 +35,8 @@ export default function SpendCapture({ today, existing, onRead }: {
 
   return (
     <div className="acc-field mf-capture">
-      <span>캡처로 불러오기 (선택)</span>
-      <small className="acc-note">카드·뱅킹 앱의 거래내역·명세서 화면을 캡처해 올리면 입력칸을 채웁니다(현대카드 명세서, 삼성 모니모 등). 글자 인식은 이 기기 안에서 하고 이미지는 서버로 보내지 않습니다.</small>
+      <span>캡처로 불러오기 (복사가 안 될 때만)</span>
+      <small className="acc-note">글자를 복사할 수 있으면 위 입력칸에 붙여넣는 쪽이 정확합니다. 캡처는 세로로 길거나 해상도가 낮으면 잘 안 읽히니, 한 화면씩 선명하게 찍어 올리세요. 글자 인식은 이 기기 안에서 하고 이미지는 서버로 보내지 않습니다.</small>
       <div className="mf-row">
         <input type="file" accept="image/*" multiple aria-label="거래내역 캡처 고르기" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
         <button type="button" className="acc-secondary" onClick={() => void read()} disabled={files.length === 0 || status != null}>

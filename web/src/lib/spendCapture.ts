@@ -125,6 +125,11 @@ export function parseSpendCapture(text: string, today: string, existing: Array<{
   const r = emptyResult()
   let headerDate: string | null = null
 
+  const hasHeader = text.split(/\r?\n/).some((l) => {
+    const ld = leadDate(l.replace(/\s+/g, ' ').trim(), today)
+    return !!ld?.date && lettersOf(ld.rest.replace(WEEKDAY, ' ')) < 2
+  })
+
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.replace(/\s+/g, ' ').trim()
     if (!line) continue
@@ -143,7 +148,11 @@ export function parseSpendCapture(text: string, today: string, existing: Array<{
       if (lead?.date && lettersOf(rest) >= 2 && !TOTAL_LINE.test(merchant)) r.unread++
       continue
     }
-    pushLine(r, have, lead?.date ?? headerDate, merchant, tail.amount, tail.sign)
+    // 날짜 머리글이 있는 명세서에서 첫 머리글보다 위의 금액 줄은 거래가 아니라 상단 합계("OO월 명세서 613,900원")다 —
+    // OCR이 "명세서"를 "형세서"로 읽어 이름으로는 못 거른 일이 있었다(2026-10-26)
+    const rowDate = lead?.date ?? headerDate
+    if (hasHeader && !rowDate) continue
+    pushLine(r, have, rowDate, merchant, tail.amount, tail.sign)
   }
   return r
 }
@@ -162,14 +171,27 @@ export function looksLikeBlockStatement(text: string): boolean {
 }
 
 /**
- * 블록형: 금액만 있는 줄이 한 건의 기준 — 바로 위 줄이 가맹점, 아래쪽에서 처음 나오는 날짜 줄이 날짜.
- * 날짜 줄 뒤의 본인/가족·카드 끝자리·보너스P는 버린다.
+ * 블록형: 금액만 있는 줄이 한 건의 기준 — 바로 위 줄이 가맹점.
+ * 날짜는 두 모양을 읽는다:
+ *  - 금액 바로 아래 줄이 날짜(삼성 모니모: `26. 9. 25본 인 6163`) → 그 날짜, 뒤의 본인/가족·카드 끝자리·보너스P는 버린다
+ *  - 그렇지 않으면 위쪽의 날짜 머리글(현대카드: `26. 10. 25 (토)`)이 이어지는 항목들의 날짜
  */
 export function parseBlockStatement(text: string, today: string, existing: Array<{ date: string; amount: number }> = []): SpendCaptureResult {
   const have = new Set(existing.map((e) => `${e.date}|${e.amount}`))
   const r = emptyResult()
   const lines = text.split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  let headerDate: string | null = null
+  const hasHeader = lines.some((l) => {
+    const ld = DATE_START.test(l) ? leadDate(l, today) : null
+    return !!ld?.date && lettersOf(ld.rest.replace(WEEKDAY, ' ')) < 2
+  })
   for (let i = 0; i < lines.length; i++) {
+    // 날짜 머리글(날짜뿐인 줄) — 아래 항목들의 날짜
+    if (DATE_START.test(lines[i])) {
+      const ld = leadDate(lines[i], today)
+      if (ld?.date && lettersOf(ld.rest.replace(WEEKDAY, ' ')) < 2) headerDate = ld.date
+      continue
+    }
     const am = AMOUNT_ONLY.exec(lines[i])
     if (!am) continue
     const amount = Number(am[2].replace(/,/g, ''))
@@ -181,13 +203,15 @@ export function parseBlockStatement(text: string, today: string, existing: Array
       merchant = cleanMerchant(lines[j])
       break
     }
-    // 날짜: 아래로 내려가며 다음 금액 줄 전까지 처음 나오는 날짜 줄
-    let date: string | null = null
-    for (let j = i + 1; j < lines.length && !AMOUNT_ONLY.test(lines[j]); j++) {
-      const lead = DATE_START.test(lines[j]) ? leadDate(lines[j], today) : null
-      if (lead) { date = lead.date; break }
-    }
-    if (lettersOf(merchant) < 2 || amount < MIN_AMOUNT || amount > MAX_AMOUNT) { if (date) r.unread++; continue }
+    // 날짜: 금액 바로 아래 줄이 날짜(모니모)면 그것, 아니면 위쪽 머리글(현대카드)
+    // (날짜뿐인 줄은 다음 항목들의 머리글이지 이 건의 날짜가 아니다 — 본인/카드 끝자리가 붙은 줄만 이 건의 것)
+    const next = lines[i + 1]
+    const nextLead = next && DATE_START.test(next) ? leadDate(next, today) : null
+    const own = nextLead && lettersOf(nextLead.rest.replace(WEEKDAY, ' ')) >= 2 ? nextLead : null
+    const date: string | null = own?.date ?? headerDate
+    if (lettersOf(merchant) < 2 || amount < MIN_AMOUNT || amount > MAX_AMOUNT || TOTAL_LINE.test(merchant)) { if (date && !TOTAL_LINE.test(merchant)) r.unread++; continue }
+    // 날짜 머리글이 있는 글에서 첫 머리글보다 위의 금액은 상단 합계("11월 12일 명세서 613,900원")다
+    if (hasHeader && !date) continue
     pushLine(r, have, date, merchant, amount, am[1])
   }
   return r
