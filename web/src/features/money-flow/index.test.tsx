@@ -33,6 +33,17 @@ describe('지출 기록', () => {
     expect(body.entries.map((e: any) => [e.date, e.amount, e.categoryId, e.learn])).toEqual([[today, 15170, 'grocery_ready', false], [today, 3690, 'grocery_basic', false]])
   })
 
+  it('삼성 모니모 메일을 가맹점 / 금액 / 날짜 블록 그대로 붙여넣어도 읽어서 입력칸을 한 줄형으로 바꾼다', async () => {
+    renderPage()
+    const monimo = ['네이버페이 네이버', '42,120원', '', '26. 9. 25본 인 6163', '보너스P 421P', '', '컴포즈커피 방화역점', '4,600원', '', '26. 9. 25본 인 6163', '보너스P 46P'].join('\n')
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: monimo } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    expect((screen.getByLabelText(/무엇을 얼마에/) as HTMLTextAreaElement).value).toBe(['2026-09-25 네이버페이 네이버 42,120원', '2026-09-25 컴포즈커피 방화역점 4,600원'].join('\n'))
+    expect((screen.getByLabelText('네이버페이 네이버 날짜') as HTMLInputElement).value).toBe('2026-09-25')
+    expect((screen.getByLabelText('네이버페이 네이버 금액') as HTMLInputElement).value).toBe('42120')
+    expect(screen.getByText(/2줄을 읽었습니다/)).toBeTruthy()
+  })
+
   it('줄 앞 날짜(261001)는 그 줄의 날짜가 되고, 금액·날짜를 저장 전에 고칠 수 있다', async () => {
     renderPage()
     fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '261001 카스 디지털 체중계 X15 21500원\n우유 2 3690' } })

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { parseSpendCapture } from '../../lib/spendCapture'
+import { parseStatementText, spendNotice } from '../../lib/spendCapture'
 import { ocrSpendCapture } from './spendOcr'
 
 /**
@@ -23,18 +23,8 @@ export default function SpendCapture({ today, existing, onRead }: {
     setStatus('준비 중…')
     try {
       const text = await ocrSpendCapture(files, setStatus)
-      const r = parseSpendCapture(text, today, existing)
-      const extras = [
-        r.duplicates > 0 ? `이미 있는 ${r.duplicates}건` : '',
-        r.income > 0 ? `입금 ${r.income}건` : '',
-      ].filter(Boolean)
-      const lost = r.unread > 0 ? ` 금액을 못 읽은 ${r.unread}줄은 직접 적어 주세요.` : ''
-      onRead(
-        r.lines.join('\n'),
-        r.lines.length === 0
-          ? `읽은 지출이 없습니다. 거래내역 목록이 글자가 선명하게 나오게 다시 캡처해 주세요.${lost}`
-          : `${r.lines.length}줄을 읽었습니다${extras.length ? ` (${extras.join('·')}은 뺐어요)` : ''}. 이름·금액을 대조하고 아래 "읽기"로 확인하세요.${lost}`,
-      )
+      const r = parseStatementText(text, today, existing)
+      onRead(r.lines.join('\n'), spendNotice(r, '캡처'))
     } catch (error) {
       onRead('', `캡처를 읽지 못했습니다: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -46,7 +36,7 @@ export default function SpendCapture({ today, existing, onRead }: {
   return (
     <div className="acc-field mf-capture">
       <span>캡처로 불러오기 (선택)</span>
-      <small className="acc-note">카드·뱅킹 앱의 거래내역 화면을 캡처해 올리면 입력칸을 채웁니다. 글자 인식은 이 기기 안에서 하고 이미지는 서버로 보내지 않습니다.</small>
+      <small className="acc-note">카드·뱅킹 앱의 거래내역·명세서 화면을 캡처해 올리면 입력칸을 채웁니다(현대카드 명세서, 삼성 모니모 등). 글자 인식은 이 기기 안에서 하고 이미지는 서버로 보내지 않습니다.</small>
       <div className="mf-row">
         <input type="file" accept="image/*" multiple aria-label="거래내역 캡처 고르기" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
         <button type="button" className="acc-secondary" onClick={() => void read()} disabled={files.length === 0 || status != null}>

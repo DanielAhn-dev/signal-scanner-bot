@@ -9,6 +9,7 @@ import {
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { PAYMENT_OPTIONS, type SavedCheck } from './FlowCheck'
 import SpendCapture from './SpendCapture'
+import { looksLikeBlockStatement, parseBlockStatement, spendNotice } from '../../lib/spendCapture'
 import MonthTotals, { shiftMonth, type MonthTotalRow } from './MonthTotals'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
@@ -135,10 +136,19 @@ export default function MoneyFlowPage({ mode = 'record' }: { mode?: 'record' | '
   const baseEntries = baseMonth ? scoped.filter((e) => e.date.startsWith(baseMonth)) : []
   const suggestions = suggestCategories(entries.filter((e) => e.mine !== false).slice(0, 60).map((e) => e.categoryId))
 
-  const readInput = (source: string = text) => {
+  const readInput = (input: string = text) => {
+    // 삼성 모니모 메일처럼 "가맹점 / 금액 / 날짜" 블록으로 붙여넣은 글은 한 줄형으로 바꿔서 읽는다(이미 있는 건·취소는 뺌)
+    let source = input
+    let blockNotice = ''
+    if (looksLikeBlockStatement(input)) {
+      const converted = parseBlockStatement(input, today, entries.map((e) => ({ date: e.date, amount: e.amount })))
+      source = converted.lines.join('\n')
+      blockNotice = spendNotice(converted, '붙여넣은 글')
+      setText(source)
+    }
     const { parsed, failed: bad } = parseQuickLines(source, today)
     setFailed(bad)
-    setNotice('')
+    setNotice(blockNotice)
     setDrafts(parsed.map((p, i) => {
       // "배우자"는 어디에 있든 배우자 것 표시로 바꾸고(없으면 공용), 분류·학습은 그 단어를 뺀 메모로 한다
       // "현금"·서울페이·계좌이체 등이 있으면 현금으로 표시한다("현금" 단어는 뺀다)

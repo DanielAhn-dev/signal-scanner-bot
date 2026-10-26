@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseQuickLine } from '../../../src/lib/moneyFlow'
-import { parseSpendCapture } from './spendCapture'
+import { looksLikeBlockStatement, parseBlockStatement, parseSpendCapture, parseStatementText, readAmountTail, spendNotice } from './spendCapture'
 
 const today = '2026-10-26'
 
@@ -50,5 +50,111 @@ describe('지출 내역 캡처 읽기', () => {
     expect(r.lines).toEqual(['2026-12-30 편의점 3,500원'])
     // "총"으로 시작하는 가게 이름은 합계로 보지 않는다
     expect(parseSpendCapture('12/30 총각네야채가게 12,000원', '2027-01-03').lines).toEqual(['2026-12-30 총각네야채가게 12,000원'])
+  })
+})
+
+// 2026-10-26 현대카드 명세서 캡처(가로 160px로 줄어든 저해상도)를 OCR로 읽은 결과 일부 — "원"이 8로, 이름이 깨지는 최악 경우
+const HYUNDAI_OCR = `NU 12월 형세서
+613,900원
+화근숲 고역순
+20.10. 2500)
+MRCuNBAATY                        4.5608
+일시불 네이버 pans
+NU MY 450.0%)
+26.10. 24(%)
+히주야비인후과의원                             7.2008
+일시불 om pans
+릭입 예절 7201.0%)
+우리보강약국                                    58008
+26.10. 23 (#)
+서물사상하수도                                28,0308
+갈마커피                                         3/600
+26.10.18(%)
+대황도술불갈피                               116,500#8
+NU 애칭 1.165(1.0^9]
+EEN UN
+다이소어성산업                                  30008
+지파크                                            1,0008
+26. 10. 185(빠1
+Gop                                         127,900`
+
+describe('카드 명세서 캡처(현대카드) 읽기', () => {
+  it('날짜가 "26. 10. 25 (토)" 꼴이고 "원"이 8로 읽혀도 금액·날짜를 맞춘다(적립·안내 줄은 건너뜀)', () => {
+    const r = parseSpendCapture(HYUNDAI_OCR, '2026-10-26')
+    expect(r.lines.map((l) => l.replace(/^(\S+) .* (\S+)$/, '$1 $2'))).toEqual([
+      '2026-10-25 4,560원',
+      '2026-10-24 7,200원',
+      '2026-10-24 5,800원',
+      '2026-10-23 28,030원',
+      '2026-10-23 3,600원',
+      '2026-10-18 116,500원',
+      '2026-10-18 3,000원',
+      '2026-10-18 1,000원',
+      '2026-10-18 127,900원',
+    ])
+    // 상단 "12월 명세서 613,900원"은 합계라 지출로 넣지 않는다
+    expect(r.lines.some((l) => l.includes('613,900'))).toBe(false)
+  })
+
+  it('날짜의 연도가 오독돼도(20→26) 월·일로 가까운 날짜를 잡는다', () => {
+    expect(parseSpendCapture('20.10. 2500)\n씨유CU 4.5608', '2026-10-26').lines).toEqual(['2026-10-25 씨유CU 4,560원'])
+  })
+})
+
+describe('삼성 모니모 메일 복사 붙여넣기', () => {
+  const MONIMO = `네이버페이 네이버
+42,120원
+
+26. 9. 25본 인 6163
+보너스P 421P
+
+컴포즈커피 방화역점
+4,600원
+
+26. 9. 25본 인 6163
+보너스P 46P
+
+쿠팡 취소
+-12,900원
+
+26. 9. 24본 인 6163`
+
+  it('가맹점 / 금액 / 날짜 줄 블록을 읽고 본인·카드 끝자리·보너스P는 버린다', () => {
+    expect(looksLikeBlockStatement(MONIMO)).toBe(true)
+    const r = parseBlockStatement(MONIMO, '2026-10-26')
+    expect(r.lines).toEqual(['2026-09-25 네이버페이 네이버 42,120원', '2026-09-25 컴포즈커피 방화역점 4,600원'])
+    expect(r.cancelled).toBe(1)
+  })
+
+  it('같은 명세서를 두 번 붙여도 이미 있는 건은 빼서 중복 저장되지 않는다', () => {
+    const r = parseStatementText(MONIMO, '2026-10-26', [{ date: '2026-09-25', amount: 42_120 }, { date: '2026-09-25', amount: 4_600 }])
+    expect(r.block).toBe(true)
+    expect(r.lines).toEqual([])
+    expect(r.duplicates).toBe(2)
+  })
+
+  it('한 줄형 글자는 블록형으로 오인하지 않는다', () => {
+    expect(looksLikeBlockStatement('10월 9일\n롯데마트(캠핑) 66,890원')).toBe(false)
+    expect(parseStatementText('10월 9일\n롯데마트(캠핑) 66,890원', '2026-10-26').block).toBe(false)
+  })
+
+  it('안내 문구에 빠진 건수를 알린다', () => {
+    const r = parseBlockStatement(MONIMO, '2026-10-26', [{ date: '2026-09-25', amount: 4_600 }])
+    const msg = spendNotice(r, '붙여넣은 글')
+    expect(msg).toContain('1줄을 읽었습니다')
+    expect(msg).toContain('이미 있는 1건')
+    expect(msg).toContain('취소·환불 1건')
+  })
+})
+
+describe('금액 끝 읽기', () => {
+  it('쉼표를 마침표·슬래시로 읽어도, 끝 8(원 오독)은 4자리 묶음일 때만 뗀다', () => {
+    expect(readAmountTail('가게 5.600원')?.amount).toBe(5600)
+    expect(readAmountTail('가게 3/600')?.amount).toBe(3600)
+    expect(readAmountTail('가게 12,348원')?.amount).toBe(12_348) // 정상 3자리 묶음은 그대로
+    expect(readAmountTail('가게 160,0008')?.amount).toBe(160_000)
+    expect(readAmountTail('가게 54008')?.amount).toBe(5400)
+    expect(readAmountTail('가게 450.0%)')).toBeNull() // 적립 예정 같은 소수 표기는 금액이 아니다
+    expect(readAmountTail('가게 99')).toBeNull() // 너무 작은 수
   })
 })
