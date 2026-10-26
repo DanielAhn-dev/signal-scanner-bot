@@ -3,6 +3,8 @@
  * 파일: market-snapshots/income-guide/{chatId}.json = { settings, history, receipts, adherenceExcluded, accounts, cashDeposits, cashChecks, cashActivity }
  * 계좌 보유 = virtual_positions 중 증권사·계좌명이 있는 행("계좌/보유 추가"로 입력). 봇 가상 계좌는 넣지 않는다.
  */
+import { computeDistributionStats, pickYieldPct } from "../lib/distributionStats";
+import { loadDistributionRows } from "./etfDistributionStore";
 import { fetchRealtimePriceBatch, type RealtimeStockData } from "../utils/fetchRealtimePrice";
 import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
 import { selectPaged } from "./supabasePaging";
@@ -195,8 +197,10 @@ export function toGuideHoldings(
  * 느리거나 실패하면 빈 값을 돌려주고 상품 유형별 가정으로 계산된다(화면을 막지 않는다).
  */
 export async function fetchYieldPctByCode(
-  holdings: Array<{ code: string; name: string; productType?: string | null }>,
+  holdings: Array<{ code: string; name: string; price?: number; productType?: string | null }>,
   timeoutMs = 5_000,
+  /** 주면 운용사 분배금 이력(etf_distributions)으로 분배율을 바로잡는다 — 규칙은 pickYieldPct. 이력 조회가 실패하면 네이버 값 그대로 */
+  history?: { supabase: any; today: string },
 ): Promise<YieldPctByCode> {
   const codes = holdings.filter((h) => isExchangeTradedProduct(h.code, h.name, h.productType)).map((h) => h.code);
   if (!codes.length) return {};
@@ -209,5 +213,18 @@ export async function fetchYieldPctByCode(
   if (timer) clearTimeout(timer);
   const out: YieldPctByCode = {};
   for (const [code, k] of map) if (k?.yieldTtm != null) out[code] = k.yieldTtm;
+  if (history) {
+    try {
+      const priceOf = new Map<string, number>();
+      for (const h of holdings) if (h.price && h.price > 0) priceOf.set(h.code, h.price);
+      const rowsByCode = await loadDistributionRows(history.supabase, [...priceOf.keys()]);
+      for (const [code, rows] of rowsByCode) {
+        const pick = pickYieldPct(computeDistributionStats(code, rows, history.today), priceOf.get(code) ?? 0, out[code]);
+        if (pick) out[code] = pick.pct;
+      }
+    } catch {
+      // 이력을 못 읽으면 네이버 값 그대로 — 분배율을 못 구했다고 가이드를 막지 않는다
+    }
+  }
   return out;
 }

@@ -39,6 +39,7 @@ import {
   type AccountKind,
 } from '../../src/lib/guideAccountScope'
 import { buildGuidePlanSnapshot } from '../../src/services/guidePlanSnapshot'
+import { loadIncomeCheck } from '../../src/services/incomeCheckService'
 import { buildAdherence } from '../../src/lib/guideAdherence'
 import { readOwnUserState } from './user-state'
 import { accountCashRows, addAccountCash, setAccountCash } from '../../src/lib/accountCash'
@@ -285,7 +286,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const withScopeHistory = (h: typeof scopeHistory) =>
       accountKey ? { ...file!, accounts: { ...accountsMap, [accountKey]: { ...(accountsMap[accountKey] ?? {}), history: h } } } : { ...file!, history: h }
     const pastCashPcts = scopeHistory.map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
-    const yieldPctByCode = await fetchYieldPctByCode(holdings)
+    const yieldPctByCode = await fetchYieldPctByCode(holdings, undefined, { supabase, today })
     // 내 계획 구성을 정했으면 해외 비중 목표는 구성을 따른다 — 계산에만 쓰고 저장 파일은 그대로
     const guidePlan = await loadGuidePlan(supabase, chatId).catch(() => null)
     const planOverseasPct = guidePlan?.overseasPct ?? null
@@ -330,6 +331,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       data: {
         ...view,
         plan,
+        // 인컴 상품 점검 — 일반 계좌 인컴 보유를 분배 이력·총수익·중복으로 판정 (src/lib/incomeProductCheck.ts)
+        incomeCheck: await loadIncomeCheck({ supabase, holdings: view.holdings, yieldPctByCode, today }),
         // 해외 비중 목표가 내 계획 구성에서 온 값이면 그 값(%) — 화면은 이 칸을 고치지 않고 모아가기 1번으로 보낸다
         overseasFromPlan: ownTargets ? null : planOverseasPct,
         // ① 새 돈 — 내 계획 구성이 여러 지수면 지수마다 한 줄(홈 '이번 달 할 일'과 같은 나누기). 아니면 null(성장 ETF 한 곳)

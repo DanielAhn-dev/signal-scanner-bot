@@ -72,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const today = kstDateKey()
     const pastCashPcts = (accountsMap[accountKey]?.history ?? []).map((h) => h.groups?.find((g) => g.group === 'cash')?.actualPct ?? 0)
     // 가이드 화면과 같은 분배율(최근 12개월 실제값 → 없으면 가정)로 계산해야 월 인컴이 화면마다 갈리지 않는다
-    const yieldPctByCode = await fetchYieldPctByCode(holdings)
+    const yieldPctByCode = await fetchYieldPctByCode(holdings, undefined, { supabase, today })
     // 가이드 화면과 같은 해외 비중 목표(내 계획 구성이 있으면 그 값)
     const guidePlan = await loadGuidePlan(supabase, chatId).catch(() => null)
     file = { ...file, settings: scopeSettingsToAccount(withPlanOverseas(file.settings, guidePlan?.overseasPct ?? null), accountsMap, accountKey, largestKey) }

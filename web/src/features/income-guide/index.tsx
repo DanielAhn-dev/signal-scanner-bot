@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button'
 import { useCurrentChatId } from '../../stores/profileStore'
 import Collapsible from '../../components/ui/Collapsible'
 import PlanSteps, { type RebalancePlan } from './PlanSteps'
+import IncomeProductCheck, { type IncomeCheckRow } from './IncomeProductCheck'
 import DistributionReceipts, { type DistributionReceiptsData } from './DistributionReceipts'
 import { reinvestLabel, reinvestTargets } from './reinvestTarget'
 import WeightHistory from './WeightHistory'
@@ -50,6 +51,8 @@ type View = {
   }
   /** 첫 화면 "할 일" (src/lib/rebalancePlan.ts). 보유가 없으면 null */
   plan?: RebalancePlan | null
+  /** 일반 계좌 인컴 상품 점검 (src/lib/incomeProductCheck.ts) */
+  incomeCheck?: IncomeCheckRow[]
   targetSource: 'stage' | 'custom'
   age: { band: string; label: string; safePct: number; applied: boolean; lines: string[] } | null
   distributions: {
@@ -598,6 +601,7 @@ export default function IncomeGuidePage() {
               ) : null}
             />
           )}
+          {view.incomeCheck && view.incomeCheck.length > 0 && <IncomeProductCheck rows={view.incomeCheck} />}
 
           <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span>증권사에서 옮기기 전에 한 번, 옮기고 보유를 고친 뒤에 한 번 기록하면 전후가 비교됩니다.</span>

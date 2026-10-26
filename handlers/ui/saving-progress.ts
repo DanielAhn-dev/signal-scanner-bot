@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { denyIfUnauthorizedRead } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { fetchYieldPctByCode, loadGuideFile } from '../../src/services/incomeGuideStore'
+import { kstDateKey } from '../../src/services/virtualAutoTradeTiming'
 import { fetchRealAccountValue } from '../../src/services/realAccountValue'
 import { selectPaged } from '../../src/services/supabasePaging'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
@@ -112,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     const [yieldPctByCode, underlying] = await Promise.all([
-      fetchYieldPctByCode(holdings).catch(() => ({})),
+      fetchYieldPctByCode(holdings, undefined, { supabase, today: kstDateKey() }).catch(() => ({})),
       fetchYieldPctByCode([UNDERLYING_INDEX]).catch(() => ({})),
     ])
     const underlyingYield = (underlying as Record<string, number>)[UNDERLYING_INDEX.code] ?? null

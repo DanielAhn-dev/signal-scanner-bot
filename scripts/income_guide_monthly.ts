@@ -69,7 +69,7 @@ async function main() {
         const holdings = sc.key ? all.filter((h) => h.accountKey === sc.key) : all;
         const settings = sc.key ? scopeSettingsToAccount(planned, accounts, sc.key, list[0]?.key ?? null) : planned;
         // 화면과 같은 분배율·계획으로 — 그달 안내(새 돈 살 곳·더 사지 말 것)와 가격을 기록에 같이 남겨 가이드 따름 판정에 쓴다
-        const yieldPctByCode = await fetchYieldPctByCode(holdings);
+        const yieldPctByCode = await fetchYieldPctByCode(holdings, undefined, { supabase, today });
         const view = buildIncomeGuideView({ holdings, settings, today, yieldPctByCode });
         const { advice, entryPrices } = await buildGuidePlanSnapshot({ supabase, file: { ...file, settings, history: sc.history }, view, yieldPctByCode, today, prices });
         const next = withMonthlyEntry(sc.history, view, holdings, { advice, prices: entryPrices });

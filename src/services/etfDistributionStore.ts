@@ -3,6 +3,7 @@
  * 서버(service role)만 읽고 쓴다. 1000행에서 조용히 잘리므로 요약은 range 루프로 읽는다.
  */
 import { matchStockName, type DistributionRow, type StockNameRow } from "../lib/distributionImport";
+import type { DistRow } from "../lib/distributionStats";
 
 export type StoredDistribution = { code: string; record_date: string; pay_date: string | null; per_share: number; rate_pct: number | null };
 
@@ -140,4 +141,27 @@ export async function loadSummary(supabase: any): Promise<DistributionSummaryRow
     }
   }
   return [...by.values()].sort((a, b) => (a.lastDate < b.lastDate ? 1 : -1));
+}
+
+/** 상품 코드별 분배금 이력(기준일 오름차순). 코드는 가이드 보유 종목 수준(수십 개)이라 in 조건으로 받고, 행은 끝까지 읽는다 */
+export async function loadDistributionRows(supabase: any, codes: string[]): Promise<Map<string, DistRow[]>> {
+  const out = new Map<string, DistRow[]>();
+  const uniq = [...new Set(codes.filter(Boolean))].slice(0, 80);
+  if (!uniq.length) return out;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("etf_distributions")
+      .select("code,record_date,per_share")
+      .in("code", uniq)
+      .order("code", { ascending: true })
+      .order("record_date", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`분배금 이력 조회 실패: ${error.message}`);
+    for (const r of data ?? []) {
+      const code = String(r.code);
+      out.set(code, [...(out.get(code) ?? []), { record_date: String(r.record_date), per_share: Number(r.per_share) }]);
+    }
+    if (!data || data.length < PAGE) break;
+  }
+  return out;
 }
