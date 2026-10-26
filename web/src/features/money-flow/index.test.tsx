@@ -44,6 +44,23 @@ describe('지출 기록', () => {
     expect(screen.getByText(/2줄을 읽었습니다/)).toBeTruthy()
   })
 
+  it('현대카드 이용내역(이용 일자: · 가맹점 · 금액 · 결제구분…)을 붙여넣으면 필요한 줄만 읽고 총 건수도 맞춰 본다', async () => {
+    renderPage()
+    const hyundai = [
+      '총 3건 총금액 6,560원', '', '--------------------', '',
+      '이용 일자: 26. 10. 25', '씨유CU청량리스카이점', '4,560원', '결제구분: 일시불', '카드명: 네이버 현대카드', '적립 예정 45(1.0%)', '', '--------------------', '',
+      '이용 일자: 26. 10. 18', '지파크', '1,000원', '결제구분: 일시불', '', '--------------------', '',
+      '이용 일자: 26. 10. 18', '지파크', '1,000원', '결제구분: 일시불',
+    ].join('\n')
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: hyundai } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    expect((screen.getByLabelText(/무엇을 얼마에/) as HTMLTextAreaElement).value)
+      .toBe(['2026-10-25 씨유CU청량리스카이점 4,560원', '2026-10-18 지파크 1,000원', '2026-10-18 지파크 1,000원'].join('\n'))
+    expect((screen.getByLabelText('씨유CU청량리스카이점 날짜') as HTMLInputElement).value).toBe('2026-10-25')
+    expect(screen.getByText(/3줄을 읽었습니다/)).toBeTruthy()
+    expect(screen.queryByText(/적혀 있는데/)).toBeNull()
+  })
+
   it('줄 앞 날짜(261001)는 그 줄의 날짜가 되고, 금액·날짜를 저장 전에 고칠 수 있다', async () => {
     renderPage()
     fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '261001 카스 디지털 체중계 X15 21500원\n우유 2 3690' } })
