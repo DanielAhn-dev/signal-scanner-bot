@@ -12,6 +12,7 @@ import discoveryPicks from '../handlers/ui/discovery-picks'
 import economicCalendar from '../handlers/ui/economic-calendar'
 import formatStock from '../handlers/ui/format-stock'
 import marketOverview from '../handlers/ui/market-overview'
+import similarTimes from '../handlers/ui/similar-times'
 import notify from '../handlers/ui/notify'
 import operations from '../handlers/ui/operations'
 import news from '../handlers/ui/news'
@@ -85,6 +86,7 @@ const ROUTES: Record<string, UiHandler> = {
   'economic-calendar': economicCalendar,
   'format-stock': formatStock,
   'market-overview': marketOverview,
+  'similar-times': similarTimes,
   news,
     'news-related': newsRelated,
   notify,
