@@ -200,3 +200,54 @@ export function compareCompositions(input: {
     };
   });
 }
+
+export type ShortfallPlan = {
+  /** 목표 시점까지 남은 개월(모르면 null) */
+  monthsLeft: number | null;
+  /** 기한 안에 닿으려면 매달 넣어야 하는 돈(기한을 모르면 null)과, 지금 적립에서 모자란 몫 */
+  neededDeposit: number | null;
+  depositGap: number;
+  /** 지금 적립 그대로면 걸리는 개월(적립이 없으면 null) — 기한을 늘리는 선택지 */
+  monthsAtCurrentDeposit: number | null;
+  /** 기한 안에 지금 적립으로 닿는 세후 월 금액(세금 선으로 자른 값)과, 그 안에서 덮이는 가장 높은 칸 — 목표를 낮추는 선택지 */
+  reachableMonthly: number | null;
+  reachableRung: string | null;
+  /** 일반 계좌 세금 선을 넘는 연 분배금(세전) — 다른 계좌 배치·급여로 메울 몫 */
+  overLimitGross: number;
+};
+
+/**
+ * 목표에 모자랄 때의 선택지를 숫자로 낸다 — 적립을 늘리거나, 기한을 늘리거나, 목표를 낮추거나, 세금 선 밖은 따로 메운다.
+ * 분배금 재투자는 빼고(보수적), 목표를 낮추는 쪽은 일반 계좌 세금 선 안으로 자른다.
+ */
+export function shortfallPlan(input: {
+  row: CompositionRow;
+  generalIncomeCapital: number;
+  monthlyDeposit: number;
+  monthsLeft: number | null;
+  taxProfile: TaxProfile;
+  rungs: Array<{ label: string; cumulative: number }>;
+}): ShortfallPlan {
+  const { row } = input;
+  const deposit = Math.max(0, input.monthlyDeposit);
+  const months = input.monthsLeft != null && input.monthsLeft > 0 ? Math.round(input.monthsLeft) : null;
+  const neededDeposit = months != null ? Math.ceil(row.extraCapital / months) : null;
+  let reachableMonthly: number | null = null;
+  let reachableRung: string | null = null;
+  if (months != null) {
+    const capital = Math.max(0, input.generalIncomeCapital) + deposit * months;
+    const maxMonthly = (FINANCIAL_INCOME_LIMIT[input.taxProfile] * LIMIT_SAFETY * NET) / 12;
+    reachableMonthly = Math.min((capital * (row.yieldPct / 100) * NET) / 12, maxMonthly);
+    const passed = input.rungs.filter((r) => r.cumulative <= reachableMonthly!);
+    reachableRung = passed.length ? passed[passed.length - 1].label : null;
+  }
+  return {
+    monthsLeft: months,
+    neededDeposit,
+    depositGap: neededDeposit != null ? Math.max(0, neededDeposit - deposit) : 0,
+    monthsAtCurrentDeposit: row.months,
+    reachableMonthly,
+    reachableRung,
+    overLimitGross: row.overLimitGross,
+  };
+}

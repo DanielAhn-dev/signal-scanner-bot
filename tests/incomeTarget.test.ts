@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { annualDistribution, compareCompositions, incomeTargetPlan, splitAmount, FINANCIAL_INCOME_LIMIT } from "../src/lib/incomeTarget";
+import { annualDistribution, compareCompositions, incomeTargetPlan, shortfallPlan, splitAmount, FINANCIAL_INCOME_LIMIT } from "../src/lib/incomeTarget";
 
 const MAN = 10_000;
 // 누적 1·3·6·9·14·20·31·43 | 59·76·116·166·266 (만원)
@@ -108,4 +108,28 @@ test("구성 3종 비교 — 이미 원금이 충분하면 0개월, 적립이 �
   assert.ok(none.every((r) => r.months === null));
   // 지역가입자 여유 선 연 900만원 → 세후 월 약 63만원 초과
   assert.ok(none.every((r) => !r.withinLimit));
+});
+
+test("부족분 선택지 — 기한 안에 닿는 월 적립, 지금 적립으로 닿는 칸, 세금 선 밖 몫", () => {
+  const rows = compareCompositions({ targetMonthlyNet: 166 * MAN, generalIncomeCapital: 80_000_000, monthlyDeposit: 1_000_000, taxProfile: "worker" });
+  const income = rows.find((r) => r.id === "income")!;
+  const rungs = [43, 59, 76, 116, 166].map((m) => ({ label: `${m}만`, cumulative: m * MAN }));
+  // 10년(120개월) 안에 2.87억 − 0.8억 = 2.07억 → 월 약 172만원, 지금 적립 100만원이면 72만원 부족
+  const p = shortfallPlan({ row: income, generalIncomeCapital: 80_000_000, monthlyDeposit: 1_000_000, monthsLeft: 120, taxProfile: "worker", rungs });
+  assert.ok(Math.abs(p.neededDeposit! - 1_730_000) < 20_000);
+  assert.ok(Math.abs(p.depositGap - 730_000) < 20_000);
+  // 10년 뒤 원금 0.8억 + 1.2억 = 2억 × 8.2% × 0.846 ÷ 12 ≈ 115.6만원 → 76만 칸까지(116만 칸은 0.4만원 못 미침)
+  assert.equal(p.reachableRung, "76만");
+  assert.ok(p.overLimitGross > 0);
+});
+
+test("부족분 선택지 — 기한을 모르면 필요 적립이 없고, 닿는 월 금액은 세금 선으로 잘린다", () => {
+  const rows = compareCompositions({ targetMonthlyNet: 166 * MAN, generalIncomeCapital: 0, monthlyDeposit: 5_000_000, taxProfile: "regional" });
+  const p0 = shortfallPlan({ row: rows[0], generalIncomeCapital: 0, monthlyDeposit: 5_000_000, monthsLeft: null, taxProfile: "regional", rungs: [] });
+  assert.equal(p0.neededDeposit, null);
+  assert.equal(p0.depositGap, 0);
+  assert.equal(p0.reachableMonthly, null);
+  const p1 = shortfallPlan({ row: rows[0], generalIncomeCapital: 0, monthlyDeposit: 5_000_000, monthsLeft: 240, taxProfile: "regional", rungs: [] });
+  // 원금이 아무리 커도 지역가입자 여유 선(연 900만원 → 세후 월 약 63.5만원)을 넘지 않는다
+  assert.ok(p1.reachableMonthly! < 640_000 && p1.reachableMonthly! > 630_000);
 });
