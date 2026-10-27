@@ -35,4 +35,11 @@ describe('관리자 메뉴', () => {
       expect(ribbon, item.key).toContain(item.key)
     }
   })
+
+  it("'비슷한 때'는 관리자 '오늘' 탭과 '시장 공부' 탭 모두에서 열 수 있다", () => {
+    const sections = menuSectionsFor(true)
+    const keysOf = (key: string) => sections.find((s) => s.key === key)!.groups.flatMap((g) => g.items.map((i) => i.key))
+    expect(keysOf('home')).toContain('similar-times')
+    expect(keysOf('learn')).toContain('similar-times')
+  })
 })
