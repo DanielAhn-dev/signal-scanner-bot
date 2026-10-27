@@ -67,6 +67,7 @@ const NAV_ICON_COMPONENTS: Record<string, React.ComponentType<{ size?: number | 
   'discovery': Search,
   'feed': List,
   'commentary': Scale,
+  'similar-times': ChartLine,
   'settings': Settings,
   'profile': User,
   'admin-users': User,
