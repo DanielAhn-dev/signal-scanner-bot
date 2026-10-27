@@ -76,6 +76,8 @@ export type SimilarResult = {
   medianPath: number[]
   /** 이후 3개월 안에 10% 넘게 더 빠진 비율(%) */
   down10Pct: number
+  /** 겹치지 않는 사례 중 기간별 가장 나빴던·가장 좋았던 때 */
+  extremes: Array<{ days: number; label: string; worst: { date: string; value: number }; best: { date: string; value: number } }>
 }
 
 export function findSimilar(now: Pick<NowState, 'score' | 'dd60' | 'vol20'>, d: SimilarData = SIMILAR, k: number = NEIGHBORS): SimilarResult | null {
@@ -105,6 +107,45 @@ export function findSimilar(now: Pick<NowState, 'score' | 'dd60' | 'vol20'>, d: 
     }),
     medianPath,
     down10Pct: (scored.filter((c) => c.x.m <= -10).length / scored.length) * 100,
+    extremes: HORIZONS.map((h) => {
+      const vals = accepted.map((a) => ({ date: a.x.d, value: a.x.r[h.idx] }))
+      const worst = vals.reduce((m, v) => (v.value < m.value ? v : m), vals[0])
+      const best = vals.reduce((m, v) => (v.value > m.value ? v : m), vals[0])
+      return { days: h.days, label: h.label, worst, best }
+    }),
+  }
+}
+
+export type Conclusion = { headline: string; bullets: string[] }
+
+/**
+ * 결과를 평소와 견줘 말로 푼다 — 가운데(중앙값)·폭(나쁜 10%~좋은 10%)·큰 하락 가능성(3개월 안 10%↓).
+ * 매매 지시나 예측 문구는 쓰지 않는다. 기준은 3개월 뒤.
+ */
+export function conclusion(result: SimilarResult, d: SimilarData = SIMILAR): Conclusion {
+  const h = result.horizons.find((x) => x.days === 60) ?? result.horizons[1]
+  const ex = result.extremes.find((x) => x.days === 60) ?? result.extremes[1]
+  const centerDiff = h.median - h.base.median
+  const center =
+    Math.abs(centerDiff) < 1 ? '평소와 비슷해요' : `평소보다 ${Math.abs(centerDiff) >= 4 ? '' : '조금 '}${centerDiff > 0 ? '높아요' : '낮아요'}`
+  const width = h.p90 - h.p10
+  const baseWidth = h.base.p90 - h.base.p10
+  const spread = width >= baseWidth * 1.25 ? '평소보다 넓게 갈렸어요' : width <= baseWidth * 0.8 ? '평소보다 좁았어요' : '평소와 비슷했어요'
+  const tailRatio = result.down10Pct / Math.max(1, d.baseline.down10Pct)
+  const tail = tailRatio >= 1.5 ? '평소보다 잦았어요' : tailRatio <= 0.67 ? '평소보다 드물었어요' : '평소와 비슷했어요'
+  const wide = width >= baseWidth * 1.25
+  const heavy = tailRatio >= 1.5
+  const headline =
+    `3개월 뒤 가운데는 ${signedPct(h.median)}로 ${center}` +
+    (wide || heavy ? `. 다만 ${wide ? '결과가 넓게 갈렸고' : ''}${wide && heavy ? ' ' : ''}${heavy ? '큰 하락이 잦았던 때예요' : '요'}` : '.')
+  return {
+    headline,
+    bullets: [
+      `가운데 값: ${signedPct(h.median)} (평소 ${signedPct(h.base.median)}) — ${center}.`,
+      `대부분(10~90%)의 범위: ${signedPct(h.p10)} ~ ${signedPct(h.p90)} (평소 ${signedPct(h.base.p10)} ~ ${signedPct(h.base.p90)}) — ${spread}.`,
+      `가장 나빴던 때 ${signedPct(ex.worst.value)}(${ymLabel(ex.worst.date)}), 가장 좋았던 때 ${signedPct(ex.best.value)}(${ymLabel(ex.best.date)}) — 겹치지 않는 사례 ${result.independent}건 안에서예요.`,
+      `3개월 안에 10% 넘게 더 빠진 적: ${result.down10Pct.toFixed(0)}% (평소 ${d.baseline.down10Pct.toFixed(0)}%) — ${tail}.`,
+    ],
   }
 }
 

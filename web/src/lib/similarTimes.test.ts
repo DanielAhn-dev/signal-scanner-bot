@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SIMILAR, findSimilar, quantile, similarTimesStale, stateView, type SimilarData, type SimilarSample } from './similarTimes'
+import { SIMILAR, conclusion, findSimilar, quantile, similarTimesStale, stateView, type SimilarData, type SimilarSample } from './similarTimes'
 
 const mk = (d: string, s: number, dd: number, v: number, end: number): SimilarSample => ({
   d, s, dd, v, r: Array.from({ length: 24 }, (_, i) => ((i + 1) / 24) * end), m: end < 0 ? end : -1,
@@ -36,6 +36,21 @@ describe('findSimilar', () => {
   })
   it('자료가 없으면 null', () => {
     expect(findSimilar({ score: 50, dd60: 0, vol20: 15 }, { ...tiny, samples: [] })).toBeNull()
+  })
+})
+
+describe('conclusion', () => {
+  it('가운데·범위·큰 하락을 평소와 견주어 말하고, 최소·최대와 시기를 보여 준다', () => {
+    const r = findSimilar({ score: 20, dd60: -18, vol20: 40 }, tiny, 3)!
+    expect(r.extremes[2].worst.value).toBeCloseTo(-30, 5)           // 겹치지 않는 사례: 2020-03(−20)과 2008-10(−30)
+    expect(r.extremes[2].worst.date).toBe('20081010')
+    expect(r.extremes[2].best.value).toBeCloseTo(-20, 5)
+    const c = conclusion(r, tiny)
+    expect(c.headline).toContain('3개월 뒤 가운데는')
+    expect(c.bullets).toHaveLength(4)
+    expect(c.bullets.join(' ')).toMatch(/가장 나빴던 때 .*\(2008\.10\)/)
+    expect(c.bullets.join(' ')).toContain('평소')
+    expect(`${c.headline} ${c.bullets.join(' ')}`).not.toMatch(/과열|사세요|파세요|매수하|매도하|오릅니다|내립니다/)
   })
 })
 

@@ -4,9 +4,39 @@ import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
 import { apiFetch } from '../../lib/api'
 import {
-  HORIZONS, INDEPENDENT_GAP_DAYS, NEIGHBORS, SIMILAR, findSimilar, signedPct, similarTimesStale, stateView, ymLabel,
+  HORIZONS, INDEPENDENT_GAP_DAYS, NEIGHBORS, SIMILAR, conclusion, findSimilar, signedPct, similarTimesStale, stateView, ymLabel,
   type NowState, type SimilarResult,
 } from '../../lib/similarTimes'
+
+const GRID_COLS = 'minmax(84px, 1.3fr) repeat(3, minmax(0, 1fr))'
+const up = 'var(--color-stock-up)'
+const down = 'var(--color-stock-down)'
+
+/** 값의 부호에 시세 색(상승 빨강·하락 파랑)을 입혀 보여 준다 */
+function Pct({ v, strong, muted }: { v: number; strong?: boolean; muted?: boolean }) {
+  return (
+    <span style={{ fontWeight: strong ? 700 : 500, color: muted ? 'var(--color-text-tertiary)' : v > 0 ? up : v < 0 ? down : undefined }}>{signedPct(v)}</span>
+  )
+}
+
+/** 카드 폭을 가득 채우는 4열 격자(첫 열 이름 + 1·3·6개월) */
+function Grid4({ head, rows }: { head: React.ReactNode[]; rows: Array<{ label: string; cells: React.ReactNode[]; muted?: boolean }> }) {
+  const cell: React.CSSProperties = { textAlign: 'center', padding: '7px 4px' }
+  return (
+    <div role="table" style={{ display: 'grid', gridTemplateColumns: GRID_COLS, alignItems: 'center', width: '100%', fontSize: 13 }}>
+      <div role="row" style={{ display: 'contents' }}>
+        <div style={{ padding: '6px 4px', borderBottom: '1px solid var(--color-border-default)' }} />
+        {head.map((h, i) => <div key={i} role="columnheader" style={{ ...cell, fontWeight: 700, fontSize: 12, borderBottom: '1px solid var(--color-border-default)' }}>{h}</div>)}
+      </div>
+      {rows.map((r) => (
+        <div key={r.label} role="row" style={{ display: 'contents' }}>
+          <div style={{ padding: '7px 4px', color: r.muted ? 'var(--color-text-tertiary)' : undefined, borderBottom: '1px solid var(--color-border-subtle, var(--color-border-default))' }}>{r.label}</div>
+          {r.cells.map((c, i) => <div key={i} role="cell" style={{ ...cell, borderBottom: '1px solid var(--color-border-subtle, var(--color-border-default))' }}>{c}</div>)}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const CARD: React.CSSProperties = { margin: '0 0 var(--space-3, 12px)', padding: '12px 14px', border: '1px solid var(--color-border-default)', borderRadius: 8, lineHeight: 1.55, wordBreak: 'keep-all' }
 
@@ -115,6 +145,7 @@ export default function SimilarTimesPage() {
 
   const result = useMemo(() => (now ? findSimilar(now) : null), [now])
   const view = useMemo(() => (now ? stateView(now) : null), [now])
+  const summary = useMemo(() => (result ? conclusion(result) : null), [result])
   const stale = similarTimesStale()
 
   return (
@@ -159,22 +190,38 @@ export default function SimilarTimesPage() {
 
           <div style={CARD}>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>이후 수익률 분포</div>
-            <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', fontSize: 12 }}>
-              <thead>
-                <tr><th style={{ textAlign: 'left' }} /><th>1개월 뒤</th><th>3개월 뒤</th><th>6개월 뒤</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>비슷했던 때 중앙값</td>{result.horizons.map((h) => <td key={h.days} style={{ textAlign: 'center' }}><strong>{signedPct(h.median)}</strong></td>)}</tr>
-                <tr><td>나쁜 쪽 10%</td>{result.horizons.map((h) => <td key={h.days} style={{ textAlign: 'center' }}>{signedPct(h.p10)}</td>)}</tr>
-                <tr><td>좋은 쪽 10%</td>{result.horizons.map((h) => <td key={h.days} style={{ textAlign: 'center' }}>{signedPct(h.p90)}</td>)}</tr>
-                <tr><td>평소 중앙값</td>{result.horizons.map((h) => <td key={h.days} style={{ textAlign: 'center', color: 'var(--color-text-tertiary)' }}>{signedPct(h.base.median)}</td>)}</tr>
-              </tbody>
-            </table>
+            <Grid4
+              head={result.horizons.map((h) => h.label)}
+              rows={[
+                { label: '비슷했던 때 중앙값', cells: result.horizons.map((h) => <Pct key={h.days} v={h.median} strong />) },
+                { label: '나쁜 쪽 10%', cells: result.horizons.map((h) => <Pct key={h.days} v={h.p10} />) },
+                { label: '좋은 쪽 10%', cells: result.horizons.map((h) => <Pct key={h.days} v={h.p90} />) },
+                { label: '평소 중앙값', muted: true, cells: result.horizons.map((h) => <Pct key={h.days} v={h.base.median} muted />) },
+              ]}
+            />
             <div style={{ fontSize: 13, marginTop: 8 }}>
               3개월 안에 10% 넘게 더 빠진 적: <strong>{result.down10Pct.toFixed(0)}%</strong>
               <span className="caption muted"> (평소 {SIMILAR.baseline.down10Pct.toFixed(0)}%)</span>
             </div>
           </div>
+
+          {summary && (
+            <div style={{ ...CARD, borderColor: 'var(--color-brand)' }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>그래서 결론은</div>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>{summary.headline}</div>
+              <ul style={{ margin: '0 0 8px', paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+                {summary.bullets.map((b) => <li key={b}>{b}</li>)}
+              </ul>
+              <Grid4
+                head={result.extremes.map((e) => e.label)}
+                rows={[
+                  { label: '가장 나빴던 때', cells: result.extremes.map((e) => <span key={e.days}><Pct v={e.worst.value} strong /> <span className="caption muted">{ymLabel(e.worst.date)}</span></span>) },
+                  { label: '가장 좋았던 때', cells: result.extremes.map((e) => <span key={e.days}><Pct v={e.best.value} strong /> <span className="caption muted">{ymLabel(e.best.date)}</span></span>) },
+                ]}
+              />
+              <div className="caption muted" style={{ marginTop: 6 }}>과거 기록을 풀어 쓴 것이에요. 앞으로 같은 결과가 나온다는 뜻이 아니고 매매 신호도 아니에요.</div>
+            </div>
+          )}
 
           <More label="한계와 읽는 법">
             <ul style={{ margin: '4px 0 8px', paddingLeft: 18, fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
