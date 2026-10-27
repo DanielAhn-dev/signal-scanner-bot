@@ -3,7 +3,8 @@ import { AlertTriangle, Building2, ChevronDown, ChevronRight, PlusCircle } from 
 import { useNavigate } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Detail from '../../../components/ui/Detail'
-import { formatKrw, formatNumber } from '../../../lib/format'
+import { formatNumber } from '../../../lib/format'
+import { useAmountMask } from '../../../stores/amountMaskStore'
 import { evaluatePeakGiveback, PEAK_GIVEBACK_ALERT_PCT, PEAK_GIVEBACK_EVIDENCE } from '../../../../../src/lib/peakGiveback'
 import { resolveHoldingAction, summarizeAccounts } from '../../../lib/holdingAction'
 import { rowTradeCost, type TradeCostOptions } from '../lib/summary'
@@ -47,6 +48,7 @@ export default function HoldingCard({
   hideAccount = false,
 }: HoldingCardProps) {
   const navigate = useNavigate()
+  const m = useAmountMask()
   const [open, setOpen] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
   // 위쪽 비중 목록에서 이 종목을 눌러 이동해 오면 펼친다
@@ -131,12 +133,12 @@ export default function HoldingCard({
             return (
               <>
                 <div
-                  className={`portfolio-pnl-amount${displayPnl != null ? (displayPnl < 0 ? ' negative' : ' positive') : ''}`}
+                  className={`portfolio-pnl-amount${displayPnl != null ? m.tone(displayPnl < 0 ? ' negative' : ' positive') : ''}`}
                 >
-                  {displayPnl != null ? formatKrw(displayPnl) : '—'}
+                  {displayPnl != null ? m.krw(displayPnl) : '—'}
                 </div>
                 <div className="caption muted">
-                  {displayPct != null ? `${formatNumber(displayPct, 2)}%` : '—'}
+                  {displayPct != null ? m.text(`${formatNumber(displayPct, 2)}%`) : '—'}
                   {/* 나눠 산 종목(lot 2건 이상)은 산 날마다 기간이 달라 보유 일수 하나가 의미 없다 */}
                   {r.hold_days != null && (r.lots?.length ?? 0) < 2 ? ` · ${r.hold_days}일` : ''}
                 </div>
@@ -150,7 +152,7 @@ export default function HoldingCard({
 
       {/* ── 보유 정보: 수량 · 평균매수가 · 매수일 · 계좌 ── */}
       <div className="caption muted portfolio-position-meta">
-        {r.quantity}주 · 평균가 {formatKrw(r.avg_price)}{open && r.buy_date ? ` · ${r.buy_date}` : ''}
+        {r.quantity}주 · 평균가 {m.krw(r.avg_price)}{open && r.buy_date ? ` · ${r.buy_date}` : ''}
         {rowAccountKey !== '|||' && !hideAccount && (
           <span className="portfolio-meta-account">
             <Building2 size={11} />
@@ -165,7 +167,7 @@ export default function HoldingCard({
         return (
           <div className="portfolio-peak-giveback portfolio-peak-giveback--alert">
             <AlertTriangle size={12} aria-hidden />
-            <span>담을 크기{sz.accounts > 1 ? `(${sz.accounts}개 계좌 합계)` : ''}: 최대({formatKrw(sz.maxAmount)})보다 {formatKrw(sz.overAmount)} 많음 · 추가매수 멈춤</span>
+            <span>담을 크기{sz.accounts > 1 ? `(${sz.accounts}개 계좌 합계)` : ''}: 최대({m.krw(sz.maxAmount)})보다 {m.krw(sz.overAmount)} 많음 · 추가매수 멈춤</span>
           </div>
         )
       })()}
@@ -249,7 +251,7 @@ export default function HoldingCard({
       {/* ── 로트 이력 ── */}
       {r.lots && r.lots.length > 0 && (
         <div className="caption portfolio-lots">
-          로트: {r.lots.map((l) => `${l.acquired_quantity}주 @${formatKrw(l.acquired_price)}`).join(' · ')}
+          로트: {r.lots.map((l) => `${l.acquired_quantity}주 @${m.krw(l.acquired_price)}`).join(' · ')}
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react'
-import { formatKrwCompact, formatNumber } from '../../../lib/format'
+import { formatNumber } from '../../../lib/format'
+import { useAmountMask } from '../../../stores/amountMaskStore'
 import type { AdvisorPerformanceData } from '../types'
 
 type PerformanceCardProps = {
@@ -15,6 +16,7 @@ export default function PerformanceCard({
   advisorPerfLoading,
   advisorPerf,
 }: PerformanceCardProps) {
+  const m = useAmountMask()
   return (
     <div className="card mb-4 portfolio-performance-card">
       <button
@@ -58,7 +60,7 @@ export default function PerformanceCard({
                 <div className="portfolio-performance-metric"><span title="실현 매도 10건 이상부터 계산">실현 승률</span><strong>{advisorPerf.summary.trustScore != null ? `${advisorPerf.summary.trustScore}%` : '표본 부족'}</strong></div>
                 <div className="portfolio-performance-metric"><span>의사결정 수</span><strong>{advisorPerf.summary.totalDecisions ?? 0}</strong></div>
                 <div className="portfolio-performance-metric"><span>매도 승률</span><strong>{advisorPerf.summary.linkedSellWinRatePct != null ? `${formatNumber(advisorPerf.summary.linkedSellWinRatePct, 1)}%` : '—'}</strong></div>
-                <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrwCompact(Number(advisorPerf.summary.linkedRealizedPnl || 0), { showPositiveSign: true })}</strong></div>
+                <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{m.compact(Number(advisorPerf.summary.linkedRealizedPnl || 0), { showPositiveSign: true })}</strong></div>
               </div>
               <div className="caption muted" style={{ marginTop: 'var(--space-3)' }}>
                 최근 액션 샘플: {(advisorPerf.recent ?? []).slice(0, 3).map((row) => `${row.code || '-'} ${row.action || '-'} (${row.confidence != null ? `${formatNumber(Number(row.confidence), 0)}%` : '신뢰도 없음'})`).join(' · ') || '없음'}

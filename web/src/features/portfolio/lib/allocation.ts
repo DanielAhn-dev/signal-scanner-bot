@@ -1,6 +1,8 @@
 import type { HoldingRow } from '../types'
 /** rest: '그 외 N종목' 줄에 묶인 종목들(더보기로 펼친다) */
-export type AllocationRow = { code: string; name: string; value: number; ratio: number; rest?: AllocationRow[] }
+export type AllocationRow = { code: string; name: string; value: number; ratio: number; quantity?: number; rest?: AllocationRow[] }
+
+type AllocationItem = { code: string; name: string; value: number; quantity?: number }
 
 export const ALLOCATION_COLORS = [
   '#2f7ae5',
@@ -35,18 +37,21 @@ export function buildAllocationRows(rows: HoldingRow[], estimatedCash: number): 
         code: String(r.code || '-'),
         name: String(r.stock_name || r.ticker || r.symbol || r.code || '-'),
         value: Math.max(0, safeValue),
+        quantity: Number.isFinite(quantity) ? quantity : 0,
       }
     })
     .filter((row) => row.value > 0)
-  const byCode = new Map<string, { code: string; name: string; value: number }>()
+  const byCode = new Map<string, AllocationItem>()
   for (const r of perRow) {
     const prev = byCode.get(r.code)
-    if (prev) prev.value += r.value
-    else byCode.set(r.code, { ...r })
+    if (prev) {
+      prev.value += r.value
+      prev.quantity = (prev.quantity ?? 0) + (r.quantity ?? 0)
+    } else byCode.set(r.code, { ...r })
   }
   const sorted = [...byCode.values()].sort((a, b) => b.value - a.value)
   // 한 종목만 남는 '그 외'는 만들지 않는다
-  const items = sorted.length > ALLOCATION_TOP + 1
+  const items: AllocationItem[] = sorted.length > ALLOCATION_TOP + 1
     ? [
         ...sorted.slice(0, ALLOCATION_TOP),
         { code: ALLOCATION_OTHER_CODE, name: `그 외 ${sorted.length - ALLOCATION_TOP}종목`, value: sorted.slice(ALLOCATION_TOP).reduce((s, r) => s + r.value, 0) },
@@ -60,7 +65,7 @@ export function buildAllocationRows(rows: HoldingRow[], estimatedCash: number): 
   const sum = items.reduce((acc, row) => acc + row.value, 0)
   if (sum <= 0) return []
 
-  const withRatio = (row: { code: string; name: string; value: number }) => ({ ...row, ratio: (row.value / sum) * 100 })
+  const withRatio = (row: AllocationItem) => ({ ...row, ratio: (row.value / sum) * 100 })
   const restRows = sorted.length > ALLOCATION_TOP + 1 ? sorted.slice(ALLOCATION_TOP).map(withRatio) : []
   return items.map((row) => (row.code === ALLOCATION_OTHER_CODE ? { ...withRatio(row), rest: restRows } : withRatio(row)))
 }

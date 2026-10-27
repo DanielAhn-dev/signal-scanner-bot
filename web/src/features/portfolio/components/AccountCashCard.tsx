@@ -3,7 +3,7 @@ import Button from '../../../components/ui/Button'
 import More from '../../../components/ui/More'
 import UnitInput from '../../../components/ui/UnitInput'
 import { useToast } from '../../../components/ToastProvider'
-import { formatKrwCompact } from '../../../lib/format'
+import { useAmountMask } from '../../../stores/amountMaskStore'
 import type { AccountCashRow } from '../../../../../src/lib/accountCash'
 
 /**
@@ -18,6 +18,7 @@ export default function AccountCashCard({ cashKey, holdingValue, row, loaded, on
   onDeposit: (key: string, amount: number) => Promise<string | null>
 }) {
   const toast = useToast()
+  const m = useAmountMask()
   const savingRef = useRef(false)
   const [saving, setSaving] = useState(false)
   const [mode, setMode] = useState<'correction' | 'deposit' | null>(null)
@@ -44,9 +45,9 @@ export default function AccountCashCard({ cashKey, holdingValue, row, loaded, on
   return (
     <div className="card mb-4 portfolio-account-cash">
       <div className="portfolio-account-cash-row">
-        <span>보유 평가 <strong>{formatKrwCompact(holdingValue)}</strong></span>
+        <span>보유 평가 <strong>{m.compact(holdingValue)}</strong></span>
         <span>
-          예수금 <strong>{loaded ? `${amount.toLocaleString('ko-KR')}원` : '…'}</strong>
+          예수금 <strong>{loaded ? m.text(`${amount.toLocaleString('ko-KR')}원`) : '…'}</strong>
         </span>
         {!mode && (
           <>

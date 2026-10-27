@@ -4,7 +4,8 @@ import Button from '../../../components/ui/Button'
 import Skeleton from '../../../components/Skeleton'
 import { EmptyState } from '../../../components/StateViews'
 import type { summarizeAccounts } from '../../../lib/holdingAction'
-import { formatKrw, formatNumber } from '../../../lib/format'
+import { formatNumber } from '../../../lib/format'
+import { useAmountMask } from '../../../stores/amountMaskStore'
 import type { TradeCostOptions } from '../lib/summary'
 import type { HoldingStateKind } from '../lib/holdingState'
 import HoldingCard from './HoldingCard'
@@ -44,7 +45,6 @@ type HoldingListProps = {
 }
 
 const pctText = (v: number | null) => (v == null ? '—' : `${v > 0 ? '+' : ''}${formatNumber(v, 2)}%`)
-const pnlClass = (v: number) => `portfolio-group-pnl${v < 0 ? ' negative' : v > 0 ? ' positive' : ''}`
 
 export default function HoldingList({
   loading,
@@ -70,6 +70,9 @@ export default function HoldingList({
   aliases,
 }: HoldingListProps) {
   // 접은 묶음(계좌 키·종목 코드) — 기본은 계좌는 펼침, 여러 계좌에 나눠 담은 종목은 접음
+  const m = useAmountMask()
+  const pnlClass = (v: number) => `portfolio-group-pnl${m.tone(v < 0 ? ' negative' : v > 0 ? ' positive' : '')}`
+  const pnlText = (g: { pnl: number; pnlPct: number | null }) => m.text(`${m.krw(g.pnl)} (${pctText(g.pnlPct)})`)
   const [collapsedAccounts, setCollapsedAccounts] = useState<Set<string>>(new Set())
   const [openStocks, setOpenStocks] = useState<Set<string>>(new Set())
   const toggle = (set: Set<string>, key: string) => {
@@ -178,8 +181,8 @@ export default function HoldingList({
                 <span className="caption muted">{g.rows.length}종목</span>
               </button>
               <div className="portfolio-group-sums">
-                <span className="portfolio-group-value">{formatKrw(g.value)}</span>
-                <span className={pnlClass(g.pnl)}>{formatKrw(g.pnl)} ({pctText(g.pnlPct)})</span>
+                <span className="portfolio-group-value">{m.krw(g.value)}</span>
+                <span className={pnlClass(g.pnl)}>{pnlText(g)}</span>
                 <span className="caption muted">비중 {formatNumber(g.weightPct, 1)}%</span>
               </div>
               {g.key !== '|||' && (
@@ -211,10 +214,10 @@ export default function HoldingList({
                 <span className="caption muted">{g.code} · {g.rows.length}개 계좌</span>
               </button>
               <div className="portfolio-group-sums">
-                <span className="portfolio-group-value">{formatKrw(g.value)}</span>
-                <span className={pnlClass(g.pnl)}>{formatKrw(g.pnl)} ({pctText(g.pnlPct)})</span>
+                <span className="portfolio-group-value">{m.krw(g.value)}</span>
+                <span className={pnlClass(g.pnl)}>{pnlText(g)}</span>
                 <span className="caption muted">
-                  합계 {g.quantity.toLocaleString('ko-KR')}주{g.avgPrice != null ? ` · 평균가 ${formatKrw(Math.round(g.avgPrice))}` : ''}
+                  합계 {g.quantity.toLocaleString('ko-KR')}주{g.avgPrice != null ? ` · 평균가 ${m.krw(Math.round(g.avgPrice))}` : ''}
                 </span>
               </div>
             </div>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import More from '../../../components/ui/More'
 import { apiFetch } from '../../../lib/api'
-import { formatKrwCompact, formatNumber } from '../../../lib/format'
+import { formatNumber } from '../../../lib/format'
+import { useAmountMask } from '../../../stores/amountMaskStore'
 import { useCurrentChatId } from '../../../stores/profileStore'
 import { buildAccountOverview, planKrIndexPct } from '../lib/accountOverview'
 import type { HoldingRow } from '../types'
@@ -13,14 +14,17 @@ import type { AccountCashRow } from '../../../../../src/lib/accountCash'
  */
 type Mix = { index: string; weight: number }[] | null
 
-const signed = (n: number | null) => (n == null ? '-' : `${n > 0 ? '+' : ''}${formatNumber(n, 1)}%`)
-const tone = (n: number | null) => (n == null || Math.abs(n) < 0.05 ? '' : n > 0 ? 'positive' : 'negative')
+const signedPct = (n: number | null) => (n == null ? '-' : `${n > 0 ? '+' : ''}${formatNumber(n, 1)}%`)
+const toneOf = (n: number | null) => (n == null || Math.abs(n) < 0.05 ? '' : n > 0 ? 'positive' : 'negative')
 
 /** 포트폴리오 계좌 키(증권사|||계좌) → 예수금 키(증권사|계좌) */
 const cashKeyOf = (accountKey: string) => accountKey.replace('|||', '|')
 
 export default function AccountOverviewCard({ rows, cashByKey }: { rows: HoldingRow[]; cashByKey: Record<string, AccountCashRow> }) {
   const chatId = useCurrentChatId()
+  const m = useAmountMask()
+  const tone = (n: number | null) => m.tone(toneOf(n))
+  const signed = (n: number | null) => m.text(signedPct(n))
   const [mix, setMix] = useState<Mix>(null)
 
   useEffect(() => {
@@ -46,9 +50,9 @@ export default function AccountOverviewCard({ rows, cashByKey }: { rows: Holding
       </div>
 
       <div className="portfolio-account-overview-total">
-        넣은 돈 {formatKrwCompact(o.cost)} → 지금 {formatKrwCompact(o.total)}{' '}
+        넣은 돈 {m.compact(o.cost)} → 지금 {m.compact(o.total)}{' '}
         <span className={tone(o.returnPct)}>({signed(o.returnPct)})</span>
-        {cashTotal > 0 && <> · 예수금 {formatKrwCompact(cashTotal)} (합계 {formatKrwCompact(o.total + cashTotal)})</>}
+        {cashTotal > 0 && <> · 예수금 {m.compact(cashTotal)} (합계 {m.compact(o.total + cashTotal)})</>}
       </div>
 
       <table className="portfolio-account-overview-table xls-card-table">
@@ -62,7 +66,7 @@ export default function AccountOverviewCard({ rows, cashByKey }: { rows: Holding
                 {b.label}
                 {b.note && <div className="portfolio-account-overview-note">{b.note}</div>}
               </td>
-              <td>{formatNumber(b.pct, 1)}%<div className="caption muted">{formatKrwCompact(b.value)}</div></td>
+              <td>{formatNumber(b.pct, 1)}%<div className="caption muted">{m.compact(b.value)}</div></td>
               <td className={tone(b.returnPct)}>{signed(b.returnPct)}</td>
             </tr>
           ))}
@@ -79,9 +83,9 @@ export default function AccountOverviewCard({ rows, cashByKey }: { rows: Holding
         <ul className="portfolio-account-overview-accounts">
           {o.accounts.map((a) => (
             <li key={a.key}>
-              <strong>{a.label}</strong> {formatKrwCompact(a.value)} · {a.topLabel} {formatNumber(a.topPct, 0)}% ·{' '}
+              <strong>{a.label}</strong> {m.compact(a.value)} · {a.topLabel} {formatNumber(a.topPct, 0)}% ·{' '}
               <span className={tone(a.returnPct)}>{signed(a.returnPct)}</span>
-              {cashOf(a.key) > 0 && ` · 예수금 ${formatKrwCompact(cashOf(a.key))}`}
+                            {cashOf(a.key) > 0 && ` · 예수금 ${m.compact(cashOf(a.key))}`}
             </li>
           ))}
         </ul>

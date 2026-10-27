@@ -1,9 +1,9 @@
 import React from 'react'
-import { Check } from 'lucide-react'
+import { Check, Eye, EyeOff } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 import EconomicEventBadge from '../../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../../components/SheetHeaderBar'
-import { formatKrwCompact } from '../../../lib/format'
+import { useAmountMask, useAmountMaskStore } from '../../../stores/amountMaskStore'
 import type { AccountFolder } from '../types'
 import { accountLabel } from '../lib/accountKey'
 import {
@@ -100,6 +100,8 @@ export default function PortfolioHeader({
   totalTradeCost,
 }: PortfolioHeaderProps) {
   const toast = useToast()
+  const m = useAmountMask()
+  const toggleAmountMask = useAmountMaskStore((s) => s.toggle)
   const [pickerOpen, setPickerOpen] = React.useState(false)
   const [renameKey, setRenameKey] = React.useState<string | null>(null)
   const [renameDraft, setRenameDraft] = React.useState('')
@@ -172,6 +174,10 @@ export default function PortfolioHeader({
                   {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
                 </span>
                 <Button variant="secondary" onClick={onOpenShare} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
+                <Button variant="secondary" aria-pressed={m.hidden} onClick={toggleAmountMask} title="금액·손익을 ••• 로 가립니다 (이 기기에 기억)">
+                  {m.hidden ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
+                  {m.hidden ? '금액 보이기' : '금액 가리기'}
+                </Button>
                 <Button
                   variant="secondary"
                   disabled={loading || copyRows.length === 0}
@@ -324,9 +330,9 @@ export default function PortfolioHeader({
         </tr>
         <tr className="xls-row portfolio-summary-row portfolio-summary-row--value">
           <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{summaryCount}</td>
-          <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{formatKrwCompact(totalInvested)}</td>
+          <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{m.compact(totalInvested)}</td>
           <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>
-            <span className={adjustedUnrealized < 0 ? 'negative' : 'positive'}>{formatKrwCompact(adjustedUnrealized, { showPositiveSign: true })}</span>
+            <span className={m.tone(adjustedUnrealized < 0 ? 'negative' : 'positive')}>{m.compact(adjustedUnrealized, { showPositiveSign: true })}</span>
           </td>
         </tr>
         <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--note">
@@ -337,7 +343,7 @@ export default function PortfolioHeader({
           <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>보유 수량×평균 매수가</td>
           <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
             {includeCost
-              ? `비용 ${formatKrwCompact(Math.round(totalTradeCost))} 차감`
+              ? `비용 ${m.compact(Math.round(totalTradeCost))} 차감`
               : '보유 포지션 기준'}
           </td>
         </tr>

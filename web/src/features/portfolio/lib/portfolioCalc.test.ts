@@ -125,6 +125,17 @@ describe('buildAllocationRows / buildDonutGradient', () => {
     ], 0)
     expect(out.map((r) => [r.code, r.value])).toEqual([['A', 300], ['B', 200]])
   })
+  it('보유 주수를 종목별로 싣고, 여러 계좌에 나뉜 종목은 합친다. 현금·그 외 줄에는 주수가 없다', () => {
+    const out = buildAllocationRows([
+      row({ code: 'A', stock_name: 'A', quantity: 1, avg_price: 100, ...KIWOOM }),
+      row({ code: 'A', stock_name: 'A', quantity: 2, avg_price: 100, ...TOSS }),
+    ], 50)
+    expect(out.map((r) => [r.code, r.quantity])).toEqual([['A', 3], ['CASH', undefined]])
+    const many = Array.from({ length: 20 }, (_, i) => row({ code: `C${i}`, stock_name: `C${i}`, quantity: i + 1, avg_price: 1000 - i }))
+    const other = buildAllocationRows(many, 0).find((r) => r.code === 'OTHER')
+    expect(other?.quantity).toBeUndefined()
+    expect(other?.rest?.[0].quantity).toBe(8)
+  })
   it('상위 12종목 밖은 그 외 한 줄로, 한 종목만 남으면 묶지 않는다', () => {
     const many = (n: number) => Array.from({ length: n }, (_, i) => row({ code: `C${i}`, stock_name: `C${i}`, quantity: 1, avg_price: 1000 - i }))
     const out = buildAllocationRows(many(20), 0)
