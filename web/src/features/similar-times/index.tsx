@@ -18,8 +18,12 @@ function Gauge({ score }: { score: number }) {
   )
 }
 
-/** 비슷했던 때 이후 6개월 가격 경로를 지금 시점(0)에서 겹쳐 그린다 — 평소 범위(회색 띠)와 함께 */
+/** 사례별 선 색(구분용 — 색 자체에 좋고 나쁨의 뜻은 없다). 가까운 순서대로 배정 */
+const CASE_COLORS = ['#e15759', '#4e79a7', '#f28e2b', '#59a14f', '#b07aa1', '#17becf', '#edc948', '#ff9da7', '#9c755f', '#76b7b2']
+
+/** 비슷했던 때 이후 6개월 가격 경로를 지금 시점(0)에서 겹쳐 그린다 — 평소 범위(회색 띠)와 사례별 범례 */
 function PathChart({ result }: { result: SimilarResult }) {
+  const [hover, setHover] = useState<string | null>(null)
   const W = 420
   const H = 220
   const padL = 36
@@ -47,6 +51,7 @@ function PathChart({ result }: { result: SimilarResult }) {
   ].join(' ')
   const ticks = Array.from(new Set([lo, hi, 0, ...Array.from({ length: Math.floor((hi - lo) / gridStep) + 1 }, (_, i) => lo + i * gridStep).filter((v) => v >= lo && v <= hi)]))
   return (
+    <div>
     <svg viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', width: '100%', maxWidth: 640, height: 'auto' }} role="img"
       aria-label={`비슷했던 때 ${result.independent}번의 이후 6개월 가격 경로와 중앙값, 평소 범위`}>
       {ticks.map((t) => (
@@ -57,15 +62,32 @@ function PathChart({ result }: { result: SimilarResult }) {
       ))}
       <path d={band} style={{ fill: 'var(--color-text-tertiary)', fillOpacity: 0.15 }} />
       <path d={line(SIMILAR.baseline.path.median)} style={{ fill: 'none', stroke: 'var(--color-text-tertiary)', strokeWidth: 1.2, strokeDasharray: '4 3' }} />
-      {drawn.map((c) => (
-        <path key={c.date} d={line(c.path)} style={{ fill: 'none', stroke: 'var(--color-brand)', strokeOpacity: 0.3, strokeWidth: 1 }} />
+      {drawn.map((c, i) => (
+        <path key={c.date} d={line(c.path)} onMouseEnter={() => setHover(c.date)} onMouseLeave={() => setHover(null)}
+          style={{ fill: 'none', stroke: CASE_COLORS[i % CASE_COLORS.length], strokeOpacity: hover == null ? 0.85 : hover === c.date ? 1 : 0.15, strokeWidth: hover === c.date ? 2.6 : 1.4 }}>
+          <title>{`${ymLabel(c.date)} → 6개월 뒤 ${signedPct(c.path[c.path.length - 1])}`}</title>
+        </path>
       ))}
-      <path d={line(result.medianPath)} style={{ fill: 'none', stroke: 'var(--color-brand)', strokeWidth: 2.4 }} />
+      <path d={line(result.medianPath)} style={{ fill: 'none', stroke: 'var(--color-text-primary)', strokeWidth: 2.8, strokeOpacity: hover == null ? 1 : 0.35 }} />
       {HORIZONS.map((h) => (
         <text key={h.days} x={x((h.idx + 1))} y={H - 8} textAnchor={h.idx === 23 ? 'end' : 'middle'} style={{ fill: 'var(--color-text-tertiary)', fontSize: 9 }}>{h.label.replace(' 뒤', '')}</text>
       ))}
       <text x={x(0)} y={H - 8} textAnchor="start" style={{ fill: 'var(--color-text-tertiary)', fontSize: 9 }}>지금</text>
     </svg>
+    <ul aria-label="사례별 선 색" style={{ listStyle: 'none', margin: '8px 0 0', padding: 0, display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
+      <li style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 16, height: 3, borderRadius: 2, background: 'var(--color-text-primary)' }} /> 중앙값(굵은 선)
+      </li>
+      {drawn.map((c, i) => (
+        <li key={c.date} onMouseEnter={() => setHover(c.date)} onMouseLeave={() => setHover(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'default', opacity: hover == null || hover === c.date ? 1 : 0.4 }}>
+          <span style={{ width: 16, height: 3, borderRadius: 2, background: CASE_COLORS[i % CASE_COLORS.length] }} />
+          {ymLabel(c.date)} <span className="caption muted">→ {signedPct(c.path[c.path.length - 1], 0)}</span>
+        </li>
+      ))}
+    </ul>
+    <div className="caption muted" style={{ marginTop: 2 }}>색은 사례를 구분하는 용도예요. 사례 옆 숫자는 6개월 뒤 수익률이고, 가까운 순서로 나열했어요.</div>
+    </div>
   )
 }
 
@@ -122,7 +144,7 @@ export default function SimilarTimesPage() {
           <div style={CARD}>
             <div style={{ fontWeight: 700, marginBottom: 2 }}>비슷했던 때 이후 6개월 가격 경로</div>
             <div className="caption muted" style={{ marginBottom: 6 }}>
-              굵은 선 = 비슷했던 {result.count}번의 중앙값, 얇은 선 = 겹치지 않는 사례 {Math.min(10, result.independent)}건, 회색 띠 = 평소(전체 기간) 범위
+              굵은 검은 선 = 비슷했던 {result.count}번의 중앙값, 색깔 선 = 겹치지 않는 사례 {Math.min(10, result.independent)}건(아래 범례), 회색 띠 = 평소(전체 기간) 범위
             </div>
             <PathChart result={result} />
             <div style={{ fontSize: 13, marginTop: 6 }}>

@@ -19,6 +19,10 @@ describe('지금과 비슷했던 때 화면', () => {
     expect(screen.getByText('한계와 읽는 법')).toBeTruthy()
     expect(screen.getByText(new RegExp(`생성일 ${SIMILAR.generated}`))).toBeTruthy()
     expect(screen.getByLabelText(/가격 경로/)).toBeTruthy()
+    const legend = screen.getByLabelText('사례별 선 색')
+    expect(legend.querySelectorAll('li').length).toBeGreaterThanOrEqual(6)   // 중앙값 + 사례 선 범례
+    expect(legend.textContent).toMatch(/\d{4}\.\d{1,2}/)
+    expect(legend.textContent).toContain('중앙값')
     const text = document.body.textContent || ''
     expect(text).not.toMatch(/과열|팔라|파세요|사세요|매수하세요|매도하세요/)
     expect(text).toContain('맞히는 것이 아니라')
