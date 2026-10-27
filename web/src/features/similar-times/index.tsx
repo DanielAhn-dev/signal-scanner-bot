@@ -19,6 +19,16 @@ function Pct({ v, strong, muted }: { v: number; strong?: boolean; muted?: boolea
   )
 }
 
+/** 값(위)과 시기(아래)를 두 줄로 고정 — 칸마다 줄이 바뀌어 어긋나지 않게 */
+function ValueWithDate({ v, date }: { v: number; date: string }) {
+  return (
+    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.3 }}>
+      <Pct v={v} strong />
+      <span className="caption muted" style={{ fontSize: 11 }}>{date}</span>
+    </span>
+  )
+}
+
 /** 카드 폭을 가득 채우는 4열 격자(첫 열 이름 + 1·3·6개월) */
 function Grid4({ head, rows }: { head: React.ReactNode[]; rows: Array<{ label: string; cells: React.ReactNode[]; muted?: boolean }> }) {
   const cell: React.CSSProperties = { textAlign: 'center', padding: '7px 4px' }
@@ -215,8 +225,8 @@ export default function SimilarTimesPage() {
               <Grid4
                 head={result.extremes.map((e) => e.label)}
                 rows={[
-                  { label: '가장 나빴던 때', cells: result.extremes.map((e) => <span key={e.days}><Pct v={e.worst.value} strong /> <span className="caption muted">{ymLabel(e.worst.date)}</span></span>) },
-                  { label: '가장 좋았던 때', cells: result.extremes.map((e) => <span key={e.days}><Pct v={e.best.value} strong /> <span className="caption muted">{ymLabel(e.best.date)}</span></span>) },
+                  { label: '가장 나빴던 때', cells: result.extremes.map((e) => <ValueWithDate key={e.days} v={e.worst.value} date={ymLabel(e.worst.date)} />) },
+                  { label: '가장 좋았던 때', cells: result.extremes.map((e) => <ValueWithDate key={e.days} v={e.best.value} date={ymLabel(e.best.date)} />) },
                 ]}
               />
               <div className="caption muted" style={{ marginTop: 6 }}>과거 기록을 풀어 쓴 것이에요. 앞으로 같은 결과가 나온다는 뜻이 아니고 매매 신호도 아니에요.</div>
