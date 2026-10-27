@@ -17,6 +17,8 @@ import {
   streak,
   type MonthCell,
 } from '../../../../src/lib/savingProgress'
+import type { IncomeCheckRow } from '../income-guide/IncomeProductCheck'
+import IncomeTargetCard, { DEFAULT_INCOME_GOAL } from './IncomeTargetCard'
 import './saving-progress.css'
 
 /**
@@ -46,6 +48,8 @@ export type SavingProgressData = {
   dropMonths?: { months: string[]; since: string } | null
   /** 고정비 사다리 재료 — fixed가 null이면 가계부 조회 실패(사다리 숨김) */
   ladder?: { fixed: Array<{ label: string; amount: number }> | null; withdrawalPct: number; addedThisMonth: number }
+  /** 인컴 목표 재료 — 계좌별 연 분배금(세전)과 일반 계좌 인컴 상품 점검 */
+  income?: { distribution: { general: number; isa: number; pension: number }; check: IncomeCheckRow[] }
 }
 
 const man = formatKrwMan
@@ -69,7 +73,7 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
   const clientId = useCurrentClientId()
   const [data, setData] = useState<SavingProgressData | null>(null)
   const [loadError, setLoadError] = useState(false)
-  const { value: accRaw } = useUserState<AccumulateState>('accumulate')
+  const { value: accRaw, set: setAcc } = useUserState<AccumulateState>('accumulate')
   const acc: AccumulateState = { ...EMPTY_STATE, ...(accRaw ?? {}) }
   const ym = currentYmKst()
 
@@ -175,6 +179,17 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
             </span>
           )}
         </div>
+      )}
+
+      {/* 1-2. 분배금으로 덮을 고정비 — 모아가기에서만. 일반 계좌 금융소득 세금 선과 점검 통과 후보를 사다리에 이어 붙인다 */}
+      {variant === 'full' && !noHoldings && data.ladder?.fixed && data.ladder.fixed.length > 0 && data.income && (
+        <IncomeTargetCard
+          fixed={data.ladder.fixed}
+          generalGross={data.income.distribution.general}
+          check={data.income.check}
+          goal={{ ...DEFAULT_INCOME_GOAL, ...(acc.incomeGoal ?? {}) }}
+          onGoal={(next) => setAcc({ ...acc, incomeGoal: next })}
+        />
       )}
 
       {/* 2. 이번 달 — 기록은 홈 '이번 달 할 일' 한 곳에서만 (예전 체크인 버튼과 두 번 기록하지 않게) */}

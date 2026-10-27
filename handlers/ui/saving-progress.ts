@@ -9,7 +9,9 @@ import { selectPaged } from '../../src/services/supabasePaging'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { loadGoalFile, requiredSeed, DEFAULT_WITHDRAWAL_PCT } from '../../src/services/goalTracker'
 import { readInvestPlan } from '../../src/services/userPlan'
-import { classifyHolding, resolveYieldPct } from '../../src/lib/incomeGuide'
+import { BUCKET_GROUP, classifyHolding, resolveYieldPct } from '../../src/lib/incomeGuide'
+import { annualDistribution } from '../../src/lib/incomeTarget'
+import { loadIncomeCheck } from '../../src/services/incomeCheckService'
 import { accountKind, distributionTaxSaved, dropMonths, isTotalReturnEtf } from '../../src/lib/savingProgress'
 import { cashEffect, categoryById } from '../../src/lib/moneyFlow'
 import { fetchKospiCloses } from '../../src/services/marketFlowCaution'
@@ -129,6 +131,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const distTax = distributionTaxSaved(taxHoldings, underlyingYield)
     const kinds = new Set(taxHoldings.map((h) => h.accountKind))
 
+    // 인컴 목표 — 계좌별 연 분배금(세전)과, 고정비 사다리가 있을 때만 일반 계좌 인컴 상품 점검(네트워크를 쓰므로 필요할 때만)
+    const distribution = annualDistribution(taxHoldings)
+    const incomeCheck = fixedCosts && fixedCosts.length > 0
+      ? await loadIncomeCheck({
+          supabase,
+          holdings: holdings
+            .filter((h) => h.quantity > 0 && h.price > 0 && h.code !== 'CASH')
+            .map((h) => {
+              const bucket = classifyHolding(h.code, h.name, h.productType)
+              return { code: h.code, name: h.name, price: h.price, value: h.quantity * h.price, group: BUCKET_GROUP[bucket], bucket, accountLabel: h.accountLabel }
+            }),
+          yieldPctByCode: yieldPctByCode as Record<string, number>,
+          today: kstDateKey(),
+        }).catch(() => [])
+      : []
+
     // 목표(목표 트래커에서 정한 월 인출 목표가 있을 때만)
     const goalFile = chatId ? await loadGoalFile(supabase, Number(chatId)).catch(() => null) : null
     const goalSeed = goalFile?.settings?.targetMonthlyProfit
@@ -169,6 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         plan,
         market: drop ? { asOf: drop.asOf, fromHighPct: drop.fromHighPct } : null,
         dropMonths: drops.since ? drops : null,
+        income: { distribution, check: incomeCheck },
         ladder: {
           fixed: fixedCosts,
           withdrawalPct: goalFile?.settings?.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT,

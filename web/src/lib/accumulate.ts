@@ -479,6 +479,8 @@ export type AccumulateState = {
   tasks?: Record<string, MonthTaskRecord>
   /** 4번에서 정한 '넣는 돈 해마다 늘리기' — 해마다 1월 홈 카드가 알린다. appliedYear는 그해 답한 연도 */
   raise?: { pct: number; since: string; appliedYear?: number }
+  /** 모아가기 '인컴으로 덮을 고정비' — 덮을 마지막 칸 이름·건강보험 가입 유형·새로 담을 인컴의 가정 분배율. 예전 기록에는 없다 */
+  incomeGoal?: { targetLabel: string | null; taxProfile: 'worker' | 'regional'; yieldPct: number }
 }
 
 export const EMPTY_STATE: AccumulateState = { goal: 'growth', target: null, received: [], deposits: [], valuation: null, lump: 0 }
