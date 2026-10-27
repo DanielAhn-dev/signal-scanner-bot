@@ -68,7 +68,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'home',
     label: '오늘',
     groups: [
-      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'briefing', label: '오늘 시장', keywords: ['테마', '브리핑', '뜨는 테마', '보유 테마'] }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }] },
+      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'briefing', label: '오늘 시장', keywords: ['테마', '브리핑', '뜨는 테마', '보유 테마'] }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }, { key: 'commentary', label: '해설 점검', userOnly: true, keywords: ['유튜브', '전문가', '통념', '달러', '금리', '금값', '유가'] }] },
     ],
   },
   {
@@ -113,7 +113,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'learn',
     label: '시장 공부',
     groups: [
-      { category: '시장 공부', items: [{ key: 'sectors', label: '섹터' }, { key: 'news', label: '뉴스' }, { key: 'economy', label: '경제지표' }, { key: 'feed', label: '피드' }] },
+      { category: '시장 공부', items: [{ key: 'sectors', label: '섹터' }, { key: 'news', label: '뉴스' }, { key: 'economy', label: '경제지표' }, { key: 'commentary', label: '해설 점검', keywords: ['유튜브', '전문가', '통념', '달러', '금리', '금값', '유가'] }, { key: 'feed', label: '피드' }] },
     ],
   },
   {
@@ -184,6 +184,7 @@ export const USER_NAV_KEYS: readonly string[] = [
   'trades',
   'market',
   'news',
+  'commentary',
   'settings',
   'profile',
 ]

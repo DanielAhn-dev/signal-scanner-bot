@@ -67,6 +67,7 @@ const MarketPage           = lazyWithRecovery(() => import('./features/market'))
 const BriefingPage         = lazyWithRecovery(() => import('./features/briefing'))
 const EconomyPage          = lazyWithRecovery(() => import('./features/economy'))
 const FeedPage             = lazyWithRecovery(() => import('./features/feed'))
+const CommentaryCheckPage  = lazyWithRecovery(() => import('./features/commentary-check'))
 const NewsPage             = lazyWithRecovery(() => import('./features/news'))
 const ProfilePage          = lazyWithRecovery(() => import('./features/profile'))
 const SectorsPage          = lazyWithRecovery(() => import('./features/sectors'))
@@ -406,6 +407,7 @@ function AppContent() {
             <Route path="/briefing"               element={<BriefingPage />} />
             <Route path="/economy"                element={<EconomyPage />} />
             <Route path="/feed"                   element={<FeedPage />} />
+            <Route path="/commentary"             element={<CommentaryCheckPage />} />
             <Route path="/news"                   element={<NewsPage />} />
             <Route path="/profile"                element={<ProfilePage />} />
             <Route path="/sectors"                element={<SectorsPage onNavigate={handleNavigate} />} />
