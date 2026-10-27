@@ -59,12 +59,12 @@ export function evaluateFundamentalGate(rows: QuarterRow[], todayIso: string): F
   return { status: "pass" };
 }
 
-/** 종목별 실적 관문 판정. 조회 실패 시 빈 맵(제외 없음) */
-export async function fetchFundamentalGateResults(
+/** 종목별 분기 실적 행 조회 (최근 800일). 조회 실패 시 throw */
+async function fetchQuarterRows(
   supabase: SupabaseClientAny,
   codes: string[],
-  todayIso: string = new Date().toISOString()
-): Promise<Map<string, FundamentalGateResult>> {
+  todayIso: string
+): Promise<{ unique: string[]; byCode: Map<string, QuarterRow[]> }> {
   const unique = [...new Set(codes.map((c) => String(c).trim()).filter(Boolean))];
   const sinceIso = new Date(Date.parse(todayIso) - 800 * 86_400_000).toISOString().slice(0, 10);
   const byCode = new Map<string, QuarterRow[]>();
@@ -90,7 +90,67 @@ export async function fetchFundamentalGateResults(
       byCode.set(row.code, list);
     }
   }
+  return { unique, byCode };
+}
+
+/** 종목별 실적 관문 판정. 조회 실패 시 빈 맵(제외 없음) */
+export async function fetchFundamentalGateResults(
+  supabase: SupabaseClientAny,
+  codes: string[],
+  todayIso: string = new Date().toISOString()
+): Promise<Map<string, FundamentalGateResult>> {
+  const { unique, byCode } = await fetchQuarterRows(supabase, codes, todayIso);
   const out = new Map<string, FundamentalGateResult>();
   for (const code of unique) out.set(code, evaluateFundamentalGate(byCode.get(code) ?? [], todayIso));
+  return out;
+}
+
+export type OperatingLossStreakResult =
+  | { status: "warn"; quarters: 4; latestPeriodEnd: string }
+  | { status: "ok" }
+  | { status: "unknown"; reason: string };
+
+/**
+ * 최근 연속 4개 분기 영업이익이 모두 음수인지 (H74, 2026-10-27).
+ * 근거: 거래대금 상위 300, 2017-04~2026-06 월별 111개월, 이후 60거래일 −20% 이하 손실 비율 37.8% vs 20.5%
+ * (월별 차이 +17.3%p, 변동성 통제 후 +11.4%p). 한 시장·한 국면 검증이며 매수 금지 근거가 아니라 주의 표시다.
+ * 위의 fundamental gate(EPS 합계·영업이익 전년 비교)와 정의가 달라 따로 둔다 — 이 쪽이 H74와 같은 정의.
+ * 데이터가 모자라거나 오래되면 판정하지 않는다.
+ */
+export function evaluateOperatingLossStreak(rows: QuarterRow[], todayIso: string): OperatingLossStreakResult {
+  const actual = rows
+    .filter((r) => !r.isConsensus && r.periodEnd)
+    .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
+  if (actual.length < 4) return { status: "unknown", reason: "분기 실적 4개 미만" };
+
+  const last4 = actual.slice(-4);
+  const latest = last4[3];
+  const ageDays = (Date.parse(todayIso.slice(0, 10)) - Date.parse(latest.periodEnd.slice(0, 10))) / 86_400_000;
+  if (!Number.isFinite(ageDays) || ageDays > FUNDAMENTAL_GATE_MAX_STALE_DAYS) {
+    return { status: "unknown", reason: "최근 분기 실적이 오래됨" };
+  }
+  // 분기가 건너뛰어졌으면(결측) 연속 4분기라고 말할 수 없다
+  for (let i = 1; i < 4; i++) {
+    const gap = (Date.parse(last4[i].periodEnd.slice(0, 10)) - Date.parse(last4[i - 1].periodEnd.slice(0, 10))) / 86_400_000;
+    if (!(gap >= 80 && gap <= 100)) return { status: "unknown", reason: "분기 실적이 연속이 아님" };
+  }
+  if (last4.some((r) => r.operatingIncome == null || !Number.isFinite(r.operatingIncome))) {
+    return { status: "unknown", reason: "영업이익 값 없음" };
+  }
+  if (last4.every((r) => (r.operatingIncome as number) < 0)) {
+    return { status: "warn", quarters: 4, latestPeriodEnd: latest.periodEnd.slice(0, 10) };
+  }
+  return { status: "ok" };
+}
+
+/** 종목별 연속 영업적자 판정. 조회 실패는 throw — 호출 쪽이 '표시 없음'으로 처리한다 */
+export async function fetchOperatingLossStreaks(
+  supabase: SupabaseClientAny,
+  codes: string[],
+  todayIso: string = new Date().toISOString()
+): Promise<Map<string, OperatingLossStreakResult>> {
+  const { unique, byCode } = await fetchQuarterRows(supabase, codes, todayIso);
+  const out = new Map<string, OperatingLossStreakResult>();
+  for (const code of unique) out.set(code, evaluateOperatingLossStreak(byCode.get(code) ?? [], todayIso));
   return out;
 }

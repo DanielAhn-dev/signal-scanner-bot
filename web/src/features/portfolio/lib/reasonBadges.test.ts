@@ -37,4 +37,11 @@ describe('buildReasonBadges', () => {
     const b = buildReasonBadges({ entry_price_guide: { verdict: 'ok', gapPct: -1.2, message: '' } }, 'hold', null, 70)
     expect(b[0]).toMatchObject({ label: '지금 매수 무방', type: 'ok' })
   })
+  it('연속 영업적자면 경고 배지(근거 포함), 관망은 붙지 않는다', () => {
+    const b = buildReasonBadges({ operating_loss_streak: { quarters: 4, latestPeriodEnd: '2026-06-30' } }, 'hold', 90, 70)
+    expect(labels(b)).toEqual(['4분기 연속 영업적자'])
+    expect(b[0]).toMatchObject({ type: 'warn' })
+    expect(b[0].title).toContain('2026-06-30')
+    expect(b[0].title).toContain('37.8%')
+  })
 })

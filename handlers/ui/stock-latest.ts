@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { fetchFundamentalGateResults } from '../../src/services/fundamentalQualityGate'
+import { fetchFundamentalGateResults, fetchOperatingLossStreaks } from '../../src/services/fundamentalQualityGate'
 import { buildInvestmentPlan } from '../../src/lib/investPlan'
 import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
 import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
@@ -1249,7 +1249,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot, latestCreditShortDaily, fundamentalGate] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot, latestCreditShortDaily, fundamentalGate, operatingLossStreak] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -1265,6 +1265,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // 봇 매수 제외 기준과 같은 판정 (fundamentalQualityGate)
       fetchFundamentalGateResults(supabase, [code])
         .then((m) => m.get(code) ?? null)
+        .catch(() => null),
+      // 최근 연속 4분기 영업적자 (H74) — 판정 불가·조회 실패는 표시 없음
+      fetchOperatingLossStreaks(supabase, [code])
+        .then((m) => {
+          const r = m.get(code)
+          return r && r.status === 'warn' ? { quarters: r.quarters, latestPeriodEnd: r.latestPeriodEnd } : null
+        })
         .catch(() => null),
     ])
 
@@ -1636,6 +1643,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             roe: asNum(fund?.roe),
             debt_ratio: asNum(fund?.debt_ratio),
             fundamental_gate: fundamentalGate,
+            operating_loss_streak: operatingLossStreak,
             sma20: resolvedSma20,
             sma50: resolvedSma50,
             sma200: resolvedSma200,

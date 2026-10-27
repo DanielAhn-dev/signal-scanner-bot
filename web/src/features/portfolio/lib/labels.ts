@@ -30,6 +30,10 @@ export const WARN_REASON_LABELS: Array<{ key: 'warn_overheat' | 'warn_vol_spike'
 export const WEIGHT_CAUTION_SOURCE_NOTE =
   '근거: 2015~2025 하루 거래대금 30억원 이상 종목(상장폐지 포함), 월 1회 표본. 고점 시점은 맞히지 못하며 신호 뒤에도 상위 10%는 3개월에 +40% 넘게 더 올랐다. 전부 매도가 아니라 추가매수 중단·비중 축소 검토용. 검증 2026-10-05.'
 
+// 숫자는 scripts/research/validate_operating_loss_avoid.py 출력 (H74, 2026-10-27)
+export const OPERATING_LOSS_SOURCE_NOTE =
+  '근거: 거래대금 상위 300 종목, 2017~2026 월별 111개월 비교. 최근 4분기 연속 영업적자 종목은 이후 60거래일 안에 −20% 이하로 빠진 비율이 37.8%로, 그렇지 않은 종목 20.5%보다 높았다(변동성을 맞춰도 +11%p). 한 시장·한 국면 검증이며 매도 신호가 아니라 비중·추가매수 점검용 주의 표시. 검증 2026-10-27.'
+
 export const BADGE_TOOLTIPS: Record<string, string> = {
   '점수부족': '추가매수 기준 점수 미달. 점수가 오르거나 기준 완화 시 추가진입 신호가 생성됩니다.',
   '경고있음': '기술적 경고 지표 발생 (이격과열·거래량급증·RSI 극단 등). 판정근거 보기에서 상세 확인.',

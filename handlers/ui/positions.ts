@@ -17,6 +17,7 @@ import { resolveHoldingPrice } from '../../src/lib/holdingPrice'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
 import { ETF_BENCHMARK_CODE, fetchEtfKeyIndicators, type EtfKeyIndicator } from '../../src/services/etfKeyIndicator'
 import { selectPaged } from '../../src/services/supabasePaging'
+import { fetchOperatingLossStreaks, type OperatingLossStreakResult } from '../../src/services/fundamentalQualityGate'
 import { computePeakSinceBuy, type PeakSinceBuy } from '../../src/lib/peakGiveback'
 import { trimmedSinceLastBuy, type TrimTradeRow } from '../../src/lib/trimSinceBuy'
 
@@ -213,6 +214,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? Promise.race([
           fetchEtfKeyIndicators([...etfCodes, ETF_BENCHMARK_CODE]).catch(() => new Map<string, EtfKeyIndicator>()),
           new Promise<Map<string, EtfKeyIndicator>>((resolve) =>
+            setTimeout(() => resolve(new Map()), POSITIONS_CAUTION_TIMEOUT_MS)),
+        ])
+      : Promise.resolve(new Map())
+
+    // 최근 연속 4분기 영업적자 (H74) — ETF는 분기 영업이익이 없어 제외. 늦으면 표시 없이 응답
+    const stockCodes = Array.from(new Set((data ?? [])
+      .filter((r: any) => r.code && !isExchangeTradedProduct(String(r.code), r.stock?.name, r.stock?.product_type))
+      .map((r: any) => String(r.code).trim())))
+    const lossStreakPromise: Promise<Map<string, OperatingLossStreakResult>> = stockCodes.length > 0
+      ? Promise.race([
+          fetchOperatingLossStreaks(supabase, stockCodes).catch(() => new Map<string, OperatingLossStreakResult>()),
+          new Promise<Map<string, OperatingLossStreakResult>>((resolve) =>
             setTimeout(() => resolve(new Map()), POSITIONS_CAUTION_TIMEOUT_MS)),
         ])
       : Promise.resolve(new Map())
@@ -444,6 +457,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const weightCautionByCode = await weightCautionPromise
     const entryGuardByCode = await entryGuardPromise
+    const lossStreakByCode = await lossStreakPromise
     const etfKeyByCode = await etfKeyPromise
     const peakSeriesByCode = await peakSeriesPromise
     const trimTradesByKey = await trimTradesPromise
@@ -550,6 +564,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         etf_key: (() => {
           const k = etfKeyByCode.get(code)
           return k ? { ...k, benchmarkReturn1y } : null
+        })(),
+        operating_loss_streak: (() => {
+          const l = lossStreakByCode.get(code)
+          return l && l.status === 'warn' ? { quarters: l.quarters, latestPeriodEnd: l.latestPeriodEnd } : null
         })(),
         entry_guard: (() => {
           const g = entryGuardByCode.get(code)

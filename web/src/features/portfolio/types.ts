@@ -84,6 +84,7 @@ export type HoldingRow = {
   recommended_buy_qty?: number | null
   etf_key?: EtfKey | null
   weight_caution?: { level: 'caution' | 'strong'; message: string | null } | null
+  operating_loss_streak?: { quarters: number; latestPeriodEnd: string } | null
   entry_guard?: { label?: string; message?: string } | null
   entry_price_guide?: { verdict: 'ok' | 'caution' | 'stale'; gapPct: number; message: string } | null
   /** 실계좌 개별주: 매수일(기록일) 뒤 최고 종가 — src/lib/peakGiveback.ts */

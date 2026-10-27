@@ -1,5 +1,5 @@
 import { formatNumber } from '../../../lib/format'
-import { WEIGHT_CAUTION_SOURCE_NOTE } from './labels'
+import { OPERATING_LOSS_SOURCE_NOTE, WEIGHT_CAUTION_SOURCE_NOTE } from './labels'
 import type { HoldingStateKind } from './holdingState'
 import type { HoldingRow } from '../types'
 
@@ -38,6 +38,15 @@ export function buildReasonBadges(
       label: weightCaution.level === 'strong' ? '비중 점검(강)' : '비중 점검',
       type: 'warn',
       title: `${weightCaution.message ?? ''}\n${WEIGHT_CAUTION_SOURCE_NOTE}`,
+    })
+  }
+  const lossStreak = r?.operating_loss_streak
+  if (lossStreak) {
+    reasonBadges.push({
+      label: `${lossStreak.quarters}분기 연속 영업적자`,
+      type: 'warn',
+      title: `최근 실적 분기: ${lossStreak.latestPeriodEnd}
+${OPERATING_LOSS_SOURCE_NOTE}`,
     })
   }
   if (holdingState === 'partial') {
