@@ -42,6 +42,6 @@ describe('buildReasonBadges', () => {
     expect(labels(b)).toEqual(['4분기 연속 영업적자'])
     expect(b[0]).toMatchObject({ type: 'warn' })
     expect(b[0].title).toContain('2026-06-30')
-    expect(b[0].title).toContain('37.8%')
+    expect(b[0].title).toContain('약 14%p')
   })
 })

@@ -71,7 +71,7 @@ export default function MarketRatiosSection({
                 result?.fundamental_gate?.status === 'pass'
                   ? '최근 4분기 흑자 · 최근 분기 영업이익이 1년 전보다 증가'
                   : result?.operating_loss_streak
-                    ? `최근 ${result.operating_loss_streak.quarters}분기 연속 영업적자 — 검증(상위 300, 2017~)에서 60거래일 −20% 이하 손실이 37.8%로 평소 20.5%보다 잦았음. 매도 신호가 아닌 주의 표시`
+                    ? `최근 ${result.operating_loss_streak.quarters}분기 연속 영업적자 — 검증(상위 300, 2017~)에서 60거래일 −20% 이하 손실이 평소보다 약 14%p 잦았음(중소형에서도 같은 방향). 매도 신호가 아닌 주의 표시`
                     : result?.fundamental_gate?.reason ?? '적자·영업이익 감소 종목은 8년 검증에서 평균보다 부진',
             },
           ] as { label: string; val: string; tag?: string | null; hint?: string }[]).map(({ label, val, tag, hint }) => (
