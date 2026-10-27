@@ -68,7 +68,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'home',
     label: '오늘',
     groups: [
-      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'briefing', label: '오늘 시장', keywords: ['테마', '브리핑', '뜨는 테마', '보유 테마'] }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }, { key: 'similar-times', label: '지금과 비슷했던 때', userOnly: true, keywords: ['비슷했던', '과거', '겹쳐', '심리', '공포', '탐욕', '사이클'] }, { key: 'commentary', label: '해설 점검', userOnly: true, keywords: ['유튜브', '전문가', '통념', '달러', '금리', '금값', '유가'] }] },
+      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'briefing', label: '오늘 시장', keywords: ['테마', '브리핑', '뜨는 테마', '보유 테마'] }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }, { key: 'news', label: '뉴스', userOnly: true }, { key: 'similar-times', label: '비슷한 때', userOnly: true, keywords: ['비슷했던', '과거', '겹쳐', '심리', '공포', '탐욕', '사이클'] }, { key: 'commentary', label: '해설 점검', userOnly: true, keywords: ['유튜브', '전문가', '통념', '달러', '금리', '금값', '유가'] }] },
     ],
   },
   {
@@ -113,7 +113,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     key: 'learn',
     label: '시장 공부',
     groups: [
-      { category: '시장 공부', items: [{ key: 'sectors', label: '섹터' }, { key: 'news', label: '뉴스' }, { key: 'economy', label: '경제지표' }, { key: 'similar-times', label: '지금과 비슷했던 때', keywords: ['비슷했던', '과거', '겹쳐', '심리', '공포', '탐욕', '사이클'] }, { key: 'commentary', label: '해설 점검', keywords: ['유튜브', '전문가', '통념', '달러', '금리', '금값', '유가'] }, { key: 'feed', label: '피드' }] },
+      { category: '시장 공부', items: [{ key: 'sectors', label: '섹터' }, { key: 'news', label: '뉴스' }, { key: 'economy', label: '경제지표' }, { key: 'similar-times', label: '비슷한 때', keywords: ['비슷했던', '과거', '겹쳐', '심리', '공포', '탐욕', '사이클'] }, { key: 'commentary', label: '해설 점검', keywords: ['유튜브', '전문가', '통념', '달러', '금리', '금값', '유가'] }, { key: 'feed', label: '피드' }] },
     ],
   },
   {
