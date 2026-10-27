@@ -31,17 +31,20 @@ function ValueWithDate({ v, date }: { v: number; date: string }) {
 
 /** 카드 폭을 가득 채우는 4열 격자(첫 열 이름 + 1·3·6개월) */
 function Grid4({ head, rows }: { head: React.ReactNode[]; rows: Array<{ label: string; cells: React.ReactNode[]; muted?: boolean }> }) {
-  const cell: React.CSSProperties = { textAlign: 'center', padding: '7px 4px' }
+  // 칸이 줄 전체 높이를 채우고(구분선이 한 줄로 이어짐) 내용만 가운데에 둔다
+  const line = '1px solid var(--color-border-subtle, var(--color-border-default))'
+  const cell: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '7px 4px', borderBottom: line }
+  const labelCell = (muted?: boolean): React.CSSProperties => ({ display: 'flex', alignItems: 'center', padding: '7px 4px', borderBottom: line, color: muted ? 'var(--color-text-tertiary)' : undefined })
   return (
-    <div role="table" style={{ display: 'grid', gridTemplateColumns: GRID_COLS, alignItems: 'center', width: '100%', fontSize: 13 }}>
+    <div role="table" style={{ display: 'grid', gridTemplateColumns: GRID_COLS, width: '100%', fontSize: 13 }}>
       <div role="row" style={{ display: 'contents' }}>
-        <div style={{ padding: '6px 4px', borderBottom: '1px solid var(--color-border-default)' }} />
-        {head.map((h, i) => <div key={i} role="columnheader" style={{ ...cell, fontWeight: 700, fontSize: 12, borderBottom: '1px solid var(--color-border-default)' }}>{h}</div>)}
+        <div style={labelCell()} />
+        {head.map((h, i) => <div key={i} role="columnheader" style={{ ...cell, fontWeight: 700, fontSize: 12 }}>{h}</div>)}
       </div>
       {rows.map((r) => (
         <div key={r.label} role="row" style={{ display: 'contents' }}>
-          <div style={{ padding: '7px 4px', color: r.muted ? 'var(--color-text-tertiary)' : undefined, borderBottom: '1px solid var(--color-border-subtle, var(--color-border-default))' }}>{r.label}</div>
-          {r.cells.map((c, i) => <div key={i} role="cell" style={{ ...cell, borderBottom: '1px solid var(--color-border-subtle, var(--color-border-default))' }}>{c}</div>)}
+          <div style={labelCell(r.muted)}>{r.label}</div>
+          {r.cells.map((c, i) => <div key={i} role="cell" style={cell}>{c}</div>)}
         </div>
       ))}
     </div>
