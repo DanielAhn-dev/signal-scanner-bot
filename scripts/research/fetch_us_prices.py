@@ -4,7 +4,7 @@ H80용 미국 일봉 수집 (2026-10-27). 분기 영업이익 자료가 있는 �
 .research-cache/us/px/<ticker>.json에 {t:[epoch], adj:[수정종가], c:[종가], v:[거래량]}로 저장한다. 2014-01-01~.
  - 초당 약 1.5건, 이어받기 가능(이미 있는 파일은 건너뜀). 연락처 등 개인정보는 보내지 않는다.
 
-실행: python -u scripts/research/fetch_us_prices.py [최대건수]
+실행: python -u scripts/research/fetch_us_prices.py [최대건수] [rev]   (rev: 목록 뒤에서부터)
 """
 import json
 import os
@@ -47,6 +47,8 @@ def main():
         if d["rows"]:
             tickers.append(d["ticker"])
     limit = int(sys.argv[1]) if len(sys.argv) > 1 else len(tickers)
+    if len(sys.argv) > 2 and sys.argv[2] == "rev":     # 두 번째 작업이 목록 뒤에서부터 받아 속도를 두 배로
+        tickers = tickers[::-1]
     done = skipped = failed = 0
     t0 = time.time()
     for tk in tickers[:limit]:
