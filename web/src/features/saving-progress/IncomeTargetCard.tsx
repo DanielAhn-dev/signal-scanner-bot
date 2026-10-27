@@ -3,7 +3,7 @@ import More from '../../components/ui/More'
 import { formatKrwMan } from '../../lib/format'
 import type { IncomeCheckRow } from '../income-guide/IncomeProductCheck'
 import type { AccumulateState } from '../../lib/accumulate'
-import { FINANCIAL_INCOME_LIMIT, LIMIT_SAFETY, incomeTargetPlan, splitAmount, type RungGap } from '../../../../src/lib/incomeTarget'
+import { COMPOSITIONS, FINANCIAL_INCOME_LIMIT, LIMIT_SAFETY, compareCompositions, incomeTargetPlan, splitAmount, type RungGap } from '../../../../src/lib/incomeTarget'
 
 /**
  * "인컴으로 덮을 고정비" — 고정비 사다리를 분배금으로 덮으려 할 때, 다음 칸까지 더 필요한 원금과
@@ -11,8 +11,10 @@ import { FINANCIAL_INCOME_LIMIT, LIMIT_SAFETY, incomeTargetPlan, splitAmount, ty
  * 계산은 src/lib/incomeTarget.ts. 매수 지시가 아니라 점검 결과를 목표에 이어 놓은 안내다.
  */
 export type IncomeGoal = NonNullable<AccumulateState['incomeGoal']>
-export const DEFAULT_INCOME_GOAL: IncomeGoal = { targetLabel: null, taxProfile: 'worker', yieldPct: 8 }
-const YIELD_OPTIONS = [6, 7, 8, 10]
+export const DEFAULT_INCOME_GOAL: IncomeGoal = { targetLabel: null, taxProfile: 'worker', yieldPct: COMPOSITIONS.balanced.yieldPct }
+/** 분배율 가정은 구성 3종의 값에서만 고른다(예전에 저장한 값은 가장 가까운 구성으로 보여 준다) */
+const YIELD_CHOICES = Object.values(COMPOSITIONS).map((c) => ({ value: c.yieldPct, label: `${c.label} ${c.yieldPct}%` }))
+const nearestYield = (y: number) => YIELD_CHOICES.reduce((a, b) => (Math.abs(b.value - y) < Math.abs(a.value - y) ? b : a)).value
 
 const man = formatKrwMan
 const muted: CSSProperties = { color: 'var(--color-text-secondary)' }
@@ -33,12 +35,18 @@ function GapLine({ title, gap, yieldPct }: { title: string; gap: RungGap; yieldP
 export default function IncomeTargetCard({
   fixed,
   generalGross,
+  generalCapital = 0,
+  monthlyDeposit = 0,
   check,
   goal,
   onGoal,
 }: {
   fixed: Array<{ label: string; amount: number }>
   generalGross: number
+  /** 일반 계좌 인컴 원금(지금 가진 것) */
+  generalCapital?: number
+  /** 내 계획의 월 적립 */
+  monthlyDeposit?: number
   check: IncomeCheckRow[]
   goal: IncomeGoal
   onGoal: (next: IncomeGoal) => void
@@ -50,6 +58,10 @@ export default function IncomeTargetCard({
   const addAmount = plan.next ? Math.min(plan.next.extraCapital, plan.roomCapital) : 0
   const split = splitAmount(check, addAmount)
   const cappedByLimit = plan.next != null && plan.next.extraCapital > plan.roomCapital
+  // 구성 3종 비교 — 목표 칸이 있으면 목표 칸, 없으면 다음 칸까지의 월 금액
+  const compareTarget = plan.target ?? plan.next
+  const rows = compareTarget ? compareCompositions({ targetMonthlyNet: compareTarget.cumulative, generalIncomeCapital: generalCapital, monthlyDeposit, taxProfile: goal.taxProfile }) : []
+  const years = (m: number | null) => (m == null ? '적립 없음' : m === 0 ? '이미 닿음' : m < 12 ? `${m}개월` : `약 ${(m / 12).toFixed(1)}년`)
   const statusText =
     plan.status === 'over' ? `세금 선(${limitMan})을 이미 넘었습니다. 더 담기 전에 세무 확인이 먼저입니다`
     : plan.status === 'near' ? `선의 80%를 넘었습니다. 더 담기 전에 남은 여유를 확인하세요`
@@ -73,8 +85,8 @@ export default function IncomeTargetCard({
           </select>
         </label>
         <label>분배율 가정{' '}
-          <select style={select} value={goal.yieldPct} onChange={(e) => onGoal({ ...goal, yieldPct: Number(e.target.value) })}>
-            {YIELD_OPTIONS.map((y) => <option key={y} value={y}>{y}%</option>)}
+          <select style={select} value={nearestYield(goal.yieldPct)} onChange={(e) => onGoal({ ...goal, yieldPct: Number(e.target.value) })}>
+            {YIELD_CHOICES.map((y) => <option key={y.value} value={y.value}>{y.label}</option>)}
           </select>
         </label>
       </span>
@@ -108,6 +120,25 @@ export default function IncomeTargetCard({
           {split.parts.length > 0 && split.leftover > 0 && <div style={muted}>{man(split.leftover)}은 상한 때문에 나누지 못했습니다. 다른 계열 후보가 생길 때까지 현금이나 지수에 두는 쪽입니다.</div>}
           {cappedByLimit && <div style={muted}>세금 선까지 남은 여유 {man(plan.roomCapital)}만 계산했습니다. 그 이상은 한도를 넘기 전에 확인이 필요합니다.</div>}
         </div>
+      )}
+
+      {compareTarget && rows.length > 0 && (
+        <More label={`${compareTarget.label}까지 만드는 구성 비교`}>
+          <div style={{ fontSize: 12, lineHeight: 1.65 }}>
+            <div style={muted}>세후 월 {man(compareTarget.cumulative)}을 일반 계좌 분배금으로 받으려면 (순위가 아니라 대가를 나란히 본 것입니다)</div>
+            {rows.map((r) => (
+              <div key={r.id} style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--color-border-default)' }}>
+                <strong>{r.label}</strong> <span style={faint}>{r.mix} · 분배율 {r.yieldPct}% 가정</span>
+                <div>필요 원금 약 {man(r.requiredCapital)} · 지금보다 {man(r.extraCapital)} 더 · {monthlyDeposit > 0 ? `월 ${man(monthlyDeposit)} 적립이면 ${years(r.months)}` : '월 적립을 정하면 기간이 나옵니다'}</div>
+                {!r.withinLimit && <div style={{ color: 'var(--color-warning)' }}>일반 계좌 세금 선을 연 {man(r.overLimitGross)} 넘습니다. 넘는 몫은 다른 계좌 배치나 급여로 메워야 해서, 일반 계좌만으로는 이 구성으로도 닿지 않습니다</div>}
+                <div style={muted}>대가: {r.cost}</div>
+              </div>
+            ))}
+            <div style={{ ...muted, marginTop: 8 }}>
+              분배율은 한국 표본(커버드콜 균등 8.2%, 고배당+커버드콜 6.5%)이고 성장 중심 4.5%는 가정입니다. 연구에서 분배율을 1%p 올릴 때마다 같은 기간 총수익이 15~20%p 줄었습니다. 기간은 분배금 재투자를 뺀 단순 계산입니다.
+            </div>
+          </div>
+        </More>
       )}
 
       <More label="계산 근거와 한계">

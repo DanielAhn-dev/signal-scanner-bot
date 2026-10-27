@@ -145,3 +145,58 @@ export function splitAmount(rows: SplitCandidate[], amount: number): { parts: Ar
     .filter((p) => p.amount > 0);
   return { parts, leftover: Math.max(0, want - parts.reduce((s, p) => s + p.amount, 0)) };
 }
+
+export type CompositionId = "income" | "balanced" | "growth";
+/**
+ * 인컴 구성 3종 — 순위가 아니라 대가를 나란히 보는 용도. 분배율은 docs/research-income-then-growth-2026-10-03.md 한국 표본의
+ * 값(커버드콜 2종 균등 8.2%, 고배당 50%+커버드콜 50% 6.5%)이고, 성장 중심 4.5%는 고배당 위주 가정이다(검증 표 없음).
+ * 같은 문서에서 분배율 1%p를 올릴 때마다 이 기간 총수익이 대략 15~20%p 줄었다.
+ */
+export const COMPOSITIONS: Record<CompositionId, { label: string; mix: string; yieldPct: number; cost: string }> = {
+  income: { label: "인컴 집중", mix: "커버드콜 위주", yieldPct: 8.2, cost: "분배금이 시장 변동에 따라 크게 흔들리고 원금이 깎일 수 있으며, 장기 성장을 가장 많이 포기합니다" },
+  balanced: { label: "균형", mix: "고배당 50% + 커버드콜 50%", yieldPct: 6.5, cost: "분배가 덜 흔들리지만 필요한 원금이 늘고, 성장은 지수보다 낮습니다" },
+  growth: { label: "성장 중심", mix: "고배당·배당성장 + 지수 일부", yieldPct: 4.5, cost: "분배금이 안정적이고 성장이 남지만 같은 월 금액에 필요한 원금이 가장 큽니다" },
+};
+
+export type CompositionRow = {
+  id: CompositionId;
+  label: string;
+  mix: string;
+  yieldPct: number;
+  cost: string;
+  /** 목표 월 금액(세후)을 일반 계좌 분배금으로 받는 데 필요한 원금 */
+  requiredCapital: number;
+  /** 지금 일반 계좌 인컴 원금과의 차이 */
+  extraCapital: number;
+  /** 월 적립이 있을 때 걸리는 개월 수(분배금 재투자 제외). 적립이 없으면 null, 이미 닿았으면 0 */
+  months: number | null;
+  /** 목표가 일반 계좌 세금 선(여유 선) 안에서 받는 분배금인지, 넘는다면 선 밖 연 분배금(세전) */
+  withinLimit: boolean;
+  overLimitGross: number;
+};
+
+/** 목표 월 금액을 구성 3종으로 만들 때의 필요 원금·기간·세금 선 */
+export function compareCompositions(input: {
+  targetMonthlyNet: number;
+  generalIncomeCapital: number;
+  monthlyDeposit: number;
+  taxProfile: TaxProfile;
+}): CompositionRow[] {
+  const target = Math.max(0, input.targetMonthlyNet);
+  const grossAnnual = (target * 12) / NET;
+  const safeLimit = FINANCIAL_INCOME_LIMIT[input.taxProfile] * LIMIT_SAFETY;
+  return (Object.keys(COMPOSITIONS) as CompositionId[]).map((id) => {
+    const c = COMPOSITIONS[id];
+    const requiredCapital = Math.round(grossAnnual / (c.yieldPct / 100));
+    const extraCapital = Math.max(0, requiredCapital - Math.max(0, input.generalIncomeCapital));
+    return {
+      id,
+      ...c,
+      requiredCapital,
+      extraCapital,
+      months: extraCapital === 0 ? 0 : input.monthlyDeposit > 0 ? Math.ceil(extraCapital / input.monthlyDeposit) : null,
+      withinLimit: grossAnnual <= safeLimit,
+      overLimitGross: Math.max(0, Math.round(grossAnnual - safeLimit)),
+    };
+  });
+}

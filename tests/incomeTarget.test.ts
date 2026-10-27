@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { annualDistribution, incomeTargetPlan, splitAmount, FINANCIAL_INCOME_LIMIT } from "../src/lib/incomeTarget";
+import { annualDistribution, compareCompositions, incomeTargetPlan, splitAmount, FINANCIAL_INCOME_LIMIT } from "../src/lib/incomeTarget";
 
 const MAN = 10_000;
 // 누적 1·3·6·9·14·20·31·43 | 59·76·116·166·266 (만원)
@@ -84,4 +84,28 @@ test("더 담을 금액 나누기 — 후보가 없으면 전부 못 나눈 몫"
   const r = splitAmount([row("A", "caution", 50_000_000, 50), row("B", "wait", 50_000_000, 50)], 5_000_000);
   assert.deepEqual(r, { parts: [], leftover: 5_000_000 });
   assert.deepEqual(splitAmount([], 1_000_000), { parts: [], leftover: 1_000_000 });
+});
+
+test("구성 3종 비교 — 12번(세후 월 166만원)의 필요 원금은 분배율이 낮을수록 커진다", () => {
+  const rows = compareCompositions({ targetMonthlyNet: 166 * MAN, generalIncomeCapital: 80_000_000, monthlyDeposit: 1_000_000, taxProfile: "worker" });
+  const by = Object.fromEntries(rows.map((r) => [r.id, r]));
+  // 166만 × 12 ÷ 0.846 = 약 2,355만원(연 세전)
+  assert.ok(Math.abs(by.income.requiredCapital - 287_000_000) < 1_500_000); // 8.2%
+  assert.ok(Math.abs(by.balanced.requiredCapital - 362_000_000) < 1_500_000); // 6.5%
+  assert.ok(Math.abs(by.growth.requiredCapital - 523_000_000) < 2_000_000); // 4.5%
+  assert.ok(by.income.requiredCapital < by.balanced.requiredCapital && by.balanced.requiredCapital < by.growth.requiredCapital);
+  // 월 100만원 적립이면 (2.87억 − 0.8억) ÷ 100만 = 약 207개월
+  assert.ok(Math.abs(by.income.months! - 207) <= 2);
+  // 직장가입자 여유 선(연 1,800만원)을 넘는다 → 선 밖 연 분배금 약 555만원
+  assert.equal(by.income.withinLimit, false);
+  assert.ok(Math.abs(by.income.overLimitGross - 5_550_000) < 50_000);
+});
+
+test("구성 3종 비교 — 이미 원금이 충분하면 0개월, 적립이 없으면 기간 없음, 선 안이면 withinLimit", () => {
+  const done = compareCompositions({ targetMonthlyNet: 50 * MAN, generalIncomeCapital: 200_000_000, monthlyDeposit: 0, taxProfile: "worker" });
+  assert.ok(done.every((r) => r.months === 0 && r.extraCapital === 0 && r.withinLimit));
+  const none = compareCompositions({ targetMonthlyNet: 100 * MAN, generalIncomeCapital: 0, monthlyDeposit: 0, taxProfile: "regional" });
+  assert.ok(none.every((r) => r.months === null));
+  // 지역가입자 여유 선 연 900만원 → 세후 월 약 63만원 초과
+  assert.ok(none.every((r) => !r.withinLimit));
 });

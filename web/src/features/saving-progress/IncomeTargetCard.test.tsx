@@ -35,4 +35,11 @@ describe('IncomeTargetCard', () => {
     rerender(<IncomeTargetCard fixed={FIXED} generalGross={GROSS} check={[]} goal={{ ...DEFAULT_INCOME_GOAL, taxProfile: 'regional', targetLabel: '대성학원' }} onGoal={onGoal} />)
     expect(screen.getByText(/일반 계좌 세금 선 안에서 받을 수 있는 분배금은/)).toBeTruthy()
   })
+  it('목표 칸까지 만드는 구성 3종 비교를 접어서 보여 준다', () => {
+    render(<IncomeTargetCard fixed={FIXED} generalGross={GROSS} generalCapital={80_000_000} monthlyDeposit={1_000_000} check={[]} goal={{ ...DEFAULT_INCOME_GOAL, targetLabel: '대성학원' }} onGoal={() => {}} />)
+    fireEvent.click(screen.getByText(/대성학원까지 만드는 구성 비교/))
+    expect(screen.getByText('인컴 집중')).toBeTruthy()
+    expect(screen.getByText('성장 중심')).toBeTruthy()
+    expect(screen.getAllByText(/일반 계좌 세금 선을 연/).length).toBe(3)
+  })
 })

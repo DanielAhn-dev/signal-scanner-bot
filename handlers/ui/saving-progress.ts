@@ -9,7 +9,7 @@ import { selectPaged } from '../../src/services/supabasePaging'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { loadGoalFile, requiredSeed, DEFAULT_WITHDRAWAL_PCT } from '../../src/services/goalTracker'
 import { readInvestPlan } from '../../src/services/userPlan'
-import { BUCKET_GROUP, classifyHolding, resolveYieldPct } from '../../src/lib/incomeGuide'
+import { BUCKET_GROUP, classifyHolding, isTaxAdvantagedAccount, resolveYieldPct } from '../../src/lib/incomeGuide'
 import { annualDistribution } from '../../src/lib/incomeTarget'
 import { loadIncomeCheck } from '../../src/services/incomeCheckService'
 import { accountKind, distributionTaxSaved, dropMonths, isTotalReturnEtf } from '../../src/lib/savingProgress'
@@ -133,6 +133,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 인컴 목표 — 계좌별 연 분배금(세전)과, 고정비 사다리가 있을 때만 일반 계좌 인컴 상품 점검(네트워크를 쓰므로 필요할 때만)
     const distribution = annualDistribution(taxHoldings)
+    // 일반 계좌 인컴 원금 — 구성 비교의 "지금 원금". 분배금을 바로 꺼내 쓸 수 있는 계좌만 센다
+    const generalIncomeCapital = Math.round(
+      holdings
+        .filter((h) => h.code !== 'CASH' && h.quantity > 0 && h.price > 0 && !isTaxAdvantagedAccount(h.accountLabel) && BUCKET_GROUP[classifyHolding(h.code, h.name, h.productType)] === 'income')
+        .reduce((s, h) => s + h.quantity * h.price, 0),
+    )
     const incomeCheck = fixedCosts && fixedCosts.length > 0
       ? await loadIncomeCheck({
           supabase,
@@ -187,7 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         plan,
         market: drop ? { asOf: drop.asOf, fromHighPct: drop.fromHighPct } : null,
         dropMonths: drops.since ? drops : null,
-        income: { distribution, check: incomeCheck },
+        income: { distribution, generalIncomeCapital, check: incomeCheck },
         ladder: {
           fixed: fixedCosts,
           withdrawalPct: goalFile?.settings?.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT,

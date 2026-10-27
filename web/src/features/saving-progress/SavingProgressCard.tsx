@@ -49,7 +49,7 @@ export type SavingProgressData = {
   /** 고정비 사다리 재료 — fixed가 null이면 가계부 조회 실패(사다리 숨김) */
   ladder?: { fixed: Array<{ label: string; amount: number }> | null; withdrawalPct: number; addedThisMonth: number }
   /** 인컴 목표 재료 — 계좌별 연 분배금(세전)과 일반 계좌 인컴 상품 점검 */
-  income?: { distribution: { general: number; isa: number; pension: number }; check: IncomeCheckRow[] }
+  income?: { distribution: { general: number; isa: number; pension: number }; generalIncomeCapital?: number; check: IncomeCheckRow[] }
 }
 
 const man = formatKrwMan
@@ -186,6 +186,8 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
         <IncomeTargetCard
           fixed={data.ladder.fixed}
           generalGross={data.income.distribution.general}
+          generalCapital={data.income.generalIncomeCapital ?? 0}
+          monthlyDeposit={data.plan?.monthly ?? 0}
           check={data.income.check}
           goal={{ ...DEFAULT_INCOME_GOAL, ...(acc.incomeGoal ?? {}) }}
           onGoal={(next) => setAcc({ ...acc, incomeGoal: next })}
