@@ -20,19 +20,22 @@ function Gauge({ score }: { score: number }) {
 
 /** 비슷했던 때 이후 6개월 가격 경로를 지금 시점(0)에서 겹쳐 그린다 — 평소 범위(회색 띠)와 함께 */
 function PathChart({ result }: { result: SimilarResult }) {
-  const W = 360
-  const H = 190
-  const padL = 34
+  const W = 420
+  const H = 220
+  const padL = 36
   const padR = 8
   const padT = 8
   const padB = 22
   const steps = SIMILAR.baseline.path.median.length
+  // 세로 범위는 실제로 그리는 선(평소 띠·중앙값·사례 10건)만으로 잡는다 — 그리지 않는 사례가 범위를 늘려 선이 가운데로 몰리지 않게
+  const drawn = result.cases.slice(0, 10)
   const all = [
     ...SIMILAR.baseline.path.p10, ...SIMILAR.baseline.path.p90, ...result.medianPath, 0,
-    ...result.cases.flatMap((c) => c.path),
+    ...drawn.flatMap((c) => c.path),
   ]
   const lo = Math.floor(Math.min(...all) / 10) * 10
   const hi = Math.ceil(Math.max(...all) / 10) * 10
+  const gridStep = hi - lo <= 100 ? 20 : 40
   const x = (i: number) => padL + (i / steps) * (W - padL - padR)
   const y = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB)
   const line = (a: number[]) => [`M${x(0)},${y(0)}`, ...a.map((v, i) => `L${x(i + 1)},${y(v)}`)].join(' ')
@@ -42,9 +45,9 @@ function PathChart({ result }: { result: SimilarResult }) {
     ...[...SIMILAR.baseline.path.p10].reverse().map((v, i) => `L${x(steps - i)},${y(v)}`),
     'Z',
   ].join(' ')
-  const ticks = [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i)
+  const ticks = Array.from(new Set([lo, hi, 0, ...Array.from({ length: Math.floor((hi - lo) / gridStep) + 1 }, (_, i) => lo + i * gridStep).filter((v) => v >= lo && v <= hi)]))
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', width: '100%', maxWidth: 520, height: 'auto' }} role="img"
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', width: '100%', maxWidth: 640, height: 'auto' }} role="img"
       aria-label={`비슷했던 때 ${result.independent}번의 이후 6개월 가격 경로와 중앙값, 평소 범위`}>
       {ticks.map((t) => (
         <g key={t}>
@@ -54,7 +57,7 @@ function PathChart({ result }: { result: SimilarResult }) {
       ))}
       <path d={band} style={{ fill: 'var(--color-text-tertiary)', fillOpacity: 0.15 }} />
       <path d={line(SIMILAR.baseline.path.median)} style={{ fill: 'none', stroke: 'var(--color-text-tertiary)', strokeWidth: 1.2, strokeDasharray: '4 3' }} />
-      {result.cases.slice(0, 10).map((c) => (
+      {drawn.map((c) => (
         <path key={c.date} d={line(c.path)} style={{ fill: 'none', stroke: 'var(--color-brand)', strokeOpacity: 0.3, strokeWidth: 1 }} />
       ))}
       <path d={line(result.medianPath)} style={{ fill: 'none', stroke: 'var(--color-brand)', strokeWidth: 2.4 }} />
