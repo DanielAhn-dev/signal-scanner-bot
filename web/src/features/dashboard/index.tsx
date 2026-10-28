@@ -24,6 +24,7 @@ import { useUserState } from '../../lib/userState'
 import { sanitizeDropPlan, type DropPlan } from '../../lib/dropPlan'
 import type { DropDayView } from '../../lib/dropDay'
 import { renderDropDayRows } from './dropDayRows'
+import { daysUntil, fmtScheduleDate, useDistributionSchedule } from '../distribution-schedule/schedule'
 import { useFillerRows } from '../../hooks/useFillerRows'
 import { pickIndustrySectors, sectorChange } from '../../lib/sectorDisplay'
 
@@ -208,6 +209,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [indices, setIndices] =useState<Partial<Record<MarketTileKey, { price?: number; changeRate?: number }>> | null>(null)
   const [realHoldings, setRealHoldings] = useState<Holding[] | null>(null)
   const [allTodosOpen, setAllTodosOpen] = useState(false)
+  const distSchedule = useDistributionSchedule()
 
   // chatId가 준비되면 포트폴리오 로드 (스토어 hydration 완료 후 실행)
   useEffect(() => {
@@ -285,6 +287,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const satellite = realHoldings ? satelliteStatus(realHoldings) : null
   // 대응 필요 = 그대로 보유가 아닌 것(줄이기·옮기기). 비중이 큰 것부터
   const actionNeeded = (advice ?? []).filter((a) => a.action !== 'keep').sort((x, y) => y.weightPct - x.weightPct)
+  // 마지막 매수일이 2주 안인 가장 이른 분배 — 같은 날이 여러 종목이면 첫 종목 + 외 N종목
+  const nextDist = (() => {
+    if (!distSchedule) return null
+    const soon = distSchedule.items.filter((it) => daysUntil(distSchedule.today, it.lastBuyDate) <= 14)
+    if (soon.length === 0) return null
+    const day = soon[0].lastBuyDate
+    return { first: soon[0], more: soon.filter((it) => it.lastBuyDate === day).length - 1 }
+  })()
   const visibleTodos = isAdmin || allTodosOpen ? todoSteps : todoSteps.filter((s) => s.key === nextTodoKey)
 
   // portfolio-realtime은 실계좌 행까지 준다 — '가상 계좌' 줄은 증권사·계좌명이 둘 다 빈 행만 센다
@@ -313,10 +323,6 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
   return (
     <div ref={sheetRef} className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
-      {/* 내 계획(MyPlanCard)은 모아가기 화면으로 옮겼다 — 홈은 [실제] 이번 달 할 일 + '내 모으기' 요약 */}
-      <RaiseNudge />
-      <MonthTaskCard />
-      <SavingProgressCard variant="home" />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>{colWidths.map((width, index) => (
           <col key={index} style={width == null ? undefined : { width }} />
@@ -333,6 +339,17 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
         </thead>
         <tbody>
+
+          {/* 내 계획(MyPlanCard)은 모아가기 화면으로 옮겼다 — 홈은 [실제] 이번 달 할 일 + '내 모으기' 요약.
+              카드는 표 밖이 아니라 A~F 머리글 아래 병합 셀 안에 둔다(밖에 두면 머리글이 카드 밑으로 밀려 보였다) */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td colSpan={6} style={{ padding: 0, whiteSpace: 'normal', verticalAlign: 'top', border: '1px solid var(--color-excel-grid-border)' }}>
+              <RaiseNudge />
+              <MonthTaskCard />
+              <SavingProgressCard variant="home" />
+            </td>
+          </tr>
 
           {/* ── 상단 헤더 ── */}
           <tr className="xls-row xls-row--even">
@@ -470,6 +487,22 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               </td>
             </tr>
           </>)}
+
+          {/* ── 보유 ETF 다음 분배: 마지막 매수일이 2주 안일 때만 한 줄(전체는 시장 캘린더) ── */}
+          {nextDist && (
+            <tr className="xls-row">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>
+                <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>분배 일정</span>
+              </td>
+              <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5, wordBreak: 'keep-all' }}>
+                {nextDist.first.name}{nextDist.more > 0 ? ` 외 ${nextDist.more}종목` : ''} · {fmtScheduleDate(nextDist.first.lastBuyDate)}까지 보유하면 받아요 · 분배락 {fmtScheduleDate(nextDist.first.exDate)}{nextDist.first.estimated ? ' (예상)' : ''}
+              </td>
+              <td className="xls-cell" style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                <span style={S.link} onClick={() => nav('market?tab=calendar')}>캘린더 →</span>
+              </td>
+            </tr>
+          )}
 
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>

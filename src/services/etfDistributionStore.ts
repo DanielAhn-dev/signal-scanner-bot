@@ -143,6 +143,30 @@ export async function loadSummary(supabase: any): Promise<DistributionSummaryRow
   return [...by.values()].sort((a, b) => (a.lastDate < b.lastDate ? 1 : -1));
 }
 
+/** 상품 코드별 기준일·지급일 이력(다음 분배 일정 추정용, 최근 2년) */
+export async function loadDistributionDates(supabase: any, codes: string[], fromDate: string): Promise<Map<string, Array<{ record_date: string; pay_date: string | null }>>> {
+  const out = new Map<string, Array<{ record_date: string; pay_date: string | null }>>();
+  const uniq = [...new Set(codes.filter(Boolean))].slice(0, 80);
+  if (!uniq.length) return out;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("etf_distributions")
+      .select("code,record_date,pay_date")
+      .in("code", uniq)
+      .gte("record_date", fromDate)
+      .order("code", { ascending: true })
+      .order("record_date", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`분배 일정 이력 조회 실패: ${error.message}`);
+    for (const r of data ?? []) {
+      const code = String(r.code);
+      out.set(code, [...(out.get(code) ?? []), { record_date: String(r.record_date), pay_date: r.pay_date ? String(r.pay_date) : null }]);
+    }
+    if (!data || data.length < PAGE) break;
+  }
+  return out;
+}
+
 /** 상품 코드별 분배금 이력(기준일 오름차순). 코드는 가이드 보유 종목 수준(수십 개)이라 in 조건으로 받고, 행은 끝까지 읽는다 */
 export async function loadDistributionRows(supabase: any, codes: string[]): Promise<Map<string, DistRow[]>> {
   const out = new Map<string, DistRow[]>();

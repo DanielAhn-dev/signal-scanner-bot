@@ -14,6 +14,8 @@ import {
   saveGuideFile,
   toGuideHoldings,
 } from '../../src/services/incomeGuideStore'
+import { loadDistributionDates } from '../../src/services/etfDistributionStore'
+import { nextDistribution } from '../../src/lib/distributionSchedule'
 import { planMixLines } from '../../src/lib/planMixGuide'
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
@@ -48,6 +50,7 @@ import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sameReceiptSl
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
 //   GET  ?summary=1 — 보유 수·직접 남긴 점검 기록 수만 (홈 길잡이용, 시세 조회 없음)
+//   GET  ?schedule=1 — 보유 종목의 다음 분배 일정(기준일·분배락·마지막 매수일·지급일, 이력에서 추정) — 홈 한 줄·시장 캘린더용
 //   POST { ...설정 } — 가이드 설정 변경 / POST { action: 'record', note } — 오늘 비중을 점검 기록에 남김
 //   POST { action: 'receipt-add', receipt: { month, code, name, quantity, perShare, net?, accountKey?, accountLabel? } } / { action: 'receipt-delete', id } — 분배금 받은 기록
 //     같은 종목이 여러 계좌에 있으면 accountKey가 필요하다(계좌마다 따로 적는다)
@@ -100,6 +103,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // 합산 기록 + 계좌별 기록
       const manualRecords = [file.history ?? [], ...Object.values(file.accounts ?? {}).map((a) => a.history ?? [])].flat().filter((h) => !h.auto).length
       return res.status(200).json({ ok: true, data: { holdingCount: rows.length, manualRecords } })
+    }
+    // 보유 ETF의 다음 분배 일정(홈·캘린더용) — 시세를 받지 않고 저장된 분배 이력에서 추정한다
+    if (req.method === 'GET' && req.query?.schedule === '1') {
+      const posRows = await loadAccountPositionRows(supabase, chatId)
+      const today = kstDateKey()
+      const fromDate = new Date(Date.parse(today) - 800 * 86_400_000).toISOString().slice(0, 10)
+      const byCode = new Map<string, { name: string; quantity: number }>()
+      for (const r of posRows) {
+        const code = String(r.code || '').trim()
+        const stock = Array.isArray(r.stock) ? r.stock[0] : r.stock
+        const cur = byCode.get(code)
+        byCode.set(code, { name: String(stock?.name ?? code), quantity: (cur?.quantity ?? 0) + Math.max(0, Math.floor(Number(r.quantity ?? 0))) })
+      }
+      const history = await loadDistributionDates(supabase, [...byCode.keys()], fromDate)
+      const items = [...byCode.entries()].flatMap(([code, v]) => {
+        const next = nextDistribution(history.get(code) ?? [], today)
+        return next ? [{ code, name: v.name, quantity: v.quantity, ...next }] : []
+      }).sort((a, b) => (a.lastBuyDate < b.lastBuyDate ? -1 : a.lastBuyDate > b.lastBuyDate ? 1 : 0))
+      return res.status(200).json({ ok: true, data: { today, items } })
     }
     const rows = await loadAccountPositionRows(supabase, chatId)
     const requested = typeof req.query?.account === 'string' ? req.query.account.trim().slice(0, 120) : ''

@@ -16,6 +16,7 @@ import { isFactStale } from '../../lib/planGuide'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
 import EconomicCalendar from '../../components/EconomicCalendar'
+import { DistributionScheduleTable } from '../distribution-schedule/schedule'
 import type { EconomicCalendarResponse } from '../../../../src/types/economics'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { useProfileStore } from '../../stores/profileStore'
@@ -846,7 +847,8 @@ export default function MarketPage() {
   const [calendarLoading, setCalendarLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [calendarError, setCalendarError] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>('diagnosis')
+  // 홈의 '캘린더 →'가 ?tab=calendar로 바로 들어온다
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get('tab') === 'calendar' ? 'calendar' : 'diagnosis'))
   // 진단 탭은 봇 위험지수·매수 관문 등 판단 근거라 관리자에게만 — 일반 사용자는 지표·캘린더만
   const isAdmin = useProfileStore((s) => s.isAdmin)
   const activeTab: Tab = !isAdmin && tab === 'diagnosis' ? 'indicators' : tab
@@ -956,6 +958,7 @@ export default function MarketPage() {
           <ErrorState message={calendarError} onRetry={loadCalendar} />
         ) : (
           <div className="market-sheet__calendar-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '0px' }}>
+            <DistributionScheduleTable />
             <EconomicCalendar
               events={calendar?.events || []}
               loading={calendarLoading}
