@@ -230,6 +230,13 @@ def main():
         r = main_r[k]
         if r:
             summary["cands"][k] = {n: (v if isinstance(v, (str, int)) else float(v)) for n, v in r.items()}
+    # 화면이 '거래대금 상위 300급 대형주'를 가르는 기준: 최근 12개 월말의 300위 20일 평균 거래대금(원) 중앙값
+    ref = []
+    for i in months()[-12:]:
+        tv = sorted((TV20[i, j] for j in range(N) if first[j] + 250 <= i <= last[j] and np.isfinite(TV20[i, j]) and TV20[i, j] >= 1e9), reverse=True)
+        if len(tv) >= 300:
+            ref.append(tv[299])
+    summary["tv20Top300"] = float(np.median(ref)) if ref else None
     json.dump(summary, open(f"{CACHE}/avoid_scan_summary.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
