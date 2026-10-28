@@ -6,6 +6,7 @@ import ShareModal from '../../components/ShareModal'
 import { useCurrentChatId } from '../../stores/profileStore'
 import ChaseWarningNote from '../../components/ChaseWarningNote'
 import DisclosureCheckCard from '../../components/DisclosureCheckCard'
+import PanicDayNote from '../../components/PanicDayNote'
 import { getFlowMetricLabel } from './lib/flow'
 import { calcChartHud } from './lib/candles'
 import { calcPriceBarPct } from './lib/dates'
@@ -110,6 +111,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           />
 
           <ChaseWarningNote changePct={result.change_pct} />
+          <PanicDayNote bars={candles} />
           <DisclosureCheckCard code={result.code} />
 
           <DecisionCard

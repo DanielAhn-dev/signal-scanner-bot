@@ -4,6 +4,7 @@ import Skeleton from './Skeleton'
 import { apiFetch } from '../lib/api'
 import { formatKstDateTime } from '../lib/format'
 import ChaseWarningNote from './ChaseWarningNote'
+import PanicDayNote from './PanicDayNote'
 
 type DetailSeriesRow = {
   date: string
@@ -165,6 +166,7 @@ export default function StockDetailModal({ code, name, isOpen, onClose }: Props)
       {!loading && !error && detailData && detailData.length > 0 && (
         <div className="dbview-detail-list">
           <ChaseWarningNote changePct={detailMeta?.changePct} />
+          <PanicDayNote bars={detailData} />
           {detailMeta?.latest && (
             <div className="dbview-detail-summary">
               <div className="dbview-detail-summary-head">최신 기준 {detailMeta.latest.date}</div>
