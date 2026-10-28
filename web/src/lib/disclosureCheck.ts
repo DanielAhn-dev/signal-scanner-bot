@@ -23,6 +23,9 @@ export function disclosureLines(items: DisclosureItem[]): DisclosureLine[] {
     let evidence = ''
     if (st && category === 'buyback') {
       evidence = `과거 자사주 취득 공시 뒤 60거래일 수익은 지수와 뚜렷한 차이가 없었어요(평균 ${st.mean60 > 0 ? '+' : ''}${st.mean60}%, ${st.n.toLocaleString('ko-KR')}건).`
+    } else if (st?.h84) {
+      const h = st.h84
+      evidence = `최근 석 달 안에 이런 공시가 난 종목은 이후 석 달 동안 주가가 20% 넘게 떨어진 비율이 ${h.on}%로, 공시가 없던 종목(${h.off}%)보다 잦았어요. 변동성이 비슷한 종목끼리 비교해도 ${h.ctrl}%p 높았어요(거래대금 상위 300, ${h.first.slice(0, 4)}~${h.last.slice(0, 4)}년 ${h.months}개월).`
     } else if (st) {
       evidence = `과거 이런 공시가 난 종목은 60거래일 안에 지수보다 30% 넘게 뒤처진 경우가 ${st.tail30}%로, 평소(${st.tail30Base}%)보다 잦았어요(${st.n.toLocaleString('ko-KR')}건${st.n < SMALL_SAMPLE ? ', 표본 적음' : ''}).`
     }

@@ -1,6 +1,6 @@
 // 자동 생성: scripts/research/build_disclosure_stats.py — 직접 고치지 말 것
-export const DISCLOSURE_STATS_META = {"generated": "2026-10-08", "period": "20140102~20261006", "method": "접수일 다음 거래일 시가 진입, KODEX 200 대비 초과, 비용 미반영, 같은 종목·범주 60거래일 안 반복 1건", "source": "가설 장부 C42~C44 · scripts/research/validate_disclosure_events.py"} as const
-export const DISCLOSURE_STATS: Record<string, { n: number; mean60: number; median60: number; tail30: number; tail30Base: number; nTop300: number; verdict: string }> = {
+export const DISCLOSURE_STATS_META = {"generated": "2026-10-08", "period": "20140102~20261006", "method": "접수일 다음 거래일 시가 진입, KODEX 200 대비 초과, 비용 미반영, 같은 종목·범주 60거래일 안 반복 1건", "source": "가설 장부 C42~C44·H84 · scripts/research/validate_disclosure_events.py·validate_avoid_scan.py"} as const
+export const DISCLOSURE_STATS: Record<string, { n: number; mean60: number; median60: number; tail30: number; tail30Base: number; nTop300: number; verdict: string; h84?: { on: number; off: number; ctrl: number; months: number; first: string; last: string; generated: string } }> = {
   "dilution": {
     "n": 6561,
     "mean60": -6.0,
@@ -8,7 +8,16 @@ export const DISCLOSURE_STATS: Record<string, { n: number; mean60: number; media
     "tail30": 21.3,
     "tail30Base": 10.0,
     "nTop300": 1340,
-    "verdict": "기각/판정 미달"
+    "verdict": "기각/판정 미달",
+    "h84": {
+      "on": 35.0,
+      "off": 20.0,
+      "ctrl": 8.4,
+      "months": 111,
+      "first": "20170428",
+      "last": "20260630",
+      "generated": "2026-10-28"
+    }
   },
   "buyback": {
     "n": 1191,

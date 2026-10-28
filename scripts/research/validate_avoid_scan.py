@@ -172,7 +172,7 @@ def study(k, lo, hi, excl21=False):
     d = np.array([r[1] for r in rows])
     h = len(d) // 2
     c = np.array(ctrl)
-    return dict(n=len(d), d=d.mean(), t=nw_t(d), h1=d[:h].mean(), h2=d[h:].mean(),
+    return dict(n=len(d), first=rows[0][0], last=rows[-1][0], d=d.mean(), t=nw_t(d), h1=d[:h].mean(), h2=d[h:].mean(),
                 on=np.mean([r[2] for r in rows]), off=np.mean([r[3] for r in rows]),
                 nflag=np.mean([r[4] for r in rows]), cd=c.mean() if len(c) else np.nan,
                 ct=nw_t(c) if len(c) > 10 else np.nan)
@@ -224,6 +224,13 @@ def main():
     for k in CANDS:
         if main_r[k] and main_r[k]["n"] >= MIN_MONTHS:
             show("한달−15% 제외", k, study(k, 0, 300, excl21=True))
+    # 화면 표(build_disclosure_stats.py)용 요약 — 손으로 고치지 않는다
+    summary = {"generated": dt.date.today().isoformat(), "horizon": HZ, "big": BIG, "cands": {}}
+    for k in CANDS:
+        r = main_r[k]
+        if r:
+            summary["cands"][k] = {n: (v if isinstance(v, (str, int)) else float(v)) for n, v in r.items()}
+    json.dump(summary, open(f"{CACHE}/avoid_scan_summary.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
 if __name__ == "__main__":

@@ -9,8 +9,13 @@ describe('disclosureLines', () => {
     expect(lines.map((l) => l.category)).toEqual(['dilution', 'buyback'])
     expect(lines[0].count).toBe(2)
     expect(lines[0].lastDate).toBe('2026-05-01')
-    expect(lines[0].evidence).toContain('30% 넘게 뒤처진')
+    expect(lines[0].evidence).toContain('20% 넘게 떨어진 비율')
+    expect(lines[0].evidence).toContain('상위 300')
     expect(lines[1].evidence).toContain('뚜렷한 차이가 없었어요')
+  })
+
+  it('H84 수치가 없는 위험 범주는 지수 대비 30% 뒤처진 비율 문구를 쓴다', () => {
+    expect(disclosureLines([item('unfaithful', '20260101')])[0].evidence).toContain('30% 넘게 뒤처진')
   })
 
   it('표본이 작은 범주는 표본 적음을 붙인다', () => {
