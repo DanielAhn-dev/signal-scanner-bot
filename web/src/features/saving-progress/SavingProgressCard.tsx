@@ -108,6 +108,9 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
   const ladder = !noHoldings && data.ladder?.fixed
     ? costLadder({ fixed: data.ladder.fixed, principal: data.principal.total, withdrawalPct: data.ladder.withdrawalPct, addedThisMonth: Math.max(data.ladder.addedThisMonth, thisMonth) })
     : null
+  // 인컴 분배금이 먼저 덮는 칸 — 일반 계좌 분배금(세후)만 센다. ISA·연금·CMA 쪽은 안에서 재투자돼 고정비로 쓰지 않는다
+  const incomeMonthly = data.income ? (data.income.distribution.general * (1 - DISTRIBUTION_TAX_RATE)) / 12 : 0
+  const incomeCoveredCount = ladder ? ladder.rungs.filter((r) => r.cumulative <= incomeMonthly).length : 0
   const lastPassed = ladder && ladder.passedCount > 0 ? ladder.rungs[ladder.passedCount - 1] : null
   const dropDone = data.dropMonths ? data.dropMonths.months.filter((m) => done.has(m)).length : 0
 
@@ -161,7 +164,11 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
                 const isNext = i === ladder.passedCount
                 return (
                   <li key={r.label} className={passed ? 'is-passed' : ''}>
-                    <span className="sp__rung-name">{passed ? <Check size={12} aria-label="넘음" /> : null}{r.label} {man(r.amount)}</span>
+                    <span className="sp__rung-name">{passed ? <Check size={12} aria-label="넘음" /> : null}{r.label} {man(r.amount)}
+                      {incomeCoveredCount > 0 && i === incomeCoveredCount - 1 && (
+                        <span className="sp__muted"> ← 인컴계좌 분배금(월 {manSmall(incomeMonthly)})을 쓴다면 여기까지</span>
+                      )}
+                    </span>
                     {isNext && ladder.next ? (
                       <span className="sp__goal">
                         <span className="sp__bar" aria-hidden="true"><span style={{ width: `${ladder.next.pct}%` }} /></span>
@@ -175,7 +182,7 @@ export default function SavingProgressCard({ variant = 'home' }: { variant?: 'ho
           )}
           {variant === 'full' && (
             <span className="sp__muted">
-              넣은 원금 × 연 {data.ladder!.withdrawalPct}% ÷ 12(목표와 같은 꺼내 쓰기 비율). 예산의 고정지출을 작은 것부터 쌓았습니다. 원금 기준이라 시장이 빠져도 줄지 않습니다. 지금 꺼내 쓰라는 뜻이 아니라, 모은 돈의 크기를 생활비로 바꿔 본 것입니다.
+              넣은 원금 × 연 {data.ladder!.withdrawalPct}% ÷ 12(목표와 같은 꺼내 쓰기 비율). 예산의 고정지출을 작은 것부터 쌓았습니다. 원금 기준이라 시장이 빠져도 줄지 않습니다.{incomeCoveredCount > 0 && ' 인컴 표시는 지금은 재투자 중이지만 훗날 생활비로 쓴다고 가정했을 때, 일반 계좌(인컴계좌) 분배금(세후)이 위 칸부터 먼저 덮는 곳까지입니다. ISA·IRP·CMA 안의 분배금은 계속 재투자되는 몫이라 세지 않습니다.'} 지금 꺼내 쓰라는 뜻이 아니라, 모은 돈의 크기를 생활비로 바꿔 본 것입니다.
             </span>
           )}
         </div>
