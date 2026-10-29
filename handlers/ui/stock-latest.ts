@@ -5,6 +5,8 @@ import { buildInvestmentPlan } from '../../src/lib/investPlan'
 import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
 import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
 import { getFundamentalSnapshot } from '../../src/services/fundamentalService'
+import { hasFundamentalValues, pickUsableFundamentals } from '../../src/lib/fundamentalsPick'
+import { dropColumn, parseMissingColumn } from '../../src/lib/missingColumn'
 import { fetchCreditShortSnapshot } from '../../src/utils/fetchCreditShortData'
 import { fetchRealtimeStockData } from '../../src/utils/fetchRealtimePrice'
 import { denyIfUnauthorizedRead } from './_accessControl'
@@ -524,37 +526,31 @@ async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]
 }
 
 async function fetchStockProfile(supabase: any, code: string): Promise<any | null> {
-  const selectAttempts = [
-    // 최신 스키마: 공매도/신용 + 기술지표 포함
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance,sma20,sma50,rsi14',
-    // foreigner_ratio 컬럼명을 쓰는 스키마 + 공매도/신용 + 기술지표 포함
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,credit_ratio,short_ratio,short_balance,sma20,sma50,rsi14',
-    // 일부 컬럼이 빠진 스키마 대비
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
-    // 기술지표 컬럼이 아직 없을 수 있는 과거 스키마
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,credit_ratio,short_ratio,short_balance',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps',
-    'code,name,sector_id,close,updated_at,description',
-    'code,name,sector_id,close,updated_at',
+  // 환경마다 stocks 컬럼이 달라(eps 없음 등) 미리 정한 select 목록은 하나만 없어도 시가총액·PER·PBR까지 통째로 빠졌다.
+  // 없다고 나온 컬럼만 빼고 다시 조회한다.
+  let columns: string[] = [
+    'code', 'name', 'sector_id', 'close', 'updated_at', 'description',
+    'market_cap', 'per', 'pbr', 'eps', 'bps',
+    'foreign_ratio', 'foreigner_ratio', 'credit_ratio', 'short_ratio', 'short_balance',
+    'sma20', 'sma50', 'rsi14',
   ]
 
-  for (const select of selectAttempts) {
+  for (let attempt = 0; attempt < columns.length + 1; attempt += 1) {
     try {
       const { data, error } = await supabase
         .from('stocks')
-        .select(select)
+        .select(columns.join(','))
         .eq('code', code)
         .limit(1)
 
-      if (!error) {
-        return data?.[0] || null
-      }
+      if (!error) return data?.[0] || null
+
+      const missing = parseMissingColumn(error.message)
+      const next = missing ? dropColumn(columns, missing) : null
+      if (!next) return null
+      columns = next
     } catch {
-      // continue
+      return null
     }
   }
 
@@ -742,6 +738,10 @@ async function saveFundamentalSnapshot(
   snapshot: any,
 ): Promise<boolean> {
   if (!snapshot || typeof snapshot !== 'object') {
+    return false
+  }
+  // 핵심 값이 하나도 없는 스냅샷은 저장하지 않는다 — 최신 행이 되어 정상 행을 가리고 6시간 재스크랩도 막는다
+  if (!hasFundamentalValues({ per: snapshot.per, pbr: snapshot.pbr, roe: snapshot.roe, debt_ratio: snapshot.debtRatio })) {
     return false
   }
 
@@ -1257,7 +1257,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select('as_of,per,pbr,eps,bps,roe,debt_ratio,computed')
         .eq('code', code)
         .order('as_of', { ascending: false })
-        .limit(1),
+        .limit(5),
       fetchInvestorFlow(supabase, code),
       fetchRealtimeStockData(code).catch(() => null),
       fetchLatestIndicators(supabase, code),
@@ -1275,7 +1275,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .catch(() => null),
     ])
 
-    let fund: any = fundamentalsResp.data?.[0] || null
+    // 값 없이 저장된 최신 행(실시간 스크랩 실패)이 예전 정상 행을 가리지 않게 값 있는 첫 행을 쓴다
+    let fund: any = pickUsableFundamentals(fundamentalsResp.data as any[] | null)
 
     const hasUsablePegInputs = (candidate: any): boolean => {
       const hasPer = asNum(candidate?.per) != null
