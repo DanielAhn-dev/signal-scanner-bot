@@ -32,4 +32,4 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           NODE_ENV: production
-        run: pnpm exec tsx scripts/etl_fundamentals.ts --all 120
+        run: pnpm exec tsx scripts/etl_fundamentals.ts --auto 400

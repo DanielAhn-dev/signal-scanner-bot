@@ -4,6 +4,8 @@ import fs from "fs";
 import path from "path";
 import { getFundamentalSnapshot } from "../src/services/fundamentalService";
 import fundamentalStore, { FundamentalSnapshot as StoreSnapshot, getStockClosePrices } from "../src/services/fundamentalStore";
+import { fillRatio, pickFundamentalTargets } from "../src/lib/fundamentalTargets";
+import { hasFundamentalValues } from "../src/lib/fundamentalsPick";
 
 const args = process.argv.slice(2);
 const defaultCodes = ["035420", "005930", "000660", "035720", "207940"];
@@ -27,7 +29,16 @@ function sleep(ms: number) {
 
 (async () => {
   let codes: string[];
-  if (args.includes("--all")) {
+  if (args.includes("--auto")) {
+    // 시가총액 큰 순으로, 최근 FRESH_DAYS일 안에 값이 채워진 종목은 건너뛰고 이어서 LIMIT개 (--auto 400 [--fresh-days 14])
+    const limit = Number(args[args.indexOf("--auto") + 1]) || 400;
+    const fdIdx = args.indexOf("--fresh-days");
+    const freshDays = fdIdx >= 0 ? Number(args[fdIdx + 1]) || 14 : 14;
+    const all = await loadAllCodes();
+    const plan = await fundamentalStore.getFundamentalCollectionPlan(freshDays);
+    codes = pickFundamentalTargets({ ranked: plan.ranked, all, fresh: plan.fresh, limit });
+    console.log(`auto: ranked=${plan.ranked.length} fresh=${plan.fresh.size} 대상=${codes.length}`);
+  } else if (args.includes("--all")) {
     const idx = args.indexOf("--all");
     const maybeLimit = args[idx + 1] || process.env.BATCH_LIMIT;
     const limit = maybeLimit ? Number(maybeLimit) : undefined;
@@ -38,6 +49,8 @@ function sleep(ms: number) {
     codes = defaultCodes;
   }
 
+  let attempted = 0;
+  let filled = 0;
   const chunkSize = 50;
   for (let i = 0; i < codes.length; i += chunkSize) {
     const chunk = codes.slice(i, i + chunkSize);
@@ -51,6 +64,14 @@ function sleep(ms: number) {
         console.log(`Fetching ${code}...`);
         const s = await getFundamentalSnapshot(code);
         const close = closePrices.get(code) ?? null;
+        attempted += 1;
+        // 핵심 값이 하나도 없으면 저장하지 않는다 — 빈 행이 최신 행이 되어 정상 값을 가리고 '수집됨'으로 보이게 한다
+        if (!hasFundamentalValues({ per: s.per, pbr: s.pbr, roe: s.roe, debt_ratio: s.debtRatio })) {
+          console.warn(`no values: ${code} (ETF·신규상장이면 정상)`);
+          await sleep(250);
+          continue;
+        }
+        filled += 1;
 
         // EPS = 주당순이익 (현재가 ÷ PER), BPS = 주당순자산 (현재가 ÷ PBR)
         const eps =
@@ -116,5 +137,11 @@ function sleep(ms: number) {
     await sleep(2000);
   }
 
-  console.log("ETL complete");
+  const ratio = fillRatio(filled, attempted);
+  console.log(`ETL complete: 시도 ${attempted}, 값 채움 ${filled} (${Math.round(ratio * 100)}%)`);
+  // 대부분 비면 수집처 구조가 바뀐 것이다 — 조용히 끝내지 말고 워크플로를 실패시켜 알린다
+  if (attempted >= 20 && ratio < 0.5) {
+    console.error("값 채움 비율이 50% 미만 — 수집 파서·수집처를 확인하세요");
+    process.exit(1);
+  }
 })();

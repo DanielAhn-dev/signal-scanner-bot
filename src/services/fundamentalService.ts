@@ -1,12 +1,9 @@
-import * as cheerio from "cheerio";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { fetchRealtimeStockData } from "../utils/fetchRealtimePrice";
 import {
   analyzeGrowthRow,
   cagrFromRow,
   clamp,
-  extractMetricValue,
-  findFirstNumberInText,
   findLatestActualAnnualValue,
   forwardGrowthPctFromAnnualRow,
   growthPctFromRow,
@@ -17,16 +14,13 @@ import {
   normalizeSectorName,
   resolveFundamentalProfile,
 } from "./fundamentalProfile";
+import { buildMobileFinance } from "./naverFinanceMobile";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
 // 온디맨드 재무 스크래핑이 지연 시 스캔 전체를 막지 않도록 요청 타임아웃을 둡니다.
 const FINANCE_FETCH_TIMEOUT_MS = 3000;
-
-type FetchLikeResponse = {
-  text(): Promise<string>;
-};
 
 type NaverFinanceData = {
   rows: Record<string, string[]>;
@@ -268,60 +262,6 @@ async function fetchSectorMetaForCode(
   }
 }
 
-function extractCurrentValuationMetric(
-  $: cheerio.CheerioAPI,
-  labelPattern: RegExp,
-  unit: string
-): number | undefined {
-  let found: number | undefined;
-
-  $("table tr").each((_, tr) => {
-    if (found !== undefined) return;
-
-    const cells = $(tr)
-      .find("th, td")
-      .map((__, cell) => $(cell).text().replace(/\s+/g, " ").trim())
-      .get();
-
-    if (!cells.length) return;
-
-    const label = (cells[0] || "").replace(/\s+/g, "");
-    if (!labelPattern.test(label)) return;
-
-    const value = extractMetricValue(cells.slice(1).join(" "), unit);
-    if (value !== undefined) found = value;
-  });
-
-  return found;
-}
-
-function parseKoreanMoneyText(text: string): number | undefined {
-  const normalized = String(text || '')
-    .replace(/\s+/g, '')
-    .replace(/,/g, '')
-    .trim()
-
-  if (!normalized) return undefined
-
-  const tokenMatches = normalized.match(/-?\d+(?:\.\d+)?(?:조|억|만)/g)
-  if (!tokenMatches?.length) return parseNum(normalized)
-
-  let total = 0
-  for (const token of tokenMatches) {
-    const match = token.match(/(-?\d+(?:\.\d+)?)(조|억|만)/)
-    if (!match) continue
-
-    const value = Number(match[1])
-    if (!Number.isFinite(value)) continue
-
-    if (match[2] === '조') total += value * 1_0000_0000_0000
-    else if (match[2] === '억') total += value * 1_0000_0000
-    else if (match[2] === '만') total += value * 10_000
-  }
-
-  return total > 0 ? Math.round(total) : parseNum(normalized)
-}
-
 export function evaluateFundamentalQuality(input: {
   sectorName?: string;
   sectorCategory?: string;
@@ -467,140 +407,32 @@ export function evaluateFundamentalQuality(input: {
   return { score: final, commentary };
 }
 
-async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
+async function fetchMobileJson(url: string): Promise<any | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FINANCE_FETCH_TIMEOUT_MS);
   try {
-    const url = `https://finance.naver.com/item/main.naver?code=${code}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FINANCE_FETCH_TIMEOUT_MS);
-    let res: FetchLikeResponse;
-    try {
-      res = (await fetch(url, {
-        headers: { "User-Agent": UA },
-        signal: controller.signal,
-      })) as FetchLikeResponse;
-    } finally {
-      clearTimeout(timer);
-    }
-    const html = await res.text();
-
-    const $ = cheerio.load(html);
-    const rows = new Map<string, string[]>();
-
-    // 기본 표 구조 우선 시도
-    function parseTableRows(tableSel: any) {
-      tableSel.find("tbody tr").each((_: any, tr: any) => {
-        const th = $(tr).find("th").first();
-        let key = th.text() || "";
-        key = key.replace(/\s+/g, "").trim();
-        if (!key) return;
-
-        const vals: string[] = [];
-        $(tr)
-          .find("td")
-          .each((__: any, td: any) => {
-            const txt = $(td).text().replace(/\s+/g, "").trim();
-            vals.push(txt);
-          });
-
-        if (vals.length) rows.set(key, vals);
-      });
-    }
-
-    parseTableRows($("div.section.cop_analysis table"));
-
-    // 페이지 구조 변경 시 전체 테이블을 스캔해서 필요한 행을 찾음
-    if (rows.size === 0) {
-      $("table").each((_: any, table: any) => {
-        parseTableRows($(table));
-      });
-    }
-
-    const currentPer = extractCurrentValuationMetric($, /^PERlEPS/i, "배");
-    const currentPbr = extractCurrentValuationMetric($, /^PBRlBPS/i, "배");
-    const marketCapText = (() => {
-      for (const [key, vals] of rows.entries()) {
-        if (/시가총액/.test(key)) return [key, ...vals].join(' ')
-      }
-      const match = html.match(/시가총액[^<]*?([0-9.,]+(?:\s*(?:조|억|만))?(?:\s*[0-9.,]+\s*(?:억|만))?)/)
-      return match?.[1] || ''
-    })()
-    const marketCap = parseKoreanMoneyText(marketCapText)
-
-    // 상세 텍스트(투자지표 요약)를 여러 위치에서 시도해 추출
-    const detailText =
-      $("dl.blind dd").text() || $(".wrap_company .blind").text() || $(".rate_info .blind").text() || "";
-    const perFromBlind = findFirstNumberInText(
-      (detailText.match(/PER[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
-    );
-    const pbrFromBlind = findFirstNumberInText(
-      (detailText.match(/PBR[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
-    );
-
-    // 표(row)에서 명시적으로 PER/PBR 라벨을 찾아 추출 (우선순위: table > blind > html)
-    let perFromTable: number | undefined;
-    let pbrFromTable: number | undefined;
-    for (const [k, vals] of rows.entries()) {
-      try {
-        const key = (k || "").toString();
-        if (/PER/i.test(key)) {
-          const v = parseNum((vals && vals[0]) || "");
-          if (v !== undefined) perFromTable = v;
-        }
-        if (/PBR/i.test(key)) {
-          const v = parseNum((vals && vals[0]) || "");
-          if (v !== undefined) pbrFromTable = v;
-        }
-      } catch (e) {
-        /* ignore */
-      }
-    }
-
-    // 전체 HTML에서 PER/PBR을 추가 추출 (페이지 구조가 다른 경우 대비)
-    const perFromHtml = findFirstNumberInText(
-      (html.match(/PER[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
-    );
-    const pbrFromHtml = findFirstNumberInText(
-      (html.match(/PBR[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
-    );
-
-    // 우선순위: 표(table) > blind text > 전체 HTML
-    const perFallback = currentPer ?? perFromTable ?? perFromBlind ?? perFromHtml;
-    const pbrFallback = currentPbr ?? pbrFromTable ?? pbrFromBlind ?? pbrFromHtml;
-
-    if (perFromTable !== undefined) console.info(`fundamental: PER from table (${code}) -> ${perFromTable}`);
-    if (pbrFromTable !== undefined) console.info(`fundamental: PBR from table (${code}) -> ${pbrFromTable}`);
-
-    const out: Record<string, string[]> = Object.fromEntries(rows.entries());
-    if (perFallback !== undefined) out.__PER_FALLBACK__ = [String(perFallback)];
-    if (pbrFallback !== undefined) out.__PBR_FALLBACK__ = [String(pbrFallback)];
-    if (marketCap !== undefined) out.__MARKET_CAP__ = [String(marketCap)];
-
-    if (perFallback === undefined && pbrFallback === undefined) {
-      // 디버깅 용도: 둘 다 못 구하면 짧게 로그 남김
-      try {
-        const snippet = html.slice(0, 600).replace(/\s+/g, " ");
-        console.info(`fundamental: PER/PBR 미발견 (${code}) snippet: ${snippet}`);
-      } catch (e) {
-        console.info(`fundamental: PER/PBR 미발견 (${code})`);
-      }
-    }
-
-    return {
-      rows: out,
-      currentPer,
-      currentPbr,
-      marketCap,
-      perFromTable,
-      pbrFromTable,
-      perFromBlind,
-      pbrFromBlind,
-      perFromHtml,
-      pbrFromHtml,
-    };
-  } catch (e) {
-    console.error(`fetchNaverFinanceRows failed (${code}):`, e);
-    return { rows: {} };
+    const res = await fetch(url, { headers: { "User-Agent": UA }, signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+// finance.naver.com 표 대신 모바일 API를 쓴다(옛 페이지는 stock.naver.com 으로 넘어가 값이 전부 비었다)
+async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
+  const base = `https://m.stock.naver.com/api/stock/${encodeURIComponent(code)}`;
+  const [integration, annual] = await Promise.all([
+    fetchMobileJson(`${base}/integration`),
+    fetchMobileJson(`${base}/finance/annual`),
+  ]);
+  const data = buildMobileFinance(integration, annual);
+  if (data.currentPer === undefined && data.currentPbr === undefined) {
+    console.info(`fundamental: PER/PBR 미발견 (${code}) integration=${integration ? "ok" : "fail"} annual=${annual ? "ok" : "fail"}`);
+  }
+  return data;
 }
 
 export async function getFundamentalSnapshot(code: string): Promise<FundamentalSnapshot> {
