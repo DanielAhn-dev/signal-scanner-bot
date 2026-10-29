@@ -75,6 +75,8 @@ type CreditShortDailySnapshot = {
   credit_ratio: number | null
   short_ratio: number | null
   short_balance: number | null
+  /** 'ok' 가 아니면(unavailable·no_row 등) 잔고·잔고비율은 값이 아니라 '없음'이다 */
+  balance_status: string | null
 }
 
 type CreditShortProxy = {
@@ -611,7 +613,7 @@ async function fetchLatestCreditShortDaily(supabase: any, code: string): Promise
   try {
     const { data, error } = await supabase
       .from('stock_credit_short_daily')
-      .select('date,credit_ratio,short_ratio,short_balance')
+      .select('date,credit_ratio,short_ratio,short_balance,balance_status')
       .eq('code', code)
       .order('date', { ascending: false })
       .limit(1)
@@ -623,6 +625,7 @@ async function fetchLatestCreditShortDaily(supabase: any, code: string): Promise
       credit_ratio: asNum(row?.credit_ratio),
       short_ratio: asNum(row?.short_ratio),
       short_balance: asNum(row?.short_balance),
+      balance_status: row?.balance_status != null ? String(row.balance_status) : null,
     }
   } catch {
     return null
@@ -1386,12 +1389,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dbCreditRatio =
       asNum((stock as any)?.credit_ratio) ??
       asNum((latestCreditShortDaily as any)?.credit_ratio)
-    const dbShortRatio =
-      asNum((stock as any)?.short_ratio) ??
-      asNum((latestCreditShortDaily as any)?.short_ratio)
-    const dbShortBalance =
-      asNum((stock as any)?.short_balance) ??
-      asNum((latestCreditShortDaily as any)?.short_balance)
+    // 공매도 잔고를 못 받은 날(KRX 차단 등)은 0으로 저장돼 있어 '공매도 잔고비율 0.00%'처럼 보였다 — 없음으로 돌린다
+    const balanceUnavailable =
+      latestCreditShortDaily?.balance_status != null && latestCreditShortDaily.balance_status !== 'ok'
+    const dbShortRatio = balanceUnavailable
+      ? null
+      : asNum((stock as any)?.short_ratio) ??
+        asNum((latestCreditShortDaily as any)?.short_ratio)
+    const dbShortBalance = balanceUnavailable
+      ? null
+      : asNum((stock as any)?.short_balance) ??
+        asNum((latestCreditShortDaily as any)?.short_balance)
     const hasSuspiciousDbShortRatio =
       dbShortRatio != null &&
       dbShortRatio > 0 &&
