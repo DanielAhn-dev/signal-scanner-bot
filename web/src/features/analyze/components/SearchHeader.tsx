@@ -69,6 +69,7 @@ export default function SearchHeader({
                     value={query}
                     onChange={setQuery}
                     onSelect={handleStockSelect}
+                    onSubmit={(v) => { void analyze(v) }}
                     placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
                     disabled={loading}
                   />

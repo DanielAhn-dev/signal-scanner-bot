@@ -7,6 +7,7 @@ import { apiFetch } from '../../lib/api'
 import { useCurrentChatId } from '../../stores/profileStore'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
+import HomeStockSearch from '../../components/HomeStockSearch'
 import { FLOW_STEPS } from '../../navigation'
 import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
@@ -339,6 +340,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
         </thead>
         <tbody>
+
+          {/* 종목 검색 — 처음 온 사람이 '종목 분석' 메뉴를 찾아가지 않아도 바로 찾을 수 있게 맨 위에 둔다 */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td colSpan={6} style={{ padding: 0, overflow: 'visible', border: '1px solid var(--color-excel-grid-border)' }}>
+              <HomeStockSearch onNavigate={onNavigate} />
+            </td>
+          </tr>
 
           {/* 내 계획(MyPlanCard)은 모아가기 화면으로 옮겼다 — 홈은 [실제] 이번 달 할 일 + '내 모으기' 요약.
               카드는 표 밖이 아니라 A~F 머리글 아래 병합 셀 안에 둔다(밖에 두면 머리글이 카드 밑으로 밀려 보였다) */}
