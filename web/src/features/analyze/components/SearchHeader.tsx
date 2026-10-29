@@ -34,7 +34,7 @@ export default function SearchHeader({
   onNavigate,
 }: SearchHeaderProps) {
   return (
-      <table className="xls-table analyze-sheet__meta-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+      <table className="xls-table xls-card-table analyze-sheet__meta-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
         <colgroup>
           <col style={{ width: '18%' }} />
           <col style={{ width: '18%' }} />

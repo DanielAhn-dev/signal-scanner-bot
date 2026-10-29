@@ -10,7 +10,7 @@ export default function ResultHead({
   result,
 }: ResultHeadProps) {
   return (
-      <table className="xls-table analyze-sheet__result-head" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+      <table className="xls-table xls-card-table analyze-sheet__result-head" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
         <colgroup>
           <col style={{ width: '22%' }} />
           <col style={{ width: '22%' }} />
