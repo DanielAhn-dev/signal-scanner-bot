@@ -530,10 +530,11 @@ async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]
 async function fetchStockProfile(supabase: any, code: string): Promise<any | null> {
   // 환경마다 stocks 컬럼이 달라(eps 없음 등) 미리 정한 select 목록은 하나만 없어도 시가총액·PER·PBR까지 통째로 빠졌다.
   // 없다고 나온 컬럼만 빼고 다시 조회한다.
+  // 시작 목록은 운영 stocks의 실제 컬럼(2026-10-29 확인: eps·bps·description·foreign_ratio 없음). 환경이 달라 더 없으면 아래에서 줄인다.
   let columns: string[] = [
-    'code', 'name', 'sector_id', 'close', 'updated_at', 'description',
-    'market_cap', 'per', 'pbr', 'eps', 'bps',
-    'foreign_ratio', 'foreigner_ratio', 'credit_ratio', 'short_ratio', 'short_balance',
+    'code', 'name', 'sector_id', 'close', 'updated_at',
+    'market_cap', 'per', 'pbr',
+    'credit_ratio', 'short_ratio', 'short_balance',
     'sma20', 'sma50', 'rsi14',
   ]
 
