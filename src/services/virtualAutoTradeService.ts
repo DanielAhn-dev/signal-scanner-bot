@@ -150,6 +150,7 @@ import { runLongTermCoachForChat } from "./longTermCoachService";
 import { fetchStockNameMap } from "./stockNames";
 import { formatStockLabel, labelFromNameMap } from "../lib/stockLabel";
 import { CASH_SWEEP_STRATEGY_ID, EXPERIMENT_CAP_PCT, readSatelliteCapPct } from "./virtualAutoTradeCashSweep";
+import { bypassGateRestriction } from "./virtualAutoTradeGateBypass";
 import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSweepStep";
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
@@ -2401,6 +2402,16 @@ function applyPerformanceBuyGuard(input: {
   requestedSlots: number;
   baseMinBuyScore: number;
   perf: AutoTradeSellPerformance | null;
+  /** 실험 계좌: 제한(슬롯 감소·점수 상향)을 건너뛴다 */
+  bypass?: boolean;
+}): { requestedSlots: number; baseMinBuyScore: number; note?: string } {
+  return bypassGateRestriction(input, applyPerformanceBuyGuardCore(input), input.bypass === true);
+}
+
+function applyPerformanceBuyGuardCore(input: {
+  requestedSlots: number;
+  baseMinBuyScore: number;
+  perf: AutoTradeSellPerformance | null;
 }): { requestedSlots: number; baseMinBuyScore: number; note?: string } {
   const requestedSlots = Math.max(0, Math.floor(input.requestedSlots));
   const baseMinBuyScore = toPositiveInt(input.baseMinBuyScore, 72);
@@ -2442,6 +2453,16 @@ function applyPerformanceBuyGuard(input: {
 }
 
 function applyPersistedGateGuard(input: {
+  requestedSlots: number;
+  baseMinBuyScore: number;
+  gateStatus?: "promote" | "hold" | "watch" | "pause";
+  /** 실험 계좌: 제한(슬롯 감소·점수 상향·매수 차단)을 건너뛴다 */
+  bypass?: boolean;
+}): { requestedSlots: number; baseMinBuyScore: number; note?: string } {
+  return bypassGateRestriction(input, applyPersistedGateGuardCore(input), input.bypass === true);
+}
+
+function applyPersistedGateGuardCore(input: {
   requestedSlots: number;
   baseMinBuyScore: number;
   gateStatus?: "promote" | "hold" | "watch" | "pause";
@@ -3673,6 +3694,7 @@ async function runMondayBuyForUser(payload: {
   const prefs = await getUserInvestmentPrefs(chatId);
   const discoveryProfile = normalizeDiscoveryProfile(prefs.discovery_profile);
   const signalTrustThresholds = resolveSignalTrustThresholdsFromPrefs(prefs);
+  const experimentGateBypass = readSatelliteCapPct(prefs) >= EXPERIMENT_CAP_PCT; // 실험 계좌는 성과·저장 게이트의 제한을 건너뛴다
 
   const { data: holdingRows, error: holdingError } = await fetchLegacyVirtualPositionsForChat({
     supabase: payload.supabase,
@@ -3855,11 +3877,13 @@ async function runMondayBuyForUser(payload: {
   }).catch(() => null);
 
   const perfGuardForMonday = applyPerformanceBuyGuard({
+    bypass: experimentGateBypass,
     requestedSlots: rawRemainSlots,
     baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
     perf: mondaySellPerf,
   });
   const persistedGuardForMonday = applyPersistedGateGuard({
+    bypass: experimentGateBypass,
     requestedSlots: perfGuardForMonday.requestedSlots,
     baseMinBuyScore: perfGuardForMonday.baseMinBuyScore,
     gateStatus: persistedGateState?.status,
@@ -4824,6 +4848,7 @@ async function runDailyReviewForUser(payload: {
   const prefs = await getUserInvestmentPrefs(chatId);
   const signalTrustThresholds = resolveSignalTrustThresholdsFromPrefs(prefs);
   const discoveryProfile = normalizeDiscoveryProfile(prefs.discovery_profile);
+  const experimentGateBypass = readSatelliteCapPct(prefs) >= EXPERIMENT_CAP_PCT; // 실험 계좌는 성과·저장 게이트의 제한을 건너뛴다
   const summary: AutoTradeActionSummary = {
     chatId,
     buys: 0,
@@ -4861,11 +4886,13 @@ async function runDailyReviewForUser(payload: {
   }).catch(() => null);
 
   const perfGuard = applyPerformanceBuyGuard({
+    bypass: experimentGateBypass,
     requestedSlots: toPositiveInt(payload.setting.monday_buy_slots, 2),
     baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
     perf: dailySellPerf,
   });
   let persistedGuard = applyPersistedGateGuard({
+    bypass: experimentGateBypass,
     requestedSlots: perfGuard.requestedSlots,
     baseMinBuyScore: perfGuard.baseMinBuyScore,
     gateStatus:
@@ -5713,11 +5740,13 @@ async function runDailyReviewForUser(payload: {
         buySellPerf = refreshedPerf;
         buyGateStatus = stricterGateStatus(buyGateStatus, resolveStrategyGateStatus(refreshedPerf));
         const refreshedPerfGuard = applyPerformanceBuyGuard({
+          bypass: experimentGateBypass,
           requestedSlots: toPositiveInt(payload.setting.monday_buy_slots, 2),
           baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
           perf: refreshedPerf,
         });
         persistedGuard = applyPersistedGateGuard({
+          bypass: experimentGateBypass,
           requestedSlots: refreshedPerfGuard.requestedSlots,
           baseMinBuyScore: refreshedPerfGuard.baseMinBuyScore,
           gateStatus: payload.manualLearning && buyGateStatus === "watch" ? "hold" : buyGateStatus,
@@ -6006,11 +6035,13 @@ async function runDailyReviewForUser(payload: {
     // 복구 모드 또는 대형주 방어 모드 시 신규 매수 슬롯을 0으로 강제
     const rawBuySlots = recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily || quarterLossBlockDaily ? 0 : Math.min(room, maxNewBuysPerRun);
     const perfAdjustedRebalance = applyPerformanceBuyGuard({
+      bypass: experimentGateBypass,
       requestedSlots: rawBuySlots,
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
       perf: buySellPerf,
     });
     const persistedRebalanceGuard = applyPersistedGateGuard({
+      bypass: experimentGateBypass,
       requestedSlots: perfAdjustedRebalance.requestedSlots,
       baseMinBuyScore: perfAdjustedRebalance.baseMinBuyScore,
       gateStatus: buyGateStatus,
