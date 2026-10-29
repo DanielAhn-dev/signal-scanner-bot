@@ -2,6 +2,7 @@ import React from 'react'
 import { formatKrw, formatNumber } from '../../../lib/format'
 import { DIVIDER } from './Divider'
 import { formatDate } from '../lib/dates'
+import { hasNoValuationData } from '../lib/valuation'
 
 export type MarketRatiosSectionProps = {
   result: any
@@ -111,6 +112,11 @@ export default function MarketRatiosSection({
             </div>
           ))}
         </div>
+        {hasNoValuationData(result) && (
+          <div className="caption" role="note" style={{ marginTop: 'var(--space-2)', color: 'var(--color-warning)' }}>
+            이 종목은 PER·PBR·ROE·부채비율을 받지 못했어요. 비어 있다고 좋거나 나쁘다는 뜻이 아니니 이 지표로는 판단하지 마세요(ETF·신규상장은 원래 없어요).
+          </div>
+        )}
         {result.fundamentals_as_of && (
           <div className="caption" style={{ marginTop: 'var(--space-2)' }}>
             재무 기준일: {formatDate(result.fundamentals_as_of)}
