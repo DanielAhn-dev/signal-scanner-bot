@@ -23,6 +23,7 @@ import {
   findRequiredIssues,
   findLimitBreaches,
   findNewlyMissing,
+  findStaleFundamentals,
   isLastTradingDayOfWeek,
   type DailyMetrics,
   type MetricSpec,
@@ -190,8 +191,13 @@ async function runQualityChecks(supabase: SupabaseClient, batchDay: string, late
   const nameByCode = new Map(activeNames.filter((r) => r.name).map((r) => [r.code, String(r.name)]));
   for (const r of requiredRows) if (r.name && r.name !== r.code && !nameByCode.has(r.code)) nameByCode.set(r.code, r.name);
 
+  // 재무 수집이 멈췄는지: 값(PER)이 채워진 가장 최근 수집 시각. 조회 실패는 "멈춤"으로 알리지 않는다
+  const { data: fundRow, error: fundErr } = await supabase.from("fundamentals").select("as_of").not("per", "is", null).order("as_of", { ascending: false }).limit(1);
+  const staleFundamentals = fundErr ? null : findStaleFundamentals(fundRow?.[0]?.as_of ?? null, new Date());
+
   const alert = buildQualityAlert({
     trend,
+    staleFundamentals,
     limitBreaches: findLimitBreaches(latestBars, prevBars),
     newlyMissing: latestBars.length && prevBars.length ? findNewlyMissing(universe, latestBars.map((b) => b.ticker), prevBars.map((b) => b.ticker)) : [],
     badNames: findBadNames(activeNames),

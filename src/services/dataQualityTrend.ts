@@ -127,6 +127,19 @@ export function findRequiredIssues(
   return out;
 }
 
+/**
+ * 재무 수집이 멈췄는지 — 값(PER 등)이 채워진 가장 최근 수집이 maxAgeDays일보다 오래됐거나 아예 없으면 알린다.
+ * 2026-10: 네이버 페이지 구조가 바뀌어 14일 넘게 전 종목 PER·ROE가 빈 채로 저장됐지만 행 수는 정상이라 아무도 몰랐다.
+ */
+export type StaleFundamentals = { ageDays: number | null };
+export function findStaleFundamentals(latestValuedAsOf: string | null, now: Date, maxAgeDays = 3): StaleFundamentals | null {
+  if (!latestValuedAsOf) return { ageDays: null };
+  const t = Date.parse(latestValuedAsOf);
+  if (!Number.isFinite(t)) return { ageDays: null };
+  const age = Math.floor((now.getTime() - t) / 86_400_000);
+  return age > maxAgeDays ? { ageDays: age } : null;
+}
+
 function pct(v: number): string {
   return `${(v * 100).toFixed(0)}%`;
 }
@@ -138,6 +151,8 @@ export type QualityAlertInput = {
   badNames: string[];
   /** 보유·추천·운용에 필요한 종목의 문제(활성 여부 무관). 맨 위에 적는다 */
   requiredIssues?: RequiredIssue[];
+  /** 재무(PER·ROE 등) 수집이 멈춘 경우 */
+  staleFundamentals?: StaleFundamentals | null;
   /** 종목 코드 → 이름. 있으면 "이름(코드)"로 적는다 */
   nameByCode?: Map<string, string>;
 };
@@ -154,6 +169,10 @@ export function buildQualityAlert(input: QualityAlertInput): string | null {
   if (required.length) {
     const sample = required.slice(0, 8).map((r) => `${htmlLabel(r.code, input.nameByCode)} [${r.uses.join("·")}] ${r.issues.join("·")}`);
     lines.push(`• 보유·추천에 필요한 종목 문제 ${required.length}개:\n  ${sample.join("\n  ")}`);
+  }
+  if (input.staleFundamentals) {
+    const age = input.staleFundamentals.ageDays;
+    lines.push(`• 재무 수집(PER·PBR·ROE·부채비율): 값이 채워진 마지막 수집이 ${age == null ? "없음" : `${age}일 전`} — 수집처 구조 변경 의심`);
   }
   for (const d of input.trend.drops) {
     lines.push(`• ${d.label}: ${d.latest}건 (평소 ${Math.round(d.baseline)}건의 ${pct(d.latest / d.baseline)})`);
