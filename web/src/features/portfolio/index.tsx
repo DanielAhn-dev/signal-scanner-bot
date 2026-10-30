@@ -18,6 +18,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import PerformanceCard from './components/PerformanceCard'
 import TradeModal from './components/modals/TradeModal'
 import TradeCaptureModal from './components/modals/TradeCaptureModal'
+import HoldingReconcileModal from './components/modals/HoldingReconcileModal'
 import ShareModal from './components/modals/ShareModal'
 import MaintenanceModal from './components/modals/MaintenanceModal'
 import DeleteConfirmModal from './components/modals/DeleteConfirmModal'
@@ -119,6 +120,7 @@ export default function Portfolio() {
   // 모달
   const trade = useTradeModal({ load })
   const [captureOpen, setCaptureOpen] = useState(false)
+  const [reconcileOpen, setReconcileOpen] = useState(false)
   const maint = useMaintenance({ load, accountFolders })
   const share = useShare(selectedAccountKey === 'virtual' ? 'virtual' : 'real')
   const { openTradeModal } = trade
@@ -138,7 +140,7 @@ export default function Portfolio() {
         subtitle={portfolioHeaderSubtitle} onNavigateToCalendar={() => navigate('/market')}
         loading={loading} refreshing={refreshing} allRows={allRows} holdingAll={holdingAll} copyRows={summaryRows}
         onRefresh={() => load({ force: true })} onOpenShare={() => share.setShareModalOpen(true)}
-        onOpenMaintenance={openMaintenanceModal} onOpenTradeCapture={() => setCaptureOpen(true)}
+        onOpenMaintenance={openMaintenanceModal} onOpenTradeCapture={() => setCaptureOpen(true)} onOpenReconcile={() => setReconcileOpen(true)}
         selectedAccountKey={selectedAccountKey} onSelectAccount={(key) => { setSelectedAccountKey(key); setPage(1) }}
         accountFolders={accountFolders} virtualCount={virtualHoldingRows.length} realCount={realCount}
         aliases={aliases} onRenameAccount={renameAccount}
@@ -262,6 +264,14 @@ export default function Portfolio() {
       {captureOpen && (
         <TradeCaptureModal
           isOpen onClose={() => setCaptureOpen(false)}
+          accountFolders={accountFolders} aliases={aliases} holdingAll={holdingAll}
+          defaultAccountKey={selectedAccountKey} load={load}
+        />
+      )}
+
+      {reconcileOpen && (
+        <HoldingReconcileModal
+          isOpen onClose={() => setReconcileOpen(false)}
           accountFolders={accountFolders} aliases={aliases} holdingAll={holdingAll}
           defaultAccountKey={selectedAccountKey} load={load}
         />

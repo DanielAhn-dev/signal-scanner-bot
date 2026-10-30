@@ -63,6 +63,8 @@ export type HoldingRow = {
   account_name?: string | null
   quantity?: number
   avg_price?: number
+  /** 기록된 투입금액(서버 positions 행 그대로) — 수량·평단 맞추기가 반올림 없이 쓴다 */
+  invested_amount?: number | null
   current_price?: number | null
   buy_price?: number
   buy_date?: string | null
