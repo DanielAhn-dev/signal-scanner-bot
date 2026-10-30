@@ -9,6 +9,8 @@
  * 체결 기록 구조는 기존 virtual_trades를 그대로 쓰고 따라 한 표시는 memo로 남긴다(DB 변경 없음).
  */
 
+import { isBulkEstimateMemo } from '../lib/bulkEstimate'
+
 export type FollowTrade = {
   id: string | number
   code: string
@@ -89,6 +91,8 @@ export type FollowComparison = {
   unpriced: number
   followedTradeCount: number
   ownTradeCount: number
+  /** 수량·평단 맞추기로 채운 추정 매수 — 체결가가 평균이라 '내 맘대로' 건수와 가격 차이에서 뺀다(손익에는 들어간다) */
+  estimatedTradeCount: number
 }
 
 const round = (v: number) => Math.round(v)
@@ -122,6 +126,7 @@ export function compareFollow(input: {
   const names = new Map<string, string | null>()
   let followedTradeCount = 0
   let ownTradeCount = 0
+  let estimatedTradeCount = 0
 
   for (const trade of real) {
     names.set(trade.code, trade.name ?? names.get(trade.code) ?? null)
@@ -138,6 +143,8 @@ export function compareFollow(input: {
         worsePct: bot.price > 0 ? (diff / bot.price) * 100 : 0,
         costAmount: round(diff * trade.quantity),
       })
+    } else if (isBulkEstimateMemo(trade.memo)) {
+      estimatedTradeCount += 1
     } else {
       ownTradeCount += 1
     }
@@ -216,5 +223,6 @@ export function compareFollow(input: {
     unpriced,
     followedTradeCount,
     ownTradeCount,
+    estimatedTradeCount,
   }
 }

@@ -77,5 +77,4 @@ export function reconcileHolding(
   return { kind: 'buy', addQty, unitPrice, addAmount, prevAvg, gapPerShare: unitPrice - prevAvg, tolerance, warnings }
 }
 
-/** 모아서 기록한 추정 매수를 구분하는 메모 접두어 — 패턴 분석에서 건별 기록과 나누는 기준 */
-export const BULK_ESTIMATE_MEMO = 'bulk-estimate'
+export { BULK_ESTIMATE_MEMO } from '../../../src/lib/bulkEstimate'

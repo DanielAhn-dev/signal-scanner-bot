@@ -17,7 +17,7 @@ vi.mock('../../stores/profileStore', () => ({
 const emptyComparison = {
   followed: { chunks: 0, invested: 0, actualPnl: 0, botPricePnl: 0, returnPct: null },
   own: { chunks: 0, invested: 0, actualPnl: 0, botPricePnl: 0, returnPct: null },
-  followedTradeCount: 0, ownTradeCount: 0, actualPnl: 0, botPricePnl: 0, priceEffect: 0,
+  followedTradeCount: 0, ownTradeCount: 0, estimatedTradeCount: 0, actualPnl: 0, botPricePnl: 0, priceEffect: 0,
   slippage: [], missed: [], missedAvgReturnPct: null, unpriced: 0,
 }
 

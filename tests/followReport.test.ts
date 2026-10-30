@@ -53,6 +53,19 @@ describe('따라 샀어요 결산', () => {
     expect(r.followed.chunks).toBe(0)
   })
 
+  it('모아서 기록한 추정 매수는 내 맘대로 건수에서 빼고 손익에는 넣는다', () => {
+    const r = compareFollow({
+      bot: [],
+      real: [mine(300, 'BUY', 5_000, '02', 4, 'bulk-estimate', '005930')],
+      prices: { '005930': 4_500 },
+    })
+    expect(r.ownTradeCount).toBe(0)
+    expect(r.estimatedTradeCount).toBe(1)
+    expect(r.followedTradeCount).toBe(0)
+    expect(r.slippage.length).toBe(0)
+    expect(r.actualPnl).toBe(-2_000)
+  })
+
   it('따라 산 뒤 내 맘대로 판 왕복은 따라 한 거래가 아니라 내 맘대로로 센다', () => {
     const r = compareFollow({
       bot: [bot(1, 'BUY', 10_000, '01')],

@@ -24,7 +24,7 @@ const day = (iso: string) => iso.slice(5, 10).replace('-', '/')
 /** 결산 한 줄 — 가격 차이와 선택 차이를 나눠서 말한다 */
 export function buildHeadlines(c: FollowComparison): string[] {
   const lines: string[] = []
-  if (c.followedTradeCount === 0 && c.ownTradeCount === 0) return lines
+  if (c.followedTradeCount === 0 && c.ownTradeCount === 0 && c.estimatedTradeCount === 0) return lines
   if (c.followedTradeCount > 0) {
     lines.push(
       c.priceEffect < 0
@@ -48,6 +48,9 @@ export function buildHeadlines(c: FollowComparison): string[] {
   }
   if (c.missed.length > 0 && c.missedAvgReturnPct != null) {
     lines.push(`따라 하지 않은 봇 매수 ${c.missed.length}건은 지금까지 평균 ${pct(c.missedAvgReturnPct)}입니다.`)
+  }
+  if (c.estimatedTradeCount > 0) {
+    lines.push(`모아서 기록한 추정 매수 ${c.estimatedTradeCount}건은 체결가가 평균값이라 가격 차이 계산에서 뺐습니다(손익에는 들어갑니다).`)
   }
   return lines
 }
