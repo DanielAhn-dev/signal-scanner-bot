@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { MIX_ASSETS, type MixAsset } from '../../data/mixData'
 import { simulatePeriod } from '../accumulate'
 import { MIX_PRESETS, simulateMix, type Rebalance } from '../mix'
-import { annualIrr, commonMonths, rollingStarts, simulatePlan } from './engine'
+import { annualIrr, commonMonths, rollingPaths, rollingStarts, simulatePlan } from './engine'
 
 const asset = (id: string, start: string, f: (i: number) => number, n = 72, dragPct = 0): MixAsset => {
   const y0 = Number(start.slice(0, 4))
@@ -140,6 +140,51 @@ describe('rollingStarts', () => {
   it('넣은 돈이 없으면 null', () => {
     const a = asset('a', '2010', () => 100)
     expect(rollingStarts({ weights: { a: 1 }, assets: [a] })).toBeNull()
+  })
+})
+
+describe('rollingPaths', () => {
+  const rising = asset('a', '2010', (i) => 100 * 1.01 ** i, 36)
+  // 오르다 꺾이는 자산 — 시작 달에 따라 원금 아래로 내려가는 경로가 생긴다
+  const wavy = asset('w', '2010', (i) => 100 + 20 * Math.sin(i / 3) + i, 72)
+
+  it('각 경로의 끝 값이 rollingStarts의 끝 배율과 같다', () => {
+    const input = { weights: { w: 1 }, startYm: '201001', endYm: '201112', monthly: 10, lump: 5, assets: [wavy] }
+    const roll = rollingStarts(input)!
+    const paths = rollingPaths(input)!
+    expect(paths.count).toBe(roll.count)
+    const ends = paths.paths.map((r) => r[r.length - 1]).sort((a, b) => a - b)
+    ends.forEach((v, i) => expect(v).toBeCloseTo(roll.ratios[i], 10))
+  })
+
+  it('고른 기간의 경로가 simulatePlan과 같고 넣은 돈도 같다', () => {
+    const input = { weights: { w: 1 }, startYm: '201103', endYm: '201302', monthly: 10, lump: 5, assets: [wavy] }
+    const plan = simulatePlan(input)!
+    const paths = rollingPaths(input)!
+    expect(paths.paid).toEqual(plan.paid)
+    paths.chosen.forEach((v, t) => expect(v).toBeCloseTo(plan.value[t] / plan.paid[t], 10))
+    expect(paths.labels).toEqual(plan.labels)
+  })
+
+  it('띠는 하위 10% ≤ 중앙 ≤ 상위 10%이고 원금 아래 경로 수를 센다', () => {
+    const paths = rollingPaths({ weights: { w: 1 }, startYm: '201001', endYm: '201112', monthly: 10, assets: [wavy] })!
+    paths.median.forEach((m, t) => {
+      if (Number.isNaN(m)) return
+      expect(paths.p10[t]).toBeLessThanOrEqual(m)
+      expect(paths.p90[t]).toBeGreaterThanOrEqual(m)
+    })
+    expect(paths.underwater).toBe(paths.isUnderwater.filter(Boolean).length)
+    expect(paths.underwater).toBeGreaterThan(0)
+  })
+
+  it('일시금 0이면 첫 시점 배율은 NaN, 매달 같은 비율로 오르면 원금 아래 경로가 없다', () => {
+    const paths = rollingPaths({ weights: { a: 1 }, startYm: '201001', endYm: '201101', monthly: 10, assets: [rising] })!
+    expect(Number.isNaN(paths.paths[0][0])).toBe(true)
+    expect(paths.underwater).toBe(0)
+  })
+
+  it('넣은 돈이 없으면 null', () => {
+    expect(rollingPaths({ weights: { a: 1 }, assets: [rising] })).toBeNull()
   })
 })
 

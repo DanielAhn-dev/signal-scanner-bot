@@ -55,6 +55,18 @@
 .ps-k-mid { width: 2px; height: 12px; background: var(--color-text-secondary); }
 .ps-k-me { width: 10px; height: 10px; border-radius: 50%; background: var(--color-text-primary); }
 
+/* 경로 부채꼴 — 시작 달 하나가 가는 선 하나 */
+.ps-fan-line { fill: none; stroke: var(--color-text-tertiary); stroke-width: 1; opacity: .22; }
+.ps-fan-line--down { stroke: var(--color-negative); opacity: .3; }
+.ps-fan-band { fill: var(--color-brand-muted); opacity: .55; stroke: none; }
+.ps-fan-median { fill: none; stroke: var(--color-text-secondary); stroke-width: 2; stroke-dasharray: 5 3; }
+.ps-fan-me { fill: none; stroke: var(--color-text-primary); stroke-width: 3; }
+.ps-fan-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ps-k-line { display: inline-block; width: 16px; height: 0; margin-right: 4px; vertical-align: middle; border-top: 2px solid var(--color-text-tertiary); }
+.ps-k-line--down { border-top-color: var(--color-negative); }
+.ps-k-line--me { border-top: 3px solid var(--color-text-primary); }
+.ps-k-line--mid { border-top: 2px dashed var(--color-text-secondary); }
+
 @media (max-width: 480px) {
   .ps-roll-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

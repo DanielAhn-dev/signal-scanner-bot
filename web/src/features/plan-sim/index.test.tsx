@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import PlanSimPageInner from './index'
 
@@ -26,6 +26,20 @@ describe('시뮬레이터 화면', () => {
     expect(row.querySelectorAll('td')).toHaveLength(2)
     expect(screen.getByText(/다른 달에 시작했다면/)).toBeTruthy()
     expect(apiFetchMock).not.toHaveBeenCalled()
+  })
+
+  it('같은 기간을 다른 시작 달로 돌린 경로 부채꼴을 그리고, 구성을 바꿔 볼 수 있다', () => {
+    render(<PlanSimPage />)
+    const fan = () => screen.getByRole('img', { name: /시작 달 \d+개로 돌린 경로/ })
+    expect(fan().getAttribute('aria-label')).toMatch(/원금 아래로 내려간 적 있는 경로 \d+개/)
+    expect(fan().querySelectorAll('.ps-fan-line').length).toBeGreaterThan(10)
+    expect(fan().querySelector('.ps-fan-me')).toBeTruthy()
+    expect(screen.getByText(/도중에 원금 아래로 내려간 적이 있습니다/).textContent).toContain('기간이 많이 겹쳐')
+    const before = fan().getAttribute('aria-label')
+    const pick = within(screen.getByRole('group', { name: '경로를 볼 구성' }))
+    fireEvent.click(pick.getByRole('button', { name: /^B 코스피200만/ }))
+    expect(pick.getByRole('button', { name: /^B 코스피200만/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(fan().getAttribute('aria-label')).not.toBe(before)
   })
 
   it('로그인했으면 내 계획 구성·매달 금액으로 A를 채운다', async () => {

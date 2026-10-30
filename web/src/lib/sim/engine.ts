@@ -251,3 +251,52 @@ export function rollingStarts(input: SimPlanInput): RollingResult | null {
     chosen: chosen.ratio, worsePct: (worse / ratios.length) * 100,
   }
 }
+
+export type RollingPaths = {
+  /** 같은 길이로 시작할 수 있었던 시작월 수 */
+  count: number
+  months: number
+  /** 시점 YYYYMM (고른 기간 기준 이름표 — 다른 시작 달의 경로는 같은 "시작 후 n개월"에 놓는다) */
+  labels: string[]
+  /** 시점별 넣은 돈 — 시작 달과 무관하게 같다 */
+  paid: number[]
+  /** paths[시작 달][시점] = 평가금 / 넣은 돈. 넣은 돈이 아직 0인 시점은 NaN */
+  paths: number[][]
+  /** 시점별 하위 10%·중앙·상위 10% 배율(넣은 돈이 0인 시점은 NaN) */
+  p10: number[]
+  median: number[]
+  p90: number[]
+  /** 고른 기간의 시점별 배율 */
+  chosen: number[]
+  /** 한 번이라도 원금(배율 1) 아래로 내려간 시작 달 수 */
+  underwater: number
+  /** underwater 여부 — paths와 같은 순서 */
+  isUnderwater: boolean[]
+}
+
+/**
+ * rollingStarts와 같은 입력으로, 시작 달마다 "시작 후 n개월" 경로 전체를 모은다 — 끝 값만이 아니라 중간에 얼마나 내려갔는지를 보여 준다.
+ * 랜덤 가정이 아니라 데이터 안에 실제로 있었던 시작 달들이다. 시작 달 사이에 기간이 겹치므로 독립 표본이 아니다.
+ */
+export function rollingPaths(input: SimPlanInput): RollingPaths | null {
+  const p = prepare(input.weights, input.assets ?? MIX_ASSETS)
+  if (!p) return null
+  const w = span(p, input.startYm, input.endYm)
+  if (!w) return null
+  const chosenRun = run(p, w.s, w.n, input, true)
+  if (!(chosenRun.stats.paidTotal > 0)) return null
+  const { paid } = chosenRun
+  const ratioOf = (value: number[]) => value.map((v, t) => (paid[t] > 0 ? v / paid[t] : NaN))
+  const paths: number[][] = []
+  for (let st = 0; st + w.n < p.timeline.length; st += 1) paths.push(ratioOf(run(p, st, w.n, input, true).value))
+  const band = (f: number) => paid.map((_, t) => {
+    const col = paths.map((r) => r[t]).filter((v) => Number.isFinite(v)).sort((a, b) => a - b)
+    return col.length ? col[Math.min(col.length - 1, Math.floor(col.length * f))] : NaN
+  })
+  const isUnderwater = paths.map((r) => r.some((v, t) => t > 0 && v < 1))
+  return {
+    count: paths.length, months: w.n, labels: chosenRun.labels, paid, paths,
+    p10: band(0.1), median: band(0.5), p90: band(0.9), chosen: ratioOf(chosenRun.value),
+    underwater: isUnderwater.filter(Boolean).length, isUnderwater,
+  }
+}

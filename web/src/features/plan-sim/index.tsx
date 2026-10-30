@@ -4,7 +4,7 @@ import More from '../../components/ui/More'
 import { SIM_ASOF, SIM_ASSETS, SIM_BUILT } from '../../data/simData'
 import { apiFetch } from '../../lib/api'
 import { STRESS_PRESETS, normalize, type Shocks } from '../../lib/mix'
-import { commonMonths, rollingStarts, simulatePlan, type SimRebalance } from '../../lib/sim/engine'
+import { commonMonths, rollingPaths, rollingStarts, simulatePlan, type SimRebalance } from '../../lib/sim/engine'
 import { PERIOD_PRESETS, resolveCustom, resolvePreset, sharedMonths, spanText, ymText, type PeriodPreset } from '../../lib/sim/period'
 import { readSimPrefill, weightsFromPlan } from '../../lib/sim/prefill'
 import type { MixEntry } from '../../lib/planMix'
@@ -12,6 +12,7 @@ import { useCurrentChatId } from '../../stores/profileStore'
 import AmountChart, { type ChartMode } from './AmountChart'
 import BehaviorGap from './BehaviorGap'
 import DropPlanCard from './DropPlanCard'
+import FanChart from './FanChart'
 import MixEditor, { type Slot } from './MixEditor'
 import { MAX_SLOTS, SIM_MIX_PRESETS, SLOT_NAMES, presetKeyOf } from './presets'
 import { ResultTable, RollingList, type SlotResult } from './Results'
@@ -64,6 +65,8 @@ export default function PlanSimPage() {
   const [raisePct, setRaisePct] = useState(() => (prefill?.raisePct ? String(Math.round(prefill.raisePct * 100)) : '0'))
   const [rebalance, setRebalance] = useState<SimRebalance>('year')
   const [mode, setMode] = useState<ChartMode>('amount')
+  // 경로 부채꼴은 한 번에 한 구성만 그린다
+  const [fan, setFan] = useState(0)
   // 아래 '이 구성 자세히'(하락 가정·내 계획으로 정하기)가 보는 구성
   const [focus, setFocus] = useState(0)
   const [shocks, setShocks] = useState<Shocks>(STRESS_PRESETS[0].shocks)
@@ -114,6 +117,15 @@ export default function PlanSimPage() {
     })
     return out
   }, [calc])
+
+  const fanIdx = Math.min(fan, Math.max(0, results.length - 1))
+  const fanName = results[fanIdx]?.name
+  const fanPaths = useMemo(() => {
+    const { slots: ss, period: pr } = calc
+    const k = fanName ? (SLOT_NAMES as readonly string[]).indexOf(fanName) : -1
+    if (!pr || k < 0 || !ss[k]) return null
+    return rollingPaths({ weights: ss[k].weights, startYm: pr.start, endYm: pr.end, lump: calc.lump, monthly: calc.monthly, monthlyRaisePct: calc.raise, rebalance: calc.rebalance, assets: SIM_ASSETS })
+  }, [calc, fanName])
 
   const updateSlot = (k: number, s: Slot) => {
     if (k === 0) touched.current.a = true
@@ -236,6 +248,35 @@ export default function PlanSimPage() {
           <section className="acc-card" aria-labelledby="ps-roll">
             <h2 id="ps-roll">같은 {spanText(head.months)}을 다른 달에 시작했다면</h2>
             <p className="acc-note">고른 기간 하나만 보면 운이 좋았던 구간을 고르기 쉽습니다. 같은 길이·같은 금액을 데이터 안의 모든 시작 달로 돌린 끝 평가금 범위입니다.</p>
+            {fanPaths && (
+              <>
+                {results.length > 1 && (
+                  <div className="ps-chips" role="group" aria-label="경로를 볼 구성">
+                    {results.map((r, k) => (
+                      <button key={r.name} type="button" className={k === fanIdx ? 'is-active' : ''} aria-pressed={k === fanIdx} onClick={() => setFan(k)}>
+                        <i className={`ps-key ps-key--${r.name}`} />{r.name} {r.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="ps-chips" role="group" aria-label="경로 그래프 세로축">
+                  <button type="button" className={mode === 'amount' ? 'is-active' : ''} aria-pressed={mode === 'amount'} onClick={() => setMode('amount')}>금액</button>
+                  <button type="button" className={mode === 'pct' ? 'is-active' : ''} aria-pressed={mode === 'pct'} onClick={() => setMode('pct')}>넣은 돈 대비 %</button>
+                </div>
+                <FanChart data={fanPaths} mode={mode} />
+                <p className="acc-legend">
+                  <span><i className="ps-k-line" />시작 달 하나</span>
+                  <span><i className="ps-k-line ps-k-line--down" />원금 아래로 내려간 적 있는 경로</span>
+                  <span><i className="ps-k-range" />하위 10%~상위 10%</span>
+                  <span><i className="ps-k-line ps-k-line--mid" />중앙</span>
+                  <span><i className="ps-k-line ps-k-line--me" />고른 기간</span>
+                </p>
+                <p className="acc-note">
+                  시작 달 {fanPaths.count}개 중 <strong>{fanPaths.underwater}개({Math.round((fanPaths.underwater / fanPaths.count) * 100)}%)</strong>가 도중에 원금 아래로 내려간 적이 있습니다.
+                  시작 달끼리 기간이 많이 겹쳐 실제로 서로 다른 경험은 이보다 적습니다.
+                </p>
+              </>
+            )}
             <RollingList rows={results} months={head.months} />
             <p className="acc-legend"><span><i className="ps-k-range" />하위 10%~최고</span><span><i className="ps-k-mid" />중앙</span><span><i className="ps-k-me" />고른 기간</span></p>
           </section>
