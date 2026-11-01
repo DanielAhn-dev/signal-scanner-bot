@@ -211,6 +211,24 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
       <p class="rb-muted">실제 하락폭은 시장 상황과 자산 간 움직임에 따라 달라지며, 이 표의 손실이 최대 손실이라는 뜻이 아닙니다. 평가액 하락을 특정 비율 안으로 막는 것은 어떤 비중으로도 보장할 수 없습니다. 커버드콜은 하락 때 일부 덜 빠질 수 있으나 같은 주식형으로 계산했고, 레버리지·인버스는 주식 하락의 2배로 넣었습니다.</p>`))
   }
 
+  // 7-2. 위험 기여도 — 최근 일봉 기준, 비중과 위험 몫의 차이
+  if (r.risk) {
+    const k = r.risk
+    const rows = k.holdings
+      .slice(0, 8)
+      .map((x) => `<tr><td class="rb-l">${e(x.name)}</td><td>${x.weightPct.toFixed(1)}%</td><td class="${x.riskSharePct > x.weightPct + 10 ? 'rb-down' : ''}">${x.riskSharePct.toFixed(1)}%</td><td>${x.volPct.toFixed(0)}%</td></tr>`)
+      .join('')
+    const pairs = k.highCorrPairs.length
+      ? `<ul class="rb-list">${k.highCorrPairs.map((p) => `<li>${e(p.a)} · ${e(p.b)} — 상관 ${p.corr.toFixed(2)}. 이름은 달라도 거의 같이 움직여 분산 효과가 작습니다.</li>`).join('')}</ul>`
+      : '<p class="rb-muted">비중 5% 이상 종목 중 거의 같이 움직이는 쌍은 없습니다.</p>'
+    const skipped = k.excluded.length ? `<p class="rb-muted">상장 후 기간이 짧아 뺀 종목: ${k.excluded.map((x) => e(x.name)).join(', ')} (계산에 들어간 평가금 ${k.coveragePct.toFixed(0)}%).</p>` : ''
+    parts.push(section('7-2. 위험은 어디서 오나', `
+      <p>비중이 아니라 <b>계좌가 흔들리는 정도 중 어느 종목 몫이 큰지</b> 봅니다. 현재 비중을 ${k.startDate}~${k.endDate}(거래일 ${k.observations}일) 내내 유지했다고 가정하면 연환산 변동성은 약 ${k.portfolioVolPct.toFixed(1)}%, 그 기간 최대 낙폭은 ${k.maxDrawdownPct.toFixed(1)}%입니다. 실질적으로 서로 다르게 움직이는 종목 수는 약 ${k.effectiveBets.toFixed(1)}개입니다.</p>
+      <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>비중</th><th>위험 몫</th><th>단독 변동성(연)</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${pairs}${skipped}
+      <p class="rb-muted">과거 약 1년의 기록이라 표본이 짧고, 위기 때는 종목끼리 평소보다 더 같이 움직입니다. 앞으로의 손실 한도를 뜻하지 않으며, 가격은 분배금이 반영된 수정주가일 수 있어 변동성 용도로만 썼습니다. 현금성은 변동 0으로 계산했습니다.</p>`))
+  }
+
   // 8. 실행 순서
   parts.push(section('8. 실행 순서', `<ol class="rb-steps">${r.steps.map((s) => `<li>${e(s)}</li>`).join('')}</ol>`))
   // 9. 데이터 신뢰도

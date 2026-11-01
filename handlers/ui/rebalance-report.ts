@@ -11,7 +11,8 @@ import { fetchEtfKeyIndicators } from '../../src/services/etfKeyIndicator'
 import { loadIndexAlternatives, toEtfYield } from '../../src/services/indexAlternatives'
 import { fetchDropDayContext } from '../../src/services/dropDayContext'
 import { isExchangeTradedProduct } from '../../src/lib/securitiesTax'
-import { DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView } from '../../src/lib/incomeGuide'
+import { CASH_BALANCE_CODE, DEFAULT_INCOME_GUIDE_SETTINGS, buildIncomeGuideView } from '../../src/lib/incomeGuide'
+import { loadAccountRisk } from '../../src/services/accountRiskService'
 import { readOwnUserState } from './user-state'
 import { applyAccountKinds, listGuideAccounts, scopeSettingsToAccount } from '../../src/lib/guideAccountScope'
 import { buildRebalancePlan } from '../../src/lib/rebalancePlan'
@@ -104,6 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const report = buildRebalanceReport({ ...baseInput, feeAlternatives: indexAlt.alternatives })
     if (!report) return res.status(404).json({ error: '이 계좌에 입력된 보유가 없습니다.' })
+    report.risk = await loadAccountRisk(supabase, view.holdings.filter((h) => h.accountKey === accountKey && h.code !== CASH_BALANCE_CODE).map((h) => ({ code: h.code, name: h.name, value: h.value })))
 
     const generatedAt = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false })
     res.setHeader('Content-Type', 'text/html; charset=utf-8')

@@ -21,6 +21,7 @@ import { FEE_TIE_PP, strategyKey, type RebalancePlan } from "./rebalancePlan";
 import { KRX_SELL_TAX_RATE, resolveOtherEtfGainTax, resolveSellTaxRate } from "./securitiesTax";
 import { buildReportReliability, type ReportReliability } from "./reportReliability";
 import { buildReportStress, type ReportStress } from "./reportStress";
+import type { RiskContribution } from "./riskContribution";
 import { chooseIndexBuy, newMoneyFromSettings, type EtfYield, type FeeAlternative } from "./indexProductChoice";
 
 /** 매도 수수료 가정 (온라인 기준) */
@@ -176,6 +177,8 @@ export type RebalanceReport = {
     | null;
   /** 하락 가정에서 이 계좌 평가금이 얼마나 줄지 (예수금 제외, 예측 아님) */
   stress: ReportStress | null;
+  /** 최근 일봉 기준 위험 기여도 (핸들러가 가격 이력을 읽어 붙인다. 이력이 모자라면 없음) */
+  risk?: RiskContribution | null;
   /** 숫자의 재료가 믿을 만한지 */
   reliability: ReportReliability;
   headline: string;
