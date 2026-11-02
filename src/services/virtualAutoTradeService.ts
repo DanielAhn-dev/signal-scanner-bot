@@ -65,6 +65,7 @@ import {
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
 import { selectPaged } from "./supabasePaging";
+import { computeUniverseBreadth } from "../lib/universeBreadth";
 import { discoverMultibaggerCandidates } from "./discoveryService";
 import { computeAutoTradePacingMetrics } from "./virtualAutoTradePacingService";
 import {
@@ -1232,27 +1233,15 @@ async function fetchUniverseBreadth(supabase: SupabaseClientAny): Promise<number
     .limit(2);
   const dates = ((dateRows ?? []) as Array<{ date: string }>).map((r) => String(r.date).slice(0, 10));
   if (dates.length < 2) return null;
-  const { data: rows } = await supabase
-    .from("stock_daily")
-    .select("ticker, date, close")
-    .in("date", dates)
-    .limit(1000);
-  const byTicker = new Map<string, { cur?: number; prev?: number }>();
-  for (const row of (rows ?? []) as Array<{ ticker: string; date: string; close: number }>) {
-    const entry = byTicker.get(row.ticker) ?? {};
-    if (String(row.date).slice(0, 10) === dates[0]) entry.cur = toNumber(row.close, 0);
-    else entry.prev = toNumber(row.close, 0);
-    byTicker.set(row.ticker, entry);
-  }
-  let advancing = 0;
-  let total = 0;
-  for (const { cur, prev } of byTicker.values()) {
-    if (!cur || !prev) continue;
-    total += 1;
-    if (cur > prev) advancing += 1;
-  }
-  return total >= 50 ? Number(((advancing / total) * 100).toFixed(1)) : null;
+  // 2일치 × 전 종목은 종목 수가 500을 넘으면 1000행에서 조용히 잘린다 — 끝까지 받는다(정렬 고정)
+  const rows = await selectPaged<{ ticker: string; date: string; close: number }>(
+    async (from, to) =>
+      await supabase.from("stock_daily").select("ticker, date, close").in("date", dates).order("date", { ascending: false }).order("ticker").range(from, to),
+    { logLabel: "autoTrade.universeBreadth" }
+  );
+  return computeUniverseBreadth(rows, dates[0]);
 }
+
 
 async function fetchMarketOverviewWithBudget(input: {
   apiBudget?: ApiBudget;
