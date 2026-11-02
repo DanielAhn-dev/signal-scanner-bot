@@ -25,10 +25,22 @@ const DRY_RUN = process.argv.includes("--dryRun=true");
 // BLS는 브라우저 흉내·curl·URL이 들어간 User-Agent를 403으로 막고, 이름만 밝히면 받아 준다 (2026-10-12 확인)
 const USER_AGENT = "nexora-calendar-bot/1.0";
 
-async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html,*/*" }, signal: AbortSignal.timeout(30_000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
-  return res.text();
+// bok.or.kr은 해외 러너에서 가끔 30초 넘게 응답하지 않아(2026-11-02) 일시 오류는 재시도한다. 4xx는 재시도해도 같다
+async function fetchText(url: string, attempts = 3): Promise<string> {
+  let lastError: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html,*/*" }, signal: AbortSignal.timeout(30_000) });
+      if (res.ok) return res.text();
+      lastError = new Error(`HTTP ${res.status} ${url}`);
+      if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
+    } catch (e) {
+      lastError = e;
+      if (e instanceof Error && /^HTTP 4\d\d/.test(e.message) && !/HTTP (408|429)/.test(e.message)) throw e;
+    }
+    if (i < attempts) await new Promise((r) => setTimeout(r, 5_000 * i));
+  }
+  throw lastError;
 }
 
 type SourceSpec = {
