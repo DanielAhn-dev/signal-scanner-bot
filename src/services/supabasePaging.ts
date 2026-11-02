@@ -154,6 +154,27 @@ export async function selectPaged<T>(
   return out;
 }
 /**
+ * `.in(키, 큰 배열)`을 DEFAULT_IN_CHUNK_SIZE개씩 나눠 조회하고, 조각마다 1000행 상한을 넘으면 페이지로 이어 받는다.
+ * 큰 `.in()`은 URL이 길어져 fetch가 실패하고, `.limit(5000)`은 1000행에서 조용히 잘린다.
+ * 페이지 사이에 행이 겹치거나 빠지지 않도록 fetchPage의 정렬 끝에 고유 컬럼을 둔다.
+ */
+export async function selectInChunked<T, K extends string | number>(
+  ids: K[],
+  fetchPage: (
+    chunk: K[],
+    from: number,
+    to: number
+  ) => Promise<{ data?: T[] | null; error?: { message?: string } | null }>,
+  options?: Parameters<typeof selectPaged<T>>[1] & { chunkSize?: number }
+): Promise<T[]> {
+  const out: T[] = [];
+  for (const chunk of chunkValues(ids, options?.chunkSize ?? DEFAULT_IN_CHUNK_SIZE)) {
+    out.push(...(await selectPaged<T>((from, to) => fetchPage(chunk, from, to), options)));
+  }
+  return out;
+}
+
+/**
  * selectPaged와 같지만 throw 대신 `{ data, error }`로 돌려준다. 기존 `if (error) ...` 흐름을 그대로 두고 조회만
  * 끝까지 받게 바꿀 때 쓴다(오류 시 data는 null — 일부만 받은 결과를 완전한 것처럼 쓰지 않는다).
  * 페이지 사이에 행이 겹치거나 빠지지 않도록 호출부 정렬 끝에 고유 컬럼(id)을 둔다.

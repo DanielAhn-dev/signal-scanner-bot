@@ -4,7 +4,7 @@ import { actionButtons } from "../messages/layout";
 import { discoverMultibaggerCandidates } from "../../services/discoveryService";
 import { parseStrategyMemo } from "../../lib/strategyMemo";
 import { getUserInvestmentPrefs, setUserInvestmentPrefs } from "../../services/userService";
-import { selectAllSettled, selectPaged } from "../../services/supabasePaging";
+import { selectAllSettled, selectInChunked, selectPaged } from "../../services/supabasePaging";
 
 type DiscoveryProfile = "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
 
@@ -326,30 +326,46 @@ async function buildBacktestEdgeRanking(input: {
     }
   }
 
-  const tradeIds = Array.from(tradeById.keys()).slice(0, 1000);
+  const tradeIds = Array.from(tradeById.keys());
   const holdByTradeId = new Map<number, { weightedDays: number; qty: number }>();
   if (tradeIds.length > 0) {
-    const lotMatchResp = await input.supabase
-      .from("virtual_trade_lot_matches")
-      .select("trade_id,lot_id,quantity")
-      .in("trade_id", tradeIds)
-      .limit(5000);
-    const lotMatches = (lotMatchResp.data ?? []) as Array<{
+    const lotMatches = await selectInChunked<{
       trade_id?: number | null;
       lot_id?: number | null;
       quantity?: number | null;
-    }>;
+    }, number>(tradeIds, (chunk, from, to) =>
+      input.supabase
+        .from("virtual_trade_lot_matches")
+        .select("trade_id,lot_id,quantity")
+        .in("trade_id", chunk)
+        .order("trade_id", { ascending: true })
+        .order("lot_id", { ascending: true })
+        .range(from, to),
+      { logLabel: "lot_matches_discovery" }
+    ).catch((e) => {
+      console.warn("[discoveryProfile] 로트 매칭 조회 실패:", e?.message || e);
+      return [];
+    });
     const lotIds = Array.from(
       new Set(lotMatches.map((row) => Math.floor(toNumber(row.lot_id, 0))).filter((id) => id > 0))
-    ).slice(0, 5000);
+    );
     const lotAcquiredAt = new Map<number, string>();
     if (lotIds.length > 0) {
-      const lotsResp = await input.supabase
-        .from("virtual_trade_lots")
-        .select("id,acquired_at")
-        .in("id", lotIds)
-        .limit(5000);
-      for (const lot of (lotsResp.data ?? []) as Array<{ id?: number | null; acquired_at?: string | null }>) {
+      const lots = await selectInChunked<{ id?: number | null; acquired_at?: string | null }, number>(
+        lotIds,
+        (chunk, from, to) =>
+          input.supabase
+            .from("virtual_trade_lots")
+            .select("id,acquired_at")
+            .in("id", chunk)
+            .order("id", { ascending: true })
+            .range(from, to),
+        { logLabel: "lots_discovery" }
+      ).catch((e) => {
+        console.warn("[discoveryProfile] 로트 조회 실패:", e?.message || e);
+        return [];
+      });
+      for (const lot of lots) {
         const lotId = Math.floor(toNumber(lot.id, 0));
         const acquiredAt = String(lot.acquired_at ?? "").trim();
         if (lotId > 0 && acquiredAt) {

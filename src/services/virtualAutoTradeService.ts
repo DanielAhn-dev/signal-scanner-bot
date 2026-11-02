@@ -64,7 +64,7 @@ import {
   type RotationHeldPosition,
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
-import { selectAllSettled, selectPaged } from "./supabasePaging";
+import { selectAllSettled, selectInChunked, selectPaged } from "./supabasePaging";
 import { computeUniverseBreadth } from "../lib/universeBreadth";
 import { discoverMultibaggerCandidates } from "./discoveryService";
 import { computeAutoTradePacingMetrics } from "./virtualAutoTradePacingService";
@@ -345,33 +345,48 @@ async function fetchBacktestEdgeProfile(input: {
     }
   }
 
-  const tradeIds = Array.from(tradeById.keys()).slice(0, 1000);
+  const tradeIds = Array.from(tradeById.keys());
   const holdDaysByTrade = new Map<number, { weightedDays: number; qty: number }>();
 
   if (tradeIds.length > 0) {
-    const { data: lotMatches } = await input.supabase
-      .from(PORTFOLIO_TABLES.lotMatches)
-      .select("trade_id,lot_id,quantity")
-      .in("trade_id", tradeIds)
-      .limit(5000);
-
-    const matches = (lotMatches ?? []) as Array<{
+    const matches = await selectInChunked<{
       trade_id?: number | null;
       lot_id?: number | null;
       quantity?: number | null;
-    }>;
+    }, number>(tradeIds, (chunk, from, to) =>
+      input.supabase
+        .from(PORTFOLIO_TABLES.lotMatches)
+        .select("trade_id,lot_id,quantity")
+        .in("trade_id", chunk)
+        .order("trade_id", { ascending: true })
+        .order("lot_id", { ascending: true })
+        .range(from, to),
+      { logLabel: "lot_matches_hold_days" }
+    ).catch((e) => {
+      console.warn("[virtualAutoTrade] 로트 매칭 조회 실패:", e?.message || e);
+      return [];
+    });
     const lotIds = Array.from(
       new Set(matches.map((row) => Math.floor(toNumber(row.lot_id, 0))).filter((id) => id > 0))
-    ).slice(0, 5000);
+    );
 
     const lotAcquiredAt = new Map<number, string>();
     if (lotIds.length > 0) {
-      const { data: lots } = await input.supabase
-        .from(PORTFOLIO_TABLES.lots)
-        .select("id,acquired_at")
-        .in("id", lotIds)
-        .limit(5000);
-      for (const lot of (lots ?? []) as Array<{ id?: number | null; acquired_at?: string | null }>) {
+      const lots = await selectInChunked<{ id?: number | null; acquired_at?: string | null }, number>(
+        lotIds,
+        (chunk, from, to) =>
+          input.supabase
+            .from(PORTFOLIO_TABLES.lots)
+            .select("id,acquired_at")
+            .in("id", chunk)
+            .order("id", { ascending: true })
+            .range(from, to),
+        { logLabel: "lots_hold_days" }
+      ).catch((e) => {
+        console.warn("[virtualAutoTrade] 로트 조회 실패:", e?.message || e);
+        return [];
+      });
+      for (const lot of lots) {
         const lotId = Math.floor(toNumber(lot.id, 0));
         const acquiredAt = String(lot.acquired_at ?? "").trim();
         if (lotId > 0 && acquiredAt) {

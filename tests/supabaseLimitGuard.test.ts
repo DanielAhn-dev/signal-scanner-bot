@@ -14,10 +14,9 @@ const BASELINE: Record<string, number> = {
   "handlers/ui/access-users.ts": 3, // 접근 허용·차단 사용자 목록
   "handlers/ui/invites.ts": 1, // 웹 사용자 프로필(초대 트리)
   "src/bot/accessControl.ts": 1, // 접근 허용 목록
-  "src/bot/commands/discoveryProfile.ts": 2, // 매도 로트 매칭(거래 1000건 미만일 때만 정확)
-  "src/bot/commands/preMarketPlan.ts": 2, // 자동매매 행동 로그·거래(진단 통계)
+    "src/bot/commands/preMarketPlan.ts": 2, // 자동매매 행동 로그·거래(진단 통계)
   "src/services/dataQualityService.ts": 2, // 점수 행(유니버스 약 230개)·종목 40개 × 일봉
-  "src/services/virtualAutoTradeService.ts": 3, // 매도 로트 매칭, 행동 로그 7일(진단 통계)
+  "src/services/virtualAutoTradeService.ts": 1, // 행동 로그 7일(진단 통계)
 };
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
