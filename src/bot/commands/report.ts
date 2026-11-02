@@ -30,6 +30,7 @@ import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../mes
 import { sendLongMessage } from "../lib/tgHelpers";
 import { selectForecastsForTopic } from "../../services/reportTopicForecasts";
 import { describeForecastDistribution } from "../../services/forecastBaseRates";
+import { selectAllSettled } from "../../services/supabasePaging";
 
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
@@ -241,17 +242,21 @@ async function handleMonthlyReportCommand(
     );
     const mddLimitKrw = seedCapital > 0 ? seedCapital * 0.08 : 0;
 
-    const { data: tradeRows, error: tradeError } = await supabase
-      .from("virtual_trades")
-      .select("side, code, price, quantity, pnl_amount, traded_at, memo")
-      .eq("chat_id", ctx.chatId)
-      .is("broker_name", null)
-      .is("account_name", null)
-      .gte("traded_at", range.startIso)
-      .lt("traded_at", range.endIso)
-      .order("traded_at", { ascending: false })
-      .limit(2000)
-      .returns<TradeRow[]>();
+    const { data: tradeRows, error: tradeError } = await selectAllSettled<TradeRow>(
+      async (a, b) =>
+        await supabase
+          .from("virtual_trades")
+          .select("side, code, price, quantity, pnl_amount, traded_at, memo")
+          .eq("chat_id", ctx.chatId)
+          .is("broker_name", null)
+          .is("account_name", null)
+          .gte("traded_at", range.startIso)
+          .lt("traded_at", range.endIso)
+          .order("traded_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(a, b),
+      { logLabel: "report.monthTrades" }
+    );
 
     if (tradeError) {
       throw new Error(`월간 거래 집계 실패: ${tradeError.message}`);

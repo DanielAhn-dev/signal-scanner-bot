@@ -4,7 +4,7 @@ import { actionButtons } from "../messages/layout";
 import { discoverMultibaggerCandidates } from "../../services/discoveryService";
 import { parseStrategyMemo } from "../../lib/strategyMemo";
 import { getUserInvestmentPrefs, setUserInvestmentPrefs } from "../../services/userService";
-import { selectPaged } from "../../services/supabasePaging";
+import { selectAllSettled, selectPaged } from "../../services/supabasePaging";
 
 type DiscoveryProfile = "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
 
@@ -293,16 +293,21 @@ async function buildBacktestEdgeRanking(input: {
   regimeScale: number;
 }> {
   const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
-  const tradesResp = await input.supabase
-    .from("trades")
-    .select("id,code,pnl_amount,memo,traded_at")
-    .eq("chat_id", input.tgId)
-    .eq("side", "SELL")
-    .is("broker_name", null)
-    .is("account_name", null)
-    .gte("traded_at", since)
-    .order("traded_at", { ascending: false })
-    .limit(1200);
+  const tradesResp = await selectAllSettled<Record<string, unknown>>(
+    async (a, b) =>
+      await input.supabase
+        .from("trades")
+        .select("id,code,pnl_amount,memo,traded_at")
+        .eq("chat_id", input.tgId)
+        .eq("side", "SELL")
+        .is("broker_name", null)
+        .is("account_name", null)
+        .gte("traded_at", since)
+        .order("traded_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(a, b),
+    { logLabel: "discoveryProfile.sellTrades" }
+  );
 
   const trades = ((tradesResp.data ?? []) as BacktestEdgeRow[]).filter(
     (row) => parseStrategyMemo(row.memo).strategyId === "core.autotrade.v1"

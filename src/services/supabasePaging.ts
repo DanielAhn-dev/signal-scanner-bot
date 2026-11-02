@@ -154,6 +154,22 @@ export async function selectPaged<T>(
   return out;
 }
 /**
+ * selectPaged와 같지만 throw 대신 `{ data, error }`로 돌려준다. 기존 `if (error) ...` 흐름을 그대로 두고 조회만
+ * 끝까지 받게 바꿀 때 쓴다(오류 시 data는 null — 일부만 받은 결과를 완전한 것처럼 쓰지 않는다).
+ * 페이지 사이에 행이 겹치거나 빠지지 않도록 호출부 정렬 끝에 고유 컬럼(id)을 둔다.
+ */
+export async function selectAllSettled<T>(
+  fetchPage: Parameters<typeof selectPaged<T>>[0],
+  options?: Parameters<typeof selectPaged<T>>[1]
+): Promise<{ data: T[] | null; error: { message: string } | null }> {
+  try {
+    return { data: await selectPaged<T>(fetchPage, options), error: null };
+  } catch (e: any) {
+    return { data: null, error: { message: String(e?.message || e) } };
+  }
+}
+
+/**
  * 표에서 최근 날짜 N개(중복 제거)를 최신순으로 돌려준다.
  * 하루에 종목 수만큼 행이 있는 표에서 `.select(date).limit(N)`으로 날짜 N개를 뽑으면 N행이 모두 같은 날이라
  * 항상 하루치만 나온다(2026-10-06: 주간 리포트·적응형 전략·스캔 통과율이 1일치로 계산됨). limit(5000)도

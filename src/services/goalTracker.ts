@@ -16,6 +16,7 @@
  */
 import { planMixRates, type PlanMixRates } from "../lib/planMixRate";
 import { readInvestPlan, type MixEntry } from "./userPlan";
+import { selectAllSettled } from "./supabasePaging";
 
 type SupabaseClientAny = any;
 
@@ -470,7 +471,10 @@ export async function fetchMonthRealized(
   today: string
 ): Promise<{ swing: number; sweep: number; sells: number; wins: number }> {
   const monthStart = `${today.slice(0, 7)}-01T00:00:00+09:00`;
-  const { data } = await supabase
+  // 응답 1000행 상한을 넘어도 이달 매도를 끝까지 받는다
+  const { data } = await selectAllSettled<{ pnl_amount: number | null; memo: string | null }>(
+    async (a, b) =>
+    await supabase
     .from("virtual_trades")
     .select("pnl_amount, memo")
     .eq("chat_id", chatId)
@@ -478,7 +482,10 @@ export async function fetchMonthRealized(
     .is("broker_name", null)
     .is("account_name", null)
     .gte("traded_at", monthStart)
-    .limit(2000);
+    .order("id", { ascending: true })
+    .range(a, b),
+    { logLabel: "goalTracker.monthSells" }
+  );
   let swing = 0;
   let sweep = 0;
   let sells = 0;

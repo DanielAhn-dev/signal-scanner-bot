@@ -64,7 +64,7 @@ import {
   type RotationHeldPosition,
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
-import { selectPaged } from "./supabasePaging";
+import { selectAllSettled, selectPaged } from "./supabasePaging";
 import { computeUniverseBreadth } from "../lib/universeBreadth";
 import { discoverMultibaggerCandidates } from "./discoveryService";
 import { computeAutoTradePacingMetrics } from "./virtualAutoTradePacingService";
@@ -293,16 +293,21 @@ async function fetchBacktestEdgeProfile(input: {
 }): Promise<BacktestEdgeProfile> {
   // 오염 구간 거래로 '백테스트 엣지'를 만들지 않는다
   const since = resolveStatsSinceIso(new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString());
-  const { data, error } = await input.supabase
-    .from(PORTFOLIO_TABLES.trades)
-    .select("id,code,pnl_amount,memo,traded_at")
-    .eq("chat_id", input.chatId)
-    .eq("side", "SELL")
-    .is("broker_name", null)
-    .is("account_name", null)
-    .gte("traded_at", since)
-    .order("traded_at", { ascending: false })
-    .limit(1200);
+  const { data, error } = await selectAllSettled<Record<string, unknown>>(
+    async (a, b) =>
+      await input.supabase
+        .from(PORTFOLIO_TABLES.trades)
+        .select("id,code,pnl_amount,memo,traded_at")
+        .eq("chat_id", input.chatId)
+        .eq("side", "SELL")
+        .is("broker_name", null)
+        .is("account_name", null)
+        .gte("traded_at", since)
+        .order("traded_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(a, b),
+    { logLabel: "autoTrade.edgeStatTrades" }
+  );
 
   if (error || !Array.isArray(data)) {
     return {
@@ -2326,16 +2331,22 @@ async function getRecentAutoTradeSellPerformance(payload: {
   // 종가 동결 사고 오염 기간 배제: 실제 전략이 아니라 버그로 만들어진 손익을 학습하지 않도록.
   const since = resolveStatsSinceIso(rawSince);
 
-  const { data, error } = await payload.supabase
-    .from(PORTFOLIO_TABLES.trades)
-    .select("side, pnl_amount, memo, traded_at")
-    .eq("chat_id", payload.chatId)
-    .eq("side", "SELL")
-    .is("broker_name", null)
-    .is("account_name", null)
-    .gte("traded_at", since)
-    .order("traded_at", { ascending: true })
-    .limit(5000);
+  // 1000행 상한에서 오름차순이면 최근 매도가 빠지므로 끝까지 받는다
+  const { data, error } = await selectAllSettled<Record<string, unknown>>(
+    async (a, b) =>
+      await payload.supabase
+        .from(PORTFOLIO_TABLES.trades)
+        .select("side, pnl_amount, memo, traded_at")
+        .eq("chat_id", payload.chatId)
+        .eq("side", "SELL")
+        .is("broker_name", null)
+        .is("account_name", null)
+        .gte("traded_at", since)
+        .order("traded_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(a, b),
+    { logLabel: "autoTrade.sellPerformance" }
+  );
 
   if (error) return null;
 
@@ -2549,18 +2560,23 @@ export async function generateAutoTradeBacktestReportForChat(input: {
   const since = new Date();
   since.setMonth(since.getMonth() - months);
 
-  const { data, error } = await supabase
-    .from(PORTFOLIO_TABLES.trades)
-    .select("side, pnl_amount, traded_at")
-    .eq("chat_id", input.chatId)
-    .is("broker_name", null)
-    .is("account_name", null)
-    .gte("traded_at", since.toISOString())
-    .order("traded_at", { ascending: true })
-    .limit(20000);
+  const { data, error } = await selectAllSettled<Record<string, unknown>>(
+    async (a, b) =>
+      await supabase
+        .from(PORTFOLIO_TABLES.trades)
+        .select("side, pnl_amount, traded_at")
+        .eq("chat_id", input.chatId)
+        .is("broker_name", null)
+        .is("account_name", null)
+        .gte("traded_at", since.toISOString())
+        .order("traded_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(a, b),
+    { logLabel: "autoTrade.backtestReport" }
+  );
 
   if (error) {
-    throw error;
+    throw new Error(error.message);
   }
 
   const rows = (data ?? []) as Array<{
@@ -2638,16 +2654,21 @@ async function getDailyRealizedPnl(payload: {
   chatId: number;
 }): Promise<number> {
   const { startIso, endIso } = getKstDayRange();
-  const { data, error } = await payload.supabase
-    .from(PORTFOLIO_TABLES.trades)
-    .select("pnl_amount")
-    .eq("chat_id", payload.chatId)
-    .eq("side", "SELL")
-    .is("broker_name", null)
-    .is("account_name", null)
-    .gte("traded_at", startIso)
-    .lt("traded_at", endIso)
-    .limit(3000);
+  const { data, error } = await selectAllSettled<Record<string, unknown>>(
+    async (a, b) =>
+      await payload.supabase
+        .from(PORTFOLIO_TABLES.trades)
+        .select("pnl_amount")
+        .eq("chat_id", payload.chatId)
+        .eq("side", "SELL")
+        .is("broker_name", null)
+        .is("account_name", null)
+        .gte("traded_at", startIso)
+        .lt("traded_at", endIso)
+        .order("id", { ascending: true })
+        .range(a, b),
+    { logLabel: "autoTrade.todaySellPnl" }
+  );
 
   if (error) return 0;
 

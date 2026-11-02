@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { selectAllSettled } from '../../src/services/supabasePaging'
 import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
@@ -48,7 +49,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const [botRes, realRes] = await Promise.all([
       supabase.from('virtual_trades').select(columns).or(owner).is('broker_name', null).is('account_name', null).eq('source', 'AUTO').gte('traded_at', since).order('traded_at', { ascending: false }).limit(300),
-      supabase.from('virtual_trades').select(columns).or(owner).not('account_name', 'is', null).order('traded_at', { ascending: true }).limit(1000),
+      // 실계좌 기록은 전 기간 오름차순이라 1000행에서 잘리면 최근 매매가 빠진다 — 끝까지 받는다
+      selectAllSettled<any>(
+        async (a, b) => await supabase.from('virtual_trades').select(columns).or(owner).not('account_name', 'is', null).order('traded_at', { ascending: true }).order('id', { ascending: true }).range(a, b),
+        { logLabel: 'followReport.real' }
+      ),
     ])
     if (botRes.error) return res.status(500).json({ error: botRes.error.message })
     if (realRes.error) return res.status(500).json({ error: realRes.error.message })

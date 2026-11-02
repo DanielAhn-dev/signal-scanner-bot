@@ -1,4 +1,5 @@
 import type { InvestmentPrefs } from "./userService";
+import { selectAllSettled } from "./supabasePaging";
 
 type SupabaseClientAny = any;
 
@@ -73,15 +74,20 @@ export async function computeAutoTradePacingMetrics(input: {
   const targetMonthlyPct = Math.max(0.2, configuredMonthlyPct);
 
   const monthStartIso = getKstMonthStartIso();
-  const { data } = await input.supabase
-    .from("virtual_trades")
-    .select("pnl_amount, side, traded_at")
-    .eq("chat_id", input.chatId)
-    .is("broker_name", null)
-    .is("account_name", null)
-    .eq("side", "SELL")
-    .gte("traded_at", monthStartIso)
-    .limit(3000);
+  const { data } = await selectAllSettled<Record<string, unknown>>(
+    async (a, b) =>
+      await input.supabase
+        .from("virtual_trades")
+        .select("pnl_amount, side, traded_at")
+        .eq("chat_id", input.chatId)
+        .is("broker_name", null)
+        .is("account_name", null)
+        .eq("side", "SELL")
+        .gte("traded_at", monthStartIso)
+        .order("id", { ascending: true })
+        .range(a, b),
+    { logLabel: "autoTrade.pacingMonthPnl" }
+  );
 
   const monthRealizedPnl = (data ?? []).reduce((sum: number, row: Record<string, unknown>) => {
     return sum + toNumber(row.pnl_amount, 0);
