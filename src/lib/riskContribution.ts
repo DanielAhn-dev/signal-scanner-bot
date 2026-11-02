@@ -21,6 +21,8 @@ export type RiskHolding = {
   riskSharePct: number;
   /** 단독 연환산 변동성 % */
   volPct: number;
+  /** 읽어 온 전체 이력(약 4년 이내) 중 이 종목의 최대 낙폭 % (음수) */
+  worstDrawdownPct: number;
 };
 
 export type HighCorrPair = { a: string; b: string; corr: number };
@@ -36,6 +38,13 @@ export type RiskContribution = {
   portfolioVolPct: number;
   /** 같은 가정의 기간 내 최대 낙폭 % (음수) */
   maxDrawdownPct: number;
+  /**
+   * 종목마다 자기 최악 구간이 동시에 왔다고 가정한 계좌 낙폭 % (음수). 실제로는 최악 시점이 서로 달라 이보다 덜 빠졌을 가능성이 크지만,
+   * 위기 때는 상관이 높아져 비슷해질 수도 있다. 계산에 들어간 평가금 기준(coveragePct).
+   */
+  worstCaseLossPct: number;
+  /** 최대 낙폭을 잰 이력의 가장 짧은 종목 기준 거래일 수 */
+  worstCaseMinDays: number;
   holdings: RiskHolding[];
   /** 비중 5% 이상 종목끼리 상관이 높은 쌍 — 분산 착시 */
   highCorrPairs: HighCorrPair[];
@@ -55,8 +64,22 @@ export function riskConcentrated(h: Pick<RiskHolding, "weightPct" | "riskSharePc
 
 export const RISK_MIN_OBSERVATIONS = 120;
 export const RISK_MAX_OBSERVATIONS = 250;
+/** 종목당 읽는 일봉 수 — 최대 낙폭용(약 4년). PostgREST 1000행 캡 안쪽으로 둔다. */
+export const RISK_HISTORY_ROWS = 1000;
 export const HIGH_CORR = 0.9;
 const TRADING_DAYS = 252;
+
+/** 날짜 오름차순 종가에서 고점 대비 최대 낙폭(음수) */
+function maxDrawdown(closes: Array<{ date: string; close: number }>): number {
+  const sorted = closes.filter((c) => c.close > 0).sort((a, b) => (a.date < b.date ? -1 : 1));
+  let peak = 0;
+  let mdd = 0;
+  for (const c of sorted) {
+    peak = Math.max(peak, c.close);
+    mdd = Math.min(mdd, c.close / peak - 1);
+  }
+  return mdd;
+}
 
 export function buildRiskContribution(rows: RiskInputRow[], opts?: { minObs?: number; maxObs?: number }): RiskContribution | null {
   const minObs = opts?.minObs ?? RISK_MIN_OBSERVATIONS;
@@ -116,8 +139,12 @@ export function buildRiskContribution(rows: RiskInputRow[], opts?: { minObs?: nu
       weightPct: (r.value / totalValue) * 100,
       riskSharePct: shares[i] * 100,
       volPct: Math.sqrt(C[i][i] * TRADING_DAYS) * 100,
+      worstDrawdownPct: maxDrawdown(r.closes ?? []) * 100,
     }))
     .sort((a, b) => b.riskSharePct - a.riskSharePct);
+
+  const worstCaseLossPct = holdings.reduce((sum, h) => sum + (h.weightPct / 100) * h.worstDrawdownPct, 0);
+  const worstCaseMinDays = Math.min(...priced.map((r) => (r.closes ?? []).filter((c) => c.close > 0).length));
 
   const pairs: HighCorrPair[] = [];
   for (let i = 0; i < n; i++) {
@@ -151,6 +178,8 @@ export function buildRiskContribution(rows: RiskInputRow[], opts?: { minObs?: nu
     coveragePct: (covered / totalValue) * 100,
     portfolioVolPct: sigmaP * Math.sqrt(TRADING_DAYS) * 100,
     maxDrawdownPct: mdd * 100,
+    worstCaseLossPct,
+    worstCaseMinDays,
     holdings,
     highCorrPairs: pairs.slice(0, 3),
     effectiveBets,

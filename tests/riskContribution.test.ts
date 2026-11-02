@@ -63,3 +63,17 @@ test("위험 쏠림은 몫 40% 이상이면서 비중의 2배 이상일 때만",
   assert.equal(riskConcentrated({ weightPct: 5, riskSharePct: 30 }), false); // 비중의 2배 넘어도 몫이 40% 미만
   assert.equal(riskConcentrated({ weightPct: 20, riskSharePct: 40 }), true); // 경계값 포함
 });
+
+test("종목별 과거 최악 낙폭과 동시 발생 가정 합계", () => {
+  // A: 100 → 200 → 100 (−50%), B: 일정
+  const a = Array.from({ length: 200 }, (_, t) => ({ date: `d${String(t).padStart(4, "0")}`, close: t < 100 ? 100 + t : 200 - (t - 100) }));
+  const b = series(200, wave(0.001));
+  const r = buildRiskContribution([
+    { code: "A", name: "롤러", value: 500, closes: a },
+    { code: "B", name: "잔잔", value: 500, closes: b },
+  ])!;
+  const ha = r.holdings.find((h) => h.code === "A")!;
+  assert.ok(Math.abs(ha.worstDrawdownPct - (101 / 199 - 1) * 100) < 1e-6); // 고점 199 → 101
+  assert.ok(r.worstCaseLossPct < 0 && r.worstCaseLossPct > ha.worstDrawdownPct);
+  assert.equal(r.worstCaseMinDays, 200);
+});

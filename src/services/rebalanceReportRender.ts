@@ -217,7 +217,7 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
     const k = r.risk
     const rows = k.holdings
       .slice(0, 8)
-      .map((x) => `<tr><td class="rb-l">${e(x.name)}</td><td>${x.weightPct.toFixed(1)}%</td><td class="${x.riskSharePct > x.weightPct + 10 ? 'rb-down' : ''}">${x.riskSharePct.toFixed(1)}%</td><td>${x.volPct.toFixed(0)}%</td></tr>`)
+      .map((x) => `<tr><td class="rb-l">${e(x.name)}</td><td>${x.weightPct.toFixed(1)}%</td><td class="${x.riskSharePct > x.weightPct + 10 ? 'rb-down' : ''}">${x.riskSharePct.toFixed(1)}%</td><td>${x.volPct.toFixed(0)}%</td><td class="rb-down">${x.worstDrawdownPct.toFixed(0)}%</td></tr>`)
       .join('')
     const pairs = k.highCorrPairs.length
       ? `<ul class="rb-list">${k.highCorrPairs.map((p) => `<li>${e(p.a)} · ${e(p.b)} — 상관 ${p.corr.toFixed(2)}. 이름은 달라도 거의 같이 움직여 분산 효과가 작습니다.</li>`).join('')}</ul>`
@@ -228,10 +228,10 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
       : ''
     const skipped = k.excluded.length ? `<p class="rb-muted">상장 후 기간이 짧아 뺀 종목: ${k.excluded.map((x) => e(x.name)).join(', ')} (계산에 들어간 평가금 ${k.coveragePct.toFixed(0)}%).</p>` : ''
     parts.push(section('7-2. 위험은 어디서 오나', `
-      <p>비중이 아니라 <b>계좌가 흔들리는 정도 중 어느 종목 몫이 큰지</b> 봅니다. 현재 비중을 ${k.startDate}~${k.endDate}(거래일 ${k.observations}일) 내내 유지했다고 가정하면 연환산 변동성은 약 ${k.portfolioVolPct.toFixed(1)}%, 그 기간 최대 낙폭은 ${k.maxDrawdownPct.toFixed(1)}%입니다. 실질적으로 서로 다르게 움직이는 종목 수는 약 ${k.effectiveBets.toFixed(1)}개입니다.</p>
-      <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>비중</th><th>위험 몫</th><th>단독 변동성(연)</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p>비중이 아니라 <b>계좌가 흔들리는 정도 중 어느 종목 몫이 큰지</b> 봅니다. 현재 비중을 ${k.startDate}~${k.endDate}(거래일 ${k.observations}일) 내내 유지했다고 가정하면 연환산 변동성은 약 ${k.portfolioVolPct.toFixed(1)}%, 그 기간 최대 낙폭은 ${k.maxDrawdownPct.toFixed(1)}%입니다. 종목마다 읽어 온 이력(가장 짧은 종목 기준 거래일 ${k.worstCaseMinDays}일, 최대 약 4년) 중 가장 크게 빠졌던 구간이 한꺼번에 다시 오면 계좌는 약 ${k.worstCaseLossPct.toFixed(0)}%까지 줄어드는 셈입니다. 실질적으로 서로 다르게 움직이는 종목 수는 약 ${k.effectiveBets.toFixed(1)}개입니다.</p>
+      <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>비중</th><th>위험 몫</th><th>단독 변동성(연)</th><th>과거 최악 낙폭</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${concHtml}${pairs}${skipped}
-      <p class="rb-muted">과거 약 1년의 기록이라 표본이 짧고, 위기 때는 종목끼리 평소보다 더 같이 움직입니다. 앞으로의 손실 한도를 뜻하지 않으며, 가격은 분배금이 반영된 수정주가일 수 있어 변동성 용도로만 썼습니다. 현금성은 변동 0으로 계산했습니다.</p>`))
+      <p class="rb-muted">변동성·상관은 최근 약 1년, 최악 낙폭은 최대 약 4년의 기록이라 표본이 짧고 2008년 같은 큰 위기는 들어 있지 않으며, 종목별 최악 시점은 서로 달라 실제 계좌 낙폭은 이 값보다 작을 수 있고, 위기 때는 종목끼리 평소보다 더 같이 움직입니다. 앞으로의 손실 한도를 뜻하지 않으며, 가격은 분배금이 반영된 수정주가일 수 있어 변동성 용도로만 썼습니다. 현금성은 변동 0으로 계산했습니다.</p>`))
   }
 
   // 8. 실행 순서
