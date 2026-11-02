@@ -33,6 +33,31 @@ export function assessGuardLoadFailures(failedLabels: string[]): { blockNewBuys:
   };
 }
 
+/** 실적 관문 unknown 비율 경고선. 정상일 때 시총 상위 300 3.0%·보통주 전체 11.6%(2026-11-02 측정)의 약 2~8배 */
+export const FUNDAMENTAL_UNKNOWN_WARN_RATIO = 0.25;
+
+/**
+ * 실적 관문이 후보 풀의 상당수를 판정하지 못하면(재무 수집 중단 등) 관문이 조용히 꺼진 것과 같다.
+ * 제외하지 않는 설계는 그대로 두고, 비율이 높을 때 경고만 남긴다. 판정 대상이 너무 적으면(<20) 말하지 않는다.
+ */
+export function assessFundamentalGateCoverage(
+  statuses: Array<"pass" | "fail" | "unknown">
+): { total: number; unknown: number; ratio: number; warn: boolean; note: string } {
+  const total = statuses.length;
+  const unknown = statuses.filter((s) => s === "unknown").length;
+  const ratio = total > 0 ? unknown / total : 0;
+  const warn = total >= 20 && ratio >= FUNDAMENTAL_UNKNOWN_WARN_RATIO;
+  return {
+    total,
+    unknown,
+    ratio,
+    warn,
+    note: warn
+      ? `⚠ 실적 관문 판정 불가 ${unknown}/${total}종목(${(ratio * 100).toFixed(0)}%) — 재무 수집 확인 필요`
+      : "",
+  };
+}
+
 export function assessAutoTradeDataQuality(input: {
   scoreStaleBusinessDays: number;
   investorStaleBusinessDays: number | null;

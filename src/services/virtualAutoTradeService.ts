@@ -157,7 +157,7 @@ import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSwe
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
 import { decideHoldingExit, extractScoreFactors } from "./virtualAutoTradeExitDecision";
-import { assessAutoTradeDataQuality, assessGuardLoadFailures } from "./virtualAutoTradeDataQuality";
+import { assessAutoTradeDataQuality, assessFundamentalGateCoverage, assessGuardLoadFailures } from "./virtualAutoTradeDataQuality";
 import { getPartialLoadLabels } from "./dataFreshnessMonitorService";
 import { buildHoldingQuoteMaps, evaluateQuoteStaleness, resolveReviewCash } from "./virtualAutoTradeDailyContext";
 import {
@@ -3235,6 +3235,13 @@ async function selectMondayCandidates(payload: {
     .map(([code]) => code);
   // ETF·ETN(현금 스윕용 CD금리·KOFR, 지수 ETF)은 가격 추적용으로 유니버스에 있지만 개별 종목 전략의 매수 대상이 아니다
   const etfCodes = scoredRows.filter((row) => isExchangeTradedProduct(row.code, row.name)).map((row) => row.code);
+  const etfCodeSet = new Set(etfCodes);
+  const gateCoverage = assessFundamentalGateCoverage(
+    scoredRows
+      .filter((row) => !etfCodeSet.has(row.code))
+      .map((row) => fundamentalGate.get(row.code)?.status ?? "unknown")
+  );
+  if (gateCoverage.warn) console.warn(`[autotrade] ${gateCoverage.note}`);
   const finalHeldCodes = new Set<string>([
     ...heldAndCooldownCodes,
     ...activeTakeProfitCooldownCodes,
@@ -3289,6 +3296,7 @@ async function selectMondayCandidates(payload: {
     latestAsof,
     thresholdUsed: Math.max(selection.thresholdUsed, qualityAdjustedMinBuyScore),
     guardNote:
+      (gateCoverage.warn ? ` · ${gateCoverage.note}` : "") +
       staleCandidateNote +
       (staleBusinessDays === 1
         ? `점수 기준일 1영업일 지연 보수 적용 · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`

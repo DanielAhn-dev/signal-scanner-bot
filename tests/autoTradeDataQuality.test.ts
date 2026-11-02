@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assessAutoTradeDataQuality, assessGuardLoadFailures } from "../src/services/virtualAutoTradeDataQuality";
+import { assessAutoTradeDataQuality, assessFundamentalGateCoverage, assessGuardLoadFailures } from "../src/services/virtualAutoTradeDataQuality";
 import { splitCandidatesByCloseFreshness } from "../src/services/virtualAutoTradeSelection";
 
 test("데이터 품질: 지연이 없어도 부분 적재면 신규 매수 차단", () => {
@@ -41,4 +41,18 @@ test("후보 종가 신선도: 오래됐거나 동결됐거나 자료 없는 후
     excluded.map((e) => `${e.code}:${e.reason}`),
     ["STALE:stale-date", "FROZEN:frozen-close", "NONE:no-data"]
   );
+});
+
+test("실적 관문 커버리지: unknown 25% 이상이면 경고, 정상 비율·표본 부족은 조용", () => {
+  const mk = (pass: number, unknown: number) => [
+    ...Array<"pass">(pass).fill("pass"),
+    ...Array<"unknown">(unknown).fill("unknown"),
+  ];
+  assert.equal(assessFundamentalGateCoverage(mk(88, 12)).warn, false); // 정상(보통주 전체 11.6%)
+  assert.equal(assessFundamentalGateCoverage(mk(75, 25)).warn, true); // 경계 25%
+  const bad = assessFundamentalGateCoverage(mk(10, 90));
+  assert.equal(bad.warn, true);
+  assert.match(bad.note, /90\/100/);
+  assert.equal(assessFundamentalGateCoverage(mk(0, 10)).warn, false); // 표본 20 미만
+  assert.equal(assessFundamentalGateCoverage([]).warn, false);
 });
