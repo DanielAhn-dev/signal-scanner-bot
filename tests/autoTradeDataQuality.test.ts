@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assessAutoTradeDataQuality } from "../src/services/virtualAutoTradeDataQuality";
+import { assessAutoTradeDataQuality, assessGuardLoadFailures } from "../src/services/virtualAutoTradeDataQuality";
 
 test("데이터 품질: 지연이 없어도 부분 적재면 신규 매수 차단", () => {
   const ok = assessAutoTradeDataQuality({ scoreStaleBusinessDays: 0, investorStaleBusinessDays: 0 });
@@ -12,4 +12,12 @@ test("데이터 품질: 지연이 없어도 부분 적재면 신규 매수 차�
   });
   assert.equal(partial.blockNewBuys, true);
   assert.match(partial.note, /종목 점수/);
+});
+
+test("매수 제외 필터 조회 실패: 하나라도 실패하면 신규 매수 보류, 모두 성공이면 통과", () => {
+  assert.equal(assessGuardLoadFailures([]).blockNewBuys, false);
+  assert.equal(assessGuardLoadFailures(["", "  "]).blockNewBuys, false);
+  const failed = assessGuardLoadFailures(["실적 관문", "실적 관문", "순매도"]);
+  assert.equal(failed.blockNewBuys, true);
+  assert.match(failed.note, /실적 관문, 순매도/);
 });

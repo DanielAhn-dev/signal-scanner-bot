@@ -156,7 +156,7 @@ import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSwe
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
 import { decideHoldingExit, extractScoreFactors } from "./virtualAutoTradeExitDecision";
-import { assessAutoTradeDataQuality } from "./virtualAutoTradeDataQuality";
+import { assessAutoTradeDataQuality, assessGuardLoadFailures } from "./virtualAutoTradeDataQuality";
 import { getPartialLoadLabels } from "./dataFreshnessMonitorService";
 import { buildHoldingQuoteMaps, evaluateQuoteStaleness, resolveReviewCash } from "./virtualAutoTradeDailyContext";
 import {
@@ -3161,11 +3161,16 @@ async function selectMondayCandidates(payload: {
     .map((row) => row.code);
   // 급등 추격(+8%·거래량 5배·고가 근처 마감 뒤 5거래일)·긴 윗꼬리(고가÷종가 6%↑)·떨어지는 칼날(한 달 -15% 이하) 매수 금지 — chaseEntrySignal
   // 둘 다 사면 20일 뒤 코스피보다 나빴다(급등 뒤 -2.9~-5.9%, 칼날 -1.5~-3.7%, 2021년까지·2022년부터 모두 t < -3)
+  // 조회 실패는 빈 결과로 넘기되 실패한 필터 이름을 모아, 아래에서 신규 매수를 보류한다(규칙이 조용히 꺼진 채 사지 않도록)
+  const guardLoadFailures: string[] = [];
   const [heavyNetSelling, disclosureFilter, fundamentalGate, weightCautions, chaseEntries] = await Promise.all([
     fetchHeavyNetSellingCodes(
       payload.supabase,
       scoredRows.map((row) => row.code)
-    ).catch(() => new Map<string, number>()),
+    ).catch(() => {
+      guardLoadFailures.push("순매도");
+      return new Map<string, number>();
+    }),
     fetchNegativeDisclosures().catch(
       (e: unknown): DisclosureFilterResult => ({
         status: "error",
@@ -3176,12 +3181,40 @@ async function selectMondayCandidates(payload: {
     fetchFundamentalGateResults(
       payload.supabase,
       scoredRows.map((row) => row.code)
-    ).catch(() => new Map<string, FundamentalGateResult>()),
-    fetchWeightCautions(payload.supabase, weightCautionCodes).catch(() => new Map<string, WeightCautionResult>()),
-    fetchChaseEntries(payload.supabase, weightCautionCodes, toKstDateKey()).catch(
-      () => new Map<string, ChaseEntryResult>()
-    ),
+    ).catch(() => {
+      guardLoadFailures.push("실적 관문");
+      return new Map<string, FundamentalGateResult>();
+    }),
+    fetchWeightCautions(payload.supabase, weightCautionCodes).catch(() => {
+      guardLoadFailures.push("과열 경고");
+      return new Map<string, WeightCautionResult>();
+    }),
+    fetchChaseEntries(payload.supabase, weightCautionCodes, toKstDateKey()).catch(() => {
+      guardLoadFailures.push("추격 회피");
+      return new Map<string, ChaseEntryResult>();
+    }),
   ]);
+  const guardLoad = assessGuardLoadFailures(guardLoadFailures);
+  if (guardLoad.blockNewBuys) {
+    return {
+      candidates: [],
+      selectionMode: "none",
+      thresholdUsed: staleAdjustedMinBuyScore,
+      latestTopScore: rankedRows[0]?.score ?? 0,
+      latestAsof,
+      filteringMetrics: {
+        initialCount: rankedRows.length,
+        afterMarketPolicyCount: 0,
+        afterBaseFilterCount: 0,
+        candidatePoolCount: 0,
+        selectedCount: 0,
+      },
+      entryProfile: "score-first",
+      pullbackCandidatesUsed: 0,
+      aggressiveCandidatesUsed: 0,
+      guardNote: `데이터 품질 게이트: ${guardLoad.note}`,
+    };
+  }
   // 선호 점수(저변동·52주 고가 근접) — 제외가 아니라 정렬 가산점(-3~+3). 근거·한계는 qualityPreferenceSignal.ts
   const qualityMetrics = await fetchQualityMetrics(payload.supabase, weightCautionCodes, toKstDateKey()).catch(
     () => new Map<string, QualityMetrics>()

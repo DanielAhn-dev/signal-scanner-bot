@@ -19,6 +19,20 @@ export type AutoTradeDataQuality = {
   investorStaleBusinessDays: number | null;
 };
 
+/**
+ * 매수 제외 필터(실적 관문·순매도·과열·추격)의 조회가 실패했을 때의 판정.
+ * 이 필터들은 검증된 손실 회피 규칙인데, 조회 실패를 "해당 종목 없음"으로 넘기면 DB 장애가 난 바로 그 날
+ * 규칙이 조용히 꺼진 채 매수한다. 실패한 필터가 하나라도 있으면 그날 신규 매수를 보류한다.
+ */
+export function assessGuardLoadFailures(failedLabels: string[]): { blockNewBuys: boolean; note: string } {
+  const labels = [...new Set(failedLabels.map((l) => l.trim()).filter(Boolean))];
+  if (labels.length === 0) return { blockNewBuys: false, note: "" };
+  return {
+    blockNewBuys: true,
+    note: `매수 제외 필터 조회 실패(${labels.join(", ")}) — 규칙을 적용하지 못해 신규 매수 보류`,
+  };
+}
+
 export function assessAutoTradeDataQuality(input: {
   scoreStaleBusinessDays: number;
   investorStaleBusinessDays: number | null;
