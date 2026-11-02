@@ -19,6 +19,7 @@
  */
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
+import { selectPaged } from "../src/services/supabasePaging";
 import { evaluateAutoTradeSignalGate } from "../src/services/virtualAutoTradeSignalGate";
 import { evaluateCloseFreshness } from "../src/services/virtualAutoTradeSelection";
 import { resolveStructuralTargets, type StructuralTargetLevel } from "../src/services/structuralTargets";
@@ -123,12 +124,15 @@ async function main() {
   for (let i = 0; i < codes.length; i += 8) {
     await Promise.all(
       codes.slice(i, i + 8).map(async (code) => {
-        const { data } = await supabase
-          .from("stock_daily")
-          .select("date, open, high, low, close, volume")
-          .eq("ticker", code)
-          .order("date", { ascending: true })
-          .limit(1000);
+        // 응답이 1000행에서 잘리지 않도록 페이지로 끝까지 읽는다(실패는 빈 이력이 아니라 중단).
+        const data = await selectPaged<Record<string, unknown>>(async (a, b) =>
+          await supabase
+            .from("stock_daily")
+            .select("date, open, high, low, close, volume")
+            .eq("ticker", code)
+            .order("date", { ascending: true })
+            .range(a, b)
+        );
         barsByCode.set(
           code,
           ((data ?? []) as Record<string, unknown>[]).map((r) => ({
