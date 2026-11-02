@@ -73,7 +73,7 @@ test("종목별 과거 최악 낙폭과 동시 발생 가정 합계", () => {
     { code: "B", name: "잔잔", value: 500, closes: b },
   ])!;
   const ha = r.holdings.find((h) => h.code === "A")!;
-  assert.ok(Math.abs(ha.worstDrawdownPct - (101 / 199 - 1) * 100) < 1e-6); // 고점 199 → 101
+  assert.ok(Math.abs(ha.worstDrawdownPct - (101 / 200 - 1) * 100) < 1e-6); // 고점 200 → 101
   assert.ok(r.worstCaseLossPct < 0 && r.worstCaseLossPct > ha.worstDrawdownPct);
   assert.equal(r.worstCaseMinDays, 200);
 });
