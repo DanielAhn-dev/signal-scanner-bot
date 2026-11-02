@@ -750,3 +750,31 @@ test('카드로 내는 고정지출은 카드 합계 안에 있으니 한 번만
   // 수입 − 저축 − 카드 결제금액 − 카드 밖 자동이체 = 실제로 남는 돈
   assert.equal(investableOf(plan, variable), 7_000_000 - 1_660_000 - 2_000_000 - 500_000)
 })
+
+test("지출 조회는 응답 상한(1000행)을 넘어도 끝까지 받는다", async () => {
+  const { loadEntryRows } = await import("../handlers/ui/money-flow");
+  const total = 2350;
+  const all = Array.from({ length: total }, (_, i) => ({ id: total - i }));
+  const calls: Array<[number, number]> = [];
+  const query: any = {
+    select: () => query, eq: () => query, gte: () => query, lte: () => query, order: () => query,
+    // PostgREST처럼 요청 범위가 커도 한 번에 1000행까지만 돌려준다
+    range: (a: number, b: number) => {
+      calls.push([a, b]);
+      return Promise.resolve({ data: all.slice(a, Math.min(b, a + 999) + 1), error: null });
+    },
+  };
+  const rows = await loadEntryRows({ from: () => query }, "c1", "2024-01-01", "2026-11-30");
+  assert.equal(rows.length, total);
+  assert.equal(new Set(rows.map((r) => r.id)).size, total);
+  assert.equal(calls.length, 3);
+});
+
+test("지출 조회 중 오류는 삼키지 않고 던진다", async () => {
+  const { loadEntryRows } = await import("../handlers/ui/money-flow");
+  const query: any = {
+    select: () => query, eq: () => query, gte: () => query, lte: () => query, order: () => query,
+    range: () => Promise.resolve({ data: null, error: { message: "fetch failed" } }),
+  };
+  await assert.rejects(() => loadEntryRows({ from: () => query }, "c1", "2024-01-01", "2026-11-30"), /fetch failed/);
+});

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { partnerSharing } from '../../src/services/household'
+import { selectPaged } from '../../src/services/supabasePaging'
 import { MAX_TOTAL_SLOTS, UNRECORDED_CATEGORY_ID, categoryById, isSavingCategory, learnKeyword, type FlowCheckInput, type FlowItem, type IrregularItem, type MonthTotal } from '../../src/lib/moneyFlow'
 
 const maxAmount = 100_000_000_000
@@ -291,6 +292,19 @@ export function splitDeleted<T extends { deletedBy: string | null }>(list: T[]):
   return { entries: list.filter((e) => !e.deletedBy), deleted: list.filter((e) => e.deletedBy) }
 }
 
+/**
+ * 한 사람의 지출 행을 기간 안에서 끝까지 읽는다. 응답은 1000행에서 조용히 잘리고(.limit(2000)도 소용없음) 화면이
+ * 25개월치를 한 번에 요청하므로 페이지로 받는다. 정렬 끝에 id를 둬야 같은 날 같은 시각 행이 페이지 경계에서 겹치거나 빠지지 않는다.
+ */
+export function loadEntryRows(supabase: any, clientId: string, from: string, to: string): Promise<any[]> {
+  return selectPaged<any>(
+    async (a, b) => await supabase.from('money_flow_entries').select(entryColumns).eq('client_id', clientId)
+      .gte('spent_on', from).lte('spent_on', to)
+      .order('spent_on', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: false }).range(a, b),
+    { logLabel: 'moneyFlow.entries' }
+  )
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setUiCorsHeaders(req, res, 'GET,POST,OPTIONS')
   res.setHeader('Cache-Control', 'private, no-store')
@@ -311,31 +325,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 부부 연결: 상대가 지출을 공유하면 상대 기록도 함께 준다(읽기만, mine: false). 고치기·지우기는 client_id로 묶여 자기 것만 된다
     const partnerClientId = await partnerSharing(supabase, user.clientId, 'spending')
     const totalOwners = partnerClientId ? [user.clientId, partnerClientId] : [user.clientId]
-    const [entries, rules, checks, partnerEntries, totals] = await Promise.all([
-      supabase.from('money_flow_entries').select(entryColumns).eq('client_id', user.clientId)
-        .gte('spent_on', from).lte('spent_on', to).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).limit(2000),
-      supabase.from('money_flow_rules').select('keyword,category_id').eq('client_id', user.clientId).limit(1000),
-      supabase.from('money_flow_checks').select('id,checked_on,label,input').eq('client_id', user.clientId)
-        .order('checked_on', { ascending: false }).order('created_at', { ascending: false }).limit(24),
-      partnerClientId
-        ? supabase.from('money_flow_entries').select(entryColumns).eq('client_id', partnerClientId)
-          .gte('spent_on', from).lte('spent_on', to).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).limit(2000)
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from('money_flow_month_totals').select('client_id,month,label,kind,amount,position,updated_at').in('client_id', totalOwners)
-        .gte('month', `${from.slice(0, 7)}-01`).lte('month', to).order('month', { ascending: false }).order('position', { ascending: true }).limit(1000),
-    ])
+    let entriesData: any[], partnerData: any[], rulesData: any[], totalsData: any[]
+    let checksResult: { data: any[] | null; error: { message?: string } | null }
+    let totalsError: { code?: string; message?: string } | null = null
+    try {
+      ;[entriesData, partnerData, rulesData, checksResult] = await Promise.all([
+        loadEntryRows(supabase, user.clientId, from, to),
+        partnerClientId ? loadEntryRows(supabase, partnerClientId, from, to) : Promise.resolve([] as any[]),
+        selectPaged<any>(
+          async (a, b) => await supabase.from('money_flow_rules').select('keyword,category_id').eq('client_id', user.clientId!).order('keyword').range(a, b),
+          { logLabel: 'moneyFlow.rules' }
+        ),
+        supabase.from('money_flow_checks').select('id,checked_on,label,input').eq('client_id', user.clientId)
+          .order('checked_on', { ascending: false }).order('created_at', { ascending: false }).limit(24),
+      ])
+      // 월 합계는 테이블이 없을 때 오류 코드를 보고 그 기능만 끄므로, selectPaged(오류를 Error로 바꿈) 대신 오류 객체를 그대로 받는다
+      totalsData = []
+      for (let a = 0; ; a += 1000) {
+        const page = await supabase.from('money_flow_month_totals').select('client_id,month,label,kind,amount,position,updated_at').in('client_id', totalOwners)
+          .gte('month', `${from.slice(0, 7)}-01`).lte('month', to)
+          .order('month', { ascending: false }).order('position', { ascending: true }).order('client_id').order('label').range(a, a + 999)
+        if (page.error) { totalsData = []; totalsError = page.error; break }
+        const rows = page.data ?? []
+        totalsData.push(...rows)
+        if (rows.length < 1000) break
+      }
+    } catch (e: any) {
+      return res.status(500).json({ error: String(e?.message || e) })
+    }
     // 월 합계 테이블(033)이 아직 없으면 그 기능만 끄고 나머지는 그대로 보여 준다. 다른 오류는 숨기지 않는다
-    const totalsMissing = isMissingTable(totals.error)
-    const failed = [entries, rules, checks, partnerEntries, ...(totalsMissing ? [] : [totals])].find((result) => result.error)
-    if (failed) return res.status(500).json({ error: failed.error!.message })
+    const totalsMissing = isMissingTable(totalsError)
+    if (checksResult.error) return res.status(500).json({ error: checksResult.error.message })
+    if (totalsError && !totalsMissing) return res.status(500).json({ error: totalsError.message })
     return res.status(200).json({
-      ...splitDeleted([...(entries.data ?? []), ...(partnerEntries.data ?? [])].map((row: any) => toEntry(row, user.clientId!))
+      ...splitDeleted([...entriesData, ...partnerData].map((row: any) => toEntry(row, user.clientId!))
         .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))),
       partnerShared: !!partnerClientId,
       totalsReady: !totalsMissing,
-      totals: totalsMissing ? [] : (totals.data ?? []).map((row: any) => toMonthTotal(row, user.clientId!)),
-      rules: (rules.data ?? []).map((row: any) => ({ keyword: row.keyword, categoryId: row.category_id })),
-      checks: (checks.data ?? []).map((row: any) => ({ id: row.id, date: String(row.checked_on).slice(0, 10), label: row.label, input: row.input })),
+      totals: totalsMissing ? [] : totalsData.map((row: any) => toMonthTotal(row, user.clientId!)),
+      rules: rulesData.map((row: any) => ({ keyword: row.keyword, categoryId: row.category_id })),
+      checks: (checksResult.data ?? []).map((row: any) => ({ id: row.id, date: String(row.checked_on).slice(0, 10), label: row.label, input: row.input })),
     })
   }
 
