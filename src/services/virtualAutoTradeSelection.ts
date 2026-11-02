@@ -50,6 +50,25 @@ export function evaluateCloseFreshness(
 }
 
 /**
+ * 매수 후보 중 종가가 오래됐거나 동결된 종목을 분리한다. 보유 종목 매도 쪽에는 같은 가드가 있었지만
+ * 매수 후보에는 없어서, 종목 하나의 시세 수집이 멈춰도 옛 가격으로 점수가 매겨진 채 사게 됐다.
+ */
+export function splitCandidatesByCloseFreshness<T extends { code: string }>(
+  candidates: T[],
+  historyByCode: Map<string, CloseFreshnessRow[]>,
+  opts?: { nowMs?: number }
+): { fresh: T[]; excluded: Array<{ code: string; reason: NonNullable<CloseFreshnessResult["reason"]> }> } {
+  const fresh: T[] = [];
+  const excluded: Array<{ code: string; reason: NonNullable<CloseFreshnessResult["reason"]> }> = [];
+  for (const candidate of candidates) {
+    const result = evaluateCloseFreshness(historyByCode.get(candidate.code) ?? [], opts);
+    if (result.ok) fresh.push(candidate);
+    else excluded.push({ code: candidate.code, reason: result.reason ?? "no-data" });
+  }
+  return { fresh, excluded };
+}
+
+/**
  * 데이터 오염 구간 레지스트리. 원장(virtual_trades 등)은 현금·실현손익·FIFO 정합성 때문에 지우지 않고,
  * 통계·학습·분석에서만 이 목록으로 격리한다. 새 사고가 나면 여기에 추가하고 컷오프를 옮긴다.
  * - scope "prices": 해당 기간 시세로 계산된 지표·신호(pullback_signals 등)도 신뢰 불가

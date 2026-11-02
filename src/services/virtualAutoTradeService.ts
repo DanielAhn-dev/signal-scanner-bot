@@ -40,6 +40,7 @@ import {
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   evaluateCloseFreshness,
+  splitCandidatesByCloseFreshness,
   isTakeProfitCooldownOverridable,
   calculatePortfolioReturnPct,
   resolveDeployableCash,
@@ -3258,12 +3259,38 @@ async function selectMondayCandidates(payload: {
     heldSectorWeightPct: payload.heldSectorWeightPct,
   });
 
+  // 최종 후보만 종목별 종가 신선도 확인(보유 종목 매도 쪽과 같은 가드). 조회 실패는 후보를 비워 보류한다.
+  let freshCandidates = selection.candidates;
+  let staleCandidateNote = "";
+  if (selection.candidates.length > 0) {
+    try {
+      const candidateHistory = await fetchStockDailyHistoryForCodes(
+        payload.supabase,
+        selection.candidates.map((c) => c.code),
+        60
+      );
+      const split = splitCandidatesByCloseFreshness(selection.candidates, candidateHistory);
+      freshCandidates = split.fresh;
+      if (split.excluded.length > 0) {
+        staleCandidateNote = ` · 종가 오래됨/동결 ${split.excluded.length}종목 제외(${split.excluded.map((e) => `${e.code}:${e.reason}`).join(", ")})`;
+      }
+    } catch {
+      freshCandidates = [];
+      staleCandidateNote = " · 후보 종가 신선도 조회 실패로 신규 매수 보류";
+    }
+  }
+
   return {
     ...selection,
+    candidates: freshCandidates,
+    filteringMetrics: selection.filteringMetrics
+      ? { ...selection.filteringMetrics, selectedCount: freshCandidates.length }
+      : selection.filteringMetrics,
     latestAsof,
     thresholdUsed: Math.max(selection.thresholdUsed, qualityAdjustedMinBuyScore),
     guardNote:
-      staleBusinessDays === 1
+      staleCandidateNote +
+      (staleBusinessDays === 1
         ? `점수 기준일 1영업일 지연 보수 적용 · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`
         : `발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${
             discoveryProfile === "PULLBACK"
@@ -3283,7 +3310,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""}${chaseCodes.length > 0 ? ` · 급등 추격·윗꼬리·한 달 급락 ${chaseCodes.length}종목 제외` : ""}${qualityPreference.size > 0 ? ` · 선호점수 가산 ${qualityPreference.size}종목` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""}${chaseCodes.length > 0 ? ` · 급등 추격·윗꼬리·한 달 급락 ${chaseCodes.length}종목 제외` : ""}${qualityPreference.size > 0 ? ` · 선호점수 가산 ${qualityPreference.size}종목` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`),
   };
 }
 
