@@ -2012,14 +2012,18 @@ async function prepareStaleGuardFallback(payload: {
 
   const priorSkipDateKeysByCode = new Map<string, string[]>();
   const sinceIso = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: skipRows, error: skipError } = await payload.supabase
-    .from("virtual_autotrade_actions")
-    .select("code, created_at")
-    .eq("chat_id", payload.chatId)
-    .eq("reason", "stale-or-frozen-close")
-    .in("code", payload.codes)
-    .gte("created_at", sinceIso)
-    .limit(1000);
+  const { data: skipRows, error: skipError } = await selectAllSettled<Record<string, unknown>>(async (a, b) =>
+    await payload.supabase
+      .from("virtual_autotrade_actions")
+      .select("code, created_at")
+      .eq("chat_id", payload.chatId)
+      .eq("reason", "stale-or-frozen-close")
+      .in("code", payload.codes)
+      .gte("created_at", sinceIso)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(a, b)
+  );
   if (skipError) {
     console.error("[autoTrade] stale guard history lookup failed", skipError.message);
   }
@@ -2269,12 +2273,16 @@ async function getRecentAutoTradeMetrics(payload: {
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
 
   const [actionsResp, runsResp] = await Promise.all([
-    payload.supabase
-      .from("virtual_autotrade_actions")
-      .select("action_type, reason, created_at")
-      .eq("chat_id", payload.chatId)
-      .gte("created_at", since)
-      .limit(2000),
+    selectAllSettled<Record<string, unknown>>(async (a, b) =>
+      await payload.supabase
+        .from("virtual_autotrade_actions")
+        .select("action_type, reason, created_at")
+        .eq("chat_id", payload.chatId)
+        .gte("created_at", since)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(a, b)
+    ),
     payload.supabase
       .from("virtual_autotrade_runs")
       .select("id, started_at")

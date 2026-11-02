@@ -3,6 +3,7 @@ import { withIndexTrendRatios } from "../../services/indexTrendRatios";
 import type { ChatContext } from "../router";
 import { PORTFOLIO_TABLES } from "../../db/portfolioSchema";
 import { getUserInvestmentPrefs } from "../../services/userService";
+import { selectAllSettled } from "../../services/supabasePaging";
 import {
   applyStrategyBuyConstraint,
   detectAutoTradeMarketPolicy,
@@ -289,18 +290,27 @@ async function getRecentPerformanceMetrics(chatId: number, windowDays = 14): Pro
   const since = resolveStatsSinceIso(new Date(Date.now() - Math.max(1, windowDays) * 24 * 60 * 60 * 1000).toISOString());
 
   const [actionsResp, tradesResp] = await Promise.all([
-    supabase
-      .from("virtual_autotrade_actions")
-      .select("action_type, reason")
-      .eq("chat_id", chatId)
-      .gte("created_at", since)
-      .limit(2000),
-    supabase
-      .from(PORTFOLIO_TABLES.trades)
-      .select("side, pnl_amount")
-      .eq("chat_id", chatId)
-      .gte("traded_at", since)
-      .limit(2000),
+    // 응답이 1000행에서 조용히 잘리지 않도록 끝까지 읽는다(id를 정렬 끝에 둬 페이지 사이 중복·누락 방지).
+    selectAllSettled<{ action_type?: string | null; reason?: string | null }>(async (a, b) =>
+      await supabase
+        .from("virtual_autotrade_actions")
+        .select("action_type, reason")
+        .eq("chat_id", chatId)
+        .gte("created_at", since)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(a, b)
+    ),
+    selectAllSettled<{ side?: string | null; pnl_amount?: number | null }>(async (a, b) =>
+      await supabase
+        .from(PORTFOLIO_TABLES.trades)
+        .select("side, pnl_amount")
+        .eq("chat_id", chatId)
+        .gte("traded_at", since)
+        .order("traded_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(a, b)
+    ),
   ]);
 
   if (actionsResp.error || tradesResp.error) {

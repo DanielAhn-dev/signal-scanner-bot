@@ -22,7 +22,7 @@ import { fetchStockNameMap } from "../../src/services/stockNames";
 import { economicCalendarCoverage, economicCalendarSyncStatus } from "../../src/utils/fetchEconomicCalendar";
 import { krxCalendarStatus, toKstDateKey } from "../../src/lib/krxCalendar";
 import { findMislabeledSells, type SellActionRow } from "../../src/lib/sellLabelAudit";
-import { selectPaged } from "../../src/services/supabasePaging";
+import { selectAllSettled, selectPaged } from "../../src/services/supabasePaging";
 
 /** 매도 사유 기록 수정(섹터 정리·비중 축소 사유 분리) 배포 뒤부터 검산한다 */
 const SELL_LABEL_AUDIT_SINCE = "2026-10-01T15:00:00+09:00";
@@ -268,14 +268,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 매도 사유 검산: 최근 14일 익절로 기록됐는데 실제 손익이 마이너스인 매도 (금액이 맞아도 사유가 틀릴 수 있다)
-    const { data: sellRows, error: sellRowsError } = await supabase
-      .from("virtual_autotrade_actions")
-      .select("chat_id, code, reason, created_at, detail")
-      .in("chat_id", chatIds)
-      .eq("action_type", "SELL")
-      // 10/01 한미약품 건은 원인을 고친 알려진 기록이라 그 뒤부터만 센다 (매일 같은 ❌ 알림 방지)
-      .gte("created_at", new Date(Math.max(Date.now() - 14 * 86_400_000, Date.parse(SELL_LABEL_AUDIT_SINCE))).toISOString())
-      .limit(5000);
+    const sellSince = new Date(Math.max(Date.now() - 14 * 86_400_000, Date.parse(SELL_LABEL_AUDIT_SINCE))).toISOString();
+    const { data: sellRows, error: sellRowsError } = await selectAllSettled<Record<string, unknown>>(async (a, b) =>
+      await supabase
+        .from("virtual_autotrade_actions")
+        .select("chat_id, code, reason, created_at, detail")
+        .in("chat_id", chatIds)
+        .eq("action_type", "SELL")
+        // 10/01 한미약품 건은 원인을 고친 알려진 기록이라 그 뒤부터만 센다 (매일 같은 ❌ 알림 방지)
+        .gte("created_at", sellSince)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(a, b)
+    );
     const mislabeled = sellRowsError ? [] : findMislabeledSells((sellRows ?? []) as SellActionRow[]);
     const labelIssue = sellRowsError || mislabeled.length > 0 ? 1 : 0;
     const labelNote = sellRowsError
