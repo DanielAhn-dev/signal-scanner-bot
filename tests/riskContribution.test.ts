@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildRiskContribution } from "../src/lib/riskContribution";
+import { buildRiskContribution, riskConcentrated } from "../src/lib/riskContribution";
 
 function series(n: number, f: (t: number) => number) {
   let p = 100;
@@ -55,4 +55,11 @@ test("이력이 짧은 종목은 제외하고 목록에 남긴다", () => {
 test("이력이 전부 없거나 평가금이 없으면 null", () => {
   assert.equal(buildRiskContribution([]), null);
   assert.equal(buildRiskContribution([{ code: "N", name: "신규", value: 100, closes: series(10, wave(0.01)) }]), null);
+});
+
+test("위험 쏠림은 몫 40% 이상이면서 비중의 2배 이상일 때만", () => {
+  assert.equal(riskConcentrated({ weightPct: 10, riskSharePct: 45 }), true);
+  assert.equal(riskConcentrated({ weightPct: 50, riskSharePct: 60 }), false); // 몫은 크지만 비중이 원래 큼
+  assert.equal(riskConcentrated({ weightPct: 5, riskSharePct: 30 }), false); // 비중의 2배 넘어도 몫이 40% 미만
+  assert.equal(riskConcentrated({ weightPct: 20, riskSharePct: 40 }), true); // 경계값 포함
 });

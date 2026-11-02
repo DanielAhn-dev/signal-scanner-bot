@@ -2,6 +2,7 @@
  * 실계좌 리밸런싱 가이드 리포트 HTML — 계산은 src/lib/rebalanceReport.ts. 리포트 화면 미리보기·파일 저장(인쇄로 PDF)에 쓴다.
  */
 import type { RebalanceReport, ReportAction } from '../lib/rebalanceReport'
+import { riskConcentrated } from '../lib/riskContribution'
 import { escapeHtml, renderLayout } from './reportWebRenderService'
 
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
@@ -221,11 +222,15 @@ export function renderRebalanceReportHtml(r: RebalanceReport, generatedAt: strin
     const pairs = k.highCorrPairs.length
       ? `<ul class="rb-list">${k.highCorrPairs.map((p) => `<li>${e(p.a)} · ${e(p.b)} — 상관 ${p.corr.toFixed(2)}. 이름은 달라도 거의 같이 움직여 분산 효과가 작습니다.</li>`).join('')}</ul>`
       : '<p class="rb-muted">비중 5% 이상 종목 중 거의 같이 움직이는 쌍은 없습니다.</p>'
+    const conc = k.holdings.filter(riskConcentrated)
+    const concHtml = conc.length
+      ? `<div class="rb-alert">${conc.map((x) => `<b>${e(x.name)}</b>은 비중 ${x.weightPct.toFixed(1)}%인데 계좌 흔들림의 ${x.riskSharePct.toFixed(0)}%를 차지합니다.`).join('<br>')}<br>비중을 줄이라는 뜻이 아니라, 이 종목의 움직임이 계좌 전체를 좌우한다는 표시입니다. 의도한 구성이면 그대로 두어도 됩니다.</div>`
+      : ''
     const skipped = k.excluded.length ? `<p class="rb-muted">상장 후 기간이 짧아 뺀 종목: ${k.excluded.map((x) => e(x.name)).join(', ')} (계산에 들어간 평가금 ${k.coveragePct.toFixed(0)}%).</p>` : ''
     parts.push(section('7-2. 위험은 어디서 오나', `
       <p>비중이 아니라 <b>계좌가 흔들리는 정도 중 어느 종목 몫이 큰지</b> 봅니다. 현재 비중을 ${k.startDate}~${k.endDate}(거래일 ${k.observations}일) 내내 유지했다고 가정하면 연환산 변동성은 약 ${k.portfolioVolPct.toFixed(1)}%, 그 기간 최대 낙폭은 ${k.maxDrawdownPct.toFixed(1)}%입니다. 실질적으로 서로 다르게 움직이는 종목 수는 약 ${k.effectiveBets.toFixed(1)}개입니다.</p>
       <div class="rb-wrap"><table class="rb-table"><thead><tr><th>종목</th><th>비중</th><th>위험 몫</th><th>단독 변동성(연)</th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${pairs}${skipped}
+      ${concHtml}${pairs}${skipped}
       <p class="rb-muted">과거 약 1년의 기록이라 표본이 짧고, 위기 때는 종목끼리 평소보다 더 같이 움직입니다. 앞으로의 손실 한도를 뜻하지 않으며, 가격은 분배금이 반영된 수정주가일 수 있어 변동성 용도로만 썼습니다. 현금성은 변동 0으로 계산했습니다.</p>`))
   }
 

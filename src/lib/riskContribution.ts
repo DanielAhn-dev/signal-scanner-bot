@@ -45,6 +45,14 @@ export type RiskContribution = {
   excluded: Array<{ code: string; name: string }>;
 };
 
+/** 위험 쏠림 안내 기준(결과를 보기 전에 정함): 위험 몫이 40% 이상이면서 비중의 2배 이상. 매매 규칙이 아니라 표시 기준이다. */
+export const RISK_CONCENTRATION_SHARE_PCT = 40;
+export const RISK_CONCENTRATION_RATIO = 2;
+
+export function riskConcentrated(h: Pick<RiskHolding, "weightPct" | "riskSharePct">): boolean {
+  return h.riskSharePct >= RISK_CONCENTRATION_SHARE_PCT && h.riskSharePct >= h.weightPct * RISK_CONCENTRATION_RATIO;
+}
+
 export const RISK_MIN_OBSERVATIONS = 120;
 export const RISK_MAX_OBSERVATIONS = 250;
 export const HIGH_CORR = 0.9;
