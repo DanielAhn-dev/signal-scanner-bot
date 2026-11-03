@@ -164,3 +164,19 @@ test("계좌별 기록: 같은 달·같은 종목이라도 계좌가 다르면 �
   assert.equal(row.addedShares, 0);
   assert.equal(row.net, 91_200);
 });
+
+test("tradedCandidatesByMonth: 그달에 샀거나 그달 1일 이후에 판 종목만 그달 후보", async () => {
+  const { tradedCandidatesByMonth } = await import("../src/lib/distributionReceipts");
+  const row = (code: string, side: string, tradedAt: string) => ({ code, name: code, side, tradedAt, accountKey: "A|B", accountLabel: "A B" });
+  const out = tradedCandidatesByMonth(
+    [
+      row("111111", "BUY", "2026-10-05T01:00:00Z"), // 10월에 삼 → 10월 후보, 9월엔 아님
+      row("222222", "SELL", "2026-10-20T01:00:00Z"), // 10월에 팖 → 10월·9월 후보(그 전에 들고 있었다)
+      row("333333", "SELL", "2026-08-10T01:00:00Z"), // 8월에 팖 → 9·10월 후보 아님
+      row("444444", "BUY", "2026-09-30T16:00:00Z"), // 한국시간 10/1 01:00 → 10월
+    ],
+    ["2026-10", "2026-09"],
+  );
+  assert.deepEqual(out["2026-10"].map((c) => c.code).sort(), ["111111", "222222", "444444"]);
+  assert.deepEqual(out["2026-09"].map((c) => c.code), ["222222"]);
+});

@@ -10,6 +10,7 @@ import {
   loadAccountPositionRows,
   loadGuideFile,
   loadGuidePlan,
+  loadRealAccountTrades,
   withPlanOverseas,
   saveGuideFile,
   toGuideHoldings,
@@ -45,7 +46,7 @@ import { loadIncomeCheck } from '../../src/services/incomeCheckService'
 import { buildAdherence } from '../../src/lib/guideAdherence'
 import { readOwnUserState } from './user-state'
 import { accountCashRows, addAccountCash, setAccountCash } from '../../src/lib/accountCash'
-import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sameReceiptSlot, sanitizeReceipt } from '../../src/lib/distributionReceipts'
+import { MAX_RECEIPTS, estimateReinvest, monthSummary, receiptNet, sameReceiptSlot, sanitizeReceipt, tradedCandidatesByMonth } from '../../src/lib/distributionReceipts'
 
 // 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts, 저장은 src/services/incomeGuideStore.ts)
 //   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
@@ -237,12 +238,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.action === 'receipt-add') {
         const r = sanitizeReceipt(body.receipt, new Date().toISOString(), () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
         if (typeof r === 'string') return res.status(400).json({ error: r })
+        // 계좌별 보기에서 계좌를 안 보낸 기록(이미 판 종목·예전 기록 고치기)은 지금 보는 계좌 것으로 — 안 그러면 다른 계좌에도 있는 종목이 '여러 계좌' 오류로 막힌다
+        if (!r.accountKey && writeKey) {
+          const [broker = '', account = ''] = writeKey.split('|')
+          r.accountKey = writeKey
+          r.accountLabel = [broker, account].filter(Boolean).join(' ')
+        }
         // 여러 계좌에 있는 종목은 계좌를 골라야 한다 — 안 고르면 두 계좌 기록이 한 줄로 덮어써졌다
         if (!r.accountKey && (await heldKeysOf(r.code)).size > 1) {
           return res.status(400).json({ error: '이 종목이 여러 계좌에 있습니다. 어느 계좌에 들어왔는지 골라 주세요.' })
         }
         // 같은 달·같은 종목·같은 계좌를 다시 적으면 고친 것으로 본다(두 번 눌러 쌓이지 않게)
-        const i = receipts.findIndex((x) => sameReceiptSlot(x, r))
+        // 계좌 없이 적었던 같은 달·같은 종목 예전 기록은 이 계좌 것으로 옮기며 고친다(두 줄로 쌓이지 않게)
+        let i = receipts.findIndex((x) => sameReceiptSlot(x, r))
+        if (i < 0 && writeKey && r.accountKey === writeKey) i = receipts.findIndex((x) => !x.accountKey && x.month === r.month && x.code === r.code)
         const prev = i >= 0 ? receipts[i] : null
         const next: typeof r = { ...r, ...(prev ? { id: prev.id } : {}) }
         // 예수금과 무관했던 예전 기록을 고칠 때는 더하지 않는다(이미 증권사 숫자에 들어 있을 수 있다)
@@ -332,11 +341,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 분배금 받은 기록 → 이번 달 합계와 다음 달 예상(기록 없는 종목은 분배율 추정, 일반 계좌는 15.4% 뗌)
     // 계좌별 보기면 이 계좌의 기록만 — 계좌를 적은 기록은 그 계좌, 예전 기록(계좌 없음)은 이 계좌에 있는 종목이면 보인다
     const heldCodes = new Set(holdings.map((h) => h.code))
-    const receipts = (file.receipts ?? []).filter((r) => !accountKey || (r.accountKey ? r.accountKey === accountKey : heldCodes.has(r.code)))
     const month = today.slice(0, 7)
     const prevMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()
     const yearAgoMonth = (() => { const [y, m] = month.split('-').map(Number); return m === 12 ? `${y}-01` : `${y - 1}-${String(m + 1).padStart(2, '0')}` })()
+    // 이미 판 종목도 그달 입력 목록에 — 입력 칸에서 고를 수 있는 최근 3개월마다 그달 보유했을 종목(실계좌 매매 기록 기준).
+    // 조회가 실패해도 화면은 그대로 보여 준다(지금 보유 종목만 뜸)
+    const receiptMonths = [month, prevMonth, (() => { const [y, m] = prevMonth.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}` })()]
+    const traded = await loadRealAccountTrades(supabase, chatId, `${receiptMonths[2]}-01T00:00:00+09:00`)
+      .then((rows) => {
+        const byMonth = tradedCandidatesByMonth(rows, receiptMonths)
+        // 계좌별 보기면 그 계좌 종목만
+        return Object.fromEntries(Object.entries(byMonth).map(([m, list]) => [m, accountKey ? list.filter((c) => c.accountKey === accountKey) : list]))
+      })
+      .catch(() => ({}))
     const ctx = { settings, today, priceOf: (code: string) => prices.get(code) }
+    // 계좌 없는 예전 기록은 그 계좌에 지금 있는 종목이거나 최근에 거래한(이미 판) 종목이면 이 계좌 것으로 본다
+    const tradedCodes = new Set(Object.values(traded as Record<string, Array<{ code: string }>>).flatMap((list) => list.map((c) => c.code)))
+    const receipts = (file.receipts ?? []).filter((r) => !accountKey || (r.accountKey ? r.accountKey === accountKey : heldCodes.has(r.code) || tradedCodes.has(r.code)))
     // 이번 달 월입금 — 모아가기 '이번 달 넣었어요' 체크인(user-state 'accumulate'.deposits). 받은 분배금이 있을 때만 읽는다
     let deposit: number | null = 0
     if (monthSummary(receipts, month).net > 0) {
@@ -380,6 +401,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           reinvest: estimateReinvest({ receipts, history, cashNow: view.cashPlan.balance, cashUpdatedAt: file.settings.cashUpdatedAt, deposit: depositWithCash, today }),
           // 받은 분배금만큼 은행에서 넣은 계좌·금액(모아가기 '받은 분배금') — 없으면 null
           cashDeposit,
+          // 달별로 그달 보유했을 종목(이미 판 것 포함) — 입력 칸 종목 목록에 합친다
+          traded,
         },
         // 가이드 따름 기록 — 안내와 다음 기록의 보유 변화 비교 (내 선택 돌아보기)
         adherence: buildAdherence({ history, today, priceOf: (code) => prices.get(code), receipts, excluded: file.adherenceExcluded }),

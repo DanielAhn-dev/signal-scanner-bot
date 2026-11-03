@@ -9,7 +9,7 @@ import { fetchRealtimePriceBatch, type RealtimeStockData } from "../utils/fetchR
 import { fetchEtfKeyIndicators } from "./etfKeyIndicator";
 import { selectPaged } from "./supabasePaging";
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
-import { sanitizeReceipts, type DistributionReceipt } from "../lib/distributionReceipts";
+import { sanitizeReceipts, type DistributionReceipt, type TradedRow } from "../lib/distributionReceipts";
 import { sanitizeCashActivity, sanitizeCashChecks, type CashActivity, type CashChecks } from "../lib/accountCash";
 import { sanitizeAccountGuideMap, type AccountGuideMap } from "../lib/guideAccountScope";
 import { overseasPctOfMix, readInvestPlan, type MixEntry } from "./userPlan";
@@ -136,6 +136,34 @@ export async function loadAccountPositionRows(supabase: any, chatId?: string | n
     { logLabel: "incomeGuide.account_positions" }
   );
   return rows.filter((r) => String(r.status ?? "holding") !== "closed");
+}
+
+/** 실계좌 매매 기록(증권사·계좌명이 있는 행) — sinceIso 이후. 분배금 입력 목록에 이미 판 종목을 넣는 데 쓴다 */
+export async function loadRealAccountTrades(supabase: any, chatId: string | number, sinceIso: string): Promise<TradedRow[]> {
+  const rows = await selectPaged<any>(
+    async (from, to) =>
+      await supabase
+        .from("virtual_trades")
+        .select("id, code, side, traded_at, broker_name, account_name, stock:stocks(name)")
+        .eq("chat_id", chatId)
+        .gte("traded_at", sinceIso)
+        .or("broker_name.not.is.null,account_name.not.is.null")
+        .order("id", { ascending: true })
+        .range(from, to),
+    { logLabel: "incomeGuide.real_trades" }
+  );
+  return rows.map((r) => {
+    const broker = String(r.broker_name ?? "").trim();
+    const account = String(r.account_name ?? "").trim();
+    return {
+      code: String(r.code ?? "").trim(),
+      name: String(r.stock?.name ?? r.code ?? ""),
+      side: String(r.side ?? ""),
+      tradedAt: String(r.traded_at ?? ""),
+      accountKey: `${broker}|${account}`,
+      accountLabel: [broker, account].filter(Boolean).join(" "),
+    };
+  });
 }
 
 /** 종목 시세 — 실시간가(장 마감 뒤엔 종가) → stocks.close 순. ETF는 stocks.close가 비어 있는 경우가 많다 */

@@ -102,6 +102,32 @@ export function sanitizeReceipts(list: unknown): DistributionReceipt[] {
     .slice(-MAX_RECEIPTS);
 }
 
+export type TradedRow = { code: string; name: string; side: string; tradedAt: string; accountKey: string; accountLabel: string };
+export type TradedCandidate = { code: string; name: string; accountKey: string; accountLabel: string };
+
+const kstMonthOf = (iso: string) => new Date(Date.parse(iso) + 9 * 3600_000).toISOString().slice(0, 7);
+
+/**
+ * 이미 판 종목도 그달 분배금 입력 목록에 뜨게 — 실계좌 매매 기록으로 "그달에 보유했을 종목"을 모은다.
+ * 그달 안에 샀거나, 그달 1일 이후에 팔았으면(= 그달에 들고 있었다) 후보. 지금 보유 중인 종목은 화면이 따로 합친다.
+ */
+export function tradedCandidatesByMonth(trades: TradedRow[], months: string[]): Record<string, TradedCandidate[]> {
+  const out: Record<string, TradedCandidate[]> = {};
+  for (const month of months) {
+    const seen = new Map<string, TradedCandidate>();
+    for (const t of trades) {
+      if (!t.code || t.code === "CASH") continue;
+      const m = kstMonthOf(t.tradedAt);
+      const held = t.side === "SELL" ? m >= month : t.side === "BUY" && m === month;
+      if (!held) continue;
+      const k = `${t.code}|${t.accountKey}`;
+      if (!seen.has(k)) seen.set(k, { code: t.code, name: t.name, accountKey: t.accountKey, accountLabel: t.accountLabel });
+    }
+    out[month] = [...seen.values()];
+  }
+  return out;
+}
+
 /** 세전 = 수량 × 주당 */
 export const receiptGross = (r: DistributionReceipt) => Math.round(r.quantity * r.perShare);
 /** 세후 = 적은 입금액, 없으면 15.4%를 뗀 값 */
