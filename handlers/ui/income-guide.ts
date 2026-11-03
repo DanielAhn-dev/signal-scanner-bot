@@ -239,11 +239,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const r = sanitizeReceipt(body.receipt, new Date().toISOString(), () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
         if (typeof r === 'string') return res.status(400).json({ error: r })
         // 계좌별 보기에서 계좌를 안 보낸 기록(이미 판 종목·예전 기록 고치기)은 지금 보는 계좌 것으로 — 안 그러면 다른 계좌에도 있는 종목이 '여러 계좌' 오류로 막힌다
-        if (!r.accountKey && writeKey) {
-          const [broker = '', account = ''] = writeKey.split('|')
-          r.accountKey = writeKey
-          r.accountLabel = [broker, account].filter(Boolean).join(' ')
-        }
+        // (표시 이름은 포트폴리오 별칭이라 서버에서 만들지 않는다 — 화면이 계좌 목록으로 보여 준다)
+        if (!r.accountKey && writeKey) r.accountKey = writeKey
         // 여러 계좌에 있는 종목은 계좌를 골라야 한다 — 안 고르면 두 계좌 기록이 한 줄로 덮어써졌다
         if (!r.accountKey && (await heldKeysOf(r.code)).size > 1) {
           return res.status(400).json({ error: '이 종목이 여러 계좌에 있습니다. 어느 계좌에 들어왔는지 골라 주세요.' })
