@@ -8649,12 +8649,13 @@ details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
 .ig-receipt-row__net { grid-area: net; text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold); }
 .ig-receipt-row__detail { grid-area: detail; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
 .ig-receipt-row__delta { grid-area: delta; text-align: right; font-size: 11px; }
-.ig-receipt-row__del { grid-area: del; display: flex; align-items: center; }
+.ig-receipt-row__del { grid-area: del; display: flex; align-items: center; gap: 10px; }
 .ig-receipt-row__del-btn {
   border: 0; background: none; padding: 4px 2px; font: inherit; font-size: 11px;
   color: var(--color-text-tertiary); cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
 }
 .ig-receipt-row__del-btn:hover:not(:disabled) { color: var(--color-error); }
+.ig-receipt-row__del-btn--edit:hover:not(:disabled) { color: var(--color-brand); }
 .ig-receipt-row__del-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── 리밸런싱 가이드 · 겹치는 종목 합치기 — 팔기(파랑)·사기(빨강) 태그, 줄 사이 얇은 구분선 ── */
