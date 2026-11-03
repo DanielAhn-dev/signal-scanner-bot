@@ -100,8 +100,19 @@ function groupByMonth(list: Receipt[]) {
   return [...by.keys()].sort().reverse().map((month) => {
     const items = [...(by.get(month) ?? [])].sort((a, b) => netOf(b) - netOf(a))
     const prevItems = by.get(prevMonthKey(month))
-    const prevByCode = prevItems ? new Map(prevItems.map((r) => [slotOf(r), netOf(r)])) : null
-    const same = prevByCode ? items.filter((r) => prevByCode.has(slotOf(r))) : []
+    // 이번 달 기록 id → 지난달 같은 자리의 세후. 계좌까지 같으면 그 기록, 지난달엔 계좌를 안 적었더라도
+    // 두 달 모두 그 종목이 한 줄씩뿐이면 같은 종목으로 본다(계좌 이름만 달라서 '새로'로 뜨던 문제)
+    const prevByCode = prevItems ? new Map<string, number>() : null
+    if (prevItems && prevByCode) {
+      const countOf = (rs: Receipt[], code: string) => rs.filter((x) => x.code === code).length
+      for (const r of items) {
+        const exact = prevItems.find((p) => slotOf(p) === slotOf(r))
+        const loose = countOf(items, r.code) === 1 && countOf(prevItems, r.code) === 1 ? prevItems.find((p) => p.code === r.code) : undefined
+        const hit = exact ?? loose
+        if (hit) prevByCode.set(r.id, netOf(hit))
+      }
+    }
+    const same = prevByCode ? items.filter((r) => prevByCode.has(r.id)) : []
     return {
       month,
       items,
@@ -109,7 +120,7 @@ function groupByMonth(list: Receipt[]) {
       estimated: items.some((r) => r.net == null),
       prevTotal: prevItems ? sum(prevItems) : null,
       prevByCode,
-      sameDelta: prevByCode && same.length > 0 ? same.reduce((s, r) => s + netOf(r) - (prevByCode.get(slotOf(r)) ?? 0), 0) : null,
+      sameDelta: prevByCode && same.length > 0 ? same.reduce((s, r) => s + netOf(r) - (prevByCode.get(r.id) ?? 0), 0) : null,
     }
   })
 }
@@ -491,7 +502,7 @@ export default function DistributionReceipts({ data, holdings, buyName, submit, 
               </summary>
               <ul className="ig-receipt-rows">
                 {g.items.map((r) => {
-                  const prev = g.prevByCode?.get(slotOf(r))
+                  const prev = g.prevByCode?.get(r.id)
                   return (
                     <li key={r.id} className={`ig-receipt-row${g.prevByCode == null ? ' ig-receipt-row--single' : ''}`}>
                       <span className="ig-receipt-row__name">
