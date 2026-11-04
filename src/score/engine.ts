@@ -29,6 +29,8 @@ export interface ScoreFactors {
   atr_pct?: number; // ATR / 종가 * 100
   // 기관/외국인 수급
   institutional_score?: number;
+  /** VIX·공포탐욕·환율이 점수에 더한 값(모든 종목 동일). 11/23 정리 전 영향 측정용 기록 */
+  market_adj?: number;
   institutional_signal?: "accumulation" | "distribution" | "neutral";
   foreign_5d?: number;
   institution_5d?: number;
@@ -429,6 +431,7 @@ export function calculateScore(
         atr14,
         atr_pct,
         institutional_score: institutionalAdj,
+        market_adj: marketAdj,
         institutional_signal: institutionalSignal,
         foreign_5d: foreign5d,
         institution_5d: institution5d,
