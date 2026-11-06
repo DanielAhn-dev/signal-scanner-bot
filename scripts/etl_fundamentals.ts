@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { getFundamentalSnapshot } from "../src/services/fundamentalService";
 import fundamentalStore, { FundamentalSnapshot as StoreSnapshot, getStockClosePrices } from "../src/services/fundamentalStore";
-import { fillRatio, pickFundamentalTargets } from "../src/lib/fundamentalTargets";
+import { fillRatio, isSourceBroken, needsSourceCheck, pickFundamentalTargets } from "../src/lib/fundamentalTargets";
 import { hasFundamentalValues } from "../src/lib/fundamentalsPick";
 
 const args = process.argv.slice(2);
@@ -139,9 +139,23 @@ function sleep(ms: number) {
 
   const ratio = fillRatio(filled, attempted);
   console.log(`ETL complete: 시도 ${attempted}, 값 채움 ${filled} (${Math.round(ratio * 100)}%)`);
-  // 대부분 비면 수집처 구조가 바뀐 것이다 — 조용히 끝내지 말고 워크플로를 실패시켜 알린다
-  if (attempted >= 20 && ratio < 0.5) {
-    console.error("값 채움 비율이 50% 미만 — 수집 파서·수집처를 확인하세요");
-    process.exit(1);
+  if (needsSourceCheck(filled, attempted)) {
+    // 대형주까지 비면 수집처 구조가 바뀐 것이다 — 조용히 끝내지 말고 워크플로를 실패시켜 알린다
+    let sampleFilled = 0;
+    for (const code of defaultCodes) {
+      try {
+        const s = await getFundamentalSnapshot(code);
+        if (hasFundamentalValues({ per: s.per, pbr: s.pbr, roe: s.roe, debt_ratio: s.debtRatio })) sampleFilled += 1;
+      } catch (e) {
+        console.error(`Error fetching sample ${code}:`, e);
+      }
+      await sleep(250);
+    }
+    console.log(`수집처 점검: 대형주 ${defaultCodes.length}개 중 ${sampleFilled}개 값 있음`);
+    if (isSourceBroken(sampleFilled, defaultCodes.length)) {
+      console.error("값 채움 비율이 50% 미만이고 대형주도 비어 있음 — 수집 파서·수집처를 확인하세요");
+      process.exit(1);
+    }
+    console.warn("값 채움 비율이 50% 미만이지만 수집처는 정상 — 남은 대상이 값 없는 종목 위주(주기 끝)");
   }
 })();

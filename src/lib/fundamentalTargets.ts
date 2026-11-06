@@ -28,3 +28,16 @@ export function pickFundamentalTargets(input: {
 export function fillRatio(filled: number, attempted: number): number {
   return attempted > 0 ? filled / attempted : 1
 }
+
+/**
+ * 채움 비율이 낮아 수집처 점검이 필요한지. 낮다고 곧 고장은 아니다 —
+ * 14일 주기 끝에는 정상 종목이 모두 채워져 상장폐지·인프라 펀드처럼 값이 없는 종목만 대상에 남는다.
+ */
+export function needsSourceCheck(filled: number, attempted: number): boolean {
+  return attempted >= 20 && fillRatio(filled, attempted) < 0.5
+}
+
+/** 값이 반드시 있어야 할 대형주 표본 절반 이상이 비면 수집처·파서 고장으로 본다 */
+export function isSourceBroken(sampleFilled: number, sampleAttempted: number): boolean {
+  return sampleAttempted === 0 || sampleFilled * 2 < sampleAttempted
+}
