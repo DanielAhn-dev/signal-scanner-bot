@@ -11,16 +11,17 @@ import { EARLY_WITHDRAWAL_TAX_RATE, PENSION_SAVING_LIMIT_WON, PENSION_TOTAL_LIMI
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, ccDownturnCase, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
-import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD, DOWNTURN, KR_RATES_FX } from '../../data/researchFacts'
+import { INDEX_CONCENTRATION, INDEX_CONCENTRATION_META } from '../../data/indexConcentration'
+import { FACT_META, type FactMeta, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD, DOWNTURN, KR_RATES_FX } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
 import './plan-check.css'
 
 const man = formatKrwMan
 const toWon = (manText: string) => { const n = Number(manText.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? Math.round(n * 10_000) : 0 }
 /** 표·그래프 아래에 자료의 기간·표본·한계·생성일을 붙인다 — 숫자만 떼어 읽으면 오해하기 쉬우므로 */
-function Basis({ id }: { id: string }) {
+function Basis({ id, meta }: { id?: string; meta?: FactMeta }) {
   const isAdmin = useProfileStore((st) => st.isAdmin)
-  const m = FACT_META[id]
+  const m = meta ?? (id ? FACT_META[id] : undefined)
   if (!m) return null
   const stale = isFactStale(m.generated) && <span className="acc-warn"> 자료를 만든 지 6개월이 넘었습니다. 다시 확인이 필요합니다.</span>
   // 일반 사용자: 기간과 한계만 쉬운 말로. 관리자: 표본·자료 끝·생성일·스크립트까지 전부
@@ -152,7 +153,39 @@ function MarketPickCard() {
         { label: '국내·해외 반반', weights: { kospi200: 50, sp500: 50 } },
       ] }) })}>세 가지를 시뮬레이터에서 기간·금액 바꿔 보기</button>
       <Basis id="market" />
+      <ConcentrationNote />
     </section>
+  )
+}
+
+/** 코스피200이 반도체 두 종목에 얼마나 쏠려 있는지 — 정보 표시일 뿐 비중을 바꾸라는 권유가 아니다 */
+function ConcentrationNote() {
+  const c = INDEX_CONCENTRATION
+  const main = c.etfs[0]
+  if (!main) return null
+  const pc = (v: number | null) => (v == null ? '—' : `${v}%`)
+  return (
+    <div className="plan-concentration">
+      <h3>코스피200 안에는 반도체 두 종목이 {main.top2.toFixed(0)}%입니다</h3>
+      <p className="acc-note">
+        {main.name} 기준 삼성전자 {main.samsung}% + SK하이닉스 {main.hynix}%. 코스피200은 여러 업종에 나눠 담는다기보다 <strong>반도체 두 종목의 움직임이 지수를 크게 좌우하는 지수</strong>입니다. 같이 오를 때는 좋지만 같이 내릴 때도 지수가 그만큼 빠집니다.
+      </p>
+      <More label="과거 큰 하락 때는">
+        <table className="acc-table plan-table">
+          <thead><tr><th>코스피 하락 구간</th><th>코스피</th><th>삼성전자</th><th>SK하이닉스</th><th>S&amp;P500</th></tr></thead>
+          <tbody>
+            {c.episodes.map((e) => (
+              <tr key={e.from}>
+                <td>{e.from}~{e.to}{e.ongoing ? ' (진행 중)' : ''}</td>
+                <td>{pc(e.kospi)}</td><td>{pc(e.samsung)}</td><td>{pc(e.hynix)}</td><td>{pc(e.spx)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="acc-note">코스피가 고점에서 −20% 이상 내린 여섯 번 모두 두 종목이 함께 크게 내렸습니다. 이번(2026-06~)은 미국 S&amp;P500이 거의 안 내렸는데 한국만 깊게 내린 점이 다릅니다. 원인이 무엇인지는 이 자료로 알 수 없고, 앞으로 같은 일이 생긴다는 뜻도 아닙니다. 미국 지수나 다른 자산을 섞으면 이 쏠림이 줄어듭니다(위 표의 반반).</p>
+      </More>
+      <Basis meta={INDEX_CONCENTRATION_META} />
+    </div>
   )
 }
 
