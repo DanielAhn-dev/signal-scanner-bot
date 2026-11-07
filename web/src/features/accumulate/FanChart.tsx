@@ -73,7 +73,10 @@ export default function FanChart({ sim, realName }: { sim: SimResult; realName?:
     setHover(Math.min(n, Math.max(first, i)))
   }
   const k = hover == null ? -1 : hover - first
-  const tipLeft = hover == null ? 0 : x(hover) > W * 0.6 ? x(hover) - 196 : x(hover) + 12
+  const TIP_W = 184
+  const tipRaw = hover == null ? 0 : x(hover) > W * 0.5 ? x(hover) - TIP_W - 12 : x(hover) + 12
+  // 좁은 화면(아이폰)에서 툴팁이 그래프 밖으로 나가 가로 스크롤이 생기지 않게 영역 안에 가둔다
+  const tipLeft = Math.max(0, Math.min(tipRaw, W - TIP_W))
 
   return (
     <div className="acc-chart-wrap" ref={wrapRef}>
