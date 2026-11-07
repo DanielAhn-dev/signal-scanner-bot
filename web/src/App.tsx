@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react'
 import { useUserStateAutoSync } from './lib/userState'
+import { useScreenViewTracking } from './lib/useScreenViewTracking'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import ExcelShell from './components/ExcelShell'
 import ProfileModal from './components/ProfileModal'
@@ -130,6 +131,7 @@ function AppContent() {
 
   const activeRoute = location.pathname.replace(/^\//, '') || 'dashboard'
   const contentMode = activeRoute === 'dashboard' ? 'native' : 'legacy'
+  useScreenViewTracking(activeRoute.split('/')[0], isSignedIn && isMember && !isReview && !isPublicAnalyze)
 
   const saveActionLabelByRoute: Record<string, string> = {
     watchlist: '감시목록 내보내기',

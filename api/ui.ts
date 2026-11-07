@@ -72,6 +72,7 @@ import triggerUpdate from '../handlers/ui/trigger-update'
 import virtualTrade from '../handlers/ui/virtual-trade'
 import watchlist from '../handlers/ui/watchlist'
 import userState from '../handlers/ui/user-state'
+import screenViews from '../handlers/ui/screen-views'
 
 type UiHandler = (req: VercelRequest, res: VercelResponse) => unknown | Promise<unknown>
 
@@ -144,6 +145,7 @@ const ROUTES: Record<string, UiHandler> = {
   'trigger-briefing': triggerBriefing,
   'trigger-update': triggerUpdate,
   'user-state': userState,
+  'screen-views': screenViews,
   'virtual-trade': virtualTrade,
   watchlist,
 }

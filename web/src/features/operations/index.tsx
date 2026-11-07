@@ -11,6 +11,7 @@ import KpiCards from './components/KpiCards'
 import LiveJobsCard from './components/LiveJobsCard'
 import DryRunApprovalCard from './components/DryRunApprovalCard'
 import ActivityList from './components/ActivityList'
+import ScreenViewsCard from './components/ScreenViewsCard'
 import LearningRunCard from './components/LearningRunCard'
 import SellCheckCard from './components/SellCheckCard'
 import InsightsCard from './components/InsightsCard'
@@ -106,6 +107,9 @@ export default function OperationsPage() {
         activityLoading={activityLoading}
         loadActivity={loadActivity}
       />
+
+      {/* 화면별 방문 — 메뉴 정리 대상 판단용 */}
+      <ScreenViewsCard />
 
       {/* 고급 진단 — 검증/디버깅용 지표. 기본 접힘. 일상적인 매매 팔로우에는 필요 없음 */}
       <div style={{ marginBottom: 'var(--space-3)' }}>
