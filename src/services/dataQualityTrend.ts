@@ -130,9 +130,13 @@ export function findRequiredIssues(
 /**
  * 재무 수집이 멈췄는지 — 값(PER 등)이 채워진 가장 최근 수집이 maxAgeDays일보다 오래됐거나 아예 없으면 알린다.
  * 2026-10: 네이버 페이지 구조가 바뀌어 14일 넘게 전 종목 PER·ROE가 빈 채로 저장됐지만 행 수는 정상이라 아무도 몰랐다.
+ * 수집은 14일 주기(etl_fundamentals --fresh-days 14)라 한 바퀴를 채우고 나면 값 있는 새 행이 며칠간 안 생기는 게 정상이다
+ * (2026-11-11: 기준 3일이라 정상 휴지기에 오탐). 그래서 기준은 주기(14일)+여유 3일이다.
+ * 구조 변경 자체는 ETL의 대형주 표본 점검(실패 처리)이 먼저 잡는다.
  */
 export type StaleFundamentals = { ageDays: number | null };
-export function findStaleFundamentals(latestValuedAsOf: string | null, now: Date, maxAgeDays = 3): StaleFundamentals | null {
+export const FUNDAMENTALS_MAX_AGE_DAYS = 17;
+export function findStaleFundamentals(latestValuedAsOf: string | null, now: Date, maxAgeDays = FUNDAMENTALS_MAX_AGE_DAYS): StaleFundamentals | null {
   if (!latestValuedAsOf) return { ageDays: null };
   const t = Date.parse(latestValuedAsOf);
   if (!Number.isFinite(t)) return { ageDays: null };

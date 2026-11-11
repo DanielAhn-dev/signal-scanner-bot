@@ -4,13 +4,14 @@ import { buildQualityAlert, findStaleFundamentals } from '../src/services/dataQu
 
 const now = new Date('2026-10-29T03:00:00Z')
 
-test('값 채워진 마지막 수집이 3일 이내면 정상', () => {
+test('값 채워진 마지막 수집이 14일 주기 휴지기(17일) 이내면 정상', () => {
   assert.equal(findStaleFundamentals('2026-10-28T20:54:00Z', now), null)
-  assert.equal(findStaleFundamentals('2026-10-26T03:00:00Z', now), null)
+  assert.equal(findStaleFundamentals('2026-10-25T03:00:00Z', now), null) // 4일 전: 주기 끝 휴지기라 정상
+  assert.equal(findStaleFundamentals('2026-10-12T03:00:00Z', now), null) // 17일 전 경계
 })
 
-test('3일을 넘기면 며칠 전인지 알린다', () => {
-  assert.deepEqual(findStaleFundamentals('2026-10-15T20:00:00Z', now), { ageDays: 13 })
+test('17일을 넘기면 며칠 전인지 알린다', () => {
+  assert.deepEqual(findStaleFundamentals('2026-10-10T20:00:00Z', now), { ageDays: 18 })
 })
 
 test('값 있는 수집이 한 번도 없거나 날짜가 깨졌으면 없음으로 알린다', () => {
