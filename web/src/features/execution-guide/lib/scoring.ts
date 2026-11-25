@@ -103,8 +103,9 @@ export function computeFlowAccelerationScore(net5d: number | null, net20d: numbe
 }
 
 export function scoreSignalFreshness(ageDays: number | null | undefined, liteAgeDays: number | null | undefined): { score: number; label: string | null } {
-  const strictAge = Number(ageDays)
-  const liteAge = Number(liteAgeDays)
+  // null/undefined는 "자료 없음"이다. Number(null)이 0이라 만점(오늘 신호)으로 읽히던 결함을 막는다.
+  const strictAge = ageDays == null ? NaN : Number(ageDays)
+  const liteAge = liteAgeDays == null ? NaN : Number(liteAgeDays)
   if (Number.isFinite(strictAge) && strictAge >= 0) {
     const score = strictAge <= 0 ? 100 : strictAge <= 1 ? 92 : strictAge <= 3 ? 80 : strictAge <= 5 ? 68 : strictAge <= 10 ? 52 : 36
     return { score, label: `신호 신선도(D-${strictAge})` }

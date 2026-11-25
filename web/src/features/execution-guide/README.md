@@ -32,7 +32,7 @@
 - 종목이 3개 미만이면 자동 후보로 채운다. 예산은 `min(투자금 ÷ 종목 수, 투자금 × 최대 비중)`이고 수량은 `⌊예산 ÷ 진입 기준가⌋`다.
 - 위험 성향은 손절·목표에 계수를 곱한다(보수 0.9/0.85, 중립 1/1, 공격 1.15/1.18).
 - 후보 점수화(`lib/candidateRank.ts`)의 가중치는 매직 넘버다. 바꾸면 자동 후보 순위가 바뀐다. 근거와 검증은 `docs/hypothesis-ledger.md`·`docs/investment-idea-registry-2026-10-07.md`를 먼저 본다(후보 선택 규칙은 11/23 전 확정 금지 대상).
-- `scoreSignalFreshness(null, null)`은 100점을 준다(`Number(null) === 0`이라 신호 나이가 없으면 "오늘 신호"로 취급). 현재 동작이며 `helpers.test.ts`가 고정한다. 고치면 점수가 바뀌므로 규칙 변경으로 다룬다.
+- `scoreSignalFreshness(null, null)`은 자료 없음으로 중립 55점이다(2026-11-23 수정, 예전엔 `Number(null)===0`이라 100점). `helpers.test.ts`가 고정한다.
 - `formatCompactKrw`는 10억 이상만 소수 1자리, 그 미만의 억 단위는 반올림한 정수다.
 - `lib/request.ts`의 `buildUiRequest`는 인증 관련 코드다. 쿼리·헤더 구성을 테스트로 고정했으니 수정 전에 확인한다.
 - 스모크 테스트(`index.test.tsx`)는 이어받기 우선순위, 수량 계산, 위험 성향 보정, 자동 채움, 일부 실패, 자동 후보, 공유를 고정한다. PDF 다운로드는 다루지 않는다.

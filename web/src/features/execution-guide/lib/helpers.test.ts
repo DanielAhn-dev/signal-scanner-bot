@@ -115,8 +115,9 @@ describe('scoring', () => {
     expect(scoreSignalFreshness(4, 0)).toEqual({ score: 68, label: '신호 신선도(D-4)' })
     expect(scoreSignalFreshness(undefined, 2)).toEqual({ score: 72, label: '라이트 신호(D-2)' })
     expect(scoreSignalFreshness(undefined, undefined)).toEqual({ score: 55, label: null })
-    // 현재 동작: null은 Number(null)=0 이라 "오늘 신호"로 취급된다(점수 100)
-    expect(scoreSignalFreshness(null, null).score).toBe(100)
+    // 2026-11-23 수정: null도 자료 없음(중립 55). 예전엔 Number(null)=0이라 만점 100이었다
+    expect(scoreSignalFreshness(null, null)).toEqual({ score: 55, label: null })
+    expect(scoreSignalFreshness(null, 2)).toEqual({ score: 72, label: '라이트 신호(D-2)' })
   })
   it('과열 위험·단계 라벨·테마 가산', () => {
     expect(computeOverheatRisk(6)).toBeCloseTo(32.4, 6)
