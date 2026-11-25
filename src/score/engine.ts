@@ -288,7 +288,7 @@ export function calculateScore(
     else if (stable.trustScore <= 35) score -= 5;
 
     // ── 시장 환경 보정 (MarketEnv) ──
-    let marketAdj = 0;
+    const marketAdj = 0;
     let institutionalAdj = 0;
     let institutionalSignal: ScoreFactors["institutional_signal"] = "neutral";
     let foreign5d: number | undefined;
@@ -296,26 +296,8 @@ export function calculateScore(
     let foreignConsecutiveBuyDays: number | undefined;
     let institutionConsecutiveBuyDays: number | undefined;
     if (marketEnv) {
-      const { vix, fearGreed, usdkrw, investorFlow } = marketEnv;
-      // VIX: 30+ → -12, 25-30 → -7, 20-25 → -3
-      if (vix != null && Number.isFinite(vix)) {
-        if (vix >= 30) marketAdj -= 12;
-        else if (vix >= 25) marketAdj -= 7;
-        else if (vix >= 20) marketAdj -= 3;
-      }
-      // CNN Fear & Greed: 극단적 공포(<=20) → 역발상 +5, 공포(<=35) → +2
-      //                   극단적 탐욕(>=80) → -7, 탐욕(>=65) → -3
-      if (fearGreed != null && Number.isFinite(fearGreed)) {
-        if (fearGreed <= 20) marketAdj += 5;
-        else if (fearGreed <= 35) marketAdj += 2;
-        else if (fearGreed >= 80) marketAdj -= 7;
-        else if (fearGreed >= 65) marketAdj -= 3;
-      }
-      // USD/KRW: 1400+ → 외국인 이탈 압력 -5, 1350+ → -2
-      if (usdkrw != null && Number.isFinite(usdkrw)) {
-        if (usdkrw >= 1400) marketAdj -= 5;
-        else if (usdkrw >= 1350) marketAdj -= 2;
-      }
+      // 2026-11-23 정리: 원/달러·VIX·CNN 공포탐욕은 점수에 반영하지 않는다(근거 없음, C55~C58·research-weight-caution).
+      const { investorFlow } = marketEnv;
 
       // 기관/외국인 수급 보정
       foreign5d = Number.isFinite(Number(investorFlow?.foreign5d))
@@ -331,8 +313,8 @@ export function calculateScore(
         ? Math.max(0, Math.floor(Number(investorFlow?.institutionConsecutiveBuyDays)))
         : undefined;
 
-      if ((foreignConsecutiveBuyDays ?? 0) >= 5) institutionalAdj += 5;
-      if ((institutionConsecutiveBuyDays ?? 0) >= 3) institutionalAdj += 3;
+      // 외국인·기관 연속 순매수 가점과 강한 순매도 감점은 삭제(C27: 종목 수급은 점수에 보탤 정보 없음).
+      // 강한 순매도 종목은 investorFlowFilter의 매수 제외 필터가 담당한다.
 
       // 매집 패턴: 가격 횡보 + 거래량 확대 + AVWAP 지지
       const accumulationPattern =
@@ -340,10 +322,6 @@ export function calculateScore(
         (vol_ratio ?? 0) >= 1.4 &&
         avwap_support >= 66;
       if (accumulationPattern) institutionalAdj += 4;
-
-      // 분배 패턴: 외국인/기관 대규모 순매도
-      if ((foreign5d ?? 0) <= -5_000_000_000) institutionalAdj -= 6;
-      if ((institution5d ?? 0) <= -3_000_000_000) institutionalAdj -= 3;
 
       if (institutionalAdj >= 4) institutionalSignal = "accumulation";
       else if (institutionalAdj <= -4) institutionalSignal = "distribution";
