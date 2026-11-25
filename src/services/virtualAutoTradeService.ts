@@ -84,6 +84,7 @@ import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securiti
 import { fetchBenchmarkComparison, formatBenchmarkLine, resolveBenchmarkPrincipal } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
+import { VOL_SIZING_INDEX_CODE, volatilityBudgetCap } from "./virtualAutoTradeVolSizing";
 import {
   entryGuardLabel,
   fetchChaseEntries,
@@ -4376,6 +4377,26 @@ async function runMondayBuyForUser(payload: {
       // 매수액이 순수 현금보다 크면 순수 현금 기준으로 다시 사이징한다.
       if (sizing.quantity > 0 && Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
         sizing = entryPlan.size(Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)));
+      }
+
+      // 담을 크기(C66, 2026-11-23): 지수보다 유난히 흔들리는 종목은 기준 금액보다 적게. 자료가 없으면 기존 사이징 그대로.
+      if (sizing.quantity > 0 && sizing.totalBudget > 0) {
+        const volMap = await fetchWeightCautions(payload.supabase, [candidate.code, VOL_SIZING_INDEX_CODE]).catch(
+          () => new Map<string, WeightCautionResult>()
+        );
+        const volCap = volatilityBudgetCap({
+          baseBudget: sizing.baseTargetBudget,
+          floor: sizing.meaningfulFloor,
+          stockVol60: volMap.get(candidate.code)?.vol60,
+          indexVol60: volMap.get(VOL_SIZING_INDEX_CODE)?.vol60,
+        });
+        if (volCap && sizing.totalBudget > volCap.cap) {
+          const resized = entryPlan.size(Math.min(deployableCash, volCap.cap));
+          summary.notes.push(
+            `${candidate.name || candidate.code}(${candidate.code}) 담을 크기 조정: 지수 대비 변동성 ${volCap.volRatio.toFixed(1)}배 → 총 목표 ${fmtKrw(sizing.totalBudget)}에서 ${fmtKrw(volCap.cap)}로`
+          );
+          sizing = resized;
+        }
       }
 
       if (!sizingNoteAdded) {
