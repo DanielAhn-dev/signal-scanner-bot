@@ -133,7 +133,9 @@ export async function handleFlowCommand(
     const i5 = investors.slice(0, 5).reduce((s, r) => s + r.instNet, 0);
     msg += `\n<b>5일 합산</b>\n`;
     msg += `외국인 ${f5 >= 0 ? "▲" : "▼"} ${fmtInt(Math.abs(f5))}주\n`;
-    msg += `기관 ${i5 >= 0 ? "▲" : "▼"} ${fmtInt(Math.abs(i5))}주`;
+    msg += `기관 ${i5 >= 0 ? "▲" : "▼"} ${fmtInt(Math.abs(i5))}주
+`;
+    msg += `<i>수급은 같은 기간 가격과 같이 움직이는 지표라 다음 주가를 예측하지 못합니다(C27·C55).</i>`;
   }
 
   const personalLines = await buildPersonalizedGuidance({

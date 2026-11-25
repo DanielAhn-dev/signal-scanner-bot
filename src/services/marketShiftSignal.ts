@@ -153,7 +153,7 @@ export function computeMarketShift(days: MarketShiftDay[]): MarketShift | null {
       windowDays: SHIFT_RANK_WINDOW,
       lookbackDays: SHIFT_LOOKBACK_DAYS,
       unusualRule: "자기 과거 상위·하위 10%",
-      limit: "하락을 예측하는 신호가 아닙니다. 평소와 얼마나 다른지만 보여줍니다. 하락 선행 여부는 가설 H29에서 검증 중입니다.",
+      limit: "하락을 예측하는 신호가 아닙니다. 평소와 얼마나 다른지만 보여줍니다. 하락 선행 여부는 가설 H29에서 검증 중입니다. 외국인 순매수는 같은 기간 가격과 같이 움직이는 지표라 다음 주가를 예측하지 못합니다(C55, 2005~2026-09).",
       generatedAt: new Date().toISOString().slice(0, 10),
     },
   };

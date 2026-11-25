@@ -83,7 +83,8 @@ export function computeMarketFlowCaution(days: MarketFlowDay[]): MarketFlowCauti
   const message = active
     ? `코스피가 고점 부근인데 외국인이 1년 중 가장 많이 파는 구간(최근 신호 ${valid[lastSignal!].date}). ` +
       `과거 같은 상황에서 3개월 안에 -10% 이상 빠진 비율 ${Math.round(ev.drop10Prob * 100)}%(평소 ${Math.round(ev.baseDrop10Prob * 100)}%). ` +
-      `개별주 추가매수를 멈추고, 계획보다 늘어난 비중은 줄일지 검토하세요. 지수 적립은 계획대로.`
+      `개별주 추가매수를 멈추고, 계획보다 늘어난 비중은 줄일지 검토하세요. 지수 적립은 계획대로. ` +
+      `다만 외국인 매도는 큰 하락 가능성을 조금 높일 뿐 시점은 알려 주지 않습니다(2005~2026-09, C55·C56: 과거 매도 구간도 보통은 평소만큼만 빠짐).`
     : `외국인 60일 누적 ${Number(foreignJo) >= 0 ? "+" : ""}${foreignJo}조원 — 수급 경고 없음.`;
   return {
     asOf: valid[last].date,
