@@ -12,13 +12,17 @@
  */
 
 import { computeDistributionCredit, exDividendDate, fetchEtfDistributions, KODEX_FUND_IDS, type EtfDistribution } from "./etfDistribution";
+import { INDEX_SWEEP_CODES } from "./virtualAutoTradeCashSweep";
 import { toKstDateKey } from "../lib/krxCalendar";
 import { positivePrice } from "../lib/holdingPrice";
 
 type SupabaseClientAny = any;
 
+/** 지수 기준선 이름 — 봇이 사는 지수 스윕(TR형)과 같은 상품으로 비교한다(2026-11-23). */
+export const INDEX_BENCHMARK_LABEL = "코스피200TR";
+
 export const BENCHMARK_CODES = [
-  { code: "069500", label: "KODEX200" },
+  { code: INDEX_SWEEP_CODES[0], label: INDEX_BENCHMARK_LABEL },
   { code: "229200", label: "코스닥150" },
   { code: "459580", label: "CD금리" },
 ] as const;
@@ -35,7 +39,7 @@ function fmtPct(value: number): string {
 
 export function formatBenchmarkLine(input: BenchmarkComparison): string {
   const parts = input.benchmarks.map((b) => `${b.label} ${fmtPct(b.returnPct)}`);
-  const beatIndex = input.benchmarks.find((b) => b.label === "KODEX200");
+  const beatIndex = input.benchmarks.find((b) => b.label === INDEX_BENCHMARK_LABEL);
   const verdict =
     beatIndex == null
       ? ""

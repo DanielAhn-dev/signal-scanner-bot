@@ -13,6 +13,7 @@ import {
   CASH_SWEEP_CANDIDATE_CODES,
   CASH_SWEEP_STRATEGY_ID,
   INDEX_SWEEP_CODES,
+  sweepTargetCodes,
   isIndexSweepCode,
   resolveCashSweepIdleAmount,
   readSatelliteCapPct,
@@ -451,7 +452,8 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
         return { notes };
       }
       // 50일선과 무관하게 항상 지수 ETF (2026-09-29 검증: 적립·거치 모두 보유가 하위 10% 결과까지 앞섬 — virtualAutoTradeCashSweep.ts)
-      const targetCodes = INDEX_SWEEP_CODES;
+      const preHolding = loadSweepHolding(sweepRows, prices);
+      const targetCodes = sweepTargetCodes(preHolding && isIndexSweepCode(preHolding.code) ? preHolding.code : null);
       const targetLabel = "지수 보유";
       // 지수 ETF 가격이 없으면 이번 회차는 건너뛴다 (금리형으로 대체하면 들고 있던 지수 스윕을 팔아 버린다)
       const sweepCode = targetCodes.find((code) => (prices.get(code)?.close ?? 0) > 0);

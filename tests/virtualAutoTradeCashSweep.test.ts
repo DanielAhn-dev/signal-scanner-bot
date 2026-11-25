@@ -67,3 +67,12 @@ test("resolveCashSweepIdleAmount: 실험 계좌(몫 100)는 입금이 있어도 
     0
   );
 });
+
+test("sweepTargetCodes: 새 매수는 TR형 우선, 이미 지수를 들고 있으면 그 종목이 먼저 (2026-11-23)", async () => {
+  const { sweepTargetCodes } = await import("../src/services/virtualAutoTradeCashSweep");
+  assert.equal(sweepTargetCodes(null)[0], "294400");
+  assert.deepEqual(sweepTargetCodes("069500").slice(0, 2), ["069500", "294400"]);
+  assert.equal(sweepTargetCodes("069500").length, INDEX_SWEEP_CODES.length);
+  // 지수 스윕이 아닌 코드는 무시
+  assert.equal(sweepTargetCodes("005930")[0], "294400");
+});

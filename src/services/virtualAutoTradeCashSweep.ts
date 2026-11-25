@@ -28,11 +28,24 @@ export const RATE_SWEEP_CODES = [
   "423160", // KODEX KOFR금리액티브(합성)
 ];
 
-/** 지수형 스윕 ETF (우선순위 순) */
+/**
+ * 지수형 스윕 ETF (우선순위 순).
+ * 2026-11-23: 새 매수는 TR형 우선 — 같은 지수 보수 차 0.10%p, 분배금 세후 입금 구조라 TR의 과세 이연이 유리하다.
+ * 1순위는 화면 추천과 같은 판정(src/lib/indexProductChoice.ts)이 고르는 KIWOOM 200TR. 판정이 바뀌면 이 순서와 웹 indexEtf.ts를 함께 고친다.
+ * 기존 KODEX 200·TIGER 200은 보유분 인식용으로 남긴다(들고 있으면 그 종목을 계속 쓴다 — 아래 sweepTargetCodes).
+ */
 export const INDEX_SWEEP_CODES = [
-  "069500", // KODEX 200
-  "102110", // TIGER 200
+  "294400", // KIWOOM 200TR
+  "278530", // KODEX 200TR
+  "069500", // KODEX 200 (기존 보유분)
+  "102110", // TIGER 200 (기존 보유분)
 ];
+
+/** 이번 회차에 살 지수 ETF 후보 — 이미 지수 스윕을 들고 있으면 그 종목이 먼저다(두 종목으로 갈라지지 않게) */
+export function sweepTargetCodes(heldIndexCode: string | null | undefined): string[] {
+  const held = String(heldIndexCode ?? "").trim();
+  return held && INDEX_SWEEP_CODES.includes(held) ? [held, ...INDEX_SWEEP_CODES.filter((c) => c !== held)] : INDEX_SWEEP_CODES;
+}
 
 /** 스윕에 쓰일 수 있는 모든 ETF — 보유분 조회·현금 취급용 */
 export const CASH_SWEEP_CANDIDATE_CODES = [...INDEX_SWEEP_CODES, ...RATE_SWEEP_CODES];
