@@ -84,6 +84,7 @@ import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securiti
 import { fetchBenchmarkComparison, formatBenchmarkLine, resolveBenchmarkPrincipal } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
+import { shouldSkipExistingRun } from "./virtualAutoTradeRunWindow";
 import { VOL_SIZING_INDEX_CODE, volatilityBudgetCap } from "./virtualAutoTradeVolSizing";
 import {
   entryGuardLabel,
@@ -7143,10 +7144,11 @@ async function startRun(payload: {
   runType: RunType;
   runKey: string;
   chatId: number;
+  dryRun?: boolean;
 }): Promise<{ runId: number | null; shouldSkip: boolean }> {
   const { data: existing } = await payload.supabase
     .from("virtual_autotrade_runs")
-    .select("id")
+    .select("id, summary")
     .eq("run_type", payload.runType)
     .eq("run_key", payload.runKey)
     .eq("chat_id", payload.chatId)
@@ -7154,7 +7156,8 @@ async function startRun(payload: {
 
   const existingId = Number((existing as Record<string, unknown> | null)?.id ?? 0) || null;
   if (existingId) {
-    return { runId: existingId, shouldSkip: true };
+    const skip = shouldSkipExistingRun((existing as Record<string, unknown> | null)?.summary, Boolean(payload.dryRun));
+    return { runId: existingId, shouldSkip: skip };
   }
 
   const { data, error } = await payload.supabase
@@ -7320,6 +7323,7 @@ export async function runVirtualAutoTradingCycle(input?: {
         runType,
         runKey,
         chatId: setting.chat_id,
+        dryRun,
       });
       runId = runStart.runId;
 
